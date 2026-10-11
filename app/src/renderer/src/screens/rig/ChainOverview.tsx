@@ -1,6 +1,6 @@
 import { useState, type DragEvent } from "react";
 import { LockIcon } from "lucide-react";
-import { Dial, GearFor, modelTitle } from "@/components/gear";
+import { Dial, GearFor, artFor, modelTitle, type GearArt } from "@/components/gear";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { profileFor } from "@shared/devices";
@@ -14,6 +14,8 @@ import { useRig } from "./rig-store";
 
 const IN_SPEC = { min: -20, max: 20, step: 1, unit: "dB" };
 const OUT_SPEC = { min: 0, max: 100, step: 1 };
+/** Drawings wider than tall (amp head, cab) get a wide thumbnail; pedals and captures a narrow one. */
+const WIDE_ART: readonly GearArt[] = ["amp", "cab"];
 
 /** Paradise-style top strip: IN trim, the three groups as thumbnails (click to open, drop to move), lock, OUT. */
 export function ChainOverview({ preset, readOnly }: { preset: PresetState; readOnly: boolean }) {
@@ -84,7 +86,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
                   <span className={cn("absolute -top-[17px] left-1.5 text-xs font-medium whitespace-nowrap", active ? "text-silkscreen" : "text-silkscreen-3")}>{GROUP_TITLE[g]}</span>
                   {groups[g].map((b) => {
                     const block = preset.blocks[b];
-                    const wide = block.code === "AMP" || block.code === "CAB";
+                    const wide = WIDE_ART.includes(artFor(block));
                     return (
                       <GearFor
                         key={b}

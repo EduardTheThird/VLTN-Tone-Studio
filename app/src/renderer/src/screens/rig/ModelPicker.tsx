@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { CheckIcon, ExternalLinkIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
 import { profileFor, snapToneLabel, type SlotTables } from "@shared/devices";
 import { notifyError } from "@/app/notify";
-import { Capture, GearFor } from "@/components/gear";
+import { Capture, GearFor, artFor, type GearArt } from "@/components/gear";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
@@ -125,7 +125,7 @@ const thumbBlock = (b: BlockState, m: ModelInfo, device: DeviceKey): BlockState 
   params: b.fxid === m.fxid ? b.params : defaultParamsFor(device, b.index, m.fxid),
 });
 
-const THUMB_W: Partial<Record<BlockCode, string>> = { AMP: "w-[104px]", CAB: "w-[88px]" };
+const THUMB_W: Partial<Record<GearArt, string>> = { amp: "w-[104px]", cab: "w-[88px]" };
 
 /** Visual model browser over the board: arrows audition on the pedal, Enter keeps, Esc reverts. */
 export function ModelPicker() {
@@ -372,7 +372,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
                 {code === "NS" ? (
                   <Capture name={t.title.replace(/^\d+ /, "")} className="mb-1 w-[62px] drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]" />
                 ) : (
-                  <GearFor block={thumbBlock(block, t.model, preset.device)} className={cn(THUMB_W[code] ?? "w-[62px]", "mb-1 drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]")} />
+                  <GearFor block={thumbBlock(block, t.model, preset.device)} className={cn(THUMB_W[artFor({ code, fxid: t.model.fxid })] ?? "w-[62px]", "mb-1 drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]")} />
                 )}
                 <b className="text-sm font-semibold">{t.title}</b>
                 <span className="text-xs leading-tight text-silkscreen-3">{t.sub}</span>

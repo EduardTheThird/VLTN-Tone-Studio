@@ -62,7 +62,7 @@ export function AmpHead({ name, type, on = true, knobs = [], interactive, disabl
 }
 
 /** Speaker cabinet: perforated grille, cones from the model name (1x8, 2x12, 4x12), "IR" for User IR slots. */
-export function Cab({ name, className, style }: Pick<GearBaseProps, "name" | "className" | "style">) {
+export function Cab({ name, ir, className, style }: Pick<GearBaseProps, "name" | "className" | "style"> & { /** A User IR slot (default: from the name) */ ir?: boolean }) {
   return (
     <GearFrame
       view={[240, 170]}
@@ -71,7 +71,7 @@ export function Cab({ name, className, style }: Pick<GearBaseProps, "name" | "cl
       style={style}
       render={(id) => {
         const m = /(\d)x(\d+)/i.exec(name);
-        const isIR = /User IR|IR\b/i.test(name);
+        const isIR = ir ?? /User IR|IR\b/i.test(name);
         const n = m ? Number(m[1]) : isIR ? 0 : 2;
         const W = 240;
         const H = 170;
