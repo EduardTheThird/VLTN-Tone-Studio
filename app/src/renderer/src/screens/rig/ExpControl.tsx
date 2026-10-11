@@ -65,7 +65,7 @@ export function ExpControl({ preset, exp, disabled }: { preset: PresetState; exp
       <PopoverContent align="start" className="flex w-[320px] flex-col gap-4 bg-surface-solid-raised!">
         {!usable &&
           (locked ? (
-            <Note text="Changing EXP settings needs GP-50 extras (experimental)." action="Open Settings" onAction={() => openDevice("settings")} />
+            <Note text="Changing EXP settings needs Experimental pedal commands." action="Open Settings" onAction={() => openDevice("settings")} />
           ) : (
             <Note text={`Connect the ${pedal} to change its EXP settings.`} />
           ))}

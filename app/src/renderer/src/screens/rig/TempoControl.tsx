@@ -8,7 +8,7 @@ import { editBpm } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
 import { tap } from "./tempo";
 
-/** Where a tempo edit goes: live where the pedal has a tempo command (GP-50 extras, GP-200), else with the save. */
+/** Where a tempo edit goes: live where the pedal has a tempo command (GP-50 with Experimental pedal commands, GP-200), else with the save. */
 function useTempoNote(): string {
   const pedal = usePedalName();
   const mode = useLiveMode("liveBpm");

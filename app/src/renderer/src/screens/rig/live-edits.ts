@@ -8,7 +8,7 @@ export type LiveEdit = "liveOrder" | "liveFootswitches" | "liveBpm";
 
 const WHAT: Record<LiveEdit, string> = { liveOrder: "chain order", liveFootswitches: "footswitches", liveBpm: "tempo" };
 
-/** How an edit reaches the pedal: right away ("live"), with the save ("save"), or with the save until GP-50 extras are on ("locked"). */
+/** How an edit reaches the pedal: right away ("live"), with the save ("save"), or with the save until Experimental pedal commands are on ("locked"). */
 export type LiveMode = "live" | "save" | "locked";
 
 export function useLiveMode(feature: LiveEdit): LiveMode {
@@ -26,5 +26,5 @@ export function liveStatusText(features: readonly DeviceFeature[]): string {
 export function saveOnlyNote(mode: LiveMode, what: string, pedal: string): string {
   if (mode === "live") return "";
   const base = `${what} reaches the ${pedal} when you save.`;
-  return mode === "locked" ? `${base} Turn on GP-50 extras in Settings to hear it right away.` : base;
+  return mode === "locked" ? `${base} Turn on Experimental pedal commands in Settings to hear it right away.` : base;
 }
