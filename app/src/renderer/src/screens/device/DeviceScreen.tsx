@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
+import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
-import { pedalName, writesLocked } from "@/state/device-model";
+import { attachedDevice, pedalName, writesLocked } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useStatusMessage } from "@/state/ui";
 import { BackupsPanel } from "./BackupsPanel";
 import { ConnectionHeader } from "./ConnectionHeader";
 import { DiagnosticsPanel, copyReport, useChecks } from "./DiagnosticsPanel";
+import { Gp200CatalogPanel } from "./Gp200CatalogPanel";
 import { connectionView } from "./guidance";
 import { PedalSettings, RawRecords } from "./PedalSettings";
 import { SettingsView } from "./SettingsView";
@@ -40,6 +42,8 @@ function DevicePage() {
     })),
   );
   const view = connectionView({ ...input, platform: host.platform });
+  // GP-200 family effect names come from the user's catalog: its import panel shows for those pedals
+  const gp200 = useDevice((s) => [attachedDevice(s), s.device].some((k) => k !== null && profileFor(k).family === "gp200"));
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -73,7 +77,10 @@ function DevicePage() {
         <PedalSettings offline={view.offline} />
         <RawRecords />
         <div className="grid grid-cols-2 items-start gap-4">
-          <BackupsPanel offline={view.offline} />
+          <div className="flex min-w-0 flex-col gap-4">
+            {gp200 && <Gp200CatalogPanel />}
+            <BackupsPanel offline={view.offline} />
+          </div>
           <DiagnosticsPanel guideOpen={guideOpen} onGuideOpenChange={setGuideOpen} guideRef={guideRef} />
         </div>
       </div>

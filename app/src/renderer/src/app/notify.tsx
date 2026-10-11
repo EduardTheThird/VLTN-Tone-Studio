@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { CircleCheck, CircleX, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { CircleCheck, CircleX, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
@@ -25,18 +25,21 @@ interface ToastAction {
 }
 
 interface ToastSpec {
-  tone: "ok" | "fault";
+  /** "info": something to do, not a result (no success or failure colour) */
+  tone: "ok" | "fault" | "info";
   title: string;
   body?: string;
   action?: ToastAction;
-  /** Keep an "ok" toast until dismissed (it asks for a decision) */
+  /** Keep an "ok" or "info" toast until dismissed (it asks for a decision) */
   sticky?: boolean;
 }
+
+const TONE_ICON = { ok: { Icon: CircleCheck, color: "text-led-on" }, fault: { Icon: CircleX, color: "text-led-fault" }, info: { Icon: Info, color: "text-silkscreen-2" } } as const;
 
 function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
   const [running, setRunning] = useState(false);
   const { tone, title, body, action } = spec;
-  const Icon = tone === "ok" ? CircleCheck : CircleX;
+  const { Icon, color } = TONE_ICON[tone];
   const onAction = async () => {
     if (!action) return;
     setRunning(true);
@@ -50,11 +53,11 @@ function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
   };
   return (
     <div
-      role={tone === "ok" ? "status" : "alert"}
+      role={tone === "fault" ? "alert" : "status"}
       aria-busy={running || undefined}
       className="glass-float relative flex w-[404px] max-w-[calc(100vw-48px)] items-start gap-2.5 rounded-lg py-3.5 pr-10 pl-3.5 text-[13px] text-silkscreen"
     >
-      <Icon className={cn("mt-px size-[18px] shrink-0", tone === "ok" ? "text-led-on" : "text-led-fault")} aria-hidden />
+      <Icon className={cn("mt-px size-[18px] shrink-0", color)} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <b className="font-semibold">{title}</b>
         {body && <span className="text-xs text-pretty text-silkscreen-2">{body}</span>}
@@ -78,7 +81,7 @@ function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
 }
 
 export function showToast(spec: ToastSpec): string | number {
-  return toast.custom((id) => <ToastCard id={id} spec={spec} />, { duration: spec.tone === "ok" && !spec.sticky ? 6000 : Infinity });
+  return toast.custom((id) => <ToastCard id={id} spec={spec} />, { duration: spec.tone !== "fault" && !spec.sticky ? 6000 : Infinity });
 }
 
 /** Device/toolkit error → one plain sentence . */
