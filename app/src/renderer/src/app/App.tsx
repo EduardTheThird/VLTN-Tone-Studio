@@ -6,7 +6,7 @@ export function App() {
   return (
     <TooltipProvider delayDuration={400}>
       <AppShell />
-      {/* overlays.md G: bottom right above the 30px status bar, max 3, newest on top. */}
+      {/* Toasts: bottom right above the 30px status bar, max 3, newest on top. */}
       <Toaster
         position="bottom-right"
         visibleToasts={3}

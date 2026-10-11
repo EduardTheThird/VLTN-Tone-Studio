@@ -13,7 +13,7 @@ import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led 
 const SIMULATED = DEVICE_KEYS.filter((k) => profileFor(k).simulator);
 export const LED_CLASS: Record<Led, string> = { on: "bg-led-on", warn: "bg-led-warn", fault: "bg-led-fault", off: "bg-led-off" };
 
-/** Device name plus its state line; owns the primary action in problem states (device.md › Layout). */
+/** Device name plus its state line; owns the primary action in problem states. */
 export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; onShowFix: () => void }) {
   const d = useDevice(
     useShallow((s) => ({

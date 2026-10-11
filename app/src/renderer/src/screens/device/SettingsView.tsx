@@ -10,13 +10,15 @@ import { host, isElectron } from "@/host";
 import { useNav } from "@/state/nav";
 import { loadAccount, setAppKey, signOut, useTones } from "@/screens/tones/store";
 import { useAppSettings } from "./settings-store";
-import { useDevice } from "@/state/device";
+import { useDevice, useProfile } from "@/state/device";
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, useUpdate } from "@/app/updates";
 
 /** Settings (`?screen=device&param=settings`): how Tone Studio behaves on this computer. */
 export function SettingsView() {
   const { settings, loaded, load, patch } = useAppSettings();
   const go = useNav((s) => s.go);
+  // GP-5 connected or remembered: the GP-50 extras do nothing, so the switch is shown dimmed.
+  const gp50Only = useProfile().key === "gp5";
 
   useEffect(() => {
     void load()
@@ -58,11 +60,11 @@ export function SettingsView() {
           )}
           <Row
             label="GP-50 extras (experimental)"
-            description="Lets Tone Studio use GP-50 commands that are known from Valeton Suite but not yet tested on a real pedal: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. Back up your pedal first. The simulator always has them."
+            description={`${gp50Only ? "GP-50 only — your pedal is a GP-5. " : ""}Lets Tone Studio use GP-50 commands that are known from Valeton Suite but not yet tested on a real pedal: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. Back up your pedal first. The simulator always has them.`}
           >
             <Switch
               checked={settings.gp50Extras}
-              disabled={!loaded}
+              disabled={!loaded || gp50Only}
               onCheckedChange={(v) => {
                 useDevice.getState().setGp50Extras(v);
                 // A failed save restores the previous value; the connected session follows it back.

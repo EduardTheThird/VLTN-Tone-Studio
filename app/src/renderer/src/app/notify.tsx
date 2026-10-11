@@ -11,7 +11,7 @@ import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
 const currentPedal = () => pedalName(useDevice.getState().device);
 
 /*
- * Toasts per overlays.md G (Sonner, bottom right above the status bar, max 3, newest on top).
+ * Toasts (Sonner, bottom right above the status bar, max 3, newest on top).
  * Success toasts auto-dismiss after 6 s; errors stay until dismissed and offer Retry when a retry is possible.
  * Every screen reports pedal results through these helpers so the copy stays the same everywhere.
  */
@@ -81,7 +81,7 @@ export function showToast(spec: ToastSpec): string | number {
   return toast.custom((id) => <ToastCard id={id} spec={spec} />, { duration: spec.tone === "ok" && !spec.sticky ? 6000 : Infinity });
 }
 
-/** Device/toolkit error → one plain sentence (overlays.md G mapping). */
+/** Device/toolkit error → one plain sentence . */
 export function describeError(error: unknown): string {
   const e = error as { code?: string; message?: string } | null;
   switch (e?.code) {

@@ -12,6 +12,7 @@ import {
   listNames,
   prstName,
   sniffPrst,
+  snapToneLabel,
 } from "./devices";
 import { pedalOnUsb, updaterOnUsb, type DeviceHostStatus } from "./host/device";
 
@@ -129,5 +130,13 @@ describe(".prst sniffing", () => {
     expect(PRST_MODELS).toBe("GP-5, GP-50 or GP-200");
     expect(listNames(["gp5", "gp50"], "and")).toBe("GP-5 and GP-50");
     expect(listNames(["gp5"])).toBe("GP-5");
+  });
+});
+
+describe("snapToneLabel / backupSeconds", () => {
+  it("shows the 0-based SnapTone slot and keeps a backup estimate per model", () => {
+    expect(snapToneLabel("gp5", 52)).toBe("SnapTone 52");
+    expect(PROFILES.gp5.backupSeconds).toBe(75);
+    expect(PROFILES.gp200.backupSeconds).toBeGreaterThan(PROFILES.gp5.backupSeconds);
   });
 });

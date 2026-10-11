@@ -26,7 +26,7 @@ import { useAppSettings } from "./settings-store";
 type Failure = { message: string; done: number[]; failed: number | null; notStarted: number[] };
 
 /**
- * Restore AlertDialog (device.md › Backups, `#restore`): names the source, which slots are replaced and what is
+ * Restore AlertDialog: names the source, which slots are replaced and what is
  * in them now, offers a full backup first, then writes slot by slot with read-back verification.
  */
 export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource | null; onOpenChange: (open: boolean) => void }) {
@@ -35,7 +35,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   const unsaved = useDevice((s) => s.unsavedChanges);
   const connected = useDevice((s) => s.status === "connected");
   const pedal = usePedalName();
-  const { slotCount, slotLabel } = useProfile();
+  const { slotCount, slotLabel, backupSeconds } = useProfile();
   const backupDefault = useAppSettings((s) => s.settings.backupBeforeWrite);
   const [backupFirst, setBackupFirst] = useState(backupDefault);
   const [phase, setPhase] = useState<"confirm" | "backup" | "restore">("confirm");
@@ -168,7 +168,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             <Checkbox id={checkId} checked={backupFirst} disabled={running} onCheckedChange={(v) => setBackupFirst(v === true)} className="mt-px" />
             <Label htmlFor={checkId} className="flex flex-col items-start gap-0.5 text-sm">
               <b className="font-semibold">Back up the pedal first</b>
-              <span className="font-normal text-silkscreen-3">Saves what is on the pedal now to a new folder. Takes about 75 seconds.</span>
+              <span className="font-normal text-silkscreen-3">Saves what is on the pedal now to a new folder. Takes about {backupSeconds} seconds.</span>
             </Label>
           </div>
         )}

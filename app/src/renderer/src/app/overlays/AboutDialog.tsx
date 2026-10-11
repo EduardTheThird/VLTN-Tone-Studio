@@ -4,7 +4,6 @@ import { listNames, profileFor } from "@shared/devices";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { host } from "@/host";
-import { DEFAULT_DEVICE } from "@/state/device-model";
 import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 import { useUi } from "@/state/ui";
 import { checkForUpdates } from "../updates";
@@ -12,8 +11,11 @@ import { checkForUpdates } from "../updates";
 const PLATFORM: Record<string, string> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
 /** "GP-5 and GP-50": the models this build connects to. */
 const MODELS = listNames(SUPPORTED_DEVICE_KEYS, "and");
+/** "100 " when every supported model has the same slot count, else nothing. */
+const slotCounts = new Set(SUPPORTED_DEVICE_KEYS.map((k) => profileFor(k).slotCount));
+const SLOTS = slotCounts.size === 1 ? `${[...slotCounts][0]} ` : "";
 
-/** Help › About VLTN Tone Studio. One of the rare places for the brand violet (DESIGN.md › Colors). */
+/** Help › About VLTN Tone Studio. One of the rare places for the brand violet. */
 export function AboutDialog() {
   const open = useUi((s) => s.aboutOpen);
   const setOpen = useUi((s) => s.setAboutOpen);
@@ -38,7 +40,7 @@ export function AboutDialog() {
           </div>
         </div>
         <DialogDescription className="text-[13px] text-pretty text-silkscreen-2">
-          {`Editor and librarian for the Valeton ${MODELS}: shape presets live on the pedal, sort its ${profileFor(DEFAULT_DEVICE).slotCount} slots, back them up, and bring NAM captures and IRs from TONE3000.`}
+          {`Editor and librarian for the Valeton ${MODELS}: shape presets live on the pedal, sort its ${SLOTS}preset slots, back them up, and bring NAM captures and IRs from TONE3000.`}
         </DialogDescription>
         <p className="text-xs text-pretty text-silkscreen-3">Valeton, {MODELS} are trademarks of their owners. This app is not made or endorsed by Valeton.</p>
         <DialogFooter>

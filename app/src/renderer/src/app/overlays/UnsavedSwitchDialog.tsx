@@ -18,7 +18,7 @@ import { diffPresets, type ChangeRow } from "@/state/unsaved-diff";
 
 const MAX_ROWS = 5;
 
-/** overlays.md B: "Save your changes to …?" when switching presets with unsaved edits. */
+/** "Save your changes to …?" when switching presets with unsaved edits. */
 export function UnsavedSwitchDialog() {
   const target = useUi((s) => s.switchTarget);
   const setTarget = useUi((s) => s.setSwitchTarget);
@@ -62,7 +62,7 @@ export function UnsavedSwitchDialog() {
       <AlertDialogContent
         className="w-[560px] max-w-[calc(100vw-48px)] gap-4 sm:max-w-[560px]"
         onOpenAutoFocus={(e) => {
-          // Enter = Save (overlays.md B); Esc still cancels.
+          // Enter = Save; Esc still cancels.
           e.preventDefault();
           saveRef.current?.focus();
         }}

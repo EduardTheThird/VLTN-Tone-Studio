@@ -70,6 +70,8 @@ export interface DeviceProfile {
   globals: boolean;
   /** The app has a simulator for this model (`?mock=<key>`, Device screen "Simulate a …") */
   simulator: boolean;
+  /** Rough seconds for a full backup (every slot), for UI copy only */
+  backupSeconds: number;
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -113,6 +115,7 @@ const gp5Family = {
   nameLength: 10,
   globals: true,
   simulator: true,
+  backupSeconds: 75,
 } as const;
 
 /** GP-5 family header: the model name, NUL terminated ("GP-5\0", "GP-50\0"), at 0. */
@@ -146,6 +149,8 @@ const gp200Family = {
   prst: GP200_PRST,
   globals: true,
   simulator: false,
+  // Estimate, not measured: per-slot read ≈ 1 s multi-chunk pause + frames/reply (gp200/lib/session.mjs pacing) × 256.
+  backupSeconds: 300,
 } as const;
 
 export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freeze({
@@ -177,6 +182,14 @@ export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freez
 
 export function isDeviceKey(v: unknown): v is DeviceKey {
   return typeof v === "string" && (DEVICE_KEYS as readonly string[]).includes(v);
+}
+
+/**
+ * How the app shows a SnapTone slot: the 0-based slot number the pedal protocol uses ("SnapTone 52").
+ * The pedal's own on-screen numbering is not confirmed, so this matches the Tones screen.
+ */
+export function snapToneLabel(_device: DeviceKey, slot: number): string {
+  return `SnapTone ${slot}`;
 }
 
 export function profileFor(key: DeviceKey): DeviceProfile {

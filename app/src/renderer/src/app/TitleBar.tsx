@@ -6,7 +6,7 @@ import { DeviceChip } from "./DeviceChip";
 import { SearchButton } from "./SearchButton";
 
 /**
- * 52px drag region (DESIGN.md › Layout): brand, preset switcher, search, device chip. Controls sit in
+ * 52px drag region: brand, preset switcher, search, device chip. Controls sit in
  * floating glass capsules. macOS reserves the traffic lights on the left; Windows/Linux reserve the
  * native window controls (titleBarOverlay) on the right.
  */
