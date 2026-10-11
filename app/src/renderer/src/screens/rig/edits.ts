@@ -2,6 +2,7 @@
 // through the device store (live edits) or changes the preset locally (reaching the pedal on save).
 import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
 import { EXP_FIELDS } from "@/gp5/lib/protocol.mjs";
+import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
 import { switchLabel } from "@/state/device-model";
 import type { BlockState, ExpEdit, ExpSettings, Gp200Edit, PresetState } from "@/state/device-types";
@@ -87,6 +88,16 @@ export function editFootswitches(lists: number[][]) {
   const from = p.footswitches.map((l) => [...l]);
   dev().setFootswitches(lists);
   useHistory.getState().record({ kind: "footswitches", from, to: lists });
+}
+
+/**
+ * The switches of `p` a model shows, as indices into PresetState.footswitches: FS1 and FS2 on the GP-5 family; on the
+ * GP-200 family one CTRL per footswitch (GP-200 8, LT 4, JR 3; the LT and JR counts aren't confirmed on a unit yet), and
+ * any higher CTRL that holds blocks (external footswitches can play CTRL 5-8).
+ */
+export function shownSwitches(p: PresetState): number[] {
+  const { ctrls, footswitches } = profileFor(p.device);
+  return p.footswitches.flatMap((list, i) => (i < Math.min(ctrls, footswitches) || list.length > 0 ? [i] : []));
 }
 
 export type FootswitchToggle = { next: number[][] } | { reason: string };

@@ -1,38 +1,46 @@
 import { PlusIcon, XIcon } from "lucide-react";
 import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
+import { profileFor } from "@shared/devices";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePedalName } from "@/state/device";
-import { switchLabel } from "@/state/device-model";
+import { isGp5Family, switchLabel } from "@/state/device-model";
 import type { PresetState } from "@/state/device-types";
-import { footswitchToggle, toggleFootswitch } from "./edits";
+import { footswitchToggle, shownSwitches, toggleFootswitch } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
 
 /**
- * Rig header "Footswitches": one button for the preset's switch assignments, a popover with one row per switch (its
- * blocks, remove, add). Rows keep the header one control wide however many switches a model has.
+ * Rig header "Footswitches" (GP-5 family) or "CTRL" (GP-200 family): one button for the preset's switch assignments, a
+ * popover with one row per switch the model shows (its blocks, remove, add). Rows keep the header one control wide
+ * however many switches a model has.
  */
 export function FootswitchControl({ preset, disabled }: { preset: PresetState; disabled: boolean }) {
   const pedal = usePedalName();
-  const note = saveOnlyNote(useLiveMode("liveFootswitches"), "A footswitch change", pedal);
-  const switches = preset.footswitches.map((assigned, key) => ({ key, label: switchLabel(preset.device, key), assigned }));
+  const gp5 = isGp5Family(preset.device);
+  const title = gp5 ? "Footswitches" : "CTRL";
+  const note = saveOnlyNote(useLiveMode("liveFootswitches"), gp5 ? "A footswitch change" : "A CTRL change", pedal);
+  const switches = shownSwitches(preset).map((key) => ({ key, label: switchLabel(preset.device, key), assigned: preset.footswitches[key] }));
   const total = switches.reduce((n, s) => n + s.assigned.length, 0);
   const code = (b: number) => preset.blocks[b]?.code ?? "?";
+  const profile = profileFor(preset.device);
+  const perFootswitch = Math.min(profile.ctrls, profile.footswitches);
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="xs" className="-mx-1 gap-1.5 px-1.5 text-sm font-normal text-silkscreen-3">
-          Footswitches
+          {title}
           <span className={total ? "font-semibold text-silkscreen" : "text-silkscreen-4"}>{total === 0 ? "none" : total === 1 ? "1 block" : `${total} blocks`}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="flex w-[320px] flex-col gap-3 bg-surface-solid-raised!">
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-[550] text-silkscreen-2">Footswitches</span>
+          <span className="text-sm font-[550] text-silkscreen-2">{title}</span>
           <span className="text-xs text-pretty text-silkscreen-3">
-            Each switch turns its blocks on and off together in Stomp mode.
+            {gp5 ? "Each switch turns its blocks on and off together in Stomp mode." : "Each CTRL turns its blocks on and off together."}
             {preset.device === "gp50" && ` Up to ${MAX_FOOTSWITCH_BLOCKS} blocks per switch, and a block can be on one switch only.`}
+            {perFootswitch < profile.ctrls &&
+              ` CTRL 1–${perFootswitch} match the ${profile.name}'s ${perFootswitch} footswitches; a higher CTRL shows here when it holds blocks. The CTRL count isn't confirmed on a ${profile.name} yet.`}
           </span>
         </div>
         <ul className="flex flex-col gap-2">
@@ -40,7 +48,7 @@ export function FootswitchControl({ preset, disabled }: { preset: PresetState; d
             const free = preset.order.filter((b) => !assigned.includes(b));
             return (
               <li key={key} className="flex min-h-7 items-center gap-2">
-                <span className="w-9 shrink-0 text-sm font-semibold text-silkscreen">{label}</span>
+                <span className="min-w-9 shrink-0 text-sm font-semibold whitespace-nowrap text-silkscreen tabular-nums">{label}</span>
                 <span className="flex min-w-0 flex-1 flex-wrap gap-1">
                   {assigned.length === 0 && <span className="text-sm text-silkscreen-4">none</span>}
                   {assigned.map((b) => (
