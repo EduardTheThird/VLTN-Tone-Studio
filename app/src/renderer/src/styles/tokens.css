@@ -52,6 +52,8 @@
   --block-mod: #4f7cff;
   --block-dly: #2dd4bf;
   --block-rvb: #a855f7;
+  --block-wah: #22c55e;                    /* GP-200 family blocks */
+  --block-vol: #e2e8f0;
 
   /* --- shadcn/ui semantic tokens ---------------------------------------------------------------------------- */
   --background: var(--enclosure);
