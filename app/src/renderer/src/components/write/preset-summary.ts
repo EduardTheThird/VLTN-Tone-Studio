@@ -1,5 +1,7 @@
 // Read-only summary of a .prst of any family for lists, chain previews and write confirmations.
 import { profileFor } from "@shared/devices";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import type { Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import { isGp5Family, modelsMissingOn } from "@/state/device-model";
 import type { BlockState, DeviceKey, ExpSettings, SlotName } from "@/state/device-types";
 import { toPresetState } from "@/state/preset-codec";
@@ -36,14 +38,19 @@ function syncedParams(blocks: readonly SummaryBlock[]): string[] {
   );
 }
 
-const cache = new WeakMap<Uint8Array, PresetSummary | null>();
+const cache = new WeakMap<Uint8Array, { catalog: Gp200Catalog | null; summary: PresetSummary | null }>();
 
-/** Parse once per byte array; null when the bytes are not a valid preset. */
+/**
+ * Parse once per byte array and GP-200 effect catalog (which names that family's models, so an import or removal
+ * describes the preset again); null when the bytes are not a valid preset.
+ */
 export function summarize(prst: Uint8Array): PresetSummary | null {
-  if (cache.has(prst)) return cache.get(prst)!;
+  const catalog = useGp200Catalog.getState().catalog;
+  const hit = cache.get(prst);
+  if (hit && hit.catalog === catalog) return hit.summary;
   let out: PresetSummary | null = null;
   try {
-    const p = toPresetState(0, prst);
+    const p = toPresetState(0, prst, undefined, catalog);
     out = {
       device: p.device,
       name: p.name,
@@ -59,7 +66,7 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   } catch {
     out = null;
   }
-  cache.set(prst, out);
+  cache.set(prst, { catalog, summary: out });
   return out;
 }
 
