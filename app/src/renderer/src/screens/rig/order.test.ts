@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { groupOf, groupsOf, joinAnd, moveBlock, moveToGroup, nudge, orderHint } from "./order";
+import type { Gp200Edit } from "@/state/device-types";
 import { MERGE_MS, invert, pushEdit, type Edit } from "./history";
 
 // 0 NR, 1 PRE, 2 DST, 3 AMP, 4 CAB, 5 EQ, 6 MOD, 7 DLY, 8 RVB, 9 NS
@@ -122,6 +123,16 @@ describe("undo history", () => {
     past = pushEdit(past, param(20, MERGE_MS + 1));
     past = pushEdit(past, param(30, MERGE_MS + 2, 1));
     expect(past).toHaveLength(3);
+  });
+  it("merges a drag on the same GP-200 patch field, not one on another field or entry", () => {
+    const patch = (to: Gp200Edit, from: Gp200Edit, at: number): Edit => ({ kind: "patch", from, to, at });
+    let past = pushEdit([], patch({ sendLevel: 10 }, { sendLevel: 0 }, 0));
+    past = pushEdit(past, patch({ sendLevel: 20 }, { sendLevel: 10 }, 300));
+    expect(past).toEqual([{ kind: "patch", from: { sendLevel: 0 }, to: { sendLevel: 20 }, at: 300 }]);
+    past = pushEdit(past, patch({ exp: { 1: { max: 80 } } }, { exp: { 1: { max: 100 } } }, 400));
+    past = pushEdit(past, patch({ exp: { 2: { max: 70 } } }, { exp: { 2: { max: 100 } } }, 500));
+    expect(past).toHaveLength(3);
+    expect(invert(past[0])).toMatchObject({ from: { sendLevel: 20 }, to: { sendLevel: 0 } });
   });
   it("inverts by swapping from and to", () => {
     expect(invert({ kind: "enabled", block: 1, from: true, to: false })).toEqual({ kind: "enabled", block: 1, from: false, to: true });

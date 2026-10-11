@@ -1,6 +1,6 @@
 // Local undo/redo of Rig edits. Entries describe what changed; screens/rig/edits.ts applies them to the pedal.
 import { create } from "zustand";
-import type { ExpEdit } from "@/state/device-types";
+import type { ExpEdit, Gp200Edit } from "@/state/device-types";
 
 /** Model, on/off and params of one block (enough to put it back exactly). */
 export interface BlockSnapshot {
@@ -18,11 +18,16 @@ export type Edit =
   | { kind: "bpm"; from: number; to: number; at: number }
   | { kind: "exp"; from: ExpEdit; to: ExpEdit; at: number }
   | { kind: "footswitches"; from: number[][]; to: number[][] }
+  /** GP-200 family patch fields; `from` holds the same fields at their previous values */
+  | { kind: "patch"; from: Gp200Edit; to: Gp200Edit; at: number }
   | { kind: "block"; label: string; from: BlockSnapshot; to: BlockSnapshot };
 
 /** Edits of the same control closer than this merge into one undo step (a drag, a wheel spin, key repeat). */
 export const MERGE_MS = 1000;
 const LIMIT = 200;
+
+/** Which fields an edit names (nested keys kept, values dropped), to tell gestures on the same control apart. */
+const shape = (x: object) => JSON.stringify(x, (_, v) => (v !== null && typeof v === "object" ? v : 0));
 
 /** Push `e`, merging it into the last entry when it continues the same gesture. Pure, for tests. */
 export function pushEdit(past: Edit[], e: Edit): Edit[] {
@@ -30,8 +35,10 @@ export function pushEdit(past: Edit[], e: Edit): Edit[] {
   if (last && e.kind === "param" && last.kind === "param" && last.block === e.block && last.index === e.index && e.at - last.at < MERGE_MS)
     return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
   if (last && (e.kind === "volume" || e.kind === "bpm") && last.kind === e.kind && e.at - last.at < MERGE_MS) return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
-  // EXP slider drags: same fields within the window merge, keeping the first `from`
+  // EXP and patch-field slider drags: the same fields within the window merge, keeping the first `from`
   if (last && e.kind === "exp" && last.kind === "exp" && Object.keys(e.to).join() === Object.keys(last.to).join() && e.at - last.at < MERGE_MS)
+    return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
+  if (last && e.kind === "patch" && last.kind === "patch" && shape(e.to) === shape(last.to) && e.at - last.at < MERGE_MS)
     return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
   return [...past, e].slice(-LIMIT);
 }

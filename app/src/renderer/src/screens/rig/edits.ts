@@ -4,7 +4,7 @@ import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
 import { EXP_FIELDS } from "@/gp5/lib/protocol.mjs";
 import { useDevice } from "@/state/device";
 import { switchLabel } from "@/state/device-model";
-import type { BlockState, ExpEdit, ExpSettings, PresetState } from "@/state/device-types";
+import type { BlockState, ExpEdit, ExpSettings, Gp200Edit, PresetState } from "@/state/device-types";
 import { defaultParamsFor } from "@/state/preset-codec";
 import { invert, useHistory, type BlockSnapshot, type Edit } from "./history";
 
@@ -61,6 +61,24 @@ export function editExp(edit: ExpEdit) {
   const from = Object.fromEntries((EXP_FIELDS as (keyof ExpSettings)[]).filter((k) => edit[k] !== undefined).map((k) => [k, exp[k]])) as ExpEdit;
   dev().setExp(edit);
   useHistory.getState().record({ kind: "exp", from, to: edit, at: performance.now() });
+}
+
+/** `cur`'s values of the fields `keys` names. */
+const pick = (cur: object, keys: object): Record<string, unknown> => Object.fromEntries(Object.keys(keys).map((k) => [k, (cur as Record<string, unknown>)[k]]));
+
+/** GP-200 family patch fields (FX loop, pan, style, author, note, EXP, Quick Access); reach the pedal on save. */
+export function editPatchFields(edit: Gp200Edit) {
+  const g = dev().preset?.gp200;
+  if (!g) return;
+  const { exp, quickAccess, ...fields } = edit;
+  // The same fields at their current values (what undo puts back)
+  const from: Gp200Edit = {
+    ...pick(g, fields),
+    ...(exp ? { exp: Object.fromEntries(Object.entries(exp).map(([i, e]) => [i, pick(g.exp[Number(i)], e)])) } : {}),
+    ...(quickAccess ? { quickAccess: Object.fromEntries(Object.entries(quickAccess).map(([i, q]) => [i, pick(g.quickAccess[Number(i)], q)])) } : {}),
+  };
+  dev().editPatch(edit);
+  useHistory.getState().record({ kind: "patch", from, to: edit, at: performance.now() });
 }
 
 export function editFootswitches(lists: number[][]) {
@@ -154,6 +172,8 @@ async function apply(e: Edit) {
       return dev().setExp(e.to);
     case "footswitches":
       return dev().setFootswitches(e.to);
+    case "patch":
+      return dev().editPatch(e.to);
     case "block":
       return applyBlock(e.to);
   }
