@@ -462,7 +462,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       userDisconnected = false;
       const attempt = ++connectAttempt;
       const cancelled = () => attempt !== connectAttempt;
-      set({ mode, status: "connecting", error: null });
+      set({ mode, status: "connecting", error: null, portName: null });
       // OS-side checks (USB, driver, Suite) run alongside; they sharpen errors and feed the Diagnostics card.
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
       const driverOpts = { log: onLog, onDisconnect: onPortLost };
@@ -480,6 +480,9 @@ export const useDevice = create<DeviceState>((set, get) => {
           await d.close();
           return;
         }
+        // The port names the model before it identifies (a sync can take minutes): copy talks about this pedal, not
+        // the remembered one. A failed attempt keeps it for the error copy and the report.
+        set({ portName: d.portName });
         await attach(d, mode);
       } catch (e) {
         if (cancelled()) return;

@@ -255,6 +255,7 @@ export interface DeviceState {
   mode: DeviceMode;
   status: ConnectionStatus;
   error: ConnectionError | null;
+  /** MIDI port of the open connection; while connecting (and after a failed attempt) the port being tried */
   portName: string | null;
   /**
    * Pedal model: the connected one, else the last one connected (persisted across launches), null before the first

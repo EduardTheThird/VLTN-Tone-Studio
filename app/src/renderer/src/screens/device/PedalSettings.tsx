@@ -5,8 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dial } from "@/components/gear";
 import { cn } from "@/lib/utils";
-import { useDevice, usePedalName } from "@/state/device";
-import { globalSpecsFor, writesLocked } from "@/state/device-model";
+import { useDevice } from "@/state/device";
+import { attachedDevice, globalSpecsFor, pedalName, writesLocked } from "@/state/device-model";
 import type { GlobalRecord, Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
@@ -15,8 +15,11 @@ import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./peda
  * model's settings table grouped like its menu. Same layout as the Rig faceplate.
  */
 export function PedalSettings({ offline }: { offline: boolean }) {
-  const { device, globals, firmware, mode } = useDevice(useShallow((s) => ({ device: s.device, globals: s.globals, firmware: s.firmware, mode: s.mode })));
-  const pedal = usePedalName();
+  const { device, remembered, firmware, mode } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware, mode: s.mode })));
+  // Another model is attached (being connected, or on USB): the remembered values are not its settings.
+  const attached = useDevice((s) => attachedDevice(s));
+  const globals = attached === device ? remembered : null;
+  const pedal = pedalName(attached);
   // A real pedal of a model not tested yet: the values are read, but Tone Studio doesn't change them (the store refuses).
   const locked = writesLocked(device, mode);
   const live = !offline && !locked;

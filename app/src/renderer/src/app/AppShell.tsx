@@ -59,9 +59,9 @@ export function AppShell() {
 }
 
 /**
- * Launch parameters (demo builds, screenshots, E2E): `?mock=<device key>` connects that simulated model (`gp5`, `gp50`;
- * `gp200`, `gp200lt`, `gp200jr` show that this version doesn't support them yet), a bare `?mock` the simulated GP-5,
- * with the bundled 100-slot backup; `?screen=library` (and `&param=`) opens a screen. The desktop app connects to the
+ * Launch parameters (demo builds, screenshots, E2E): `?mock=<device key>` connects that simulated model (`gp5`, `gp50`,
+ * `gp200`, `gp200lt`, `gp200jr`), a bare `?mock` the simulated GP-5 with the bundled 100-slot backup;
+ * `?screen=library` (and `&param=`) opens a screen. The desktop app connects to the
  * real pedal on launch; failures stay in the device store's error state (chip and Device screen show it).
  */
 function useLaunchParams() {

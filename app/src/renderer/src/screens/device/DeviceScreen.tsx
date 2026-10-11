@@ -36,6 +36,7 @@ function DevicePage() {
       disconnectReason: s.disconnectReason,
       lastConnectedAt: s.lastConnectedAt,
       device: s.device,
+      portName: s.portName,
     })),
   );
   const view = connectionView({ ...input, platform: host.platform });

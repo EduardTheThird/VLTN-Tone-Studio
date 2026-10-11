@@ -6,7 +6,7 @@ import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
 import { host } from "@/host";
 import { profileFor } from "@shared/devices";
 import { getDriver, useDevice } from "./device";
-import { acksFrames, writeFrameCount } from "./device-model";
+import { acksFrames, attachedDevice, writeFrameCount } from "./device-model";
 import type { Gp200Driver } from "./driver/gp200-driver";
 import { editPrst, toPresetState } from "./preset-codec";
 
@@ -171,6 +171,24 @@ describe("GP-200 with a catalog imported before it connects", () => {
     useGp200Catalog.setState({ status: "none", catalog: null, loaded: false });
     await store().connect("mock", { mockDevice: "gp200" });
     expect(store().preset!.blocks[3].model?.name).toBe("Init Amp");
+  }, 30_000);
+});
+
+describe("GP-200 connecting after a GP-50", () => {
+  afterAll(async () => {
+    await store().disconnect();
+  });
+
+  it("names the pedal by its port while it syncs, before the remembered model changes", async () => {
+    useDevice.setState({ device: "gp50" });
+    const seen: { status: string; device: string | null; attached: string | null }[] = [];
+    const off = useDevice.subscribe((s) => {
+      if (s.portName && !seen.length) seen.push({ status: s.status, device: s.device, attached: attachedDevice(s) });
+    });
+    await store().connect("mock", { mockDevice: "gp200" });
+    off();
+    expect(seen[0]).toEqual({ status: "connecting", device: "gp50", attached: "gp200" });
+    expect([store().device, attachedDevice(store())]).toEqual(["gp200", "gp200"]);
   }, 30_000);
 });
 

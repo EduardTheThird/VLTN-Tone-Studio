@@ -5,8 +5,9 @@ import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
 import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
 import { encode as gp200Encode, encodeFrames } from "@/gp200/lib/protocol.mjs";
 import { imageOf, withEightCtrl } from "@/gp200/lib/prst.mjs";
-import { PRST_MODELS, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
-import type { DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
+import { PRST_MODELS, deviceForPortName, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
+import { pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
+import type { ConnectionStatus, DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
 import { gp200SpecsFor } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
@@ -86,6 +87,17 @@ export const SUPPORTED_PEDALS = SUPPORTED_DEVICE_KEYS.map((k) => profileFor(k).n
 /** The connected (or last connected) pedal's name, else every supported model's. */
 export function pedalNameOrBoth(device: DeviceKey | null): string {
   return device ? pedalName(device) : SUPPORTED_PEDALS;
+}
+
+/**
+ * The pedal connection copy is about (header, chip, status bar, diagnostics): the connected one; else the one on the
+ * port being (or last) tried, by its name; else the one the host sees on USB; else the last connected (`device`). A
+ * remembered GP-50 never stands in for a GP-200 that is attached. Data copy (names, settings) stays with `device`.
+ */
+export function attachedDevice(s: { status: ConnectionStatus; hostStatus: DeviceHostStatus | null; device?: DeviceKey | null; portName?: string | null }): DeviceKey | null {
+  const usb = pedalOnUsb(s.hostStatus);
+  if (s.status === "connected") return s.device ?? usb;
+  return (s.portName ? deviceForPortName(s.portName) : null) ?? usb ?? s.device ?? null;
 }
 
 /** "07" (GP-5) or "12-C" (GP-200): slot label on the connected (or last connected) pedal, DEFAULT_DEVICE's before. */
