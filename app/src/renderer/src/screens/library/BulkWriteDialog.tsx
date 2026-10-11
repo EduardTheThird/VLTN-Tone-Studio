@@ -19,8 +19,7 @@ import { notifySuccess } from "@/app/notify";
 import { host } from "@/host";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { pedalName, presetDevice } from "@/state/device-model";
-import { REPLACED_ID } from "@shared/host/files";
-import { readSlot, runNative } from "./native";
+import { readAndBackUp, readSlot, runNative } from "./native";
 import { slotsToRead, type NativeOp, type Step } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
@@ -104,26 +103,19 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
         return;
       }
       const original = useDevice.getState().slot;
-      const sources = slotsToRead(steps);
-      const toRead = doBackup && !backedUp.current ? [...new Set([...sources, ...replaced])].sort((a, b) => a - b) : sources;
+      const job = await readAndBackUp({
+        steps,
+        sources: slotsToRead(steps),
+        backUp: doBackup,
+        backedUp: backedUp.current,
+        pedal,
+        read: read.current,
+        onStatus: (text, done, reads) => (setStatus(text), setProgress(done / (reads + steps.length))),
+      });
+      backedUp.current = job.backedUp;
+      const toRead = job.toRead;
       const total = toRead.length + steps.length;
-      let n = 0;
-      for (const slot of toRead) {
-        n++;
-        if (read.current.has(slot)) continue;
-        setStatus(`Reading slot ${slot}`);
-        setProgress(n / total);
-        read.current.set(slot, await readSlot(slot));
-      }
       if (steps.some((s) => s.from === "blank") && !read.current.has("blank")) read.current.set("blank", await blankPreset());
-      if (doBackup && !backedUp.current) {
-        setStatus("Saving the replaced slots");
-        await host.files.addPresets(
-          REPLACED_ID,
-          replaced.map((slot) => ({ name: nameOf(slot), prst: read.current.get(slot)!, slot, source: `Slot ${slot} on ${pedal}` })),
-        );
-        backedUp.current = true;
-      }
       for (let i = written.current; i < steps.length; i++) {
         const step = steps[i];
         failedAt.slot = step.slot;

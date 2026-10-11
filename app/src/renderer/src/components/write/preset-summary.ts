@@ -1,8 +1,8 @@
 // Read-only summary of a GP-5 family .prst (GP-5 or GP-50) for lists, chain previews and write confirmations.
-import { parsePrst, GP50_ONLY_FXIDS } from "@/gp5/lib/prst.mjs";
+import { parsePrst } from "@/gp5/lib/prst.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
 import { profileFor } from "@shared/devices";
-import { blockCodes } from "@/state/device-model";
+import { blockCodes, modelsMissingOn } from "@/state/device-model";
 import type { BlockCode, Gp5FamilyKey, ModelInfo, SlotName } from "@/state/device-types";
 
 export interface SummaryBlock {
@@ -39,11 +39,8 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
     const p = parsePrst(prst);
     const device: Gp5FamilyKey = p.device;
     const codes = blockCodes(device);
-    const gp50Only: string[] = [];
     const blocks = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
       const fxid = b.fxid >>> 0;
-      const only = (GP50_ONLY_FXIDS as Record<number, string>)[fxid];
-      if (only) gp50Only.push(`${codes[index]} (${only})`);
       return { index, code: codes[index], enabled: b.enabled, fxid, model: modelByFxid(fxid, device) as ModelInfo | undefined, params: b.params };
     });
     out = {
@@ -54,7 +51,7 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
       volume: p.settings.volume,
       bpm: p.settings.bpm,
       footswitches: { fs1: p.footswitches.fs1, fs2: p.footswitches.fs2 },
-      gp50Only,
+      gp50Only: modelsMissingOn(prst, "gp5"),
     };
   } catch {
     out = null;

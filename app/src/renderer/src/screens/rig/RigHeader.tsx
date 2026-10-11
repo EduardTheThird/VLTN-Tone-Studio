@@ -12,15 +12,13 @@ import { cn } from "@/lib/utils";
 import { host } from "@/host";
 import { useDevice, usePedalName } from "@/state/device";
 import type { PresetState } from "@/state/device-types";
+import { slotNameError } from "@/state/device-model";
 import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
 import { ExpControl } from "./ExpControl";
 import { TempoControl } from "./TempoControl";
 import { useHistory } from "./history";
 import { useRig } from "./rig-store";
-
-/** overlays.md F: printable ASCII characters, as many as the pedal shows (profile nameLength). */
-const BAD_CHAR = /[^\x20-\x7e]/;
 
 interface Props {
   preset: PresetState;
@@ -300,9 +298,8 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
   const pedal = usePedalName();
   const profile = profileFor(preset.device);
   const nameLength = profile.nameLength;
-  const bad = BAD_CHAR.exec(value)?.[0];
   const trimmed = value.trimEnd();
-  const error = bad ? `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed === "" ? "A slot needs a name." : null;
+  const error = slotNameError(value, pedal);
   const atLimit = value.length >= nameLength;
   const slot = preset.slot;
   const before = preset.name;

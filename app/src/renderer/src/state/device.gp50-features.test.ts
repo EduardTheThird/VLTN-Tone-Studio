@@ -8,7 +8,7 @@ import { parsePrst } from "@/gp5/lib/prst.mjs";
 import { SYNC_ON_DIVISION } from "@/gp5/lib/catalog.mjs";
 import { REPLACED_ID } from "@shared/host/files";
 import { runNative } from "@/screens/library/native";
-import { affectedSlots, clearSteps, copySteps, moveSteps } from "@/screens/library/plans";
+import { clearSteps, copySteps, moveSteps } from "@/screens/library/plans";
 import { isEmptyName } from "@/screens/library/store";
 import { getDriver, toPresetState, useDevice } from "./device";
 import type { Gp5Driver } from "./driver/gp5-driver";
@@ -168,7 +168,7 @@ describe("GP-50 features in the device store", () => {
     const op = { kind: "move" as const, from: 4, to: 6 };
     await runNative({ op, steps: moveSteps([4], 6, 100)!, pedal: "GP-50", read: new Map(), backedUp: false });
     expect(store().names.slice(4, 7).map((n) => n.name)).toEqual([before[5], before[6], before[4]]);
-    expect(backups.map((b) => b.slot)).toEqual(affectedSlots(op));
+    expect(backups.map((b) => b.slot)).toEqual([4, 5, 6]);
     expect(backups.every((b) => b.name === b.pedalHad)).toBe(true);
   }, 30_000);
 

@@ -33,6 +33,40 @@ function noteResult(steps: readonly Step[], read: ReadonlyMap<number | "blank", 
   useLibrary.setState({ bodies });
 }
 
+/**
+ * Read `sources` and, when backing up, every replaced (non-empty) slot of `steps`, then save the replaced ones to
+ * Replaced presets (once: skipped when `backedUp`). Bodies already in `read` are not read again.
+ */
+export async function readAndBackUp(job: {
+  steps: readonly Step[];
+  sources: number[];
+  backUp: boolean;
+  backedUp: boolean;
+  pedal: string;
+  read: Map<number | "blank", Uint8Array>;
+  /** `done` of `reads` slots read so far */
+  onStatus?(text: string, done: number, reads: number): void;
+}): Promise<{ replaced: number[]; toRead: number[]; backedUp: boolean }> {
+  const names = useDevice.getState().names;
+  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
+  const replaced = job.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
+  const backUp = job.backUp && replaced.length > 0 && !job.backedUp;
+  const toRead = backUp ? [...new Set([...job.sources, ...replaced])].sort((a, b) => a - b) : job.sources;
+  for (const [i, slot] of toRead.entries()) {
+    if (job.read.has(slot)) continue;
+    job.onStatus?.(`Reading slot ${slot}`, i, toRead.length);
+    job.read.set(slot, await readSlot(slot));
+  }
+  if (backUp) {
+    job.onStatus?.("Saving the replaced slots", toRead.length, toRead.length);
+    await host.files.addPresets(
+      REPLACED_ID,
+      replaced.map((slot) => ({ name: nameOf(slot), prst: job.read.get(slot)!, slot, source: `Slot ${slot} on ${job.pedal}` })),
+    );
+  }
+  return { replaced, toRead, backedUp: job.backedUp || backUp };
+}
+
 export interface NativeRun {
   op: NativeOp;
   /** Preview of the result (plans.ts), slot ← content */
@@ -51,24 +85,10 @@ export interface NativeRun {
  * command on the pedal. Resolves with the slots that were backed up (empty when nothing was replaced).
  */
 export async function runNative(run: NativeRun): Promise<number[]> {
-  const names = useDevice.getState().names;
-  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
-  const replaced = run.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
-  const toRead = [...new Set([...slotsToRead([...run.steps]), ...replaced])].sort((a, b) => a - b);
+  const job = await readAndBackUp({ ...run, sources: slotsToRead([...run.steps]), backUp: true, onStatus: (text, done, reads) => run.onStatus?.(text, done / (reads + 1)) });
+  run.backedUp = job.backedUp;
+  const { replaced, toRead } = job;
   const total = toRead.length + 1;
-  for (const [i, slot] of toRead.entries()) {
-    if (run.read.has(slot)) continue;
-    run.onStatus?.(`Reading slot ${slot}`, i / total);
-    run.read.set(slot, await readSlot(slot));
-  }
-  if (replaced.length && !run.backedUp) {
-    run.onStatus?.("Saving the replaced slots", toRead.length / total);
-    await host.files.addPresets(
-      REPLACED_ID,
-      replaced.map((slot) => ({ name: nameOf(slot), prst: run.read.get(slot)!, slot, source: `Slot ${slot} on ${run.pedal}` })),
-    );
-    run.backedUp = true;
-  }
   run.onStatus?.(`The ${run.pedal} is changing ${run.steps.length === 1 ? "the slot" : `${run.steps.length} slots`}`, toRead.length / total);
   await runOp(run.op);
   noteResult(run.steps, run.read);

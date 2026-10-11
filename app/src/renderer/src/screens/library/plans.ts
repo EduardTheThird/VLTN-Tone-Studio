@@ -48,18 +48,3 @@ export function slotsToRead(steps: Step[]): number[] {
 
 /** A preset-management command the pedal runs itself (GP-50 delete / copy / move). */
 export type NativeOp = { kind: "delete"; slots: number[] } | { kind: "copy"; from: number; to: number } | { kind: "move"; from: number; to: number };
-
-/** Slots whose content a native command changes, ascending: a move shifts every slot between `from` and `to`. */
-export function affectedSlots(op: NativeOp): number[] {
-  switch (op.kind) {
-    case "delete":
-      return [...new Set(op.slots)].sort((a, b) => a - b);
-    case "copy":
-      return op.from === op.to ? [] : [op.to];
-    case "move": {
-      if (op.from === op.to) return [];
-      const lo = Math.min(op.from, op.to);
-      return Array.from({ length: Math.max(op.from, op.to) - lo + 1 }, (_, i) => lo + i);
-    }
-  }
-}

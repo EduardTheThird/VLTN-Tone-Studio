@@ -2,6 +2,7 @@
 // through the device store (live edits) or changes the preset locally (reaching the pedal on save).
 import { defaultParams } from "@/gp5/lib/catalog.mjs";
 import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
+import { EXP_FIELDS } from "@/gp5/lib/protocol.mjs";
 import { useDevice } from "@/state/device";
 import type { BlockState, ExpEdit, ExpSettings, PresetState } from "@/state/device-types";
 import { invert, useHistory, type BlockSnapshot, type Edit } from "./history";
@@ -51,14 +52,12 @@ export function editBpm(bpm: number) {
   if (to !== from) useHistory.getState().record({ kind: "bpm", from, to, at: performance.now() });
 }
 
-const EXP_KEYS: readonly (keyof ExpSettings)[] = ["on", "paramMin", "paramMax", "volPosition", "volMin", "volMax", "targetModule", "targetParam"];
-
 /** EXP settings edit (GP-50); the store checks every value and throws RangeError for one out of range. */
 export function editExp(edit: ExpEdit) {
   const exp = dev().preset?.exp;
   if (!exp) return;
   // The same fields as `edit`, with the preset's current values (what undo puts back)
-  const from = Object.fromEntries(EXP_KEYS.filter((k) => edit[k] !== undefined).map((k) => [k, exp[k]])) as ExpEdit;
+  const from = Object.fromEntries((EXP_FIELDS as (keyof ExpSettings)[]).filter((k) => edit[k] !== undefined).map((k) => [k, exp[k]])) as ExpEdit;
   dev().setExp(edit);
   useHistory.getState().record({ kind: "exp", from, to: edit, at: performance.now() });
 }
@@ -184,7 +183,7 @@ export async function playPreset(target: PresetState) {
     d.setFootswitches(target.footswitches);
   if (d.can("exp") && target.exp && now.exp) {
     const exp = target.exp;
-    const changed = EXP_KEYS.filter((k) => now.exp?.[k] !== exp[k]);
+    const changed = (EXP_FIELDS as (keyof ExpSettings)[]).filter((k) => now.exp?.[k] !== exp[k]);
     if (changed.length) d.setExp(Object.fromEntries(changed.map((k) => [k, exp[k]])) as ExpEdit);
   }
 }

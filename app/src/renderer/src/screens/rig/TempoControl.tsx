@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useDevice, usePedalName } from "@/state/device";
 import { editBpm } from "./edits";
-import { BPM_MAX, BPM_MIN, clampBpm, tap } from "./tempo";
+import { BPM_MAX, BPM_MIN, tap } from "./tempo";
 
 /** Where a tempo edit goes: live on a GP-50 with extras, else into the preset (reaches the pedal on save). */
 function useTempoNote(): string {
@@ -29,7 +29,7 @@ export function TempoControl({ bpm, disabled }: { bpm: number; disabled: boolean
 
   const commit = (text: string) => {
     const n = Number(text.trim());
-    if (text.trim() && Number.isFinite(n)) editBpm(clampBpm(n));
+    if (text.trim() && Number.isFinite(n)) editBpm(n);
     setDraft(String(useDevice.getState().preset?.bpm ?? bpm));
   };
 

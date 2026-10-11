@@ -127,6 +127,13 @@ export function crossFamilyNote(from: DeviceKey, to: DeviceKey): string {
   return `This preset is for a ${pedalName(from)}; Tone Studio can't convert it for a ${pedalName(to)}.`;
 }
 
+/** Why `value` can't be a slot name on `pedal` (printable ASCII only, not blank), or null when it can. */
+export function slotNameError(value: string, pedal: string): string | null {
+  const bad = [...value].find((c) => !/^[\x20-\x7e]$/.test(c));
+  if (bad) return `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.`;
+  return value.trimEnd() === "" ? "A slot needs a name." : null;
+}
+
 /** Blocks of GP-5 family `prst` whose model does not exist on `target`, e.g. ["PRE (PRE C-Wah)"]. Empty when nothing is lost. */
 export function modelsMissingOn(prst: Uint8Array, target: Gp5FamilyKey): string[] {
   const p = parsePrst(prst);

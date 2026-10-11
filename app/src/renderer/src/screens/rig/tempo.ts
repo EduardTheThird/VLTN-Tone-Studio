@@ -1,13 +1,15 @@
 // Tap tempo for the Rig header: computed in the app (both models store a tempo per preset; the GP-50 also takes it live).
 
-export const BPM_MIN = 40;
-export const BPM_MAX = 260;
+import { PATCH_SETTINGS } from "@/gp5/lib/protocol.mjs";
+
+/** The tempo range the pedal stores (40..260); the device store clamps edits to it too. */
+export const { min: BPM_MIN, max: BPM_MAX } = PATCH_SETTINGS.bpm;
 /** A pause longer than this starts a new tap sequence (the pedal's own tap tempo uses the same 2 s). */
 export const TAP_RESET_MS = 2000;
 /** Intervals averaged: the most recent ones, so the tempo follows a player who speeds up. */
 export const TAP_WINDOW = 4;
 
-export const clampBpm = (bpm: number) => Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
+const clampBpm = (bpm: number) => Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(bpm)));
 
 /**
  * Add a tap at `now` (ms) to `taps` (earlier tap times, oldest first). Returns the taps to keep and the tempo they give:

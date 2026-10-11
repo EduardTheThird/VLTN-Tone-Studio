@@ -10,7 +10,7 @@ import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
-import { blockCodes } from "@/state/device-model";
+import { blockCodes, slotNameError } from "@/state/device-model";
 import type { BlockCode } from "@/state/device-types";
 import { PRST_MODELS } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
@@ -20,7 +20,6 @@ import { writableCollections } from "./LocalPane";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
 const CORE = [2, 9, 3, 4, 5];
-const NAME_RE = /^[\x20-\x7E]*$/;
 
 /** Inspector body for the current selection: one slot, several slots, or a preset on this computer. */
 export function Inspector({ onClose }: { onClose?: () => void }) {
@@ -180,8 +179,7 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
   const { nameLength } = useProfile();
   useEffect(() => inputRef.current?.select(), []);
   const trimmed = value.replace(/\s+$/, "");
-  const bad = [...value].find((c) => !NAME_RE.test(c));
-  const error = bad ? `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed ? null : "A slot needs a name.";
+  const error = slotNameError(value, pedal);
   const cancel = () => useLibrary.setState({ renaming: null });
   const commit = () => {
     if (error || trimmed === name) return cancel();

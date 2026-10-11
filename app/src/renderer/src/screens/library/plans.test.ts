@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { affectedSlots, clearSteps, copySteps, moveSteps, slotsToRead, swapSteps } from "./plans";
+import { clearSteps, copySteps, moveSteps, slotsToRead, swapSteps } from "./plans";
 
 // A GP-5's 100 slots.
 const SLOTS = 100;
@@ -57,25 +57,5 @@ describe("copy, swap, clear", () => {
   it("clears with blank presets and reads only real sources", () => {
     const steps = [...clearSteps([3]), ...copySteps([9, 2], 20, SLOTS)!];
     expect(slotsToRead(steps)).toEqual([2, 9]);
-  });
-});
-
-describe("affectedSlots", () => {
-  it("deletes exactly the given slots, once each, ascending", () => {
-    expect(affectedSlots({ kind: "delete", slots: [9, 3, 9] })).toEqual([3, 9]);
-  });
-  it("copies onto the target only", () => {
-    expect(affectedSlots({ kind: "copy", from: 57, to: 64 })).toEqual([64]);
-    expect(affectedSlots({ kind: "copy", from: 5, to: 5 })).toEqual([]);
-  });
-  it("moves down: every slot from the source to the target shifts", () => {
-    expect(affectedSlots({ kind: "move", from: 57, to: 60 })).toEqual([57, 58, 59, 60]);
-  });
-  it("moves up: every slot from the target to the source shifts", () => {
-    expect(affectedSlots({ kind: "move", from: 12, to: 9 })).toEqual([9, 10, 11, 12]);
-  });
-  it("matches the slots a full-write move rewrites", () => {
-    expect(affectedSlots({ kind: "move", from: 40, to: 35 })).toEqual(moveSteps([40], 35, SLOTS)!.map((s) => s.slot));
-    expect(affectedSlots({ kind: "move", from: 4, to: 4 })).toEqual([]);
   });
 });
