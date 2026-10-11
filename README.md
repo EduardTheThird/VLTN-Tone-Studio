@@ -254,24 +254,28 @@ Record yourself through the pedal and it designs a cabinet IR that brings your t
 
 | | GP-5 | GP-50 | GP-200 · 200R · 200X | GP-200LT | GP-200JR |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Recognised over USB | ✅ | ✅ | 🗓️ | 🗓️ | 🗓️ |
+| Recognised over USB | ✅ | ✅ | 🧪 | 🧪 | 🧪 |
 | Live editing | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
 | Preset library | ✅ 100 slots | 🧪 100 slots | 🗓️ 256 slots | 🗓️ 256 slots | 🗓️ 255 slots |
 | Backups and restore | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
 | `.prst` import and export | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
-| Pedal settings | ✅ | 🛠️ | 🗓️ | 🗓️ | 🗓️ |
-| Expression pedal settings per preset | — | 🗓️ | 🗓️ | 🗓️ | 🗓️ |
+| Pedal settings | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
+| Footswitch assignment and chain order | ✅ | 🧪¹ | 🗓️ CTRL 1–8 | 🗓️ | 🗓️ |
+| Tempo and tap tempo | 🧪 | 🧪¹ | 🗓️ | 🗓️ | 🗓️ |
+| Expression pedal settings per preset | — | 🧪¹ | 🗓️ | 🗓️ | 🗓️ |
 | SnapTones (NAM) over USB | ✅ 30 slots | 🧪 30 slots | 🗓️ 10 slots | ❔ | ❔ |
 | User IRs over USB | ✅ 20 slots | 🧪 20 slots | 🗓️ 20 slots | 🗓️ 20 slots | 🗓️ 20 slots |
 | Tone Match | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
 | Simulated pedal (no hardware needed) | ✅ `?mock` | ✅ `?mock=gp50` | 🗓️ | 🗓️ | 🗓️ |
 | Tested on a real unit by this project | ✅ | not yet | not yet | not yet | not yet |
 
-✅ works &nbsp;·&nbsp; 🧪 works in the app and the simulator, not yet tried on a real unit &nbsp;·&nbsp; 🛠️ being fixed: the GP-50 shows the GP-5's settings list, and some of its settings sit at other addresses &nbsp;·&nbsp; 🗓️ planned &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it
+✅ works &nbsp;·&nbsp; 🧪 works in the app, not yet tried on a real unit &nbsp;·&nbsp; 🗓️ planned &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it
 
-The app recognises the connected model by itself. `.prst` files of either pedal can be written to either: a GP-5 preset goes onto a GP-50 unchanged; a GP-50 preset loses its GP-50-only models on a GP-5, and the app lists them before writing.
+¹ On a real GP-50, live footswitch and order changes, live tempo, expression pedal settings and the pedal's own copy, move and clear are known only from Valeton Suite's code. They sit behind **Settings › GP-50 extras (experimental)** until they're tried on a GP-50; with it off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.
 
-The GP-200 family speaks a different protocol from the GP-5 and GP-50. How the GP-50 and GP-200 support will be completed, including their simulators, is in [`docs/device-expansion-plan.md`](docs/device-expansion-plan.md).
+The app recognises the connected model by itself. `.prst` files of the GP-5 and GP-50 can be written to either: a GP-5 preset goes onto a GP-50 unchanged; a GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing.
+
+The GP-200 family speaks a different protocol from the GP-5 and GP-50. A GP-200, GP-200LT or GP-200JR is recognised today and shown as not supported yet. Its effect names and knob ranges will come from Valeton's GP-200 editor on your computer, since Tone Studio can't ship that list. The work left is in [`docs/gp200-wiring-plan.md`](docs/gp200-wiring-plan.md); the overall plan is in [`docs/device-expansion-plan.md`](docs/device-expansion-plan.md).
 
 <br>
 
