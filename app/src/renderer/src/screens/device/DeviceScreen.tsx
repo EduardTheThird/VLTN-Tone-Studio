@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
+import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
+import { attachedDevice, pedalName, writesLocked } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useStatusMessage } from "@/state/ui";
 import { BackupsPanel } from "./BackupsPanel";
 import { ConnectionHeader } from "./ConnectionHeader";
 import { DiagnosticsPanel, copyReport, useChecks } from "./DiagnosticsPanel";
+import { Gp200CatalogPanel } from "./Gp200CatalogPanel";
+import { GlobalEqPanel } from "./GlobalEqPanel";
 import { connectionView } from "./guidance";
 import { PedalSettings, RawRecords } from "./PedalSettings";
 import { SettingsView } from "./SettingsView";
@@ -35,14 +39,18 @@ function DevicePage() {
       disconnectReason: s.disconnectReason,
       lastConnectedAt: s.lastConnectedAt,
       device: s.device,
+      portName: s.portName,
     })),
   );
   const view = connectionView({ ...input, platform: host.platform });
+  // GP-200 family effect names come from the user's catalog: its import panel shows for those pedals
+  const gp200 = useDevice((s) => [attachedDevice(s), s.device].some((k) => k !== null && profileFor(k).family === "gp200"));
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);
   const guideRef = useRef<HTMLDivElement>(null);
+  const locked = view.kind === "connected" && writesLocked(input.device, input.mode);
 
-  useStatusMessage({ led: view.led, text: view.statusText });
+  useStatusMessage({ led: view.led, text: locked ? `Pedal settings are read-only on the ${pedalName(input.device)}` : view.statusText });
 
   // The driver-problem state opens the Windows 11 guide by itself.
   useEffect(() => {
@@ -68,9 +76,13 @@ function DevicePage() {
       <ConnectionHeader view={view} onShowFix={showFix} />
       <div className="flex flex-col gap-4 px-7 pt-[26px] pb-7">
         <PedalSettings offline={view.offline} />
+        <GlobalEqPanel offline={view.offline} />
         <RawRecords />
         <div className="grid grid-cols-2 items-start gap-4">
-          <BackupsPanel offline={view.offline} />
+          <div className="flex min-w-0 flex-col gap-4">
+            {gp200 && <Gp200CatalogPanel />}
+            <BackupsPanel offline={view.offline} />
+          </div>
           <DiagnosticsPanel guideOpen={guideOpen} onGuideOpenChange={setGuideOpen} guideRef={guideRef} />
         </div>
       </div>

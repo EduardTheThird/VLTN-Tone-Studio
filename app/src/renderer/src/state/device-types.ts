@@ -172,7 +172,7 @@ export type Globals = Partial<Record<GlobalName, number>>;
 
 /**
  * Optional capabilities of a connected pedal (DeviceDriver.features). The store offers the experimental ones
- * (EXPERIMENTAL_FEATURES, device-model.ts) on a real pedal only with the "GP-50 extras" setting on.
+ * (EXPERIMENTAL_FEATURES, device-model.ts) on a real pedal only with the "Experimental pedal commands" setting on.
  */
 export type DeviceFeature =
   /** Reads whether the active preset has unsaved edits (GP-50 0x45) */
@@ -194,7 +194,19 @@ export type DeviceFeature =
   /** Copy one slot onto another inside the pedal (GP-50 11 4B) */
   | "copyPreset"
   /** Move a slot in the list, the ones in between shift (GP-50 11 5A) */
-  | "movePreset";
+  | "movePreset"
+  /** Global EQ values set one at a time (GP-200 family 0x1005) */
+  | "globalEq";
+
+/**
+ * Global EQ of the GP-200 family: the 31 values in the order of gp200/lib protocol GLOBAL_EQ_INDEX (ranges:
+ * driver/gp200-globals.ts gp200EqSpec). `read`: the pedal reported all of them; until it does, the values it didn't
+ * report are the editor's factory values (GP200_EQ_DEFAULTS).
+ */
+export interface GlobalEq {
+  values: readonly number[];
+  read: boolean;
+}
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 export type DeviceMode = "webmidi" | "mock";
@@ -255,6 +267,7 @@ export interface DeviceState {
   mode: DeviceMode;
   status: ConnectionStatus;
   error: ConnectionError | null;
+  /** MIDI port of the open connection; while connecting (and after a failed attempt) the port being tried */
   portName: string | null;
   /**
    * Pedal model: the connected one, else the last one connected (persisted across launches), null before the first
@@ -272,13 +285,15 @@ export interface DeviceState {
   /** Number of differing params/blocks between preset and saved */
   unsavedChanges: number;
   globals: Globals | null;
+  /** Global EQ of the connected (or last connected) GP-200 family pedal; null on other models */
+  globalEq: GlobalEq | null;
   /** Firmware the pedal reports in its settings (e.g. "1.1.0"), when known */
   firmware: string | null;
-  /** Optional capabilities usable now (connected model, simulator or the "GP-50 extras" setting) */
+  /** Optional capabilities usable now (connected model, simulator or the "Experimental pedal commands" setting) */
   features: readonly DeviceFeature[];
-  /** Capabilities the connected pedal has but that stay off until "GP-50 extras (experimental)" is turned on */
+  /** Capabilities the connected pedal has but that stay off until "Experimental pedal commands" is turned on */
   lockedFeatures: readonly DeviceFeature[];
-  /** Mirror of the "GP-50 extras (experimental)" app setting */
+  /** Mirror of the "Experimental pedal commands" app setting (stored as gp50Extras) */
   gp50Extras: boolean;
   /** SnapTone slot names (user + factory), when read */
   snapTones: SlotName[] | null;
@@ -313,7 +328,7 @@ export interface DeviceState {
   clearLastError(): void;
   /** True when `feature` is usable now (see `features`) */
   can(feature: DeviceFeature): boolean;
-  /** Apply the "GP-50 extras (experimental)" setting (the Settings screen saves it; this re-gates the features) */
+  /** Apply the "Experimental pedal commands" setting (the Settings screen saves it; this re-gates the features) */
   setGp50Extras(on: boolean): void;
 
   // connection
@@ -359,6 +374,8 @@ export interface DeviceState {
   /** Move the preset of slot `from` to slot `to`; the slots in between shift by one (movePreset feature) */
   movePreset(from: number, to: number): Promise<void>;
   setGlobal(name: GlobalName, value: number): void;
+  /** One Global EQ value (globalEq feature), clamped to its range; sent live like the settings. RangeError for an unused index */
+  setGlobalEq(index: number, value: number): void;
   readSnapTones(): Promise<SlotName[]>;
   readUserIRs(): Promise<SlotName[]>;
   /**

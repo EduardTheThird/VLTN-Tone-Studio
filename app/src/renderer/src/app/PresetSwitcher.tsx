@@ -4,7 +4,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useDevice, usePedalName, useProfile } from "@/state/device";
+import { useDevice, useProfile } from "@/state/device";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { keyLabel } from "./keys";
 import { requestPresetSwitch } from "./preset-switch";
 
@@ -15,12 +16,14 @@ export function PresetSwitcher() {
   const status = useDevice((s) => s.status);
   const busy = useDevice((s) => s.busy);
   const unsaved = useDevice((s) => s.unsavedChanges);
-  const pedal = usePedalName();
+  // The pedal being read: the one on the port being opened, not a remembered other model (whose preset isn't shown)
+  const pedal = useDevice((s) => pedalName(attachedDevice(s)));
+  const otherModel = useDevice((s) => attachedDevice(s) !== s.device);
   const { slotLabel } = useProfile();
   const [open, setOpen] = useState(false);
   const connected = status === "connected" && slot !== null;
   const canSwitch = connected && !busy;
-  const current = slot === null ? undefined : names.find((n) => n.slot === slot);
+  const current = slot === null || otherModel ? undefined : names.find((n) => n.slot === slot);
 
   const select = (target: number) => {
     setOpen(false);
@@ -81,7 +84,7 @@ export function PresetSwitcher() {
               <CommandGroup>
                 {names.map((n) => (
                   <CommandItem key={n.slot} value={`${slotLabel(n.slot)} ${n.name}`} onSelect={() => select(n.slot)} className="min-h-8">
-                    <span className="w-5 font-semibold text-silkscreen-3 tabular-nums">{slotLabel(n.slot)}</span>
+                    <span className="min-w-5 font-semibold text-silkscreen-3 tabular-nums">{slotLabel(n.slot)}</span>
                     <span className="flex-1 truncate">{n.name}</span>
                     {n.slot === slot && <span className="text-xs text-silkscreen-3">Current</span>}
                   </CommandItem>

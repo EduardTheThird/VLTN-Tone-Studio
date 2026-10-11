@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Globals, SettingSpec } from "@/state/device-types";
+import { GLOBALS } from "@/gp200/lib/protocol.mjs";
+import type { DeviceKey, GlobalName, Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
-const names = (device: "gp5" | "gp50", globals: Globals | null = {}, firmware: string | null = null) =>
+const names = (device: DeviceKey, globals: Globals | null = {}, firmware: string | null = null) =>
   settingsGroups(device, globals, firmware).flatMap((g) => g.items.map((s) => s.name));
+const labelsOf = (device: DeviceKey) => Object.fromEntries(settingsGroups(device, {}, null).flatMap((g) => g.items.map((s) => [s.name, s.label])));
 const spec = (device: "gp5" | "gp50", name: string, firmware: string | null = "1.1.0"): SettingSpec => {
   const found = settingsGroups(device, {}, firmware)
     .flatMap((g) => g.items)
@@ -35,6 +37,20 @@ describe("settingsGroups", () => {
 
   it("shows nothing for an unknown model", () => {
     expect(settingsGroups(null, null, null)).toEqual([]);
+  });
+
+  it("shows each GP-200 model the settings of its own jacks, named as on that model", () => {
+    const din: GlobalName[] = ["midiInSource", "midiInChannelDin", "midiOutChannelDin", "clockOutDin"];
+    const ltJacks: GlobalName[] = ["exp1Mode", "extFs1", "extFs2"];
+    expect(names("gp200")).toEqual(expect.arrayContaining([...din, "exp2Mode", "extFs1Tap", "extFs2Tap"]));
+    expect(ltJacks.filter((n) => names("gp200").includes(n))).toEqual([]);
+    expect(names("gp200lt")).toEqual(expect.arrayContaining([...din, ...ltJacks]));
+    expect(din.filter((n) => names("gp200jr").includes(n))).toEqual([]);
+    expect(names("gp200jr")).toEqual(expect.arrayContaining(["midiInChannelUsb", "midiOutChannelUsb", "clockOutUsb"]));
+    // The LT's two jacks give four external footswitches; the GP-200's one jack gives two
+    expect([labelsOf("gp200").extFs1Tap, labelsOf("gp200").extFs2Tap]).toEqual(["External footswitch 1", "External footswitch 2"]);
+    const lt = labelsOf("gp200lt");
+    expect([lt.extFs1, lt.extFs2, lt.extFs1Tap, lt.extFs2Tap]).toEqual([1, 2, 3, 4].map((n) => `External footswitch ${n}`));
   });
 });
 
@@ -72,5 +88,7 @@ describe("isNamedRecord", () => {
     expect(isNamedRecord("gp5", 1, 10)).toBe(false);
     expect(isNamedRecord("gp5", 5, 4)).toBe(true);
     expect(isNamedRecord(null, 5, 4)).toBe(false);
+    // a JR has no DIN MIDI setting, but the record is still a known one
+    expect(isNamedRecord("gp200jr", GLOBALS.midiInChannelDin.id, 0x1e)).toBe(true);
   });
 });

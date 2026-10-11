@@ -13,7 +13,7 @@ export interface ReportInput {
   status: string;
   mode: string;
   portName: string | null;
-  /** Connected pedal model, else the last connected one */
+  /** The pedal the connection is about: connected, being connected, on USB, else the last connected (guidance attachedDevice) */
   device: DeviceKey | null;
   connectionError: ConnectionError | null;
   lastError: RequestError | null;

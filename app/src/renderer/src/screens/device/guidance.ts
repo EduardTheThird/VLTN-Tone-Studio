@@ -3,7 +3,7 @@
 import { VALETON_VID, listNames, profileFor } from "@shared/devices";
 import { pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
 import type { HostApi } from "@shared/host";
-import { pedalName, pedalNameOrBoth } from "@/state/device-model";
+import { attachedDevice, pedalName, pedalNameOrBoth } from "@/state/device-model";
 import type { ConnectionError, ConnectionStatus, DeviceKey, DeviceMode, RequestError } from "@/state/device-types";
 import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 
@@ -64,17 +64,24 @@ export interface GuidanceInput {
   now?: number;
   /** Connected pedal model, else the last connected one (store `device`); null before the first connection */
   device?: DeviceKey | null;
+  /** Port of the open, opening or last tried connection (store `portName`): it names the pedal before it identifies */
+  portName?: string | null;
 }
 
 const MIDI2_RE = /midi\s*2|usbmidi2/i;
 /** "GP-5 or GP-50" */
 const SUPPORTED_EITHER = listNames(SUPPORTED_DEVICE_KEYS);
 
-/** Pedal model for the copy: the connected one, else the one on USB, else the last connected; unknown = both models. */
-export function pedalModelName(input: Pick<GuidanceInput, "status" | "hostStatus" | "device">): string {
-  const usb = pedalOnUsb(input.hostStatus);
-  const device = input.status === "connected" ? (input.device ?? usb) : (usb ?? input.device);
-  return pedalNameOrBoth(device ?? null);
+/** Pedal model for the copy (attachedDevice); unknown = every supported model. */
+export function pedalModelName(input: Pick<GuidanceInput, "status" | "hostStatus" | "device" | "portName">): string {
+  return pedalNameOrBoth(attachedDevice(input));
+}
+
+/** Valeton's apps for `device`: the editor that may hold its port, and the tool that updates its firmware. */
+export function vendorApps(device: DeviceKey | null): { editor: string; updater: string } {
+  return device && profileFor(device).family === "gp200"
+    ? { editor: "Valeton's GP-200 editor", updater: "Valeton's updater" }
+    : { editor: "Valeton Suite", updater: "Valeton Suite" };
 }
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -102,8 +109,8 @@ const AUDIO_GROUP_STEPS = (h: DeviceHostStatus | null) => {
     "Open Tone Studio again and press Look for the pedal.",
   ];
 };
-const win11Steps = (pedal: string) => [
-  `Plug the ${pedal} in, switch it on and close Valeton Suite.`,
+const win11Steps = (pedal: string, app: string) => [
+  `Plug the ${pedal} in, switch it on and close ${app}.`,
   `Right-click Start and open Device Manager. Find the ${pedal}.`,
   "Right-click it, choose Update driver, then Browse my computer, then Let me pick from a list.",
   "Untick Show compatible hardware, pick USB Audio Device and finish.",
@@ -132,7 +139,8 @@ function base(kind: ViewKind, led: Led, chip: string, state: string, detail: str
 export function connectionView(input: GuidanceInput): ConnectionView {
   const { status, error, mode, hostStatus: h, platform } = input;
   const desktop = platform !== "web";
-  const pedal = pedalModelName(input);
+  const attached = attachedDevice(input);
+  const pedal = pedalNameOrBoth(attached);
   const lastSeen = input.lastConnectedAt ? `Last connected ${formatWhen(input.lastConnectedAt, input.now)}` : "Not connected yet";
 
   if (status === "connected")
@@ -161,7 +169,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
   switch (error.code) {
     case "bootloader":
       return base("bootloader", "warn", "Update mode", "Firmware update mode", 'The pedal is on its "Firmware Update / Restore" screen', {
-        note: "Tone Studio doesn't send anything to a pedal in update mode, so a firmware update can't be interrupted. Finish the update in Valeton Suite. When the pedal restarts normally, the app connects by itself.",
+        note: `Tone Studio doesn't send anything to a pedal in update mode, so a firmware update can't be interrupted. Finish the update in ${vendorApps(attached).updater}. When the pedal restarts normally, the app connects by itself.`,
         action: "none",
         actionLabel: null,
         statusText: `${pedal} in firmware update mode, the app is not sending anything`,
@@ -229,7 +237,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
               h?.driver && MIDI2_RE.test(h.driver)
                 ? 'Windows 11 attached its new MIDI 2.0 driver to the pedal, and neither this app nor Valeton Suite can talk through it. Switching the pedal to the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.'
                 : 'Windows has no working MIDI driver on the pedal. Giving it the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.',
-            steps: win11Steps(pedal),
+            steps: win11Steps(pedal, vendorApps(attached).editor),
             action: "show-fix",
             actionLabel: "Show the fix",
             statusText: `${pedal} found, but its driver hides the MIDI port`,

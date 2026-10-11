@@ -3,11 +3,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { GLOBAL_EQ_INDEX } from "@/gp200/lib/protocol.mjs";
 import { host } from "@/host";
 import { profileFor } from "@shared/devices";
 import { getDriver, useDevice } from "./device";
-import { acksFrames, writeFrameCount } from "./device-model";
+import { acksFrames, attachedDevice, writeFrameCount } from "./device-model";
 import type { Gp200Driver } from "./driver/gp200-driver";
+import { GP200_EQ_DEFAULTS } from "./driver/gp200-globals";
 import { editPrst, toPresetState } from "./preset-codec";
 
 const stored = new Map<string, string>();
@@ -54,7 +56,7 @@ describe("GP-200 in the device store", () => {
   it("connects without a catalog: every block is there, its model unknown, the GP-200 fields read", () => {
     const s = store();
     expect(s.device).toBe("gp200");
-    expect([...s.features].sort()).toEqual(["exportPreset", "liveBpm"]);
+    expect([...s.features].sort()).toEqual(["exportPreset", "globalEq", "liveBpm", "modified"]);
     const p = s.preset!;
     expect(p.blocks).toHaveLength(11);
     expect(p.blocks.every((b) => b.params.length === 15 && b.model === undefined)).toBe(true);
@@ -67,12 +69,24 @@ describe("GP-200 in the device store", () => {
     expect([writeFrameCount(p.prst), acksFrames("gp200")]).toEqual([7, false]);
   });
 
-  it("keeps the export read and live tempo open on a real GP-200 (no experimental gate)", () => {
+  it("keeps the export read and live tempo open on a real GP-200; the Global EQ write is experimental", () => {
     useDevice.setState({ mode: "webmidi" });
     store().setGp50Extras(false);
-    expect([...store().features].sort()).toEqual(["exportPreset", "liveBpm"]);
+    expect([...store().features].sort()).toEqual(["exportPreset", "liveBpm", "modified"]);
+    expect(store().lockedFeatures).toEqual(["globalEq"]);
+    expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/Experimental pedal commands/);
     useDevice.setState({ mode: "mock" });
     store().setGp50Extras(false);
+  });
+
+  it("sets Global EQ values live, starting from the factory values until the pedal reports its own", async () => {
+    expect(store().globalEq).toEqual({ values: GP200_EQ_DEFAULTS, read: false });
+    store().setGlobalEq(GLOBAL_EQ_INDEX.level, 70.4);
+    store().setGlobalEq(GLOBAL_EQ_INDEX.band2.gain, -30);
+    expect([store().globalEq!.values[GLOBAL_EQ_INDEX.level], store().globalEq!.values[GLOBAL_EQ_INDEX.band2.gain]]).toEqual([70, -20]);
+    await until(async () => expect([driver().mock!.globalEq[GLOBAL_EQ_INDEX.level], driver().mock!.globalEq[GLOBAL_EQ_INDEX.band2.gain]]).toEqual([70, -20]));
+    expect(() => store().setGlobalEq(2, 1)).toThrow(RangeError);
+    expect(store().unsavedChanges).toBe(0);
   });
 
   it("plays param, on/off, volume and tempo edits live; tempo stops at 250", async () => {
@@ -105,6 +119,18 @@ describe("GP-200 in the device store", () => {
     expect(saved.gp200?.quickAccess[1]).toMatchObject({ block: 3, param: 1 });
     expect(saved.footswitches[0]).toEqual([2, 3]);
     expect([saved.blocks[2].params[0], saved.volume, saved.bpm]).toEqual([42, 77, 250]);
+  }, 30_000);
+
+  it("keeps unsaved edits counted after Read pedal again: the pedal reports its edited buffer", async () => {
+    const volume = store().preset!.volume === 41 ? 42 : 41;
+    store().setVolume(volume);
+    await until(async () => expect(driver().mock!.dirty).toBe(true));
+    await store().sync();
+    expect(store().preset!.volume).toBe(volume);
+    expect(store().saved!.volume).not.toBe(volume);
+    expect(store().unsavedChanges).toBe(1);
+    await store().discard();
+    expect(store().unsavedChanges).toBe(0);
   }, 30_000);
 
   it("refuses to rename the active slot while it has unsaved edits, then renames it", async () => {
@@ -174,6 +200,24 @@ describe("GP-200 with a catalog imported before it connects", () => {
   }, 30_000);
 });
 
+describe("GP-200 connecting after a GP-50", () => {
+  afterAll(async () => {
+    await store().disconnect();
+  });
+
+  it("names the pedal by its port while it syncs, before the remembered model changes", async () => {
+    useDevice.setState({ device: "gp50" });
+    const seen: { status: string; device: string | null; attached: string | null }[] = [];
+    const off = useDevice.subscribe((s) => {
+      if (s.portName && !seen.length) seen.push({ status: s.status, device: s.device, attached: attachedDevice(s) });
+    });
+    await store().connect("mock", { mockDevice: "gp200" });
+    off();
+    expect(seen[0]).toEqual({ status: "connecting", device: "gp50", attached: "gp200" });
+    expect([store().device, attachedDevice(store())]).toEqual(["gp200", "gp200"]);
+  }, 30_000);
+});
+
 describe.each(["gp200lt", "gp200jr"] as const)("%s: read-only on a real pedal", (key) => {
   beforeAll(async () => {
     await store().connect("mock", { mockDevice: key });
@@ -198,6 +242,7 @@ describe.each(["gp200lt", "gp200jr"] as const)("%s: read-only on a real pedal", 
     await expect(store().rename(7, "No")).rejects.toMatchObject(unsafe);
     await expect(store().uploadUserIr(0, "No", new Uint8Array(16))).rejects.toMatchObject(unsafe);
     expect(() => store().setGlobal("inputLevel", 3)).toThrow(/hasn't been tested/);
+    expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/hasn't been tested/);
     store().setVolume(55);
     await until(async () => expect((await onPedal()).volume).toBe(55));
     expect(driver().mock!.violations).toEqual([]);

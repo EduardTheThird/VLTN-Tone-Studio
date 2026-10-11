@@ -8,9 +8,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { notifyError, notifySuccess } from "@/app/notify";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
-import { getMidiLog, useDevice, usePedalName } from "@/state/device";
+import { getMidiLog, useDevice } from "@/state/device";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { formatLogLine } from "@/state/midi-log";
-import { clock, diagnosticChecks, type Check, type CheckState } from "./guidance";
+import { clock, diagnosticChecks, vendorApps, type Check, type CheckState } from "./guidance";
 import { buildReport } from "./report";
 import { MidiLog } from "./MidiLog";
 
@@ -56,7 +57,7 @@ export async function currentReport(checks: Check[]): Promise<string> {
     status: d.status,
     mode: d.mode,
     portName: d.portName,
-    device: d.device,
+    device: attachedDevice(d),
     connectionError: d.error,
     lastError: d.lastError,
     monitor: d.monitor ? getMidiLog() : null,
@@ -98,7 +99,9 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
   const monitor = useDevice((s) => s.monitor);
   const setMonitor = useDevice((s) => s.setMonitor);
   const clearMidiLog = useDevice((s) => s.clearMidiLog);
-  const pedal = usePedalName();
+  const attached = useDevice((s) => attachedDevice(s));
+  const pedal = pedalName(attached);
+  const apps = vendorApps(attached);
   const [checking, setChecking] = useState(false);
 
   const checkAgain = useCallback(async () => {
@@ -186,7 +189,9 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
         <CollapsibleContent className="pr-3 pb-3 pl-[38px] text-sm text-silkscreen-2">
           <p className="mb-2 text-pretty">The pedal is fine. Windows gave it the new "USB MIDI 2.0" driver, which Valeton software and this app can't use. Give it the "USB Audio Device" driver instead:</p>
           <ol className="mb-2.5 flex list-decimal flex-col gap-1 pl-[18px] marker:font-semibold marker:text-silkscreen-3">
-            <li>Plug the {pedal} in, switch it on and close Valeton Suite.</li>
+            <li>
+              Plug the {pedal} in, switch it on and close {apps.editor}.
+            </li>
             <li>
               Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find the {pedal}.
             </li>
@@ -200,7 +205,7 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
             <li>Unplug the pedal, plug it back in, then press Check again.</li>
           </ol>
           <p className="mb-2 text-pretty text-silkscreen-3">
-            A firmware update puts the pedal in update mode, which Windows treats as a separate device. If an update in Valeton Suite stops at 0%, repeat these steps while the pedal shows its update screen.
+            A firmware update puts the pedal in update mode, which Windows treats as a separate device. If an update in {apps.updater} stops at 0%, repeat these steps while the pedal shows its update screen.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => void checkAgain()} disabled={checking}>

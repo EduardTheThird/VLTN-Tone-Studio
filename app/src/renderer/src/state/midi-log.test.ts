@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CC, encode, packetize } from "@/gp5/lib/protocol.mjs";
+import * as gp200 from "@/gp200/lib/protocol.mjs";
+import { generatePatch } from "@/gp200/lib/mock-device.mjs";
 import { MIDI_LOG_CAP, MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
 import type { MidiLogEntry } from "./device-types";
 
@@ -80,5 +82,41 @@ describe("MidiLogDecoder", () => {
     expect(tx(encode.read(0x45))).toBe("Read unsaved-edits flag");
     const listChanged = [0x12, 0x1b, 2, 0, 0, 0];
     expect(d.line("rx", frames(listChanged)[0], { raw: Uint8Array.from(listChanged) })!.text).toBe("Pedal: Preset names changed");
+  });
+});
+
+describe("MidiLogDecoder on the GP-200", () => {
+  type Msg = { cmd: number; payload: Uint8Array };
+  const tx = (d: MidiLogDecoder, msg: Msg) => gp200.encodeFrames(msg).map((f) => d.line("tx", f)!.text);
+  /** A pedal message as the GP-200 session logs it: the last frame, with what it decoded. */
+  const rx = (d: MidiLogDecoder, msg: Msg) => d.line("rx", gp200.encodeFrames(msg, gp200.CHUNK.DEVICE).at(-1)!, gp200.decodeMessage(msg))!.text;
+
+  it("decodes outgoing selects, reads, edits and settings, naming the param when known", () => {
+    const d = new MidiLogDecoder((block, index) => (block === 3 && index === 0 ? "Gain" : undefined), () => "gp200");
+    const { encode: e, PATCH_SETTING, GLOBALS } = gp200;
+    expect(tx(d, e.select(46))).toEqual(["Select preset 12-C"]);
+    expect(tx(d, e.readStored(5))).toEqual(["Read slot 02-B"]);
+    expect(tx(d, e.param(0, { block: 3, paramId: 0, fxid: 0x07000001, value: 42 }))).toEqual(["AMP Gain 42"]);
+    expect(tx(d, e.blockEnabled(0, 2, false))).toEqual(["DST off"]);
+    expect(tx(d, e.patchSetting(0, PATCH_SETTING.TEMPO, 120))).toEqual(["Tempo 120 BPM"]);
+    expect(tx(d, e.global(GLOBALS.inputMode.id, 2))).toEqual(["Global Input mode Line"]);
+    expect(tx(d, e.globalEq(30, 60))).toEqual(["Global EQ value 30 60"]);
+  });
+
+  it("reassembles a full write: partial frames, then the slot it writes", () => {
+    const lines = tx(new MidiLogDecoder(), gp200.encode.fullWrite(5, generatePatch(5)));
+    expect(lines).toHaveLength(7);
+    expect(lines[0]).toBe("Frame 1 of 7");
+    expect(lines.at(-1)).toBe("Write slot 02-B (7 frames)");
+  });
+
+  it("describes what the session decoded from the pedal, and its warnings", () => {
+    const d = new MidiLogDecoder();
+    const { rec, concat, CMD, STATUS } = gp200;
+    expect(rx(d, { cmd: CMD.SET, payload: rec.system(0, 7) })).toBe("Pedal: Preset 02-D selected");
+    expect(rx(d, { cmd: CMD.SET, payload: concat([rec.header(1, 5), generatePatch(5)]) })).toBe("Reply: slot 02-B");
+    expect(rx(d, { cmd: CMD.SET, payload: rec.status(STATUS.DIRTY, 1) })).toBe("Pedal: Active preset edited");
+    expect(d.line("warn", new Uint8Array(), { kind: "resend", what: "read slot 5", attempt: 1 })!.text).toBe("No reply to read slot 5: sending it again (try 2)");
+    expect(d.line("warn", new Uint8Array(), { kind: "verify", slot: 5, attempt: 1, offset: 9 })!.text).toBe("Slot 02-B didn't read back the same after write 1");
   });
 });

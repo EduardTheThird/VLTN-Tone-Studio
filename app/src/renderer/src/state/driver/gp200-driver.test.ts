@@ -1,13 +1,14 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Gp200FamilyKey } from "@/gp200/lib/session.mjs";
-import { generatePatch, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
+import { MockGp200, generatePatch, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
+import { CHUNK, CMD, GLOBAL_EQ_INDEX, REC, concat, encodeFrames, f32le, rec, tlv } from "@/gp200/lib/protocol.mjs";
 import { crc16Modbus } from "@/gp200/lib/snaptone.mjs";
 import { applyPatchEdits, buildPrst, isGp200Prst, parsePatch, parsePrst } from "@/gp200/lib/prst.mjs";
 import { profileFor } from "@shared/devices";
 import type { DriverEvent } from "./types";
 import { Gp200Driver, Gp200UpdaterError } from "./gp200-driver";
-import { GP200_GLOBAL_SPECS } from "./gp200-globals";
+import { GP200_EQ_DEFAULTS, GP200_GLOBAL_SPECS } from "./gp200-globals";
 
 
 let open: Gp200Driver[] = [];
@@ -80,6 +81,14 @@ describe("Gp200Driver sync", () => {
     expect(parsePrst(prst).patch.name).toBe(names[40].name);
     expect(await d.exportPreset(40)).toEqual(prst);
     expect(dev.current).toBe(0);
+  });
+
+  it("reports an edit buffer that differs from its slot at connect as modified", async () => {
+    expect((await (await simulate()).sync()).modified).toBe(false);
+    const d = await simulate();
+    d.mock!.editBuffer = applyPatchEdits(d.mock!.editBuffer, { volume: 12 });
+    expect((await d.sync()).modified).toBe(true);
+    expect(await d.readModified()).toBe(false); // the pedal itself reported nothing yet
   });
 });
 
@@ -221,8 +230,54 @@ describe("Gp200Driver settings", () => {
     expect(dev.violations.filter((v) => v.kind === "danger")).toEqual([]);
   });
 
+  it("refuses the settings of jacks the connected model doesn't have", async () => {
+    const { d, dev } = await connected("gp200jr");
+    const before = dev.log.length;
+    await expect(d.setGlobal("midiInChannelDin", 3)).rejects.toThrow("The GP-200JR has no setting midiInChannelDin");
+    await expect(d.setGlobal("exp1Mode", 1)).rejects.toThrow(RangeError);
+    expect(dev.log.length).toBe(before);
+    await d.setGlobal("midiInChannelUsb", 3);
+    expect(dev.globals.midiInChannelUsb).toBe(3);
+  });
+
   it("gives every enum setting one label per value", () => {
     for (const s of GP200_GLOBAL_SPECS) if (s.labels) expect(s.max - s.min + 1).toBe(s.labels.length);
+  });
+});
+
+describe("Gp200Driver Global EQ", () => {
+  it("sets one value clamped to its range, refuses the unused ones, and reports the pedal's echo", async () => {
+    const { d, dev } = await connected();
+    expect((await d.readGlobals()).eq).toEqual({ values: GP200_EQ_DEFAULTS, read: false });
+    const echo = nextEvents(d, 1);
+    await d.setGlobalEq(GLOBAL_EQ_INDEX.band1.gain, 33);
+    expect(await echo).toEqual([{ type: "globalEq", values: { [GLOBAL_EQ_INDEX.band1.gain]: 20 }, all: false }]);
+    expect(dev.globalEq[GLOBAL_EQ_INDEX.band1.gain]).toBe(20);
+    await d.setGlobalEq(GLOBAL_EQ_INDEX.band1.q, 0.123);
+    expect(dev.globalEq[GLOBAL_EQ_INDEX.band1.q]).toBeCloseTo(0.12, 5);
+    const before = dev.log.length;
+    for (const unused of [2, 29, 31]) await expect(d.setGlobalEq(unused, 1)).rejects.toThrow(RangeError);
+    expect(dev.log.length).toBe(before);
+    expect((await d.readGlobals()).eq?.values[GLOBAL_EQ_INDEX.band1.gain]).toBe(20);
+  });
+
+  it("takes the whole EQ when the pedal reports it in one message with its settings", async () => {
+    // Device-to-host bytes go through the transport's listener: keep it to play a 0x1004 report next to the settings
+    let toHost: ((bytes: Uint8Array) => void) | null = null;
+    const transport = MockGp200.prototype.transport;
+    const spy = vi.spyOn(MockGp200.prototype, "transport").mockImplementation(function (this: MockGp200) {
+      const t = transport.call(this);
+      return { ...t, onMessage: (cb: (bytes: Uint8Array) => void) => t.onMessage((toHost = cb)) };
+    });
+    const { d } = await connected();
+    spy.mockRestore();
+    const reported = GP200_EQ_DEFAULTS.map((v, i) => (i === GLOBAL_EQ_INDEX.level ? 64 : v));
+    const events = nextEvents(d, 1);
+    for (const f of encodeFrames({ cmd: CMD.SET, payload: concat([rec.globals(new Uint8Array(72)), tlv(REC.GLOBAL_EQ_ALL, concat(reported.map(f32le)))]) }, CHUNK.DEVICE)) toHost!(f);
+    expect((await events)[0]).toMatchObject({ type: "globalEq", all: true });
+    const eq = (await d.readGlobals()).eq!;
+    expect(eq.read).toBe(true);
+    eq.values.forEach((v, i) => expect(v).toBeCloseTo(reported[i], 5)); // f32 on the wire
   });
 });
 

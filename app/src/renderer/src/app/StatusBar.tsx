@@ -6,6 +6,7 @@ import { useNav } from "@/state/nav";
 import { useUi, type StatusHint, type StatusMessage } from "@/state/ui";
 import { host } from "@/host";
 import { connectionView } from "@/screens/device/guidance";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { liveStatusText } from "@/screens/rig/live-edits";
 import { keyLabel } from "./keys";
 
@@ -35,8 +36,10 @@ export function StatusBar() {
   const features = useDevice((s) => s.features);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
+  // While connecting: the pedal on the port being opened, not the remembered one
+  const connecting = useDevice((s) => (s.status === "connecting" ? pedalName(attachedDevice(s)) : null));
   const live = status === "connected";
-  const errorView = status === "error" && error ? connectionView({ status, error, mode, hostStatus: null, platform: host.platform, device }) : null;
+  const errorView = status === "error" && error ? connectionView({ status, error, mode, hostStatus: null, platform: host.platform, device, portName }) : null;
 
   const message: StatusMessage =
     override ??
@@ -47,7 +50,7 @@ export function StatusBar() {
         : errorView
           ? { led: errorView.led, text: errorView.statusText }
           : status === "connecting"
-          ? { led: "warn", text: `Connecting to the ${pedal}…` }
+          ? { led: "warn", text: `Connecting to the ${connecting}…` }
           : hadPreset && screen === "rig"
             ? { led: "off", text: `Offline: the Rig is read-only until the ${pedal} is back. Nothing has been lost.` }
             : { led: "off", text: `Not connected: presets on the pedal can't be changed until the ${pedal} is back` });

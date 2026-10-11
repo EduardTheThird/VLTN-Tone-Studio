@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { MenuCommand } from "@shared/ipc";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { openFiles, runCommand, useUi, type AppCommand } from "@/state/ui";
 import { modKey } from "./keys";
@@ -16,9 +16,10 @@ export async function reconnect(): Promise<void> {
   try {
     await d.connect(d.mode);
   } catch {
-    const { error, device } = useDevice.getState();
-    const pedal = pedalName(device);
-    notifyError(`Couldn't connect to the ${pedal}`, error ?? new Error(`The ${pedal} didn't answer.`), reconnect);
+    const s = useDevice.getState();
+    // The pedal on the port that failed (or on USB) before a remembered other model
+    const pedal = pedalName(attachedDevice(s));
+    notifyError(`Couldn't connect to the ${pedal}`, s.error ?? new Error(`The ${pedal} didn't answer.`), reconnect);
   }
 }
 

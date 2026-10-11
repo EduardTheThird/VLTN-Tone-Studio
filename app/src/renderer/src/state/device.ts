@@ -10,6 +10,7 @@ import { MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
 import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
+import { clampGp200Eq } from "./driver/gp200-globals";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
 import { clampParamValue, editPrst, orderError, syncParams, toPresetState } from "./preset-codec";
 import { SendQueue } from "./send-queue";
@@ -93,7 +94,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     const d = requireDriver();
     if (get().features.includes(feature)) return d;
     const locked = get().lockedFeatures.includes(feature);
-    throw new DeviceError("unsafe", locked ? "This needs GP-50 extras (experimental), which you can turn on in Settings." : `The ${pedalName(get().device)} can't do this from Tone Studio.`);
+    throw new DeviceError("unsafe", locked ? "This needs Experimental pedal commands, which you can turn on in Settings." : `The ${pedalName(get().device)} can't do this from Tone Studio.`);
   };
 
   /** Replace the live preset (and optionally the saved copy) and recount changes. */
@@ -246,6 +247,11 @@ export const useDevice = create<DeviceState>((set, get) => {
       if (!isEcho(`global:${e.name}`)) set({ globals: { ...(get().globals ?? {}), [e.name]: e.value } });
       return;
     }
+    if (e.type === "globalEq") {
+      const eq = get().globalEq;
+      if (eq) set({ globalEq: { values: eq.values.map((v, i) => (e.values[i] === undefined || isEcho(`eq:${i}`) ? v : e.values[i])), read: eq.read || e.all } });
+      return;
+    }
     try {
       onPresetEvent(e);
     } catch (err) {
@@ -281,6 +287,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         names: snap.names,
         slot: snap.slot,
         globals: snap.globals?.values ?? null,
+        globalEq: snap.globals?.eq ?? null,
         globalRecords: snap.globals?.records ?? null,
         firmware: snap.globals?.firmware ?? null,
         snapTones: null,
@@ -396,6 +403,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     saved: null,
     unsavedChanges: 0,
     globals: null,
+    globalEq: null,
     firmware: null,
     features: [],
     lockedFeatures: [],
@@ -462,7 +470,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       userDisconnected = false;
       const attempt = ++connectAttempt;
       const cancelled = () => attempt !== connectAttempt;
-      set({ mode, status: "connecting", error: null });
+      set({ mode, status: "connecting", error: null, portName: null });
       // OS-side checks (USB, driver, Suite) run alongside; they sharpen errors and feed the Diagnostics card.
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
       const driverOpts = { log: onLog, onDisconnect: onPortLost };
@@ -480,6 +488,9 @@ export const useDevice = create<DeviceState>((set, get) => {
           await d.close();
           return;
         }
+        // The port names the model before it identifies (a sync can take minutes): copy talks about this pedal, not
+        // the remembered one. A failed attempt keeps it for the error copy and the report.
+        set({ portName: d.portName });
         await attach(d, mode);
       } catch (e) {
         if (cancelled()) return;
@@ -511,7 +522,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         setNames(names);
         await readActive(d, names, true);
         const globals = await d.readGlobals().catch(() => null);
-        if (globals) set({ globals: globals.values, globalRecords: globals.records, firmware: globals.firmware ?? get().firmware });
+        if (globals) set({ globals: globals.values, globalRecords: globals.records, firmware: globals.firmware ?? get().firmware, globalEq: globals.eq ?? get().globalEq });
         set({ lastError: null });
       } catch (e) {
         noteError(e);
@@ -555,7 +566,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     // Order, footswitches and tempo change the preset here; they play live where the pedal has a command for them
-    // (GP-50 extras), and otherwise reach the pedal with the full write on save.
+    // (GP-50 with Experimental pedal commands, GP-200 tempo), and otherwise reach the pedal with the full write on save.
     setOrder(order) {
       editLocal({ order });
       touch("order");
@@ -729,6 +740,17 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ globals: { ...(get().globals ?? {}), [name]: v } });
       touch(`global:${name}`);
       sends.push(`global:${name}`, () => d.setGlobal(name, v));
+    },
+
+    setGlobalEq(index, value) {
+      requireWritable();
+      const d = requireFeature("globalEq");
+      const eq = get().globalEq;
+      if (!eq) return;
+      const v = clampGp200Eq(index, value);
+      set({ globalEq: { ...eq, values: eq.values.map((x, i) => (i === index ? v : x)) } });
+      touch(`eq:${index}`);
+      sends.push(`eq:${index}`, () => d.setGlobalEq!(index, v));
     },
 
     async readSnapTones() {

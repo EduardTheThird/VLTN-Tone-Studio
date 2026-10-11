@@ -89,6 +89,24 @@ describe("connectionView", () => {
     expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50 / GP-200 / GP-200LT / GP-200JR");
   });
 
+  it("names the GP-200 on the port or on USB, never the remembered GP-50", () => {
+    const remembered = { mode: "webmidi", platform: "linux", device: "gp50" } as const;
+    const connecting = connectionView({ ...remembered, status: "connecting", error: null, hostStatus: null, portName: "GP-200 MIDI 1" });
+    expect(connecting.statusText).toBe("Connecting to the GP-200");
+    expect(err("timeout", { ...remembered, portName: "GP-200LT MIDI 1" }).detail).toBe("A device answered, but not like a GP-200LT");
+    expect(connectionView({ ...remembered, status: "disconnected", error: null, hostStatus: host({ usb: [gp200] }) }).statusText).toBe("GP-200 not connected");
+    // A simulated GP-200 is named by its port while it syncs; once connected the store's model names it
+    expect(connectionView({ ...remembered, mode: "mock", status: "connecting", error: null, hostStatus: null, portName: "GP-200JR (simulated)" }).statusText).toBe("Connecting to the GP-200JR");
+  });
+
+  it("sends GP-200 owners to Valeton's own tools, GP-5 owners to Valeton Suite", () => {
+    expect(err("bootloader", { device: "gp200" }).note).toMatch(/Finish the update in Valeton's updater/);
+    expect(err("bootloader", { device: "gp50" }).note).toMatch(/Finish the update in Valeton Suite/);
+    const driver = (usb: typeof gp200) => err("not-found", { platform: "win32", hostStatus: host({ usb: [usb], driver: "usbmidi2" }) }).steps[0];
+    expect(driver(gp200)).toBe("Plug the GP-200 in, switch it on and close Valeton's GP-200 editor.");
+    expect(driver(gp50)).toBe("Plug the GP-50 in, switch it on and close Valeton Suite.");
+  });
+
   it("no pedal on USB = plug-in guidance listing the visible ports", () => {
     const v = connectionView({
       status: "error",
