@@ -1,4 +1,4 @@
-// Gp5Session against the GP-50 profile of MockGp5 (skill valeton-gp50 simulator.md), plus the refusals on a GP-5.
+// Gp5Session against the GP-50 profile of MockGp5, plus the refusals on a GP-5.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";

@@ -138,7 +138,7 @@ function writeName(b, name) {
 }
 
 const SETTING_FIELD = Object.freeze(Object.fromEntries(Object.entries(PATCH_SETTINGS).map(([field, s]) => [s.id, field])));
-/** Byte size of each settings TLV entry by id. GP-5: VOL and BPM as u32; GP-50 (RE, reference.md §2.1) below. */
+/** Byte size of each settings TLV entry by id. GP-5: VOL and BPM as u32; GP-50 (Suite 2.1.0 RE) below. */
 export const SETTING_SIZES = Object.freeze({ gp5: Object.freeze({ 1: 4, 2: 4 }), gp50: Object.freeze({ 1: 1, 2: 4, 3: 1, 4: 4, 5: 4, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1 }) });
 /** EXP settings of an empty GP-50 slot (gp50-blank.prst). */
 export const EXP_DEFAULTS = Object.freeze({ on: false, paramMin: 0, paramMax: 100, volPosition: 0, volMin: 0, volMax: 100, targetModule: 0, targetParam: 0 });
@@ -166,7 +166,7 @@ function readSettings(b, rec, device) {
   return settings;
 }
 
-/** GP-50 footswitch state byte (reference.md §2.2): 06 when the switch has blocks and all of them are enabled, else 05. */
+/** GP-50 footswitch state byte (Suite 2.1.0 RE): 06 when the switch has blocks and all of them are enabled, else 05. */
 export const footswitchState = (enableMask, fsMask) => (fsMask !== 0 && (enableMask & fsMask) === fsMask ? 0x06 : 0x05);
 
 /**

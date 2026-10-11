@@ -1,7 +1,7 @@
 // SnapTone (NS block capture) upload format of the Valeton GP-5. Pure, isomorphic ESM, zero dependencies.
 //
-// Valeton Suite 2.1.0 converts a NAM model into an 8840-byte "VTSI" clone blob (native HTKPA, see
-// ../../gp5-reverse-engineering), cuts it down to a 2696-byte SnapTone file and sends that file in ONE command:
+// Valeton Suite 2.1.0 converts a NAM model into an 8840-byte "VTSI" clone blob (native HTKPA, static RE),
+// cuts it down to a 2696-byte SnapTone file and sends that file in ONE command:
 //   [0x11, 0x25, nId u32 = 0, fxId u32, name[16], node[16] = 0, fPara f32[8] = 0, file[2696]]  = 2770 B, 146 frames.
 // Evidence (Suite 2.1.0 Dart, Android arm64 build): ToneCatchUtils.convertCatchFileType0Ver0 0x7b7350,
 // ToneCatchFile.toBytes 0x7b6a44, ToneCatchCrcUtils.crc16 0x7b7a50, ImportTcHelper.importSCIndex 0x7ba504..0x7ba648
@@ -113,7 +113,7 @@ export function sanitizeUserIrName(name) {
 }
 
 /**
- * Suite 2.1.0's SnapTone import name (Import50TcHelper, valeton-gp50 reference.md §6): drop ".nam", apply the
+ * Suite 2.1.0's SnapTone import name (Import50TcHelper): drop ".nam", apply the
  * per-character rule, then its sanitizeFileName step removes punctuation and whitespace, so only letters and digits
  * remain; cut to 10, "X" when empty.
  */

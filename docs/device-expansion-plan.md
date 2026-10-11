@@ -1,6 +1,6 @@
 # Plan: full GP-50 and GP-200 support
 
-Status 2026-10-11. Inputs: the 15 repositories of [github.com/topics/valeton](https://github.com/topics/valeton) (plus a dozen GP-200 projects outside the topic), static reverse engineering of Valeton Suite 2.1.0 and the official GP-200 editor 1.8.0 with [REA](https://github.com/morluto/rea) + Ghidra and blutter, and the GP-50 1.1.0 / GP-200 1.8.0 firmware images. The detailed protocol knowledge lives in the agent skills `valeton-gp50` and `valeton-gp200` (`.claude/skills/`, local); this file is the engineering plan.
+Status 2026-10-11. Inputs: the 15 repositories of [github.com/topics/valeton](https://github.com/topics/valeton) (plus a dozen GP-200 projects outside the topic), static reverse engineering of Valeton Suite 2.1.0 and the official GP-200 editor 1.8.0 with [REA](https://github.com/morluto/rea) + Ghidra and blutter, and the GP-50 1.1.0 / GP-200 1.8.0 firmware images. The protocol facts are documented in the code (`app/src/renderer/src/gp5/`, `app/src/renderer/src/gp200/`) and its tests; this file is the engineering plan.
 
 ## 1. Where we are
 | device | protocol family | app today | confidence |
@@ -66,7 +66,7 @@ GP-50 profile inside `MockGp5`, new `MockGp200`, native fixture banks, virtual M
 ### Phase 4 — Multi-device refactor (no behaviour change for GP-5/GP-50)
 Registry and `DeviceKey` union; replace every `gp5`/`gp50` binary branch and silent coercion to `gp5` (`main/tone3000/records.ts`, `files-store.ts`, `host/web/files.ts`, `state/device.ts`, library/tones/tonematch stores, command palette); USB detection reads PIDs from the registry (today a GP-200 on USB is reported as "firmware update mode"); slot labels and counts from the profile; backups `gp200-YYYY-MM-DD`; `.prst` sniffing per family. Acceptance: all existing tests green, GP-5 and GP-50 mocks behave identically, a new test runs the store over every registry key.
 
-### Phase 5 — GP-200 toolkit (`gp200-toolkit`, mirrors `gp5-toolkit`)
+### Phase 5 — GP-200 toolkit (`app/src/renderer/src/gp200/`, mirrors `gp5/`)
 | module | content | tests |
 |---|---|---|
 | `protocol.mjs` | frame/deframe (14-bit LEN/OFF, 183-B chunks, unmasked low nibble on RX), TLV encode/walk, record builders, danger-frame guard | 59 RE vectors (independently re-encoded) |
@@ -80,7 +80,7 @@ Registry and `DeviceKey` union; replace every `gp5`/`gp50` binary branch and sil
 Library with 256 (JR 255) slots and bank labels `01-A`…`64-D`; Rig with 11 blocks (WAH, VOL, FX-loop send/return nodes, all movable); EXP1 A/B + EXP2 (9 slots), 8 CTRL masks, 3 Quick-Access knobs; globals incl. global EQ; User IR (20 × 1024 samples) and SnapTone (5 AMP + 5 DST) from TONE3000 and local files, reusing the SnapTone converter with the 1024-tap cap; Tone Match model mapping for the GP-200 catalog (or hidden until mapped); LT/JR differences from the profile (footswitches, MIDI labels, slot count). Updater-mode detection (SOFTWARE_STATE 0, PID `002B`) shows "update with Valeton's tool" and sends nothing.
 
 ### Phase 7 — Hardware verification and release gates
-Run the checklists in `valeton-gp50/hardware-verification.md` and `valeton-gp200/hardware-verification.md` (read-only first, writes on scratch slots, everything logged as fixtures). A feature leaves "experimental" only after its round trip passes on hardware on the current firmware; CHANGELOG and README support table updated per release. Firmware gating: GP-50 1.0.5 vs 1.1.0, GP-200 by the 0x1007 version.
+Run the hardware checklists for the GP-50 and the GP-200 (read-only first, writes on scratch slots, everything logged as fixtures). A feature leaves "experimental" only after its round trip passes on hardware on the current firmware; CHANGELOG and README support table updated per release. Firmware gating: GP-50 1.0.5 vs 1.1.0, GP-200 by the 0x1007 version.
 
 ## 4. Simulators
 Goal: the whole app, tests and demos run without a pedal, and the simulators fail the same way the pedals do.
@@ -89,13 +89,13 @@ Goal: the whole app, tests and demos run without a pedal, and the simulators fai
 |---|---|---|
 | bank | native GP-50 bank from MIT presets + generated ones (not Valeton's factory bank) | generated patches + MIT `.prst`; 256/255 slots by type |
 | replies | 511-B `0x41` in 27 frames, `12 45`, `12 4F` export, GP-50 globals, `0x42` records | 0x2001 `{1,type}`, SOFTWARE_STATE, pushed 0x1007, stored vs edit-buffer reads in 185-B chunks, name tables, `0x100B`/`0x1014`, `0x2003` echo |
-| commands | all GP-5 commands + `0x42` EXP, `0x4D`, `0x44`, `0x46`, `0x4B`, `0x5A` | all records in `valeton-gp200/protocol.md`; full write applied only when complete and addressed in the TLVs |
+| commands | all GP-5 commands + `0x42` EXP, `0x4D`, `0x44`, `0x46`, `0x4B`, `0x5A` | all records of the GP-200 protocol (`gp200/lib/protocol.mjs`); full write applied only when complete and addressed in the TLVs |
 | select | `11 43`, CC#0, Program Change | `0x1008 {0,slot}`, CC0 + PC (polarity switch until verified) |
 | notifications | `12 43 s16`, echoes; `12 1B` behind a flag | `0x1008` on patch change, echoes of globals, `0x1011` dirty |
 | faults | `wedgeOnOverrun`, `selectRaceMs`, `dropFrames`, pacing violations | deaf window after writes, 0x9F verify glitch, ALSA-style fragmentation, CMD `0x03` flush, a host that waits for ACKs is flagged |
 | safety | `0x3F`/`0x33`/firmware frames never answered | firmware jump / updater / destructive globals refused and recorded |
 
-Shared pieces: one `?mock=<deviceKey>` switch in the app (`gp5`, `gp50`, `gp200`, `gp200lt`, `gp200jr`), Device-screen "Simulate a …" buttons from the registry, a virtual MIDI port script per family so other apps (and Valeton's editor, for captures) can talk to the simulator, and replay of hardware JSONL captures as regression tests once phase 7 produces them. The specs: `valeton-gp50/simulator.md`, `valeton-gp200/simulator.md`.
+Shared pieces: one `?mock=<deviceKey>` switch in the app (`gp5`, `gp50`, `gp200`, `gp200lt`, `gp200jr`), Device-screen "Simulate a …" buttons from the registry, a virtual MIDI port script per family so other apps (and Valeton's editor, for captures) can talk to the simulator, and replay of hardware JSONL captures as regression tests once phase 7 produces them. The specs: `gp5/lib/mock-device.mjs`, `gp200/lib/mock-device.mjs`.
 
 ## 5. Risks
 | risk | mitigation |
@@ -109,4 +109,4 @@ Shared pieces: one `?mock=<deviceKey>` switch in the app (`gp5`, `gp50`, `gp200`
 | GPL sources (phash, kabir0st, donpark2000…) | facts only, no code; our codec is written from the RE notes and vectors |
 
 ## 6. Tooling used
-`morluto/rea` 6.4.0 (MIT) as a persistent MCP session over a local bridge (`.claude/skills/gp5-reverse-engineering/tools/`), Ghidra 12.1.4, blutter (Dart 3.12.1), Python for assets and firmware. Workflow: `gp5-reverse-engineering` → "Static RE of the vendor apps".
+`morluto/rea` 6.4.0 (MIT) as a persistent MCP session over a local bridge, Ghidra 12.1.4, blutter (Dart 3.12.1), Python for assets and firmware.

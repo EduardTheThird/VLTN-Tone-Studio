@@ -1,6 +1,6 @@
 // Valeton GP-200 family (GP-200 / R / X, GP-200LT, GP-200JR) USB-MIDI codec. Pure, isomorphic ESM, zero dependencies.
 // A different protocol generation from the GP-5: no checksum, no ACK, TLV records. Evidence: static RE of the official
-// GP-200 editor 1.8.0 (skill valeton-gp200: protocol.md, preset-format.md, data/*-vectors.json); GPL sources were
+// GP-200 editor 1.8.0 and the protocol vectors derived from it (tests/vectors.mjs); GPL sources were
 // used for facts only.
 //
 // Frame:  F0 21 25 7E 47 50 2D 32 | CMD | LEN lo7 hi7 | OFF lo7 hi7 | 2 wire bytes per byte, high nibble first | F7
@@ -21,7 +21,7 @@ const HEAD = 13; // F0 + 7 id bytes + CMD + LEN(2) + OFF(2)
 /** Address frames: bytes 9..12 are an address instead of LEN/OFF. */
 export const ADDRESS = Object.freeze({ SOFTWARE_STATE: Object.freeze([0x12, 0, 0, 0]), SOFTWARE_JUMP: Object.freeze([0x12, 0, 0x20, 0]) });
 
-/** TLV record types (protocol.md §2). */
+/** TLV record types. */
 export const REC = Object.freeze({
   HEADER: 0x0000,
   READ: 0x0001,
@@ -106,7 +106,7 @@ export function slotLabel(slot) {
 }
 
 /**
- * 0x1008 global ids with their place in the 0x1007 state record (reference.md §4, data/gp200-globals.json).
+ * 0x1008 global ids with their place in the 0x1007 state record (editor 1.8.0 RE).
  * `off` null = not mirrored in 0x1007 (EXP1 A/B lives in the patch).
  */
 export const GLOBALS = Object.freeze({
@@ -519,7 +519,7 @@ export const encode = {
 // ------------------------------------------------------------------------------------------- safety
 
 /**
- * Why a wire frame must never be sent (SKILL.md safety rule 1), or null when it is allowed:
+ * Why a wire frame must never be sent, or null when it is allowed:
  * the bootloader updater (F0 7E 48 ...), SOFTWARE_JUMP, the 0x2000 firmware-jump prelude, a 0x1007 write
  * (overwrites every global) and the destructive 0x1008 ids (delete IR / delete SnapTone / reset footswitches).
  * Only the first chunk of a message can be inspected; dangerOfMessage checks whole messages.

@@ -1,5 +1,5 @@
-// In-memory GP-200 / GP-200LT / GP-200JR simulator speaking the documented USB protocol (skill valeton-gp200,
-// simulator.md). Use it for unit tests, UI development and (via scripts/virtual-gp200.mjs) as a virtual MIDI device.
+// In-memory GP-200 / GP-200LT / GP-200JR simulator speaking the USB protocol of protocol.mjs (GP-200 editor 1.8.0 RE).
+// Use it for unit tests, UI development and as a virtual MIDI device.
 // It models what the editor RE, captures and OSS hardware work show; unknown requests stay silent so host timeouts
 // get exercised. Every reply is produced by this toolkit's own encoder. The bank is generated: Valeton's factory
 // presets and catalog are never bundled (pass `images` or a `catalog` built from the user's algorithm.xml).
@@ -42,7 +42,7 @@ import { defaultParams } from "./catalog.mjs";
 const INIT_FXIDS = Object.freeze([0x00000001, 0x05000001, 0x03000000, 0x0700003a, 0x0000001b, 0x0a000024, 0x0100003c, 0x04000002, 0x0b00001f, 0x0c000001, 0x06000003]);
 const STYLES = ["Rock", "Pop", "Blues", "Funk", "Jazz", "Metal", "Latin", "Country"];
 const KINDS = ["Clean", "Crunch", "Lead", "Ambient"];
-/** Global EQ defaults of the editor's model constructor (data/gp200-globals.json). */
+/** Global EQ defaults of the editor's model constructor (editor 1.8.0 RE). */
 const GLOBAL_EQ_DEFAULTS = Object.freeze([1, 19, 0.71, 1, 20, 0.71, 0, 1, 100, 0.71, 0, 1, 500, 0.71, 0, 1, 1600, 0.71, 0, 1, 5000, 0.71, 0, 1, 20000, 0.71, 0, 1, 20001, 0.71, 50]);
 const GLOBAL_DEFAULTS = Object.freeze({ inputMode: 1, recModeL: 1, recModeR: 1, midiInSource: 2, clockSource: 4 });
 const BLOCK_CC = Object.freeze({ 48: 0, 49: 2, 50: 3, 51: 4, 52: 5, 53: 6, 54: 7, 55: 8, 56: 9, 57: 1 }); // CC -> block

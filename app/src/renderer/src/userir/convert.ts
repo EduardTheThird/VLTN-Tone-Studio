@@ -1,5 +1,5 @@
-// WAV -> User IR data block (the same on GP-5 and GP-50), as Valeton Suite 2.1.0 prepares an IR (see .claude/skills/gp5-reverse-engineering/
-// userir.md §1): channel 0, r8brain resample to 44.1 kHz, JUCE 24-bit rounding, first 512 samples. Two Suite quirks
+// WAV -> User IR data block (the same on GP-5 and GP-50), as Valeton Suite 2.1.0 prepares an IR (static RE of its
+// code): channel 0, r8brain resample to 44.1 kHz, JUCE 24-bit rounding, first 512 samples. Two Suite quirks
 // are fixed on purpose: chunks are walked instead of read at fixed offsets, and stereo 24-bit/44.1 kHz files use
 // channel 0 instead of being sent interleaved. Clean mono files give the same bytes as Suite.
 

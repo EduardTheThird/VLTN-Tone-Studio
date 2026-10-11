@@ -1,6 +1,6 @@
 // NAM file check for the SnapTone conversion (the same SnapTone format on GP-5 and GP-50).
 // Valeton Suite 2.1.0 makes a SnapTone from any model its NeuralAmpModelerCore loads (no size or
-// architecture gate in its Dart code; see .claude/skills/gp5-reverse-engineering/snaptone.md). Tone Studio
+// architecture gate in its Dart code, static RE of the Suite 2.1.0 Android build). Tone Studio
 // reproduces that conversion for the two families it renders like Suite does:
 //  - NAM A1 WaveNet (standard, lite, feather, nano): 0.5.x passes through; 0.7.x is reshaped to the 0.5.x layout
 //    (for the standard WaveNet the layouts differ only in the config schema; the flat `weights` array, head_scale

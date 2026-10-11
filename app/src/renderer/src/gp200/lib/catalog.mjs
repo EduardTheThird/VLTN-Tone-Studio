@@ -2,13 +2,13 @@
 // Valeton's: never ship it or data derived from it). Pure, isomorphic ESM: no Node APIs, so the app can build the
 // catalog from a file the user picks.
 //
-// Semantics (editor 1.8.0 XML parser @0x1000d9de0, preset-format.md §4):
+// Semantics (editor 1.8.0 XML parser @0x1000d9de0):
 //   Alg@Code = u32 fxid (decimal) | Alg@Index = UI list position only | control@ID = param index in f32[15] and the
 //   0x0005 param byte | control@idx = UI order, `bind` refers to it | Combox value = Menu@TrueID when present, else
 //   the 0-based menu position | Switch 0/1, SubType="Power" + bind = tempo sync (the bound knob becomes a note
 //   division index 0-10, set to 4) | MinISOff = the minimum shows as OFF | CABCode = Auto-CAB-Match target.
 //
-// Catalog shape (same as the RE artifact data/gp200-catalog.json, minus descriptions):
+// Catalog shape (descriptions are not kept):
 //   { meta: { device, source, counts }, modules: [{ module, algs: [{ name, module, code, codeHex, index, cabCode?,
 //     cabCodeHex?, knobs: [{ kind, name, idx, id, type, default, defaultRaw?, min?, max?, step?, suffix?, valueType?,
 //     bind?, minIsOff?, subType?, options?: [{ name, value, trueId? }] }] }] }] }

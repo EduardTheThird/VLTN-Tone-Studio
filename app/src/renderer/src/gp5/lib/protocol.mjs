@@ -1,5 +1,5 @@
 // Valeton GP-5 / GP-50 USB-MIDI SysEx protocol codec. Pure, isomorphic ESM (browser + Node >= 18), zero dependencies.
-// Both pedals speak the same protocol (valeton-gp50 read/wrote a GP-50 with it); they differ in the preset size
+// Both pedals speak the same protocol (drewmerc302/valeton-gp50 read/wrote a GP-50 with it); they differ in the preset size
 // (0x41 body 466 vs 511 bytes, write 26 vs 29 frames), USB PID and the effect catalog (see prst.mjs, catalog.mjs).
 //
 // Wire format (identical host->device and device->host):
@@ -10,7 +10,7 @@
 // Payload: [kind, fn, ...args]. kind 0x12 = read/query (and read replies), 0x11 = set/command, 0x14 = device ACK.
 // All integers little-endian u32, parameter values float32 LE.
 //
-// Sources (see skill gp5-sysex-protocol for per-fact evidence): drewmerc302/valeton-gp50 (MIT),
+// Sources: drewmerc302/valeton-gp50 (MIT),
 // fsanchezlme97-ui/gp5-editor (MIT), helvecioneto/gp5-wc (Apache-2.0), Builty/TonexOneController (Apache-2.0).
 
 export const USB_IDS = Object.freeze({ vendorId: 0x84ef, gp5: 0x0184, gp50: 0x018a, midiInterface: 3 });
@@ -98,7 +98,7 @@ export const GLOBALS = globalsTable({
 });
 
 /**
- * GP-50 global settings (Valeton Suite 2.1.0 RE, skill valeton-gp50 reference.md §5). The record ids differ from the
+ * GP-50 global settings (Valeton Suite 2.1.0 RE). The record ids differ from the
  * GP-5: (2,4) is BT REC, (3,4) the monitor, (4,4)/(5,4) REC mode L/R. Entries with `since` exist from that firmware on;
  * a UI should show only the entries the pedal reports in its 0x10 reply.
  */
@@ -458,7 +458,7 @@ export const encode = Object.freeze({
   renamePreset: (slot, name) => (assertSlot(slot), [KIND.SET, CMD.RENAME_PRESET, ...u32le(slot), ...asciiField(name, 10)]),
   /**
    * Full preset write: payload for a GP-5 (507 B) or GP-50 (552 B) .prst; bytes 0x19.. = name + body.
-   * GP-5: 488 bytes -> 26 frames; GP-50: 533 bytes -> 29 frames (valeton-gp50 Suite capture).
+   * GP-5: 488 bytes -> 26 frames; GP-50: 533 bytes -> 29 frames (drewmerc302/valeton-gp50 Suite capture).
    */
   writePreset: (slot, prst) => {
     assertSlot(slot);

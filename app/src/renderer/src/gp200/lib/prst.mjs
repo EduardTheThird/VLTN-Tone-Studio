@@ -1,5 +1,5 @@
 // GP-200 patch image (1168 bytes of TLV records) and the 1224-byte `.prst` file. Pure, isomorphic ESM.
-// Evidence: preset-format.md of skill valeton-gp200 (editor 1.8.0 export @0x100135e50, import @0x10014b7a0).
+// Evidence: static RE of the GP-200 editor 1.8.0 (export @0x100135e50, import @0x10014b7a0).
 //
 // Image (editor order): 0x0002 info (88) | 0x0008 chain (16) | 0x0014 x 11 blocks (68) | 0x000C x 9 EXP slots (12) |
 //   0x0010 x 3 Quick-Access knobs (4) | 0x000F x 8 CTRL masks (8). Files from editors before 1.4.0 have 4 CTRL records

@@ -1,4 +1,4 @@
-// GP-50 codec facts from static RE of Valeton Suite 2.1.0 (skill valeton-gp50, protocol.md "Test vectors"; frames
+// GP-50 codec facts from static RE of Valeton Suite 2.1.0 (test vectors from the RE; frames
 // computed independently with packetize on the RE workstation). Run: node --test tests/
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -174,7 +174,7 @@ test("EXP settings: parsed for GP-50 presets, editable with validation, refused 
   const exp = { on: true, paramMin: 13, paramMax: 87, volPosition: 1, volMin: 10, volMax: 90, targetModule: 9, targetParam: 1 };
   const edited = applyEdits(usLead, { exp, bpm: 120 });
   assert.deepEqual(parsePrst(edited).settings.exp, exp);
-  // reference.md §2.1 example payload of the settings record
+  // example payload of the settings record (Suite 2.1.0 RE)
   const settings = "01 20 01 00 32 02 20 04 00 78 00 00 00 03 20 01 00 01 04 20 04 00 0d 00 00 00 05 20 04 00 57 00 00 00 06 20 01 00 01 07 20 01 00 0a 08 20 01 00 5a 09 20 01 00 09 0a 20 01 00 01";
   assert.equal(toHex(edited.subarray(0x55, 0x55 + 59)), settings);
   assert.equal(expTargetBlock(9), 7, "EXP target DLY = storage block 7");

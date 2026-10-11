@@ -11,7 +11,7 @@
 //    setting or global replaces the queued one (never per fn alone, which would drop edits of other params).
 //
 // GP-50-only commands (EXP/BPM records, 8-byte footswitch masks, chain reorder, delete/paste/move, export read,
-// is-modified) come from static RE of Valeton Suite 2.1.0 (skill valeton-gp50); on a GP-5 they are refused with
+// is-modified) come from static RE of Valeton Suite 2.1.0; on a GP-5 they are refused with
 // Gp5Error("unsafe").
 
 import {
@@ -42,7 +42,7 @@ import { USER_IR, encodeImportUserIr, isUserIrSlot } from "./userir.mjs";
 
 export const DEFAULT_TIMING = Object.freeze({
   interMessageMs: 20, // TonexOneController: VALETON_GP5_INTER_MESSAGE_DELAY
-  settleMs: 200, // gap after every read exchange (valeton-gp50 SETTLE_MS)
+  settleMs: 200, // gap after every read exchange (drewmerc302/valeton-gp50 SETTLE_MS)
   editSettleMs: 25, // gap after live-edit commands (gp5-editor EDIT_SETTLE_MS)
   readTimeoutMs: 2500, // whole multi-frame reply must arrive within this
   ackTimeoutMs: 150, // per-frame ACK wait during writes/commands

@@ -6,7 +6,7 @@
 // Evidence (Suite 2.1.0 Dart, Android arm64 build): PresetModel.importIR 0x7bc550 (payload, addSendData(33),
 // charArray length 2048), ImportIRHelper._wavFileBytes2ListInt 0x815c14 (sample packing), PresetUtils.getFixId
 // 0x814fac + module_data.json "User IR 1..20" (fxid), ImportIRHelper.importIrIndex (name rule = SnapTone's).
-// Full write-up: .claude/skills/gp5-reverse-engineering/userir.md. Accepted by a GP-5 on 2026-10-10 (112 ACKs, 0x20 read-back).
+// Accepted by a GP-5 on 2026-10-10 (112 ACKs, 0x20 read-back).
 //
 // Data block: the first 512 samples of the IR at 44.1 kHz, each the sign-extended 24-bit value stored as int32
 // little-endian (NOT left-justified), zero-padded to 2048 bytes. No header, size or CRC.

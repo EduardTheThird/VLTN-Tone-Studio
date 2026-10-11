@@ -2,7 +2,7 @@
 // Same transport contract as the GP-5 toolkit:
 //   { name: string, send(bytes: Uint8Array): void, onMessage(cb: (bytes: Uint8Array) => void): void, close(): void|Promise<void> }
 //
-// Rules from the editor RE and OSS hardware work (skill valeton-gp200):
+// Rules from the editor RE and OSS hardware work:
 //  - no ACKs exist: never wait for one. Replies exist only for queries, the 0x2003 save echo and upload results.
 //  - pace like the editor: >= 10 ms between frames, 1 s after the last chunk of a multi-chunk message (also covers the
 //    ~0.8 s the pedal ignores commands after a write burst); one request in flight; queries 1000 ms x 3 resends.

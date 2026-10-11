@@ -3,7 +3,7 @@
 // of Valeton Suite show; behaviour the pedal has not been observed to do (e.g. param defaults after a model change) is
 // NOT invented. The presets decide the model: 507-byte files make a GP-5, 552-byte files a GP-50.
 //
-// GP-50 profile (skill valeton-gp50 simulator.md): GP-50 globals with int32 values, 0x42 patch-setting records with
+// GP-50 profile (Valeton Suite 2.1.0 RE): GP-50 globals with int32 values, 0x42 patch-setting records with
 // echoes, 0x4D masks, 0x44 order, 0x46/0x4B/0x5A preset management, 0x45 is-modified, 12 4F export, select via
 // 11 43 / CC#0 / Program Change, the full GP-50 CC chart, Sync resets, and faults (wedge on overrun, select race).
 // Forbidden functions (factory reset 0x3F, 0x1C, 0x33, firmware 0x60..0x6E, ...) are never answered, only recorded.
@@ -44,7 +44,7 @@ const isOn = (v) => v >= 64;
 
 // GP-5 0x10 record layout copied from a real GP-5 reply: [a, b, len, value]
 const GP5_GLOBALS = [[1, 1, 4, 0x01010006], [2, 1, 4, 1], [2, 2, 4, 80], [1, 2, 1, 0], [3, 2, 1, 100], [1, 3, 1, 0], [1, 4, 1, 0], [2, 4, 1, 0], [3, 4, 1, 1], [4, 4, 1, 1], [5, 4, 1, 0], [3, 3, 1, 0], [7, 4, 2, 3]];
-// GP-50 records (reference.md §5, all int32) with plausible menu defaults; (4,10) and (1,13) only on firmware 1.1.0.
+// GP-50 records (Suite 2.1.0 RE, all int32) with plausible menu defaults; (4,10) and (1,13) only on firmware 1.1.0.
 const GP50_GLOBALS = [
   [2, 1, 1], [1, 2, 0], [2, 2, 50], [1, 3, 0], [3, 3, 0], [4, 3, 0], [1, 4, 0], [2, 4, 0], [3, 4, 0], [4, 4, 1], [5, 4, 1],
   [1, 5, 0], [5, 5, 3], [6, 5, 4], [1, 6, 0], [2, 6, 0], [1, 9, 0], [2, 9, 1], [1, 10, 3], [2, 10, 0], [3, 10, 0], [1, 11, 1],
@@ -153,7 +153,7 @@ export class MockGp5 {
     this.#listener = cb;
   }
 
-  /** Reopening the port of a GP-50 that wedges on overruns wedges it (valeton-gp50 hardware anecdote). */
+  /** Reopening the port of a GP-50 that wedges on overruns wedges it (drewmerc302/valeton-gp50 hardware anecdote). */
   #reopen() {
     if (this.#listener && this.gp50 && this.wedgeOnOverrun) this.wedged = true;
   }
@@ -230,7 +230,7 @@ export class MockGp5 {
     }
   }
 
-  /** GP-50 CC chart (reference.md §4); the GP-5-only CCs 22/23/29/30 fall through and are ignored. */
+  /** GP-50 CC chart (GP-50 manual); the GP-5-only CCs 22/23/29/30 fall through and are ignored. */
   #ccGp50(cc, v) {
     const step = isOn(v) ? 1 : -1;
     const bpm = () => parsePrst(this.#prst()).settings.bpm;

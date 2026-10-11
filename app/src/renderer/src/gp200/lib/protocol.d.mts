@@ -233,7 +233,7 @@ export const encode: {
   deletePatch(slot: number): Msg;
 };
 
-/** Why a frame must never be sent (SKILL.md safety rule 1), or null. */
+/** Why a frame must never be sent (firmware jump, updater, destructive globals), or null. */
 export function dangerOf(bytes: Bytes): string | null;
 export function dangerOfMessage(msg: Message): string | null;
 export class DangerousFrameError extends Error {

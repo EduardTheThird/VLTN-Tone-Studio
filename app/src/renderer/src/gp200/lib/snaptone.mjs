@@ -2,7 +2,7 @@
 //
 // The GP-200 editor runs the same clone pipeline as Valeton Suite for the GP-5 (NAM render -> HTKPA fit -> 0x2288
 // "VTSI" blob) and then cuts the second float array (the impulse response) to 1024 taps: 0x88 header + 0x1200 bytes
-// of float data = 0x1288 bytes, CRC-16/MODBUS recomputed (RE @0x100115a30 + an MIT upload capture, protocol.md §7).
+// of float data = 0x1288 bytes, CRC-16/MODBUS recomputed (RE @0x100115a30 + an MIT upload capture).
 // The blob travels in record 0x1013, zero-padded to 0x2000 bytes.
 //
 // Blob layout (little-endian): 0x00 "VTSI" | 0x04 u32 size | 0x08 u16 CRC-16/MODBUS over [0x0C, size) stored
