@@ -1,32 +1,37 @@
 # Plan: wire the GP-200 family into the app (phase 6, remaining work)
 
-Status 2026-10-11, branch `feature/gp50-support`. Follows `docs/device-expansion-plan.md` phase 6. Line numbers are as of commit `be7de7b`; expect drift.
+Status 2026-10-11, branch `feature/gp50-support`. Follows `docs/device-expansion-plan.md` phase 6. Line numbers drift; search by name.
 
 ## Where we are
 | piece | state |
 |---|---|
 | GP-200 protocol lib `app/src/renderer/src/gp200/lib` (codec, `.prst`, catalog builder, session, `MockGp200`) | done, 115 toolkit tests green, nothing run on hardware |
-| `Gp200Driver` (`state/driver/gp200-driver.ts`) + `gp200-globals.ts` | done, driver tests green; **not registered** (`DRIVER_FAMILIES = ["gp5"]`) |
-| effect-catalog import from the user's `algorithm.xml` (host API, IPC, web host, `gp200/app/catalog-store.ts`, `catalog-adapter.ts`, `screens/device/Gp200CatalogPanel.tsx`) | done; **panel not mounted** |
-| registry profiles `gp200` / `gp200lt` / `gp200jr` (`shared/devices.ts`) | done; `simulator: false` |
-| store, screens | GP-5 preset model only. A GP-200 connects to "not supported yet" |
+| `Gp200Driver` + `gp200-globals.ts` | done and **registered** (`DRIVER_FAMILIES = ["gp5", "gp200"]`); the simulator runs at `FAST_SIMULATOR` pace |
+| effect-catalog import from the user's `algorithm.xml` (`gp200/app/catalog-store.ts`, `catalog-adapter.ts`) | loads when a GP-200 family pedal connects; **`Gp200CatalogPanel` not mounted** (G0) |
+| registry profiles `gp200` / `gp200lt` / `gp200jr` | `simulator: true`; `writable: false` on the LT and JR (no memory writes on a real unit until one is tested) |
+| store and files (step 1) | done: every family connects, syncs, edits, saves, renames, writes and backs up; Rig, Library, Tones, Device and Song render on `?mock=gp200*` |
+| screens | GP-5 layouts with GP-200 data: step 2 below |
 
-The GP-5 and GP-50 work, the ponytail cuts and the UI fixes U1–U14 are committed. Gates: `npm run typecheck`, `npm test`, `npm run test:toolkit` from `app/`, plus browser smoke runs on `?mock=gp200`, `?mock=gp200lt`, `?mock=gp200jr`, and `?mock=gp5` / `?mock=gp50` unchanged.
+Gates: `npm run typecheck`, `npm test`, `npm run test:toolkit` from `app/`, plus a browser smoke on `?mock=gp200`, `?mock=gp200lt`, `?mock=gp200jr` and `?mock=gp5` / `?mock=gp50` unchanged.
 
-## Step 1: foundation (one agent; everything else depends on it)
-1. **Preset model per family.** Today `toPresetState` / `editLocal` / `saveToSlot` / `rename` in `state/device.ts` (~L63-85, 162-166, 663, 675) and `library/RenameConfirmDialog.tsx` parse and edit through the GP-5 `parsePrst` / `applyEdits`, which throw on GP-200 bytes. The rename path throws *after* the pedal was already renamed. Add one family codec seam (`parse`, `applyEdits`, `rebuild`), with GP-200 built on `gp200/lib/prst.mjs` (`parsePrst`, `parsePatch`, `applyEdits`, `buildPrst`). Map the GP-200 vocabulary: `tempo` vs `bpm`, `chain{order,sendPos,returnPos}` vs `order`, `ctrl[8]` masks vs fs1/fs2, `exp[9]`, `quickAccess[3]`, pan, loop mode, send/return level, style, author, note.
-2. **Types.** `BlockCode` needs WAH and VOL. `PresetState.device` widens beyond `Gp5FamilyKey`. Footswitches become generic controls (fs1/fs2 on the GP-5 family, CTRL 1-8 on the GP-200), and there is an EXP per family. `Globals` / `GlobalName` become family-aware (`setGlobal` already accepts GP-200 names in the driver).
-3. **Catalog.** Load `useGp200Catalog` on connect. Map models with `catalog-adapter.ts` (block-aware lookup, menu values with gaps). Re-model the open preset when the catalog loads. If no catalog is present, show blocks as "Unknown model" with a clear state, not a crash.
-4. **Block roles from the profile, not indices:** AMP, CAB (5 on the GP-200, 4 on the GP-5), capture block (NS on the GP-5 family; AMP or DST by SnapTone slot on the GP-200), movable/core sets, FX-loop nodes. Hard-coded spots: `Pedalboard.tsx` (blocks[9] as NS), `ChainOverview.tsx`, `AmpCabView.tsx` (blocks[4] as CAB), `ModelPicker.tsx`, `rig/order.ts` (AMP=3, CAB=4, MOVABLE, GP-5 `validateOrder`), `components/write/MiniChain.tsx`, `library/Inspector.tsx`, `song/tonematch/ir-store.ts` (`CAB = 4` would switch NR off on a GP-200).
-5. **Register:** `DRIVER_FAMILIES` + `FACTORIES` (`state/driver/types.ts`, `index.ts`), `simulator: true` on the GP-200 profiles. Map the `bootloader` code (`Gp200UpdaterError`) and the `Gp200Error` codes in `state/connection-error.ts`. Gate features per family: `exportPreset` / `liveBpm` are verified features on the GP-200 and must not hide behind "GP-50 extras".
-6. **Files and writes:**
-   - `ConfirmWriteDialog.tsx` `writeFrameCount` uses the GP-5 encoder, so it crashes for 1224-byte files. Use a per-family frame count, and no "frames acknowledged" copy (the GP-200 sends no ACKs).
-   - `sniffPrst` reports LT/JR files as `gp200`; compare by family where the model doesn't matter.
-   - `conversion.ts`: GP-200 ↔ LT/JR is the same format, not lossy.
-   - `preset-summary.ts` returns null for GP-200 files.
-   - `library/import.ts` rejects GP-200 files.
-   - "Clear" needs an empty slot, which the GP-200 doesn't have.
-7. **Tests to update:** `state/device.registry.test.ts`, `screens/device/guidance.test.ts`, `screens/library/import.test.ts`. Add store tests over `MockGp200` for gp200 / lt / jr: connect + sync, edits, save, rename, write, catalog absent / present.
+## Step 1: foundation (done: 6344815, f6d5c52, d95479d)
+What step 2 builds on; all of it lives in files no step-2 agent owns.
+- **Preset model** (`state/device-types.ts`): `PresetState.device` is any model; `footswitches: number[][]`, one block list per switch (FS1/FS2, or every CTRL record of a GP-200 patch: 8, also on the LT and JR; how many to show is the screen's call); `exp` stays GP-50 only; `gp200: Gp200Fields | null` holds author, note, pan, style, FX loop (mode, send/return level, send/return position), the 9 EXP entries (EXP 1A, 1B, 2 × 3) and the 3 Quick Access knobs. `BlockCode` adds WAH and VOL; `Gp5BlockCode` is the GP-5 family's. `ParamInfo` may carry `values` (menus with gaps) and `offAtMin`.
+- **Codec seam** (`state/preset-codec.ts`): `toPresetState`, `editPrst(prst, PresetEdits)`, `modelFor(device, block, fxid, params?)`, `modelsFor(device, block)`, `defaultParamsFor(device, block, fxid)`, `clampParamValue`, `orderError`. GP-200 models come from the imported catalog and are block-aware; without a catalog blocks have no model ("Unknown model").
+- **Store** (`state/device.ts`): `editPatch(Gp200Edit)` edits the GP-200 fields locally (they reach the pedal on save; the session has live commands for most of them, not wired yet); `setFootswitches(lists)`; tempo clamps to `profile.tempo` (GP-200 40-250); renaming the active GP-200 slot with unsaved edits is refused (the pedal saves the edit buffer to rename it); the catalog loads on connect and re-describes the open preset when it is imported or removed; unsaved-changes rows cover the GP-200 fields.
+- **Helpers** (`state/device-model.ts`): `switchLabel(device, i)`, `globalSpecsFor` (GP-200 table) with `SettingSpec`, `writesLocked(device, mode)`, `acksFrames(device)`, per-family `EXPERIMENTAL_FEATURES` (none on the GP-200), `writeFrameCount` (7 frames on the GP-200). Registry: `profile.tempo`, `profile.writable`, `profile.captureBlock(slot)`.
+- **Rig rules** (`screens/rig/order.ts`): every helper takes the device; AMP/CAB from the profile; all GP-200 blocks move; interim grouping keeps every block visible (AMP and CAB in the amp group, the rest before/after AMP).
+- **Files**: summaries, the mini chain, the Inspector, import, the write dialog and conversion handle GP-200 family files; GP-200 ↔ LT/JR files need no conversion.
+- **Fixed on the way**: a live param edit that read the edit buffer while another patch was selected was sent with the old model's fxid into the new patch (`Gp200Driver` now drops stale reads and edits).
+
+Left for step 2 or later (not blockers):
+- `midi-log.ts` still decodes as GP-5 SysEx: GP-200 traffic shows as "SysEx" out and "Unreadable frame" in (D).
+- "Clear" refuses on models without empty slots with a message; the Library still offers it and an Empty tab (C, G20). "Duplicate" on a GP-200 says "Clear one first" (C).
+- GP-200 SnapTones play in the AMP (0-4) or DST (5-9) block as fxid `0x0F00000n`; the Rig, picker and Tones still think in NS terms (A G13, C G16).
+- The GP-200 "modified" state (the `0x1011` dirty push, `Gp200Session.dirty`) isn't a driver feature yet, so at connect an edited edit buffer reads as saved.
+- Preset summaries are cached per byte array: one made before a catalog import keeps "Unknown model" until the bytes are read again.
+- `--block-wah` / `--block-vol` tokens don't exist yet (A G14); `art.ts` has interim colours.
+- The settings screen throws on a change for a read-only LT/JR on a real pedal (store refuses); it should disable the controls (D).
 
 ## Step 2: UI (four agents in parallel, disjoint files, after step 1)
 Issue ids come from the UI × model review.
