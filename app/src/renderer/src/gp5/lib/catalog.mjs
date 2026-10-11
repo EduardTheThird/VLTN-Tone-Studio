@@ -1,6 +1,8 @@
 // Effect/model catalog lookups for the GP-5 and GP-50. Data: ./catalog-data.mjs (generated, one merged list).
 // Every lookup takes the device key ("gp5" | "gp50"): the GP-50 has 3 more models and tempo-sync params that the
 // GP-5 lacks, so a model's param list depends on the pedal.
+// Param fields: name, index (algId), min, max, step, default, unit?, toggle?, labels? (enum: labels[value]),
+// syncs? (on a Sync toggle: algId of the Time/Rate param it switches to note divisions).
 import { BLOCKS } from "./protocol.mjs";
 import { MODELS as ALL_MODELS, SNAPTONE_PARAMS } from "./catalog-data.mjs";
 
@@ -74,6 +76,34 @@ export function defaultParams(fxid, device) {
   const out = new Array(8).fill(0);
   for (const p of modelByFxid(fxid, device)?.params ?? []) out[p.index] = p.default;
   return out;
+}
+
+/** Note divisions a synced Time/Rate param holds as an index 0..10 (GP-50, Valeton Suite 2.1.0 RE). */
+export const SYNC_DIVISIONS = Object.freeze(["1/1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16"]);
+/** Division index the pedal sets when Sync turns on (1/4); turning Sync off restores the param's default. */
+export const SYNC_ON_DIVISION = 4;
+
+/** The Sync toggle param that switches param `algId` of model `fxid` to note divisions, or undefined. */
+export function syncToggleFor(fxid, algId, device) {
+  return modelByFxid(fxid, device)?.params.find((p) => p.syncs === algId);
+}
+
+/** True when param `algId` of a block (model `fxid`, current `params`) is synced and so holds a division index. */
+export function isSynced(fxid, algId, params, device) {
+  const toggle = syncToggleFor(fxid, algId, device);
+  return !!toggle && params[toggle.index] >= 0.5;
+}
+
+/**
+ * The param spec as the pedal currently shows it: a synced Time/Rate becomes a 0..10 index labelled with
+ * SYNC_DIVISIONS; anything else is returned unchanged. undefined when the model has no such param.
+ */
+export function displayedParam(fxid, algId, params, device) {
+  const p = modelByFxid(fxid, device)?.params.find((x) => x.index === algId);
+  if (!p || !isSynced(fxid, algId, params, device)) return p;
+  const { unit, ...rest } = p;
+  void unit;
+  return { ...rest, min: 0, max: SYNC_DIVISIONS.length - 1, step: 1, default: SYNC_ON_DIVISION, labels: SYNC_DIVISIONS };
 }
 
 /** Human-readable view of a parsed preset (from prst.parsePrst; its `device` selects the catalog). */

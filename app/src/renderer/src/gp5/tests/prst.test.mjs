@@ -37,7 +37,7 @@ test("the body length identifies the pedal", () => {
   assert.equal(deviceByBodyLength(500), null);
 });
 
-test("GP-50 presets: u8 volume and footswitch mode bytes survive edits", () => {
+test("GP-50 presets: u8 volume, BPM and footswitch edits; the state bytes follow the enabled blocks", () => {
   const out = applyEdits(voxNam, { volume: 64, bpm: 90, footswitches: { fs1: [0, 2], fs2: [] } });
   assert.equal(out.length, 552);
   assert.ok(isCrcValid(out));
@@ -45,7 +45,9 @@ test("GP-50 presets: u8 volume and footswitch mode bytes survive edits", () => {
   assert.equal(p.device, "gp50");
   assert.deepEqual([p.settings.volume, p.settings.bpm], [64, 90]);
   assert.deepEqual(p.footswitches, { fs1: [0, 2], fs2: [] });
-  assert.deepEqual(out.subarray(-2), voxNam.subarray(-2), "the 2 GP-50 footswitch mode bytes are kept");
+  assert.deepEqual(Array.from(out.subarray(-2)), [0x05, 0x05], "FS1 holds a disabled block (DST), FS2 is empty");
+  const allOn = applyEdits(out, { blocks: { DST: { enabled: true } } });
+  assert.deepEqual(Array.from(allOn.subarray(-2)), [0x06, 0x05], "every FS1 block is on -> 06");
 });
 
 test("applyEdits changes only the addressed bytes and fixes the CRC", () => {

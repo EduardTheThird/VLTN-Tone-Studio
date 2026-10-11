@@ -97,13 +97,32 @@ export function cloneToSnapToneFile(blob) {
   return out;
 }
 
-/** Suite's name rule: keep allowed ASCII characters, cut to 10, "X" when nothing printable is left. */
+/** Cut to 10 characters; "X" when nothing but spaces is left (Suite's last step for both name rules). */
+const finishName = (kept) => {
+  const cut = kept.slice(0, SNAPTONE.NAME_MAX);
+  return cut.trim() === "" ? "X" : cut;
+};
+
+/** Suite's per-character rule (Reg.dataFileNameReg): keep printable ASCII except `$`, space allowed; User IR names use it. */
+export function sanitizeUserIrName(name) {
+  return finishName(
+    Array.from(String(name ?? ""))
+      .filter((c) => NAME_CHAR.test(c))
+      .join("")
+  );
+}
+
+/**
+ * Suite 2.1.0's SnapTone import name (Import50TcHelper, valeton-gp50 reference.md §6): drop ".nam", apply the
+ * per-character rule, then its sanitizeFileName step removes punctuation and whitespace, so only letters and digits
+ * remain; cut to 10, "X" when empty.
+ */
 export function sanitizeSnapToneName(name) {
-  const kept = Array.from(String(name ?? ""))
-    .filter((c) => NAME_CHAR.test(c))
-    .join("")
-    .slice(0, SNAPTONE.NAME_MAX);
-  return kept.trim() === "" ? "X" : kept;
+  return finishName(
+    String(name ?? "")
+      .replaceAll(".nam", "")
+      .replace(/[^a-zA-Z0-9]/g, "")
+  );
 }
 
 export const isUserSnapToneSlot = (slot) => Number.isInteger(slot) && slot >= SNAPTONE.FIRST_USER_SLOT && slot <= SNAPTONE.LAST_USER_SLOT;

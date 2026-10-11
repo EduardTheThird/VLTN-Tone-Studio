@@ -8,10 +8,11 @@
 //     0x0001 (16)  settings: [01 20 04 00 u32 VOL][02 20 04 00 u32 BPM]
 //     0x0002 (390) tone: [01 30 04 00 u32 enable mask][02 30 0a 00 order[10]][03 30 28 00 10 x u32 fxid][04 30 40 01 80 x f32]
 //     0x0003 (8)   footswitch masks fs1 u32, fs2 u32
-// GP-50 differences: header "GP-50", devtag "GP50", settings 0x0001 = 59 bytes (u8 VOL, u32 BPM + 8 more records
-// ids 3..10), footswitch 0x0003 = 10 bytes (masks + 2 mode bytes). The 390-byte tone block is identical.
+// GP-50 differences: header "GP-50", devtag "GP50", settings 0x0001 = 59 bytes (u8 VOL, u32 BPM + the 8 EXP records
+// ids 3..10, protocol.mjs PATCH_SETTINGS), footswitch 0x0003 = 10 bytes (masks + 2 state bytes: 06 when the switch has
+// blocks and all are enabled, else 05). The 390-byte tone block is identical.
 
-import { BLOCKS, crc8 } from "./protocol.mjs";
+import { BLOCKS, EXP_FIELDS, PATCH_SETTINGS, blockMask, blocksOfMask, crc8, patchSettingValue, u32le } from "./protocol.mjs";
 
 export const NAME_OFF = 0x19;
 export const NAME_LEN = 16;
@@ -136,9 +137,42 @@ function writeName(b, name) {
   }
 }
 
+const SETTING_FIELD = Object.freeze(Object.fromEntries(Object.entries(PATCH_SETTINGS).map(([field, s]) => [s.id, field])));
+/** Byte size of each settings TLV entry by id. GP-5: VOL and BPM as u32; GP-50 (RE, reference.md §2.1) below. */
+export const SETTING_SIZES = Object.freeze({ gp5: Object.freeze({ 1: 4, 2: 4 }), gp50: Object.freeze({ 1: 1, 2: 4, 3: 1, 4: 4, 5: 4, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1 }) });
+/** EXP settings of an empty GP-50 slot (gp50-blank.prst). */
+export const EXP_DEFAULTS = Object.freeze({ on: false, paramMin: 0, paramMax: 100, volPosition: 0, volMin: 0, volMax: 100, targetModule: 0, targetParam: 0 });
+
+/** Call fn(field, valueOffset, size) for every entry of the settings record 0x0001. */
+function forEachSetting(b, rec, fn) {
+  const d = view(b);
+  for (let i = rec.offset; i + 4 <= rec.offset + rec.length; ) {
+    const len = d.getUint16(i + 2, true);
+    fn(SETTING_FIELD[b[i]], i + 4, len);
+    i += 4 + len;
+  }
+}
+
+/** Settings record 0x0001 (absent = the defaults) -> { volume, bpm, exp? (GP-50) }. */
+function readSettings(b, rec, device) {
+  const d = view(b);
+  const raw = {};
+  if (rec)
+    forEachSetting(b, rec, (field, at, len) => {
+      raw[field] = len === 4 ? d.getInt32(at, true) : len === 2 ? d.getUint16(at, true) : b[at];
+    });
+  const settings = { volume: raw.volume ?? 50, bpm: raw.bpm ?? 120 };
+  if (device === "gp50") settings.exp = Object.fromEntries(EXP_FIELDS.map((f) => [f, f === "on" ? raw.on === 1 : (raw[f] ?? EXP_DEFAULTS[f])]));
+  return settings;
+}
+
+/** GP-50 footswitch state byte (reference.md §2.2): 06 when the switch has blocks and all of them are enabled, else 05. */
+export const footswitchState = (enableMask, fsMask) => (fsMask !== 0 && (enableMask & fsMask) === fsMask ? 0x06 : 0x05);
+
 /**
  * Parse a .prst into a plain object.
  * blocks[k] = { name, enabled, fxid, params: number[8] } in storage order NR..NS.
+ * settings = { volume, bpm, exp? } — `exp` (EXP_FIELDS, `on` as a boolean) only for GP-50 presets.
  */
 export function parsePrst(prst) {
   const b = u8(prst);
@@ -154,25 +188,13 @@ export function parsePrst(prst) {
     fxid: d.getUint32(off.models + k * 4, true),
     params: Array.from({ length: PARAMS_PER_BLOCK }, (_, i) => d.getFloat32(off.params + (k * PARAMS_PER_BLOCK + i) * 4, true)),
   }));
-  const settings = { volume: 50, bpm: 120 };
-  const fs = { fs1: [], fs2: [] };
-  for (const r of listRecords(b)) {
-    if (r.tag === 0x0001) {
-      for (let i = r.offset; i + 4 <= r.offset + r.length; ) {
-        const id = b[i];
-        const len = d.getUint16(i + 2, true);
-        const v = len === 4 ? d.getInt32(i + 4, true) : len === 2 ? d.getUint16(i + 4, true) : b[i + 4];
-        if (id === 1) settings.volume = v;
-        else if (id === 2) settings.bpm = v;
-        i += 4 + len;
-      }
-    } else if (r.tag === 0x0003) {
-      const bits = (m) => BLOCKS.flatMap((_, k) => (m & (1 << k) ? [k] : []));
-      fs.fs1 = bits(d.getUint32(r.offset, true));
-      fs.fs2 = bits(d.getUint32(r.offset + 4, true));
-    }
-  }
-  return { device: device.key, name: readName(b), crcValid: isCrcValid(b), mask, order, blocks, settings, footswitches: fs };
+  const recs = listRecords(b);
+  const settings = readSettings(b, recs.find((r) => r.tag === 0x0001), device.key);
+  const fsRec = recs.find((r) => r.tag === 0x0003);
+  const footswitches = fsRec
+    ? { fs1: blocksOfMask(d.getUint32(fsRec.offset, true)), fs2: blocksOfMask(d.getUint32(fsRec.offset + 4, true)) }
+    : { fs1: [], fs2: [] };
+  return { device: device.key, name: readName(b), crcValid: isCrcValid(b), mask, order, blocks, settings, footswitches };
 }
 
 /** Validate a chain order: permutation of 0..9 with the fixed core DST,NS,AMP,CAB,EQ contiguous. */
@@ -184,15 +206,67 @@ export function validateOrder(order) {
   return null;
 }
 
+/** Most blocks one GP-50 footswitch may switch (Suite UI rule). */
+export const MAX_FOOTSWITCH_BLOCKS = 3;
+
+/** Validate GP-50 footswitch assignments: block indices 0..9, at most 3 per switch, no block on both. null = valid. */
+export function validateFootswitches(fs1, fs2) {
+  for (const [label, list] of [["FS1", fs1], ["FS2", fs2]]) {
+    if (!Array.isArray(list) || new Set(list).size !== list.length || list.some((k) => !Number.isInteger(k) || k < 0 || k > 9))
+      return `${label} must list distinct block indices 0..9`;
+    if (list.length > MAX_FOOTSWITCH_BLOCKS) return `${label} can switch at most ${MAX_FOOTSWITCH_BLOCKS} blocks`;
+  }
+  if (fs1.some((k) => fs2.includes(k))) return "a block can be on one footswitch only";
+  return null;
+}
+
+function applySettings(b, rec, edits, device) {
+  const d = view(b);
+  const values = {};
+  if (edits.volume !== undefined) values.volume = Math.max(0, Math.min(100, Math.trunc(edits.volume)));
+  if (edits.bpm !== undefined) values.bpm = Math.max(PATCH_SETTINGS.bpm.min, Math.min(PATCH_SETTINGS.bpm.max, Math.trunc(edits.bpm)));
+  if (edits.exp) {
+    if (device !== "gp50") throw new RangeError("only GP-50 presets have EXP settings");
+    for (const [field, v] of Object.entries(edits.exp)) {
+      if (!EXP_FIELDS.includes(field)) throw new RangeError(`unknown EXP setting ${field}`);
+      values[field] = patchSettingValue(field, v);
+    }
+  }
+  forEachSetting(b, rec, (field, at, len) => {
+    if (values[field] === undefined) return;
+    if (len === 4) d.setInt32(at, values[field], true);
+    else b[at] = values[field];
+  });
+}
+
+/** Write the footswitch masks (both models) and, on a GP-50, recompute the two state bytes from the enable mask. */
+function applyFootswitches(b, rec, device, enableMask, edit) {
+  const d = view(b);
+  const fs1 = edit?.fs1 ?? blocksOfMask(d.getUint32(rec.offset, true));
+  const fs2 = edit?.fs2 ?? blocksOfMask(d.getUint32(rec.offset + 4, true));
+  if (device === "gp50") {
+    const err = validateFootswitches(fs1, fs2);
+    if (err) throw new RangeError(err);
+  }
+  d.setUint32(rec.offset, blockMask(fs1), true);
+  d.setUint32(rec.offset + 4, blockMask(fs2), true);
+  if (device === "gp50") b.set([footswitchState(enableMask, blockMask(fs1)), footswitchState(enableMask, blockMask(fs2))], rec.offset + 8);
+}
+
 /**
  * Return a NEW .prst with edits applied and CRC fixed. edits:
- *  { name, volume (0..100), bpm (40..300), order: number[10], footswitches: { fs1: number[], fs2: number[] },
+ *  { name, volume (0..100), bpm (40..260), exp: Partial<{ on, paramMin, paramMax, volPosition, volMin, volMax,
+ *    targetModule, targetParam }> (GP-50 only), order: number[10], footswitches: { fs1?: number[], fs2?: number[] },
  *    blocks: { [blockIndexOrName]: { enabled?, fxid?, params?: { [algId]: value } } } }
+ * On a GP-50 a footswitch or on/off edit also recomputes the footswitch state bytes; footswitches are validated
+ * with validateFootswitches.
  */
 export function applyEdits(prst, edits = {}) {
   const b = Uint8Array.from(u8(prst));
+  const device = detectDevice(b).key;
   const d = view(b);
   const off = toneOffsets(b);
+  let enableChanged = false;
   for (const [key, e] of Object.entries(edits.blocks ?? {})) {
     const k = /^\d+$/.test(key) ? Number(key) : BLOCKS.indexOf(key.toUpperCase());
     if (k < 0 || k > 9) throw new RangeError(`unknown block ${key}`);
@@ -200,6 +274,7 @@ export function applyEdits(prst, edits = {}) {
     if (e.enabled !== undefined) {
       const m = d.getUint32(off.mask, true);
       d.setUint32(off.mask, (e.enabled ? m | (1 << k) : m & ~(1 << k)) >>> 0, true);
+      enableChanged = true;
     }
     for (const [alg, value] of Object.entries(e.params ?? {})) {
       const i = Number(alg);
@@ -213,24 +288,9 @@ export function applyEdits(prst, edits = {}) {
     b.set(edits.order, off.order);
   }
   const recs = listRecords(b);
-  if (edits.volume !== undefined || edits.bpm !== undefined) {
-    const r = recs.find((x) => x.tag === 0x0001);
-    for (let i = r.offset; i + 4 <= r.offset + r.length; ) {
-      const id = b[i];
-      const len = d.getUint16(i + 2, true);
-      const put = (v) => (len === 4 ? d.setInt32(i + 4, v, true) : (b[i + 4] = v & 0xff));
-      if (id === 1 && edits.volume !== undefined) put(Math.max(0, Math.min(100, Math.trunc(edits.volume))));
-      if (id === 2 && edits.bpm !== undefined && len === 4) put(Math.max(40, Math.min(300, Math.trunc(edits.bpm))));
-      i += 4 + len;
-    }
-  }
-  if (edits.footswitches) {
-    const r = recs.find((x) => x.tag === 0x0003);
-    for (const [key, o] of [["fs1", 0], ["fs2", 4]]) {
-      const list = edits.footswitches[key];
-      if (list) d.setUint32(r.offset + o, list.reduce((m, k) => m | (1 << k), 0) >>> 0, true);
-    }
-  }
+  if (edits.volume !== undefined || edits.bpm !== undefined || edits.exp) applySettings(b, recs.find((x) => x.tag === 0x0001), edits, device);
+  if (edits.footswitches || (enableChanged && device === "gp50"))
+    applyFootswitches(b, recs.find((x) => x.tag === 0x0003), device, d.getUint32(off.mask, true), edits.footswitches);
   if (edits.name !== undefined) writeName(b, edits.name);
   return refixCrc(b);
 }
@@ -248,8 +308,53 @@ export function rebuildPrst(name, body, deviceKey) {
 /** Body part of a .prst (what the device returns for read 0x41). */
 export const bodyOf = (prst) => u8(prst).slice(BODY_OFF);
 
+/** 390-byte tone record payload: enable mask, order[10], fxid[10], f32 params[80]. */
+function tonePayload({ mask, order, fxids, params }) {
+  const out = new Uint8Array(390);
+  const v = view(out);
+  out.set(REC.MASK, 0);
+  v.setUint32(4, mask >>> 0, true);
+  out.set(REC.ORDER, 8);
+  out.set(order, 12);
+  out.set(REC.MODELS, 22);
+  fxids.forEach((fx, k) => v.setUint32(26 + k * 4, fx >>> 0, true));
+  out.set(REC.PARAMS, 66);
+  params.forEach((p, i) => v.setFloat32(70 + i * 4, p, true));
+  return out;
+}
+
+/** Assemble a .prst of `target` from its parts (settings = { volume, bpm, exp? }, tone = 390-byte record payload). */
+function assemblePrst(target, name, settings, tone, footswitches) {
+  const sizes = SETTING_SIZES[target.key];
+  const values = { volume: settings.volume, bpm: settings.bpm, ...(target.key === "gp50" ? { ...EXP_DEFAULTS, ...settings.exp } : {}) };
+  const settingsPayload = concat(
+    ...Object.entries(sizes).map(([id, size]) => {
+      const entry = new Uint8Array(4 + size);
+      entry.set([Number(id), 0x20, size, 0]);
+      const v = Number(values[SETTING_FIELD[id]]);
+      if (size === 4) view(entry).setInt32(4, v, true);
+      else entry[4] = v;
+      return entry;
+    })
+  );
+  const enableMask = view(tone).getUint32(4, true);
+  const fs1 = blockMask(footswitches.fs1);
+  const fs2 = blockMask(footswitches.fs2);
+  const fsPayload = concat(u32le(fs1), u32le(fs2));
+  const fsRecord = target.key === "gp50" ? concat(fsPayload, [footswitchState(enableMask, fs1), footswitchState(enableMask, fs2)]) : fsPayload;
+  const body = concat(
+    tlv(0x00ff, concat(hx("010004000100000002000400"), target.devtag)),
+    tlv(0x0000, hx("011004000a0000000210040008000000")),
+    tlv(0x0001, settingsPayload),
+    tlv(0x0002, tone),
+    tlv(0x0003, fsRecord)
+  );
+  return rebuildPrst(name, body, target.key);
+}
+
 /**
  * Convert GP-50 .prst -> GP-5 (or back). The 390-byte tone block is shared, so this is a re-wrap.
+ * GP-5 -> GP-50 gets the blank EXP settings and computed footswitch state bytes; GP-50 -> GP-5 drops EXP.
  * GP-50-only models block conversion unless { force: true } (their model records get zeroed).
  */
 export function convertPrst(prst, targetKey, { force = false } = {}) {
@@ -257,10 +362,7 @@ export function convertPrst(prst, targetKey, { force = false } = {}) {
   const source = detectDevice(b);
   const target = deviceProfile(targetKey);
   if (source.key === target.key) return b.slice();
-  const d = view(b);
-  const recs = listRecords(b);
-  const get = (tag) => recs.find((r) => r.tag === tag);
-  const toneRec = get(0x0002);
+  const toneRec = listRecords(b).find((r) => r.tag === 0x0002);
   if (!toneRec || toneRec.length !== 390) throw new Error("unexpected tone block");
   const tone = b.slice(toneRec.offset, toneRec.offset + 390);
   const models = find(tone, REC.MODELS) + 4;
@@ -273,31 +375,16 @@ export function convertPrst(prst, targetKey, { force = false } = {}) {
   if (problems.length && !force) throw new Error(`no GP-5 equivalent for ${problems.join(", ")}; pass { force: true } to drop them`);
   if (force) for (let k = 0; k < N_BLOCKS; k++) if (GP50_ONLY_FXIDS[tv.getUint32(models + k * 4, true)]) tv.setUint32(models + k * 4, 0, true);
   const { settings, footswitches } = parsePrst(b);
-  const mask = (list) => list.reduce((m, k) => m | (1 << k), 0) >>> 0;
-  const w = (n, v) => {
-    const o = new Uint8Array(n);
-    const ov = view(o);
-    if (n === 4) ov.setUint32(0, v >>> 0, true);
-    else o[0] = v;
-    return o;
-  };
-  const settingsPayload =
-    target.key === "gp5"
-      ? concat([1, 0x20, 4, 0], w(4, settings.volume), [2, 0x20, 4, 0], w(4, settings.bpm))
-      : concat(
-          [1, 0x20, 1, 0, settings.volume & 0xff],
-          [2, 0x20, 4, 0],
-          w(4, settings.bpm),
-          ...[[3, 1, 0], [4, 4, 0], [5, 4, 100], [6, 1, 0], [7, 1, 0], [8, 1, 100], [9, 1, 0], [10, 1, 0]].map(([id, n, v]) => concat([id, 0x20, n, 0], w(n, v)))
-        );
-  const fsPayload = concat(w(4, mask(footswitches.fs1)), w(4, mask(footswitches.fs2)), target.key === "gp50" ? [5, 5] : []);
-  const body = concat(
-    tlv(0x00ff, concat(hx("010004000100000002000400"), target.devtag)),
-    tlv(0x0000, hx("011004000a0000000210040008000000")),
-    tlv(0x0001, settingsPayload),
-    tlv(0x0002, tone),
-    tlv(0x0003, fsPayload)
-  );
-  void d;
-  return rebuildPrst(readName(b), body, target.key);
+  return assemblePrst(target, readName(b), { volume: settings.volume, bpm: settings.bpm }, tone, footswitches);
+}
+
+// The empty GP-50 slot (drewmerc302/valeton-gp50 app/static/data/presets.json slot 0, MIT; fixtures/gp50-blank.prst).
+const BLANK_FXIDS = [0x1b, 0, 0x03000000, 0x07000001, 0x0a000001, 0x01000035, 0x04000000, 0x0b000000, 0x0c00000b, 0x0f000000];
+const BLANK_PARAMS = [[20], [20, 50], [40, 70, 50], [30, 50, 50], [50], [0, 0, 0, 0, 0, 50], [50, 0.5, 50], [20, 500, 30], [30, 0, 50], [50, 50, 50, 50, 50]];
+
+/** A new empty GP-50 preset (what the pedal holds in a cleared slot), named `name`. */
+export function blankGp50Prst(name = DEVICES.gp50.emptyName) {
+  const params = BLANK_PARAMS.flatMap((p) => [...p, ...new Array(PARAMS_PER_BLOCK - p.length).fill(0)]);
+  const tone = tonePayload({ mask: 0, order: DEFAULT_ORDER, fxids: BLANK_FXIDS, params });
+  return assemblePrst(DEVICES.gp50, name, { volume: 50, bpm: 120, exp: EXP_DEFAULTS }, tone, { fs1: [], fs2: [] });
 }

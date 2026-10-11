@@ -40,7 +40,8 @@ test("live-edit commands match gp5-editor and TonexOneController vectors", () =>
   assert.equal(one(encode.setParam("AMP", 0, 50)), norm("F0 00 0F 00 01 00 00 00 0E 01 01 04 08 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04 08 04 02 F7"));
   assert.equal(one(encode.setParam("DLY", 1, 500)), norm("F0 00 0D 00 01 00 00 00 0E 01 01 04 08 00 07 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 0F 0A 04 03 F7"));
   assert.equal(one(encode.setPatchVolume(80)), norm("F0 00 0E 00 01 00 00 00 0A 01 01 04 02 00 01 02 00 00 00 00 00 05 00 00 00 00 00 00 00 F7"));
-  assert.equal(one(encode.setGlobal("inputTrim", -6)), norm("F0 0B 0E 00 01 00 00 00 0A 01 01 01 01 00 01 00 03 00 00 00 00 0F 0A 00 00 00 00 00 00 F7"));
+  // globals go out as int32 LE like Valeton Suite (the old signed-byte form sent -6 as FA 00 00 00)
+  assert.equal(one(encode.setGlobal("inputTrim", -6)), norm("F0 0B 01 00 01 00 00 00 0A 01 01 01 01 00 01 00 03 00 00 00 00 0F 0A 0F 0F 0F 0F 0F 0F F7"));
   assert.equal(one(encode.setGlobal("masterVolume", 75)), norm("F0 0D 0A 00 01 00 00 00 0A 01 01 01 01 00 02 00 02 00 00 00 00 04 0B 00 00 00 00 00 00 F7"));
   assert.equal(
     one(encode.savePreset(7, "Clean")),

@@ -12,7 +12,7 @@
 // little-endian (NOT left-justified), zero-padded to 2048 bytes. No header, size or CRC.
 
 import { CMD, KIND, u32le } from "./protocol.mjs";
-import { SNAPTONE, sanitizeSnapToneName } from "./snaptone.mjs";
+import { SNAPTONE, sanitizeUserIrName } from "./snaptone.mjs";
 
 export const USER_IR = Object.freeze({
   SLOTS: 20,
@@ -57,7 +57,7 @@ export function encodeImportUserIr(slot, name, data) {
   const fxId = userIrFxId(slot);
   const d = toBytes(data);
   if (d.length !== USER_IR.DATA_BYTES) throw new Error(`a User IR data block is ${USER_IR.DATA_BYTES} bytes, got ${d.length}`);
-  const label = sanitizeSnapToneName(name);
+  const label = sanitizeUserIrName(name);
   const out = new Uint8Array(DATA_AT + USER_IR.DATA_BYTES);
   out.set([KIND.SET, CMD.IMPORT_USER_IR, ...u32le(0), ...u32le(fxId)], 0);
   for (let i = 0; i < label.length; i++) out[10 + i] = label.charCodeAt(i);
