@@ -6,9 +6,6 @@ import type { SlotName } from "@/state/device-types";
 import type { UserIrFile } from "@/userir/convert";
 import { irSlotLabel } from "./store";
 
-// The GP-5 family converter's output (see userir/convert); the slot count comes from the pedal's profile.
-const KEPT_MS = (USER_IR.SAMPLES / USER_IR.RATE) * 1000;
-
 /** What the slot holds now, or null when it is empty (or the pedal's list isn't read). */
 export function irOccupant(userIRs: SlotName[] | null, slot: number | null): string | null {
   if (slot === null || !userIRs) return null;
@@ -16,10 +13,10 @@ export function irOccupant(userIRs: SlotName[] | null, slot: number | null): str
   return s && s.kind !== "empty" && !isEmptySlotName(s.name) ? s.name : null;
 }
 
-/** What the converter kept of the file: both pedals convolve 512 samples at 44.1 kHz (11.6 ms). */
+/** What the converter kept of the file: the pedal convolves its first samples at 44.1 kHz (512 = 11.6 ms on the GP-5 family, 1024 on the GP-200 family). */
 export function irSummary(ir: UserIrFile): string {
   const lengthMs = (ir.sourceFrames / ir.sourceRate) * 1000;
-  const kept = `${KEPT_MS.toFixed(1)} ms (${USER_IR.SAMPLES} samples at 44.1 kHz)`;
+  const kept = `${((ir.samples / USER_IR.RATE) * 1000).toFixed(1)} ms (${ir.samples} samples at 44.1 kHz)`;
   const used = ir.truncated
     ? `Uses the first ${kept} of this ${lengthMs.toFixed(1)} ms IR; the pedal keeps no more.`
     : `Uses all ${lengthMs.toFixed(1)} ms of it; the pedal keeps up to ${kept}.`;

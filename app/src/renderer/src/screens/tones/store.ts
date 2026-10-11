@@ -4,12 +4,12 @@ import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { DEFAULT_DEVICE, pedalName, presetDevice } from "@/state/device-model";
+import { DEFAULT_DEVICE, pedalName, presetDevice, profileOrDefault } from "@/state/device-model";
 import { profileFor, snapToneLabel } from "@shared/devices";
 import type { DeviceKey } from "@/state/device-types";
 import { notifySuccess } from "@/app/notify";
 import type { PresetRef } from "./usage";
-import { convertToSnapTone } from "@/snaptone/convert";
+import { convertToClone, snapToneFile } from "@/snaptone/convert";
 import { prepareUserIr, type UserIrFile } from "@/userir/convert";
 
 export interface ListState {
@@ -41,9 +41,9 @@ export interface SendState {
   error: string | null;
   /** SnapTone: the checked NAM file */
   check: NamCheck | null;
-  /** SnapTone: the converted 2696-byte file, kept for retrying the write */
+  /** SnapTone: the converted clone, kept for retrying the write; the upload file for the connected pedal is cut from it */
   file: Uint8Array | null;
-  /** IR: the converted 2048-byte User IR block and what was cut, kept for retrying the write */
+  /** IR: the converted User IR block and what was cut, kept for retrying the write */
   ir: UserIrFile | null;
   /** Target slot chosen by the user, in the pedal's user range (GP-5: SnapTone 50–79, User IR 0–19 shown as User IR 1–20) */
   proposedSlot: number | null;
@@ -368,7 +368,7 @@ export async function runSend(toneId: number): Promise<void> {
       const source = await host.tones.prepareIr(req);
       storeRecord(source.record);
       patchSend(toneId, { step: 2 });
-      patchSend(toneId, { phase: "ready", step: 3, ir: prepareUserIr(source.wav) });
+      patchSend(toneId, { phase: "ready", step: 3, ir: prepareUserIr(source.wav, profileOrDefault(useDevice.getState().device).userIr.samples) });
     } catch (e) {
       sendError(toneId, e);
     }
@@ -380,7 +380,7 @@ export async function runSend(toneId: number): Promise<void> {
     const source = await host.tones.prepareSnapTone(req);
     storeRecord(source.record);
     patchSend(toneId, { phase: "converting", step: 3, check: source.check, progress: 0 });
-    const file = await convertToSnapTone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal);
+    const file = await convertToClone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal);
     patchSend(toneId, { phase: "ready", step: 4, file, progress: 0 });
   } catch (e) {
     if (!abort.signal.aborted) sendError(toneId, e);
@@ -398,7 +398,7 @@ export async function writeSnapTone(toneId: number): Promise<void> {
   const slot = s.proposedSlot;
   patchSend(toneId, { phase: "writing", step: 4, error: null, progress: 0 });
   try {
-    const stored = await useDevice.getState().uploadSnapTone(slot, s.name, s.file, { onProgress: (progress) => patchSend(toneId, { progress }) });
+    const stored = await useDevice.getState().uploadSnapTone(slot, s.name, snapToneFile(s.file, linkDevice()), { onProgress: (progress) => patchSend(toneId, { progress }) });
     const rec = await host.tones.link(toneId, { kind: "snaptone", slot, slotName: stored, device: linkDevice() });
     storeRecord(rec);
     patchSend(toneId, { phase: "linked", step: 5, linkedSlot: slot });
