@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
+import { pedalName } from "@/state/device-model";
 import type { DeviceProfile } from "@shared/devices";
 import { knownBody, useLibraryActions } from "./actions";
 import { endDrag, hasFiles, LOCAL_MIME, SLOTS_MIME, startDrag } from "./dnd";
@@ -59,6 +60,8 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const drag = useLibrary((s) => s.drag);
   const actions = useLibraryActions();
   const pedal = usePedalName();
+  // The slots listed are the connected pedal's, or the last connected one's from its cache: name that model.
+  const listPedal = useDevice((s) => pedalName(s.device));
   const profile = useProfile();
   const writable = useWritable();
   const connected = status === "connected";
@@ -219,7 +222,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const loading = !names.length && (status === "connecting" || status === "idle");
   const head = (
     <div className="flex min-h-8 items-center gap-3 px-2">
-      <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On {pedal}</h2>
+      <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On {listPedal}</h2>
       {names.length > 0 && <span className="text-sm whitespace-nowrap text-silkscreen-3">{hasEmpty ? `${used} used, ${rows.length - used} empty` : `${rows.length} slots`}</span>}
       <span className="flex-1" />
       {hasEmpty && (
@@ -241,7 +244,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   );
 
   return (
-    <section aria-label={`On ${pedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
+    <section aria-label={`On ${listPedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
       {head}
       {status !== "connected" && names.length > 0 && <OfflineBanner />}
       {connected && profile.family === "gp200" && <CatalogBanner />}
