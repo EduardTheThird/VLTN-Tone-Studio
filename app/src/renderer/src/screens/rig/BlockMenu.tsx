@@ -5,7 +5,6 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
-  ContextMenuPortal,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuSub,
@@ -68,16 +67,13 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
               Assign to CTRL
               {on.length > 0 && <ContextMenuShortcut>{on.map((i) => i + 1).join(", ")}</ContextMenuShortcut>}
             </ContextMenuSubTrigger>
-            {/* In a portal: inside the menu, its overflow and backdrop filter would clip the submenu */}
-            <ContextMenuPortal>
-              <ContextMenuSubContent>
-                {switches.map((which) => (
-                  <ContextMenuCheckboxItem key={which} checked={on.includes(which)} onCheckedChange={() => toggleFootswitch(which, block.index)}>
-                    {switchLabel(preset.device, which)}
-                  </ContextMenuCheckboxItem>
-                ))}
-              </ContextMenuSubContent>
-            </ContextMenuPortal>
+            <ContextMenuSubContent>
+              {switches.map((which) => (
+                <ContextMenuCheckboxItem key={which} checked={on.includes(which)} onCheckedChange={() => toggleFootswitch(which, block.index)}>
+                  {switchLabel(preset.device, which)}
+                </ContextMenuCheckboxItem>
+              ))}
+            </ContextMenuSubContent>
           </ContextMenuSub>
         ) : (
           preset &&

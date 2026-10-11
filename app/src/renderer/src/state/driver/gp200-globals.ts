@@ -160,13 +160,13 @@ export const GP200_EQ_BANDS: readonly Gp200EqBand[] = Object.freeze([
   { label: "High cut", ...GLOBAL_EQ_INDEX.highCut },
 ]);
 
-/** Range of one Global EQ value; `off`: the end that switches a cut off. */
+/** Range of one Global EQ value; `off`: the end of the range that switches a cut off (reads OFF on a dial). */
 export interface Gp200EqSpec {
   min: number;
   max: number;
   step: number;
   unit?: string;
-  off?: number;
+  off?: "min" | "max";
 }
 
 const FREQ = { min: 20, max: 20000, step: 1, unit: "Hz" };
@@ -178,8 +178,8 @@ const FREQ = { min: 20, max: 20000, step: 1, unit: "Hz" };
  */
 export function gp200EqSpec(index: number): Gp200EqSpec {
   if (index === GLOBAL_EQ_INDEX.level) return { min: 0, max: 100, step: 1 };
-  if (index === GLOBAL_EQ_INDEX.lowCut.freq) return { ...FREQ, min: 19, off: 19 };
-  if (index === GLOBAL_EQ_INDEX.highCut.freq) return { ...FREQ, max: 20001, off: 20001 };
+  if (index === GLOBAL_EQ_INDEX.lowCut.freq) return { ...FREQ, min: 19, off: "min" };
+  if (index === GLOBAL_EQ_INDEX.highCut.freq) return { ...FREQ, max: 20001, off: "max" };
   for (const b of GP200_EQ_BANDS) {
     if (index === b.en) return { min: 0, max: 1, step: 1 };
     if (index === b.freq) return FREQ;

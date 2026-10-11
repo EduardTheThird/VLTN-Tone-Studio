@@ -47,7 +47,6 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
           disabled={disabled}
           onChange={(v) => useDevice.getState().setGlobalEq(index, v)}
         />
-        {spec.off !== undefined && values[index] === spec.off && <span className="text-xs text-silkscreen-4">Off</span>}
       </div>
     );
   };
