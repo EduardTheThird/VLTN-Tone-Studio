@@ -6,6 +6,7 @@ import { useNav } from "@/state/nav";
 import { useUi, type StatusHint, type StatusMessage } from "@/state/ui";
 import { host } from "@/host";
 import { connectionView } from "@/screens/device/guidance";
+import { liveStatusText } from "@/screens/rig/live-edits";
 import { keyLabel } from "./keys";
 
 const LED: Record<StatusMessage["led"], string> = { on: "bg-led-on", off: "bg-led-off", warn: "bg-led-warn", fault: "bg-led-fault" };
@@ -31,6 +32,7 @@ export function StatusBar() {
   const override = useUi((s) => s.message);
   const hints = useUi((s) => s.hints) ?? DEFAULT_HINTS[screen] ?? DEFAULT_HINTS.other;
   const error = useDevice((s) => s.error);
+  const features = useDevice((s) => s.features);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
   const live = status === "connected";
@@ -41,7 +43,7 @@ export function StatusBar() {
     (busy
       ? { led: "warn", text: `${busy.label}…` }
       : live
-        ? { led: "on", text: "Live: every change plays on the pedal, nothing is stored until you save" }
+        ? { led: "on", text: liveStatusText(features) }
         : errorView
           ? { led: errorView.led, text: errorView.statusText }
           : status === "connecting"

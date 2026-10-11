@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupOf, groupsOf, moveBlock, moveToGroup, nudge } from "./order";
+import { groupOf, groupsOf, joinAnd, moveBlock, moveToGroup, nudge, orderHint } from "./order";
 import { MERGE_MS, invert, pushEdit, type Edit } from "./history";
 
 // 0 NR, 1 PRE, 2 DST, 3 AMP, 4 CAB, 5 EQ, 6 MOD, 7 DLY, 8 RVB, 9 NS
@@ -55,6 +55,24 @@ describe("moveToGroup", () => {
   });
   it("returns null when the block is already there", () => {
     expect(moveToGroup(DEFAULT, 8, "after")).toBeNull();
+  });
+});
+
+describe("orderHint", () => {
+  const CODES = ["NR", "PRE", "DST", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "NS"];
+  it("names the pedals that can move and the ones that stay, per side", () => {
+    expect(orderHint(DEFAULT, "before", CODES)).toBe("Drag a pedal to reorder. NR and PRE can move; DST and NS stay in front of the amp.");
+    expect(orderHint(DEFAULT, "after", CODES)).toBe("Drag a pedal to reorder. MOD, DLY and RVB can move; EQ stays right after the cab.");
+  });
+  it("follows the pedals when they change sides", () => {
+    const allBefore = [0, 1, 6, 7, 8, 2, 9, 3, 4, 5];
+    expect(orderHint(allBefore, "before", CODES)).toBe("Drag a pedal to reorder. NR, PRE, MOD, DLY and RVB can move; DST and NS stay in front of the amp.");
+    expect(orderHint(allBefore, "after", CODES)).toBe("EQ stays right after the cab. To bring a pedal here, drag it onto “After the amp” in the chain overview.");
+  });
+  it("joins lists in plain English", () => {
+    expect(joinAnd([])).toBe("");
+    expect(joinAnd(["A"])).toBe("A");
+    expect(joinAnd(["A", "B", "C"])).toBe("A, B and C");
   });
 });
 

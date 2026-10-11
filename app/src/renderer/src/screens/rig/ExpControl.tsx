@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
+import { useNav } from "@/state/nav";
 import { expTargetParams } from "@/state/device-model";
 import type { ExpEdit, ExpSettings, PresetState } from "@/state/device-types";
 import { editExp } from "./edits";
@@ -41,20 +42,36 @@ export function ExpControl({ preset, exp, disabled }: { preset: PresetState; exp
   const pedal = usePedalName();
   const usable = useDevice((s) => s.features.includes("exp"));
   const locked = useDevice((s) => s.lockedFeatures.includes("exp"));
+  // GP-50 "EXP/FS jack": 0 = expression pedal, else a footswitch, and the pedal ignores the preset's EXP settings
+  const jackIsFootswitch = useDevice((s) => (s.globals?.expJack ?? 0) !== 0);
   const off = disabled || !usable;
   const ids = { on: useId(), target: useId(), param: useId(), range: useId(), pos: useId() };
   const volume = exp.targetModule === VOLUME_TARGET;
   const params = expTargetParams(preset, exp.targetModule);
+  const shown = exp.on ? targetLabel(preset, exp.targetModule).split(" · ")[0] : "Off";
+  const openDevice = (param: string | null) => {
+    setOpen(false);
+    useNav.getState().go("device", param);
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="xs" aria-label={`EXP pedal ${exp.on ? "on" : "off"}, settings`} className="-mx-1 gap-1.5 px-1.5 text-sm font-normal text-silkscreen-3">
+        <Button variant="ghost" size="xs" aria-label={`EXP ${shown}, settings`} className="-mx-1 gap-1.5 px-1.5 text-sm font-normal text-silkscreen-3">
           EXP
-          <span className={cn("font-semibold", exp.on ? "text-silkscreen" : "text-silkscreen-4")}>{exp.on ? targetLabel(preset, exp.targetModule).split(" · ")[0] : "Off"}</span>
+          <span className={cn("font-semibold", exp.on ? "text-silkscreen" : "text-silkscreen-4")}>{shown}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex w-[320px] flex-col gap-4">
+      <PopoverContent align="start" className="flex w-[320px] flex-col gap-4 bg-surface-solid-raised!">
+        {!usable &&
+          (locked ? (
+            <Note text="Changing EXP settings needs GP-50 extras (experimental)." action="Open Settings" onAction={() => openDevice("settings")} />
+          ) : (
+            <Note text={`Connect the ${pedal} to change its EXP settings.`} />
+          ))}
+        {jackIsFootswitch && (
+          <Note text={`The ${pedal}'s EXP/FS jack is set to footswitch, so it ignores these settings until the jack is set to an expression pedal.`} action="Open Device" onAction={() => openDevice(null)} />
+        )}
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor={ids.on} className="text-sm font-[550] text-silkscreen-2">
             EXP pedal
@@ -136,16 +153,22 @@ export function ExpControl({ preset, exp, disabled }: { preset: PresetState; exp
             />
           </>
         )}
-
-        {!usable && (
-          <p className="text-xs text-pretty text-silkscreen-3">
-            {locked
-              ? "Changing EXP settings needs GP-50 extras (experimental), which you can turn on in Settings."
-              : `Connect the ${pedal} to change its EXP settings.`}
-          </p>
-        )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Why the settings below can't be changed or have no effect, with the way to fix it. */
+function Note({ text, action, onAction }: { text: string; action?: string; onAction?(): void }) {
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-md bg-well px-3 py-2.5 text-xs text-pretty text-silkscreen-2">
+      {text}
+      {action && (
+        <Button variant="outline" size="xs" onClick={onAction}>
+          {action}
+        </Button>
+      )}
+    </div>
   );
 }
 

@@ -5,16 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useDevice, usePedalName } from "@/state/device";
 import { editBpm } from "./edits";
+import { saveOnlyNote, useLiveMode } from "./live-edits";
 import { BPM_MAX, BPM_MIN, tap } from "./tempo";
 
-/** Where a tempo edit goes: live on a GP-50 with extras, else into the preset (reaches the pedal on save). */
+/** Where a tempo edit goes: live where the pedal has a tempo command (GP-50 extras), else with the save. */
 function useTempoNote(): string {
   const pedal = usePedalName();
-  const live = useDevice((s) => s.features.includes("liveBpm"));
-  const locked = useDevice((s) => s.lockedFeatures.includes("liveBpm"));
-  if (live) return `Plays on the ${pedal} right away. Save the preset to keep it.`;
-  if (locked) return `The ${pedal} gets the new tempo when you save. Turn on GP-50 extras in Settings to hear it right away.`;
-  return `The ${pedal} gets the new tempo when you save the preset.`;
+  const mode = useLiveMode("liveBpm");
+  return mode === "live" ? `Plays on the ${pedal} right away. Save the preset to keep it.` : saveOnlyNote(mode, "The new tempo", pedal);
 }
 
 /** Rig header tempo: the preset's BPM with a field and a tap button; taps are averaged in the app. */

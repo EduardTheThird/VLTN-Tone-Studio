@@ -21,7 +21,7 @@ export interface DialProps {
   className?: string;
 }
 
-/** Compact machined dial (mockups' .knob): track + value ring, dark cap, white pointer. Same input model as gear knobs. */
+/** Compact machined dial: track + value ring, dark cap, white pointer. Same input model as gear knobs. */
 export function Dial({ label, ariaLabel, value, spec, onChange, disabled, size = 46, color = "var(--silkscreen-2)", layout = "column", className }: DialProps) {
   const [active, setActive] = useState(false);
   const r = size / 2 - 5;

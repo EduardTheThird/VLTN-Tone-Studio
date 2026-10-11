@@ -1,4 +1,4 @@
-// Shading helpers for the gear drawings (port of design/mockups/assets/gear.js). The drawings are the one place
+// Shading helpers for the gear drawings. The drawings are the one place
 // with hand-tuned colours: block hues mirror the --block-* tokens because the shading math needs hex values.
 import type { BlockCode } from "@/state/device-types";
 
@@ -66,7 +66,7 @@ const WORDS: Record<string, string | null> = {
   pink: "#d95596",
 };
 
-/** Finish from the model name, then the block colour family, then a hash (gear.js finishFor). */
+/** Finish from the model name, then the block colour family, then a hash. */
 export function finishFor(name: string, base: string, h: number, want?: Finish, color?: string): FinishInfo {
   const pick: Finish = want ?? (["matte", "matte", "matte", "noir", "frost"] as const)[(h >>> 9) % 5];
   const word = Object.keys(WORDS).find((w) => new RegExp(`\\b${w}\\b`, "i").test(name));

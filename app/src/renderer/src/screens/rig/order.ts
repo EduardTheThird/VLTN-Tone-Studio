@@ -65,3 +65,19 @@ export function nudge(order: readonly number[], block: number, dir: -1 | 1): num
   }
   return null;
 }
+
+/** "A", "A and B", "A, B and C". */
+export const joinAnd = (items: readonly string[]) => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+/**
+ * Board hint for one side of the amp, from the order rules: which of its pedals can move and which stay put.
+ * `codes[b]` is the block code of block index b.
+ */
+export function orderHint(order: readonly number[], group: "before" | "after", codes: readonly string[]): string {
+  const blocks = groupsOf(order)[group];
+  const movable = blocks.filter(isMovable).map((b) => codes[b]);
+  const fixed = blocks.filter((b) => !isMovable(b)).map((b) => codes[b]);
+  const stays = fixed.length ? `${joinAnd(fixed)} ${fixed.length === 1 ? "stays" : "stay"} ${group === "before" ? "in front of the amp" : "right after the cab"}` : "";
+  if (!movable.length) return `${stays}. To bring a pedal here, drag it onto “${GROUP_TITLE[group]}” in the chain overview.`;
+  return `Drag a pedal to reorder. ${joinAnd(movable)} can move${stays ? `; ${stays}` : ""}.`;
+}

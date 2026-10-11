@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CheckIcon, ExternalLinkIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
-import { profileFor, type SlotTables } from "@shared/devices";
+import { profileFor, snapToneLabel, type SlotTables } from "@shared/devices";
 import { defaultParams, modelsForBlock } from "@/gp5/lib/catalog.mjs";
 import { notifyError } from "@/app/notify";
 import { Capture, GearFor } from "@/components/gear";
@@ -70,7 +70,7 @@ function tilesFor(code: BlockCode, device: DeviceKey, snapTones: SlotName[] | nu
       const name = snapTones?.find((s) => s.slot === n)?.name;
       const user = isUserSnapTone(n, snapTone);
       const empty = user && name === "Empty";
-      return { model: m, title: name ? `${n} ${name}` : m.title, sub: user ? (empty ? "Empty user slot" : "User slot") : "Factory slot", empty };
+      return { model: m, title: name ? `${n} ${name}` : snapToneLabel(device, n), sub: user ? (empty ? "Empty user slot" : "User slot") : "Factory slot", empty };
     });
   return models.map((m) => {
     if (m.type === "User IR") {
@@ -124,7 +124,7 @@ const thumbBlock = (b: BlockState, m: ModelInfo, device: DeviceKey): BlockState 
 
 const THUMB_W: Partial<Record<BlockCode, string>> = { AMP: "w-[104px]", CAB: "w-[88px]" };
 
-/** Visual model browser over the board (rig.html#picker): arrows audition on the pedal, Enter keeps, Esc reverts. */
+/** Visual model browser over the board: arrows audition on the pedal, Enter keeps, Esc reverts. */
 export function ModelPicker() {
   const picker = useRig((s) => s.picker);
   const preset = useDevice((s) => s.preset);
@@ -309,34 +309,37 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
         </Button>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[210px_1fr]">
-        <nav aria-label="Blocks" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-seam px-2.5 py-3">
-          {cats.map((b) => {
-            const c = blockCodes(preset.device)[b];
-            const enabled = inGroup.includes(b);
-            return (
-              <button
-                key={b}
-                type="button"
-                disabled={!enabled}
-                aria-current={b === blockIndex}
-                onClick={() => b !== blockIndex && void switchBlock(b)}
-                className={cn(
-                  "flex h-[34px] shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-silkscreen-2 enabled:hover:bg-accent disabled:cursor-default disabled:opacity-35",
-                  b === blockIndex && "bg-white/14 text-silkscreen shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]",
-                )}
-              >
-                <span className="size-[9px] flex-none rounded-full" style={{ background: `var(--block-${c.toLowerCase()})` }} />
-                {CATEGORY[c]}
-                <span className="ml-auto text-xs tracking-wide text-silkscreen-4">{c}</span>
-              </button>
-            );
-          })}
-          <p className="mx-1.5 mt-auto mb-1 text-xs text-pretty text-silkscreen-4">
+        <div className="flex min-h-0 flex-col border-r border-seam">
+          <nav aria-label="Blocks" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pt-3 pb-2">
+            {cats.map((b) => {
+              const c = blockCodes(preset.device)[b];
+              const enabled = inGroup.includes(b);
+              return (
+                <button
+                  key={b}
+                  type="button"
+                  disabled={!enabled}
+                  aria-current={b === blockIndex}
+                  onClick={() => b !== blockIndex && void switchBlock(b)}
+                  className={cn(
+                    "flex h-[34px] shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-silkscreen-2 enabled:hover:bg-accent disabled:cursor-default disabled:opacity-35",
+                    b === blockIndex && "bg-white/14 text-silkscreen shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]",
+                  )}
+                >
+                  <span className="size-[9px] flex-none rounded-full" style={{ background: `var(--block-${c.toLowerCase()})` }} />
+                  {CATEGORY[c]}
+                  <span className="ml-auto text-xs tracking-wide text-silkscreen-4">{c}</span>
+                </button>
+              );
+            })}
+          </nav>
+          {/* outside the scrolling list, so it stays readable when the list has to scroll (short windows) */}
+          <p className="mx-4 mb-3 shrink-0 text-xs text-pretty text-silkscreen-4">
             {code === "NS"
-              ? "Captures live in SnapTone slots on the pedal. New ones arrive through Tones and the capture editor."
+              ? "SnapTones live in slots on the pedal. Add new ones in Tones."
               : `Each ${pedal} block holds one kind of effect, so ${article(NOUN[code])} ${NOUN[code]} can only go in ${code}.`}
           </p>
-        </nav>
+        </div>
         <div ref={gridRef} role="listbox" aria-label={`${CATEGORY[code]} models`} className="grid min-h-0 auto-rows-max grid-cols-[repeat(auto-fill,minmax(118px,1fr))] content-start gap-2.5 overflow-auto px-4 py-3.5">
           {visible.map((t) => {
             const current = t.model.fxid === original.fxid;

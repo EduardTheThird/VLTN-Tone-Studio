@@ -26,7 +26,7 @@ const HINTS = [
   { keys: ["M"], label: "change model" },
 ];
 
-/** Rig: the active preset drawn as gear, edited live on the pedal (design/screens/rig.md). */
+/** Rig: the active preset drawn as gear, edited live on the pedal. */
 export function RigScreen() {
   const preset = useDevice((s) => s.preset);
   const saved = useDevice((s) => s.saved);

@@ -41,10 +41,13 @@ export function Pedal(props: PedalProps) {
         const ring = f.kind === "noir" ? f.accent : light ? "#1c1c1e" : "#ffffff";
         const track = light ? "rgba(0,0,0,.16)" : "rgba(255,255,255,.18)";
         const darkCaps = f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
-        const layout: PedalLayout =
+        const hasT = toggles.length > 0;
+        const picked: PedalLayout =
           knobs.length > 4
             ? "dense"
             : (want ?? (knobs.length <= 1 ? "hero" : knobs.length === 3 ? (["tri", "row"] as const)[(h >>> 4) % 2] : knobs.length === 4 ? "grid" : (["row", "hero"] as const)[(h >>> 4) % 2]));
+        // A big knob over small ones leaves no room for a switch row: their labels would sit under the knobs.
+        const layout: PedalLayout = picked === "hero" && hasT && knobs.length > 1 ? "row" : picked;
         const focusId = active ?? focus;
         const parts: ReactNode[] = [];
 
@@ -87,13 +90,13 @@ export function Pedal(props: PedalProps) {
           );
         };
 
-        const hasT = toggles.length > 0;
         let ty = 86;
         if (layout === "hero" && knobs.length) {
+          // with switches the hero has a single knob (see `layout`), raised so its label clears the switch row
           const rest = knobs.slice(1);
-          K(knobs[0], 50, hasT && rest.length ? 50 : 54, hasT && rest.length ? 13 : 15.5);
-          rest.forEach((k, i) => K(k, rest.length === 1 ? 50 : 24 + i * (52 / Math.max(1, rest.length - 1)), hasT ? 82 : 92, 7.5));
-          ty = rest.length ? 104 : 86;
+          K(knobs[0], 50, hasT ? 48 : 54, hasT ? 14 : 15.5);
+          rest.forEach((k, i) => K(k, rest.length === 1 ? 50 : 24 + i * (52 / Math.max(1, rest.length - 1)), 92, 7.5));
+          ty = 92;
         } else if (layout === "tri") {
           const pos = hasT ? [[27, 42], [73, 42], [50, 68]] : [[27, 46], [73, 46], [50, 74]];
           knobs.slice(0, 3).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 9 : 10));
@@ -103,7 +106,7 @@ export function Pedal(props: PedalProps) {
           knobs.slice(0, 4).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 8.5 : 9.5));
           ty = 102;
         } else if (layout === "dense") {
-          // more than four knobs (not in gear.js): three columns of small knobs
+          // more than four knobs: three columns of small knobs
           const rows = Math.ceil(knobs.length / 3);
           const dy = rows > 2 ? 22 : 28;
           knobs.forEach((k, i) => {

@@ -16,6 +16,7 @@ import { slotNameError } from "@/state/device-model";
 import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
 import { ExpControl } from "./ExpControl";
+import { FootswitchControl } from "./FootswitchControl";
 import { TempoControl } from "./TempoControl";
 import { useHistory } from "./history";
 import { useRig } from "./rig-store";
@@ -25,7 +26,7 @@ interface Props {
   connected: boolean;
 }
 
-/** Preset name, unsaved count, tempo, FS chips; undo/redo, Compare with saved, Discard, Save split button. */
+/** Preset name, unsaved count, tempo, footswitches, EXP; undo/redo, Compare with saved, Discard, Save split button. */
 export function RigHeader({ preset, connected }: Props) {
   const saved = useDevice((s) => s.saved);
   const unsaved = useDevice((s) => s.unsavedChanges);
@@ -131,8 +132,7 @@ export function RigHeader({ preset, connected }: Props) {
             <span>No unsaved changes</span>
           )}
           <TempoControl bpm={preset.bpm} disabled={!editable} />
-          <FsChips label="FS1" blocks={preset.footswitches.fs1} preset={preset} />
-          <FsChips label="FS2" blocks={preset.footswitches.fs2} preset={preset} />
+          <FootswitchControl preset={preset} disabled={!editable} />
           {preset.exp && <ExpControl preset={preset} exp={preset.exp} disabled={!editable} />}
         </div>
       </div>
@@ -271,27 +271,7 @@ function IconTip({ label, keys, children }: { label: string; keys: string[]; chi
   );
 }
 
-function FsChips({ label, blocks, preset }: { label: string; blocks: number[]; preset: PresetState }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      {label}
-      <span className="flex gap-1">
-        {blocks.length === 0 && <span className="text-silkscreen-4">none</span>}
-        {blocks.map((b) => {
-          const code = preset.blocks[b]?.code ?? "?";
-          return (
-            <span key={b} className="inline-flex h-5 items-center gap-[5px] rounded-pill px-[7px] text-xs font-semibold text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam-strong)]">
-              <span className="size-1.5 rounded-full" style={{ background: `var(--block-${code.toLowerCase()})` }} />
-              {code}
-            </span>
-          );
-        })}
-      </span>
-    </span>
-  );
-}
-
-/** overlays.md F: inline rename with a character counter (10 on the GP-5); commits on the pedal immediately. */
+/** Inline rename with a character counter (the model's name length); commits on the pedal immediately. */
 function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }) {
   const [value, setValue] = useState(preset.name.trimEnd());
   const [busy, setBusy] = useState(false);
@@ -342,9 +322,11 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
             if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) onDone();
           }}
           className={cn(
-            "h-10 w-[240px] rounded-sm bg-well px-3 text-[26px] font-bold text-silkscreen shadow-[inset_0_0_0_1px_var(--glass-edge)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--silkscreen)]",
+            "h-10 max-w-[40vw] rounded-sm bg-well px-3 text-[26px] font-bold text-silkscreen shadow-[inset_0_0_0_1px_var(--glass-edge)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--silkscreen)]",
             error && "shadow-[inset_0_0_0_1.5px_var(--led-fault)] focus-visible:shadow-[inset_0_0_0_1.5px_var(--led-fault)]",
           )}
+          // room for the longest name in wide letters (W ≈ 1.05em at this weight) plus the padding
+          style={{ width: `calc(${nameLength * 1.1}em + 24px)` }}
         />
         <span className={cn("text-xs tabular-nums", atLimit ? "text-led-warn" : "text-silkscreen-3")}>
           {value.length}/{nameLength}

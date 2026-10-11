@@ -1,4 +1,4 @@
-// Gear drawings (React port of design/mockups/assets/gear.js): role="img" art + accessible control layer.
+// Gear drawings: role="img" art + accessible control layer.
 export { Pedal, type PedalProps, type PedalLayout } from "./Pedal";
 export { EqPedal, Capture, type CaptureProps } from "./EqPedal";
 export { AmpHead, Cab, AmpPanel, type AmpProps } from "./Amp";

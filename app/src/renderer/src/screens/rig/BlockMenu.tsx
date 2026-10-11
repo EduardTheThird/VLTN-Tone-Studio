@@ -4,16 +4,18 @@ import {
   ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { modelTitle } from "@/components/gear";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { BlockState } from "@/state/device-types";
 import { copyBlock, pasteBlock } from "./clipboard";
 import { editEnabled, editOrder, footswitchToggle, resetToDefaults, toggleFootswitch } from "./edits";
 import { isMovable, nudge } from "./order";
+import { useLiveMode } from "./live-edits";
 import { useRig } from "./rig-store";
 
 /** Right-click menu of a pedal: on/off, change model, copy/paste settings, FS1/FS2, move, reset. */
@@ -22,6 +24,9 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
   const fs = preset?.footswitches;
   const order = useDevice((s) => s.preset?.order);
   const clip = useRig((s) => s.clipboard);
+  const pedal = usePedalName();
+  const fsMode = useLiveMode("liveFootswitches");
+  const orderMode = useLiveMode("liveOrder");
   const canPaste = !!clip && clip.code === block.code && !readOnly;
   const left = order && nudge(order, block.index, -1);
   const right = order && nudge(order, block.index, 1);
@@ -64,6 +69,7 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
             </ContextMenuCheckboxItem>
           );
         })}
+        {!readOnly && fsMode !== "live" && <SaveNote pedal={pedal} />}
         {isMovable(block.index) && (
           <>
             <ContextMenuSeparator />
@@ -75,6 +81,7 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
               Move later in the chain
               <ContextMenuShortcut>Alt →</ContextMenuShortcut>
             </ContextMenuItem>
+            {!readOnly && orderMode !== "live" && <SaveNote pedal={pedal} />}
           </>
         )}
         <ContextMenuSeparator />
@@ -84,4 +91,9 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/** Under the footswitch and move items when the pedal has no live command for them. */
+function SaveNote({ pedal }: { pedal: string }) {
+  return <ContextMenuLabel className="text-xs font-normal text-pretty text-silkscreen-3">Reaches the {pedal} when you save</ContextMenuLabel>;
 }

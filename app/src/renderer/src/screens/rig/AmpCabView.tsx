@@ -15,7 +15,7 @@ import { useRig } from "./rig-store";
 
 const sentence = (t?: string) => (t ? t.charAt(0) + t.slice(1).toLowerCase() : "");
 
-/** Amp head and cabinet side by side on the stage backdrop (rig.html#amp). */
+/** Amp head and cabinet side by side on the stage backdrop. */
 export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly: boolean }) {
   const amp = preset.blocks[3];
   const cab = preset.blocks[4];

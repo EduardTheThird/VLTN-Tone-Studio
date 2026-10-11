@@ -1,4 +1,5 @@
 import { useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
 import { Capture, Dial, GearFor, knobsForBlock, modelTitle, paramTitle } from "@/components/gear";
@@ -9,21 +10,17 @@ import { useDevice, usePedalName } from "@/state/device";
 import type { BlockState, PresetState } from "@/state/device-types";
 import { BlockMenu } from "./BlockMenu";
 import { editEnabled, editOrder, editParam } from "./edits";
-import { groupsOf, isMovable, moveBlock } from "./order";
+import { saveOnlyNote, useLiveMode } from "./live-edits";
+import { groupsOf, isMovable, moveBlock, orderHint } from "./order";
 import { useRig } from "./rig-store";
-import { snapToneName } from "./snaptone";
+import { snapToneIndex, snapToneName } from "./snaptone";
 import { useMediaQuery } from "./use-media-query";
 
 export const DRAG_MIME = "application/x-gp5-block";
 
-/** Pedal art width: scales with the window height left for the board (2:3 gear), rig.md › Minimum window.
- *  --rig-banner is the offline banner height (set by RigScreen). */
+/** Pedal art width: scales with the window height left for the board (2:3 gear), so a 1280×800 window still shows
+ *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). */
 const GEAR_W = "w-[clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),186px)]";
-
-const HINT: Record<"before" | "after", string> = {
-  before: "Drag a pedal to reorder. NR and PRE can move; DST and NS stay in front of the amp.",
-  after: "MOD, DLY and RVB can move; EQ stays right after the cab.",
-};
 
 function stateLine(b: BlockState) {
   if (b.code === "NS") return b.enabled ? "SnapTone on, replacing the amp and cab" : "SnapTone off";
@@ -50,13 +47,14 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
-  const nsSlot = snapToneName(preset.blocks[9], snapTones);
+  const nsSlot = snapToneName(preset.blocks[9], snapTones, preset.device);
+  const orderNote = saveOnlyNote(useLiveMode("liveOrder"), "The new order", pedal);
 
   const hint = readOnly
     ? `Showing the last read. Pedals can't be turned, switched or moved until the ${pedal} is back.`
     : view === "before" && nsOn
       ? `NS is on, so ${nsSlot} plays in place of the amp and cab.`
-      : HINT[view];
+      : `${orderHint(preset.order, view, preset.blocks.map((b) => b.code))}${orderNote && ` ${orderNote}`}`;
 
   const onDragOver = (target: number) => (e: DragEvent<HTMLDivElement>) => {
     if (drag === null) return;
@@ -90,7 +88,7 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
       <div role="list" aria-label="Pedals in signal order" className={cn("relative flex min-h-0 flex-1 items-start justify-center gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:none]", readOnly && "opacity-70")}>
         {blocks.map((b) =>
           b === 9 && nsOn ? (
-            <NsColumn key={b} block={preset.blocks[9]} readOnly={readOnly} name={nsSlot} />
+            <NsColumn key={b} block={preset.blocks[9]} readOnly={readOnly} name={nsSlot} device={preset.device} />
           ) : (
             <SlotColumn
               key={b}
@@ -120,7 +118,9 @@ export function BoardHead({ title, hint, keys }: { title: string; hint: string; 
   return (
     <div className="relative -mx-2.5 -mt-1.5 flex items-center gap-4 self-stretch rounded-lg bg-[rgb(10_10_12/0.66)] px-3.5 py-2">
       <h2 className="m-0 shrink-0 text-[15px] font-semibold">{title}</h2>
-      <span className="min-w-0 truncate text-sm text-silkscreen-3">{hint}</span>
+      <span className="min-w-0 truncate text-sm text-silkscreen-3" title={hint}>
+        {hint}
+      </span>
       <span className="grow" />
       {keys && (
         <span className="flex shrink-0 items-center gap-1 text-sm whitespace-nowrap text-silkscreen-3 max-[1320px]:hidden">
@@ -241,11 +241,12 @@ function SlotColumn({ block, readOnly, showValues, dropSide, dragging, onDragSta
   );
 }
 
-/** NS engaged: the capture plus its dials, wider than a pedal column (rig-snaptone.html). */
-function NsColumn({ block, readOnly, name }: { block: BlockState; readOnly: boolean; name: string }) {
+/** NS engaged: the capture plus its dials, wider than a pedal column. */
+function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOnly: boolean; name: string; device: DeviceKey }) {
   const selected = useRig((s) => s.selected === 9);
   const knobs = knobsForBlock(block);
   const short = useMediaQuery("(max-height: 820px)");
+  const slot = snapToneLabel(device, snapToneIndex(block.fxid));
   return (
     <BlockMenu block={block} readOnly={readOnly}>
       <div
@@ -268,7 +269,9 @@ function NsColumn({ block, readOnly, name }: { block: BlockState; readOnly: bool
           <div className="flex min-w-0 flex-1 flex-col gap-3.5 rounded-lg bg-[rgb(10_10_12/0.66)] px-4 py-3.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:px-3.5 [@media(max-height:820px)]:py-2.5">
             <div className="flex flex-col gap-1">
               <b className="text-[15px] leading-tight font-semibold text-silkscreen">{name}</b>
-              <span className="text-xs text-silkscreen-3">SnapTone slot {block.fxid & 0xff}, playing in place of the amp and cab</span>
+              <span className="text-xs text-silkscreen-3">
+                {name === slot ? "Playing" : `${slot}, playing`} in place of the amp and cab
+              </span>
             </div>
             <div className="flex justify-between border-t border-seam pt-3 [@media(max-height:820px)]:pt-2">
               {knobs.map((k) => (

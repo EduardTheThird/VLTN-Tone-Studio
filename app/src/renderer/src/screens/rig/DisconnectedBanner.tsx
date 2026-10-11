@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useDevice, usePedalName } from "@/state/device";
 import { useNav } from "@/state/nav";
 
-/** overlays.md C: not dismissable, disappears on reconnect. The Rig below shows the last read, read-only. */
+/** Not dismissable, disappears on reconnect. The Rig below shows the last read, read-only. */
 export function DisconnectedBanner() {
   const error = useDevice((s) => s.error);
   const pedal = usePedalName();
