@@ -263,6 +263,20 @@ async function updateRecord(toneId: number, fn: (r: ToneRecord) => ToneRecord): 
   return writeRecord(tonesDir(), fn(rec));
 }
 
+/** A downloaded IR tone's WAV (the newest model with a file on disk), for baking a cab into a SnapTone. No download. */
+async function readIr(toneId: number): Promise<Uint8Array> {
+  const rec = await readRecord(tonesDir(), toneId);
+  if (!rec || rec.format !== "ir") throw new HostError("not-found", "This impulse response hasn't been downloaded yet");
+  for (const model of [...rec.models].reverse()) {
+    const path = join(tonesDir(), String(toneId), model.file);
+    const size = (await stat(path).catch(() => null))?.size;
+    if (size === undefined) continue;
+    if (size > MAX_LOCAL_IR) throw new HostError("invalid", `${rec.title} is too large for an impulse response`);
+    return new Uint8Array(await readFile(path));
+  }
+  throw new HostError("not-found", `${rec.title} isn't downloaded anymore. Send it once from Tones to download it again.`);
+}
+
 export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
   handle("tones:account", () => account());
   handle("tones:markSplashSeen", () => patchState({ splashSeen: true }));
@@ -293,6 +307,7 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
     if (size > MAX_LOCAL_IR) throw new HostError("invalid", `${basename(path)} is too large for an impulse response`);
     return new Uint8Array(await readFile(path));
   });
+  handle("tones:readIr", (_e, toneId: number) => readIr(toneId));
   handle("tones:link", (_e, toneId: number, link: SlotLink | null) => updateRecord(toneId, (r) => linkRecord(r, link, new Date())));
   handle("tones:local", () => listRecords(tonesDir()));
 }

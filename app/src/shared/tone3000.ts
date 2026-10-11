@@ -102,6 +102,12 @@ const GEAR_LABEL: Record<T3kGear, string> = {
 };
 export const gearLabel = (g: string) => GEAR_LABEL[g as T3kGear] ?? g;
 
+/**
+ * The capture's gear includes the cab (TONE3000 "amp-cab"; NAM metadata "amp_cab", "amp_pedal_cab"): a cab IR baked
+ * into its SnapTone would put a second cab in the chain, so none is offered.
+ */
+export const gearIncludesCab = (gear: string | null | undefined): boolean => gear === "amp-cab" || gear === "amp_cab" || gear === "amp_pedal_cab";
+
 const LICENSE_LABEL: Record<string, string> = {
   t3k: "TONE3000 license",
   "cc-by": "CC BY, credit the creator",

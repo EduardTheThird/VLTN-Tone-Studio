@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { profileFor } from "@shared/devices";
-import { prepareUserIr } from "./convert";
+import { prepareUserIr, readWavMono } from "./convert";
 
 /** Samples a User IR keeps: 512 on the GP-5 family, 1024 on the GP-200 family. */
 const GP5 = profileFor("gp5").userIr.samples;
@@ -105,5 +105,30 @@ describe("prepareUserIr", () => {
     expect(() => prepareUserIr(noData, GP5)).toThrow(/no audio data/);
     expect(() => prepareUserIr(wavFile({ rate: 44100, bits: 24, data: new Uint8Array(0) }), GP5)).toThrow(/contains no audio/);
     expect(() => prepareUserIr(wavFile({ format: 3, rate: 44100, bits: 64, data: new Uint8Array(8) }), GP5)).toThrow(/isn't supported/);
+  });
+});
+
+describe("readWavMono", () => {
+  it("reads channel 0 of a 16-bit stereo file at its own rate", () => {
+    const bytes = new Uint8Array(3 * 4);
+    const v = new DataView(bytes.buffer);
+    [16384, -32768, 1].forEach((s, i) => {
+      v.setInt16(i * 4, s, true);
+      v.setInt16(i * 4 + 2, 12345, true); // right channel, ignored
+    });
+    const { samples, rate } = readWavMono(wavFile({ channels: 2, rate: 48000, bits: 16, data: bytes }));
+    expect(rate).toBe(48000);
+    expect(Array.from(samples)).toEqual([0.5, -1, 1 / 32768]);
+  });
+
+  it("reads 32-bit float samples as they are", () => {
+    const f = Float32Array.from([0.5, -0.25, 2]);
+    const { samples, rate } = readWavMono(wavFile({ format: 3, rate: 96000, bits: 32, data: new Uint8Array(f.buffer) }));
+    expect(rate).toBe(96000);
+    expect(samples).toEqual(f);
+  });
+
+  it("throws the same readable errors as prepareUserIr", () => {
+    expect(() => readWavMono(new Uint8Array(20))).toThrow("This file is not a WAV file.");
   });
 });

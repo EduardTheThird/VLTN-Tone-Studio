@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Info, Wand2 } from "lucide-react";
 import type { T3kModel, T3kTone } from "@shared/host/tones";
 import { HostError } from "@shared/ipc";
-import { ARCH_LABEL, gearLabel, gp5Models, isGp5Model, licenseLabel, modelsVerdict, proposeSlotName, slotLinkOn, verdictLabel } from "@shared/tone3000";
+import { ARCH_LABEL, gearIncludesCab, gearLabel, gp5Models, isGp5Model, licenseLabel, modelsVerdict, proposeSlotName, slotLinkOn, verdictLabel } from "@shared/tone3000";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -11,10 +11,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
+import { DEFAULT_DEVICE, isGp5Family } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { notifyError } from "@/app/notify";
 import { browse, cancelSend, closeSheet, loadAccount, startSendDraft, updateDraft, useTones } from "./store";
 import { CreatorAvatar } from "./ToneCard";
+import { noCabIrReason } from "./CabIrPicker";
 import { UserIrSteps, UseOnGp5 } from "./SendSteps";
 import { SnapToneSteps } from "./SnapToneSteps";
 import { ToneImage } from "./ToneImage";
@@ -126,10 +128,12 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
           <Fact label="Updated" value={tone ? tone.updated_at.slice(0, 10) : record ? record.savedAt.slice(0, 10) : "—"} />
           <Fact label="Downloads" value={tone ? tone.downloads_count.toLocaleString() : "—"} />
         </dl>
-        {gear === "amp-cab" && !isIr && (
+        {gearIncludesCab(gear) && !isIr && (
           <p className="-mt-1.5 flex gap-2 text-[12px] text-pretty text-silkscreen-3">
             <Info className="mt-0.5 size-3.5 flex-none" aria-hidden />
-            This capture includes the cab. On the {model} a SnapTone replaces both AMP and CAB, so it plays complete.
+            {isGp5Family(device ?? DEFAULT_DEVICE)
+              ? `This capture includes the cab. On the ${model} a SnapTone replaces both AMP and CAB, so it plays complete.`
+              : `This capture includes the cab. On the ${model} CAB still plays after the SnapTone, so turn CAB off where the SnapTone plays.`}
           </p>
         )}
         {tone?.description && (
@@ -222,7 +226,7 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
               <span className="text-silkscreen-3">Step {stepNo} of 5</span>
             </div>
             {send.text && <p className="text-[12px] text-silkscreen-2">Sends your edited version from the capture editor, made from the selected model.</p>}
-            {isIr ? <UserIrSteps send={send} model={selected} /> : <SnapToneSteps send={send} model={selected} />}
+            {isIr ? <UserIrSteps send={send} model={selected} /> : <SnapToneSteps send={send} model={selected} noCabIr={noCabIrReason(device, gear)} />}
           </section>
         )}
       </div>

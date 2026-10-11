@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Check, Send, TriangleAlert } from "lucide-react";
 import { prepareNam } from "@shared/nam";
 import { snapToneLabel } from "@shared/devices";
-import { firstEmptySlot, isEmptySlotName, linkedSlotOn, proposeSlotName, sanitizeSlotName } from "@shared/tone3000";
+import { firstEmptySlot, isEmptySlot, linkedSlotOn, proposeSlotName, sanitizeSlotName } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Progress } from "@/components/ui/progress";
@@ -17,7 +17,9 @@ import { DEFAULT_DEVICE, pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { UseOnGp5 } from "@/screens/tones/SendSteps";
 import { SnapToneSlotPicker, TestSignalNotice } from "@/screens/tones/SnapToneSteps";
-import { openSheet, startSendDraft, useTones } from "@/screens/tones/store";
+import { CabIrPicker, noCabIrReason } from "@/screens/tones/CabIrPicker";
+import { host } from "@/host";
+import { openSheet, startSendDraft, useTones, type CabIrChoice } from "@/screens/tones/store";
 import type { NamInfo } from "./nam/model";
 import { isFlat } from "./nam/shaping";
 import { exportText, useCapture } from "./store";
@@ -64,12 +66,17 @@ function Stop({ name, title, sub, lit, caption, image }: { name: string; title: 
   );
 }
 
-function Hop({ top, bottom }: { top: string; bottom: string }) {
+function Hop({ top, bottom, note }: { top: string; bottom: string; note?: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5 pt-3 text-[11px] whitespace-nowrap text-silkscreen-3">
       <ArrowRight className="size-3.5" aria-hidden />
       {top}
       <b className="font-semibold text-silkscreen-2">{bottom}</b>
+      {note && (
+        <span className="max-w-28 truncate" title={note}>
+          {note}
+        </span>
+      )}
     </div>
   );
 }
@@ -150,10 +157,15 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
   const isA2 = info.arch.kind === "A2";
   const a1Size = info.arch.kind === "A1" ? info.arch.size : "";
   const stopTitle = isA2 ? (liteOnly ? "A2-Lite" : "A2-Full") : `A1 ${a1Size}`;
+  const [picked, setCabIr] = useState<CabIrChoice | null>(null);
+  // The file's own gear type or TONE3000's can say the cab is in the capture; the GP-200 family keeps CAB as a block
+  const gearType = useCapture((s) => s.recipe?.metadata.gear_type);
+  const noCabIr = noCabIrReason(device, gearType, record?.gear);
+  const cabIr = noCabIr === null ? picked : null;
 
   const sendViaTones = () => {
     if (toneId === null || loaded.key.modelId === null) return;
-    startSendDraft(toneId, loaded.key.modelId, proposeSlotName(record?.title ?? title), "snaptone", { text: exportFile() });
+    startSendDraft(toneId, loaded.key.modelId, proposeSlotName(record?.title ?? title), "snaptone", { text: exportFile(), cabIr });
     openSheet(toneId);
     go("tones", String(toneId));
   };
@@ -162,7 +174,7 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
     <>
       <div className="mx-5 grid grid-cols-[1fr_auto_1fr] items-start gap-1 rounded-lg bg-well px-1.5 py-2.5" aria-label="Chain of approximations">
         <Stop name={title} title={stopTitle} sub={versionLabel} lit caption={isA2 ? "NAM A2" : "NAM A1"} image={image} />
-        <Hop top="Tone Studio" bottom="converts" />
+        <Hop top="Tone Studio" bottom="converts" note={cabIr ? `with ${cabIr.name}` : undefined} />
         <Stop name={linkedText ?? "SnapTone"} title="SnapTone" sub={linkedText !== null ? `On your ${pedal}` : "Can't be measured here"} lit={linkedText !== null} />
       </div>
       <ol className="m-0 min-h-0 flex-1 list-none overflow-auto px-5 pt-3 pb-3">
@@ -173,13 +185,20 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
         {toneId !== null ? (
           <Step n={2} status={linked !== null ? "done" : "current"} title={linkedText !== null ? `Linked to ${linkedText} on your ${pedal}` : `Send to the ${pedal}`}>
             <Sub>Tone Studio turns your version into a SnapTone, writes it to a user slot over USB and links the slot to this tone.</Sub>
+            {noCabIr !== null ? (
+              <Sub>{noCabIr}</Sub>
+            ) : (
+              <span className="mt-2 flex">
+                <CabIrPicker value={cabIr} onChange={setCabIr} />
+              </span>
+            )}
             <Button variant={linked !== null ? "outline" : "default"} size="sm" className="mt-2 self-start" onClick={sendViaTones}>
               <Send className="size-3.5" aria-hidden />
               {linked !== null ? "Send again" : `Send to the ${pedal}…`}
             </Button>
           </Step>
         ) : (
-          <LocalSend title={title} exportFile={exportFile} />
+          <LocalSend title={title} exportFile={exportFile} cabIr={cabIr} onCabIr={setCabIr} noCabIr={noCabIr} />
         )}
       </ol>
     </>
@@ -188,8 +207,23 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
 
 type LocalPhase = "idle" | "converting" | "writing";
 
-/** A file opened from disk: convert it and write a user SnapTone slot directly (no TONE3000 tone to link). */
-function LocalSend({ title, exportFile }: { title: string; exportFile: () => string }) {
+/**
+ * A file opened from disk: convert it and write a user SnapTone slot directly (no TONE3000 tone to link). `noCabIr`:
+ * why no cab IR is offered (noCabIrReason), null when one is.
+ */
+function LocalSend({
+  title,
+  exportFile,
+  cabIr,
+  onCabIr,
+  noCabIr,
+}: {
+  title: string;
+  exportFile: () => string;
+  cabIr: CabIrChoice | null;
+  onCabIr: (choice: CabIrChoice | null) => void;
+  noCabIr: string | null;
+}) {
   const connected = useDevice((s) => s.status === "connected");
   const snapTones = useDevice((s) => s.snapTones);
   const device = useDevice((s) => s.device);
@@ -212,8 +246,8 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
     if (slot === null && snapTones) setSlot(firstEmptySlot("snaptone", snapTones, device));
   }, [slot, snapTones, device]);
 
-  const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot)?.name;
-  const replacing = occupant && !isEmptySlotName(occupant) ? occupant : null;
+  const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot);
+  const replacing = occupant && !isEmptySlot(occupant) ? occupant.name : null;
   const slotText = slot === null ? null : snapToneLabel(device ?? DEFAULT_DEVICE, slot);
 
   const send = async () => {
@@ -224,7 +258,8 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
     setProgress(0);
     setPhase("converting");
     try {
-      const file = await convertToSnapTone(prepareNam(exportFile()).json, setProgress, abort.current.signal);
+      const wav = cabIr && (cabIr.kind === "file" ? cabIr.wav : await host.tones.readIr(cabIr.toneId));
+      const file = await convertToSnapTone(prepareNam(exportFile()).json, setProgress, abort.current.signal, wav ?? undefined);
       setPhase("writing");
       setProgress(0);
       const stored = await useDevice.getState().uploadSnapTone(slot, name, file, { onProgress: setProgress });
@@ -257,7 +292,9 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
             </InputGroupAddon>
           </InputGroup>
           <SnapToneSlotPicker value={slot} onChange={setSlot} disabled={working} />
+          {noCabIr === null && <CabIrPicker value={cabIr} onChange={onCabIr} disabled={working} />}
         </div>
+        {noCabIr !== null && <Sub>{noCabIr}</Sub>}
         {replacing && !working && written?.slot !== slot && <Sub>Replaces {replacing}. A SnapTone can't be read back from the pedal.</Sub>}
         {working && <Progress value={progress * 100} className="mt-2 w-56" aria-label={phase === "converting" ? "SnapTone conversion progress" : "SnapTone write progress"} />}
         {working && <Sub>{phase === "converting" ? "Making the SnapTone…" : `Writing ${slotText}…`}</Sub>}

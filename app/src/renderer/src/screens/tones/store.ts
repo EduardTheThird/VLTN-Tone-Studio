@@ -50,7 +50,12 @@ export interface SendState {
   linkedSlot: number | null;
   /** Edited .nam text from the capture editor, used instead of the download */
   text: string | null;
+  /** SnapTone: cab IR baked into the clone (null: amp only) */
+  cabIr: CabIrChoice | null;
 }
+
+/** A cab IR to bake into a SnapTone: a downloaded TONE3000 IR tone or a WAV file picked from disk. */
+export type CabIrChoice = { kind: "tone"; toneId: number; name: string } | { kind: "file"; name: string; wav: Uint8Array };
 
 /** Slot context menu: pick which downloaded tone a slot holds. */
 export interface LinkChoice {
@@ -301,9 +306,9 @@ function linkDevice(): DeviceKey {
 
 /**
  * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
- * it is sent instead of the TONE3000 download.
+ * it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
  */
-export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string } = {}): void {
+export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string; cabIr?: CabIrChoice | null } = {}): void {
   const cur = get().send[toneId];
   if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked") return;
   const d = useDevice.getState();
@@ -327,13 +332,22 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
         proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs, d.device),
         linkedSlot: null,
         text: opts.text ?? null,
+        cabIr: kind === "snaptone" ? (opts.cabIr ?? null) : null,
       },
     },
   }));
 }
 
-export function updateDraft(toneId: number, patch: Partial<Pick<SendState, "modelId" | "name" | "proposedSlot">>): void {
-  patchSend(toneId, patch);
+/** A different cab IR makes the converted file stale, so the draft goes back to step 1. */
+export function updateDraft(toneId: number, patch: Partial<Pick<SendState, "modelId" | "name" | "proposedSlot" | "cabIr">>): void {
+  const stale = "cabIr" in patch && get().send[toneId]?.file;
+  patchSend(toneId, stale ? { ...patch, file: null, phase: "idle", step: 1, progress: 0, error: null } : patch);
+}
+
+/** The WAV bytes of a cab IR choice (a tone's file is read from disk, never downloaded here). */
+function cabIrWav(choice: CabIrChoice | null): Promise<Uint8Array | undefined> {
+  if (!choice) return Promise.resolve(undefined);
+  return choice.kind === "file" ? Promise.resolve(choice.wav) : host.tones.readIr(choice.toneId);
 }
 
 /** Running SnapTone conversions, so cancelSend can stop the worker. */
@@ -380,7 +394,8 @@ export async function runSend(toneId: number): Promise<void> {
     const source = await host.tones.prepareSnapTone(req);
     storeRecord(source.record);
     patchSend(toneId, { phase: "converting", step: 3, check: source.check, progress: 0 });
-    const file = await convertToClone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal);
+    const wav = await cabIrWav(s.cabIr);
+    const file = await convertToClone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal, wav);
     patchSend(toneId, { phase: "ready", step: 4, file, progress: 0 });
   } catch (e) {
     if (!abort.signal.aborted) sendError(toneId, e);

@@ -91,31 +91,44 @@ function encodeSamples(samples24: Int32Array): Uint8Array {
   return out;
 }
 
-/**
- * Parse a WAV file and turn it into the User IR block a pedal keeping `samples` samples takes (profile.userIr.samples).
- * Throws a user-facing Error.
- */
-export function prepareUserIr(wav: Uint8Array, samples: number): UserIrFile {
+/** Parse a WAV file down to its format and channel 0 as -1..1 floats. Throws a user-facing Error. */
+function decodeWav(wav: Uint8Array): { fmt: WavFormat; samples: Float32Array } {
   const { fmt, data } = readChunks(wav);
   if (fmt.channels < 1 || fmt.rate < 1) throw new Error("This WAV file has an invalid format header.");
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const read = sampleReader(fmt, view);
   if (!read) throw new Error(`This WAV encoding isn't supported (format ${fmt.format}, ${fmt.bits}-bit). Use 16-, 24- or 32-bit PCM or 32-bit float.`);
   const frameBytes = (fmt.bits / 8) * fmt.channels;
-  const sourceFrames = Math.floor(data.length / frameBytes);
-  if (sourceFrames === 0) throw new Error("This WAV file contains no audio.");
+  const frames = Math.floor(data.length / frameBytes);
+  if (frames === 0) throw new Error("This WAV file contains no audio.");
+  const samples = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) samples[i] = read(i * frameBytes);
+  return { fmt, samples };
+}
+
+/** Channel 0 of a WAV file as -1..1 floats, at the file's own rate. Throws a user-facing Error. */
+export function readWavMono(wav: Uint8Array): { samples: Float32Array; rate: number } {
+  const { fmt, samples } = decodeWav(wav);
+  return { samples, rate: fmt.rate };
+}
+
+/**
+ * Parse a WAV file and turn it into the User IR block a pedal keeping `samples` samples takes (profile.userIr.samples).
+ * Throws a user-facing Error.
+ */
+export function prepareUserIr(wav: Uint8Array, samples: number): UserIrFile {
+  const { fmt, samples: source } = decodeWav(wav);
+  const sourceFrames = source.length;
 
   // Zero-filled: shorter IRs are padded with silence, as Suite does.
   const samples24 = new Int32Array(samples);
   let frames44 = sourceFrames;
   if (fmt.rate === USER_IR.RATE && fmt.format === FORMAT_PCM && fmt.bits === 24) {
-    // Suite's direct path: the 24-bit values go to the pedal untouched.
+    // Suite's direct path: the 24-bit values go to the pedal untouched (int / 2^23 is exact in a float).
     const n = Math.min(sourceFrames, samples);
-    for (let i = 0; i < n; i++) samples24[i] = Math.round(read(i * frameBytes) * 0x800000);
+    for (let i = 0; i < n; i++) samples24[i] = Math.round(source[i] * 0x800000);
   } else {
-    let ch0: Float32Array = new Float32Array(sourceFrames);
-    for (let i = 0; i < sourceFrames; i++) ch0[i] = read(i * frameBytes);
-    if (fmt.rate !== USER_IR.RATE) ch0 = convertSampleRate(ch0, fmt.rate, USER_IR.RATE);
+    const ch0 = fmt.rate === USER_IR.RATE ? source : convertSampleRate(source, fmt.rate, USER_IR.RATE);
     frames44 = ch0.length;
     if (frames44 === 0) throw new Error("This IR is too short to use.");
     const n = Math.min(frames44, samples);

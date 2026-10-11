@@ -10,6 +10,8 @@ export interface ConvertRequest {
   namText: string;
   /** Valeton's nam_input_wav.wav (see shared/host/snaptone.ts) */
   signalWav: Uint8Array;
+  /** Optional cab IR (raw WAV bytes) baked into the SnapTone */
+  cabIrWav?: Uint8Array;
 }
 
 export type ConvertReply =
@@ -23,9 +25,15 @@ const PHASE_SPAN: Record<ClonePhase, [number, number]> = { excitation: [0, 0.07]
 /**
  * Convert a NAM A1 or A2 model (checked by shared/nam.ts prepareNam) into the 8840-byte SnapTone clone, in a Web
  * Worker; snapToneFile cuts a pedal's upload file from it. `onProgress` gets an overall fraction 0..1 (the clone phase
- * reports only its start).
+ * reports only its start). `cabIrWav` (raw WAV bytes) is a cab IR baked in after the model; a WAV the worker can't read
+ * rejects with a readable message.
  */
-export async function convertToClone(namText: string, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<Uint8Array> {
+export async function convertToClone(
+  namText: string,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+  cabIrWav?: Uint8Array,
+): Promise<Uint8Array> {
   const signalWav = await host.snaptone.signal();
   if (!signalWav) throw new Error("Making a SnapTone needs Valeton's test signal (nam_input_wav.wav). Choose it first.");
   if (signal?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
@@ -55,7 +63,10 @@ export async function convertToClone(namText: string, onProgress?: (fraction: nu
       finish();
       reject(new Error(e.message || "The SnapTone converter stopped"));
     };
-    worker.postMessage({ namText, signalWav } satisfies ConvertRequest, [signalWav.buffer]);
+    // The IR is copied so the caller keeps its bytes (they may be reused for another conversion).
+    const cabIr = cabIrWav?.slice();
+    const request: ConvertRequest = { namText, signalWav, cabIrWav: cabIr };
+    worker.postMessage(request, cabIr ? [signalWav.buffer, cabIr.buffer] : [signalWav.buffer]);
   });
 }
 
@@ -68,7 +79,12 @@ export function snapToneFile(clone: Uint8Array, device: DeviceKey): Uint8Array {
 }
 
 /** convertToClone, then the upload file for the connected (or last connected) pedal. */
-export async function convertToSnapTone(namText: string, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<Uint8Array> {
-  const clone = await convertToClone(namText, onProgress, signal);
+export async function convertToSnapTone(
+  namText: string,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+  cabIrWav?: Uint8Array,
+): Promise<Uint8Array> {
+  const clone = await convertToClone(namText, onProgress, signal, cabIrWav);
   return snapToneFile(clone, useDevice.getState().device ?? DEFAULT_DEVICE);
 }
