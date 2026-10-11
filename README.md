@@ -275,7 +275,7 @@ Record yourself through the pedal and it designs a cabinet IR that brings your t
 
 The app recognises the connected model by itself. `.prst` files of the GP-5 and GP-50 can be written to either: a GP-5 preset goes onto a GP-50 unchanged; a GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing.
 
-The GP-200 family speaks a different protocol from the GP-5 and GP-50. A GP-200, GP-200LT or GP-200JR is recognised today and shown as not supported yet. Its effect names and knob ranges will come from Valeton's GP-200 editor on your computer, since Tone Studio can't ship that list. The work left is in [`docs/gp200-wiring-plan.md`](docs/gp200-wiring-plan.md); the overall plan is in [`docs/device-expansion-plan.md`](docs/device-expansion-plan.md).
+The GP-200 family speaks a different protocol from the GP-5 and GP-50. Its support is being built: a GP-200, GP-200LT or GP-200JR already connects, but its screens still use the GP-5's layout, and the LT and JR stay read-only until one has been tested. Its effect names and knob ranges will come from Valeton's GP-200 editor on your computer, since Tone Studio can't ship that list.
 
 <br>
 

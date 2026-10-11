@@ -13,7 +13,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Changed
 - Texts name the connected pedal (GP-5 or GP-50) instead of always saying GP-5. Backups of a GP-50 go into `gp50-YYYY-MM-DD` folders titled "GP-50 backup"; `backup.json` records the model. Diagnostic reports are saved as `valeton-diagnostics-*.txt`.
 - SnapTone and User IR links of a tone remember which model they were made on, and the Tones screen only treats a link as "on your pedal" when the model matches.
-- The README has a support table for the GP-5, GP-50 and the GP-200 family, and `docs/device-expansion-plan.md` lays out how GP-50 support will be completed and GP-200 support added, including simulators for both.
+- The README has a support table for the GP-5, GP-50 and the GP-200 family.
 
 ### Known limitations
 - The GP-50 path hasn't been tried on a real GP-50 by this project yet. Reading, writing and Program Change select on a GP-50 come from drewmerc302/valeton-gp50, which tested them on hardware. Live edits, SnapTone and User IR uploads use the protocol the two pedals share; Valeton Suite 2.1.0's own code sends a GP-50 the same bytes.
