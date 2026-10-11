@@ -1,0 +1,324 @@
+// DeviceDriver for the GP-200 family (GP-200 incl. R/X, GP-200LT, GP-200JR): an adapter over Gp200Session, plus the
+// simulator (MockGp200). Safety (GP-200 editor 1.8.0 RE): selects go out as 0x1008 only (never CC/PC); the session paces
+// every frame, never waits for ACKs (there are none), verifies full writes by reading back, moves off the active slot
+// before writing it, refuses the dangerous frames, and sends nothing at all once the pedal reports update mode.
+import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry } from "@/gp200/lib/session.mjs";
+import { MockGp200, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
+import { PATCH_SETTING } from "@/gp200/lib/protocol.mjs";
+import { buildPrst, parsePatch } from "@/gp200/lib/prst.mjs";
+import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
+import { profileFor, type DeviceKey } from "@shared/devices";
+import type { BackupEntry, ConnectionError, DeviceFeature, GlobalName, Globals, SlotName } from "../device-types";
+import { clampGp200Global, gp200GlobalRecords, gp200GlobalSpec, type Gp200GlobalName, type Gp200Globals } from "./gp200-globals";
+import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
+
+/** GP-5 family SnapTone upload file (Suite's cut-down clone): too short for the GP-200, which keeps 1024 IR taps. */
+const GP5_SNAPTONE_FILE_BYTES = 2696;
+/** User IR data the driver takes: int32 LE samples, at most this many (the pedal stores 1024). */
+const USER_IR_MAX_SAMPLES = profileFor("gp200").userIr.samples;
+/** Live tempo range of a GP-200 patch (BPM). */
+const BPM_RANGE = [40, 250] as const;
+/** How long a select we sent may still come back as the pedal's "patch changed" echo. */
+const ECHO_WINDOW_MS = 1000;
+
+/** Settings snapshot of a GP-200: values keyed by the GP-200 setting names (gp200-globals.ts). */
+export interface Gp200GlobalsSnapshot extends GlobalsSnapshot {
+  values: Globals & Gp200Globals;
+}
+
+/** The pedal answered in firmware update mode. Shaped like a ConnectionError; the session sends nothing more. */
+export class Gp200UpdaterError extends Error implements ConnectionError {
+  readonly code = "bootloader" as const;
+  constructor() {
+    super("The GP-200 is in firmware update mode. Finish or restart the update with Valeton's updater, then reconnect.");
+    this.name = "Gp200UpdaterError";
+  }
+}
+
+function toGlobals(values: Gp200Globals, firmware: string | null): Gp200GlobalsSnapshot {
+  return { values: { ...values }, records: gp200GlobalRecords(values), ...(firmware ? { firmware } : {}) };
+}
+
+/** Name tables of the SnapTone and User IR slots: flag 1 = the slot holds data. */
+const toTable = (list: NameEntry[]): SlotName[] => list.map((e) => ({ slot: e.slot, name: e.name, kind: e.flag ? "user" : "empty" }));
+
+/** int32 LE sample block (the GP-5 family's User IR data layout, up to 1024 samples here) → samples. */
+function irSamples(data: Uint8Array): Int32Array {
+  if (data.byteLength === 0 || data.byteLength % 4 !== 0 || data.byteLength > USER_IR_MAX_SAMPLES * 4)
+    throw new RangeError(`A GP-200 User IR is up to ${USER_IR_MAX_SAMPLES} samples of 4 bytes; got ${data.byteLength} bytes.`);
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return Int32Array.from({ length: data.byteLength / 4 }, (_, i) => view.getInt32(i * 4, true));
+}
+
+export class Gp200Driver implements DeviceDriver {
+  readonly family = "gp200";
+  /** "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006. */
+  readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm"];
+  readonly #session: Gp200Session;
+  readonly #listeners = new Set<(e: DriverEvent) => void>();
+  /** Model (fxid) of each block in the edit buffer: the 0x0005 param record names it. null = read it again. */
+  #fxids: readonly number[] | null = null;
+  /** Echoes of our own selects and model changes still expected from the pedal: key → deadline (ms) */
+  #echoes: readonly { key: string; until: number }[] = [];
+
+  private constructor(
+    transport: Gp200Transport,
+    readonly portName: string,
+    opts: Pick<DriverOptions, "log"> & { timing?: Partial<Gp200Timing> },
+    /** The simulator behind a mock connection (tests and diagnostics), else null */
+    readonly mock: MockGp200 | null = null,
+  ) {
+    this.#session = new Gp200Session(transport, { log: opts.log, timing: opts.timing });
+    this.#session.addEventListener("message", (ev) => {
+      const e = this.#toDriverEvent((ev as Event & { message: Gp200Event }).message);
+      if (e) this.#emit(e);
+    });
+    this.#session.addEventListener("badframe", () => this.#emit({ type: "badframe" }));
+  }
+
+  /** Open the pedal's MIDI ports matching `port` (`access`: an already granted MIDIAccess). */
+  static async open(access: MIDIAccess, port: string | RegExp, opts: DriverOptions & { timing?: Partial<Gp200Timing> }): Promise<Gp200Driver> {
+    const transport = await connectWebMidi({ access, port, onDisconnect: opts.onDisconnect });
+    return new Gp200Driver(transport, transport.name, opts);
+  }
+
+  /** Connect a simulated `device` with the simulator's generated bank (`mock`: fault injection for tests). */
+  static async simulate(
+    device: Gp200FamilyKey,
+    opts: DriverOptions & { timing?: Partial<Gp200Timing>; mock?: Omit<MockGp200Options, "type"> },
+  ): Promise<Gp200Driver> {
+    const mock = new MockGp200({ latencyMs: 2, ...opts.mock, type: device });
+    return new Gp200Driver(mock.transport(), `${profileFor(device).name} (simulated)`, opts, mock);
+  }
+
+  #emit(e: DriverEvent) {
+    for (const l of this.#listeners) l(e);
+  }
+
+  #expectEcho(key: string) {
+    const now = Date.now();
+    this.#echoes = [...this.#echoes.filter((x) => x.until > now), { key, until: now + ECHO_WINDOW_MS }];
+  }
+
+  /** True (and forgotten) when `key` is an echo of something we sent. */
+  #isEcho(key: string): boolean {
+    const now = Date.now();
+    const live = this.#echoes.filter((x) => x.until > now);
+    const i = live.findIndex((x) => x.key === key);
+    this.#echoes = i < 0 ? live : live.filter((_, j) => j !== i);
+    return i >= 0;
+  }
+
+  /** Pedal traffic nobody waited for → driver events. Our own select/model echoes are dropped. */
+  #toDriverEvent(msg: Gp200Event): DriverEvent | null {
+    switch (msg.kind) {
+      case "patchChanged":
+        if (this.#isEcho(`select:${msg.slot}`)) return null;
+        this.#fxids = null;
+        return { type: "resync" };
+      case "model":
+        if (this.#isEcho(`model:${msg.block}:${msg.fxid}`)) return null;
+        this.#fxids = null;
+        return { type: "resync" };
+      case "chain":
+        return { type: "resync" };
+      case "param":
+        return { type: "param", block: msg.block, index: msg.paramId, value: msg.value };
+      case "blockEnabled":
+        return { type: "block", block: msg.block, enabled: msg.enabled };
+      case "patchSetting":
+        if (msg.target === PATCH_SETTING.VOL) return { type: "patchSetting", field: "volume", value: msg.value };
+        if (msg.target === PATCH_SETTING.TEMPO) return { type: "patchSetting", field: "bpm", value: msg.value };
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  /** Remember the models of an edit buffer image (for setParam). */
+  #remember(image: Uint8Array): Uint8Array {
+    this.#fxids = parsePatch(image).blocks.map((b) => b.fxid);
+    return image;
+  }
+
+  get device(): DeviceKey | null {
+    return this.#session.device;
+  }
+
+  /** Firmware version the pedal reported ("1.8.0"), null until connected. */
+  get firmware(): string | null {
+    return this.#session.firmware;
+  }
+
+  /** Connect FSM (identity, SOFTWARE_STATE, globals). Update mode → Gp200UpdaterError, and nothing more is sent. */
+  async identify(): Promise<DeviceKey> {
+    if (!this.#session.device) {
+      try {
+        await this.#session.connect();
+      } catch (e) {
+        throw e instanceof Gp200Error && e.code === "updater" ? new Gp200UpdaterError() : e;
+      }
+    }
+    return this.#session.device as Gp200FamilyKey;
+  }
+
+  /**
+   * The editor's sync: IR names, every slot (the GP-200 has no name table, so each is read: 256 reads, 255 on the
+   * JR), style names, edit buffer, SnapTone names. `onProgress` counts those steps.
+   */
+  async sync(opts: ProgressOptions = {}): Promise<SyncSnapshot> {
+    const device = await this.identify();
+    const snap = await this.#session.sync({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    const image = this.#remember(snap.editBuffer.image);
+    return {
+      device,
+      names: snap.presets.map((p) => ({ slot: p.slot, name: p.name })),
+      slot: snap.editBuffer.slot,
+      prst: buildPrst(image),
+      globals: snap.globals ? toGlobals(snap.globals, snap.firmware) : null,
+    };
+  }
+
+  /** Every slot is read for its name (about 3 s on the pedal). */
+  async readNames(opts: ProgressOptions = {}): Promise<SlotName[]> {
+    const names = await this.#session.readPresetNames({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    return names.map((n) => ({ slot: n.slot, name: n.name }));
+  }
+
+  /** The edit buffer carries its own (live) name, so `names` is not needed. */
+  async readActive(_names: readonly SlotName[]): Promise<{ slot: number; prst: Uint8Array }> {
+    const { slot, image } = await this.#session.readEditBuffer();
+    return { slot, prst: buildPrst(this.#remember(image)) };
+  }
+
+  /** The edit buffer carries its own (live) name, so `name` is not needed. */
+  async readEditBuffer(_name: string): Promise<Uint8Array> {
+    return buildPrst(this.#remember((await this.#session.readEditBuffer()).image));
+  }
+
+  /** 0x1008 {0, slot}; the pedal's echo of it is not reported as a pedal-side change. */
+  async select(slot: number): Promise<void> {
+    this.#expectEcho(`select:${slot}`);
+    this.#fxids = null;
+    await this.#session.selectPreset(slot);
+  }
+
+  /** Hop to the next slot and back: the edit buffer is reloaded from memory. */
+  async reloadSlot(slot: number): Promise<void> {
+    await this.select((slot + 1) % this.#session.slotCount);
+    await this.select(slot);
+  }
+
+  /** Stored read: nothing is selected. */
+  async readPreset(slot: number, _names?: readonly SlotName[]): Promise<Uint8Array> {
+    return (await this.#session.readPreset(slot)).prst;
+  }
+
+  exportPreset(slot: number): Promise<Uint8Array> {
+    return this.readPreset(slot);
+  }
+
+  /**
+   * Full write + double read-back (the session retries up to `attempts`). Writing the active slot: the session moves
+   * to the next slot first and comes back (a stale edit buffer otherwise); any other slot is selected afterwards.
+   */
+  async writePreset(slot: number, prst: Uint8Array, opts: ProgressOptions & { attempts?: number } = {}): Promise<void> {
+    const active = this.#session.currentSlot === slot;
+    if (active) {
+      this.#expectEcho(`select:${(slot + 1) % this.#session.slotCount}`);
+      this.#expectEcho(`select:${slot}`);
+      this.#fxids = null;
+    }
+    await this.#session.writePreset(slot, prst, { confirm: true, verify: true, attempts: opts.attempts, onProgress: opts.onProgress });
+    if (!active) await this.select(slot);
+  }
+
+  /** The active slot: live name + save (0x2003); any other: read, rename, full verified write. */
+  async rename(slot: number, name: string): Promise<void> {
+    await this.#session.renamePreset(slot, name, { confirm: true });
+  }
+
+  /** Stored reads of every slot; nothing is selected. */
+  async backupAll(opts: ProgressOptions = {}): Promise<BackupEntry[]> {
+    const entries = await this.#session.backupAll({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    return entries.map((e) => ({ slot: e.slot, name: e.name, prst: e.prst }));
+  }
+
+  /** `block`: storage order (PRE WAH DST AMP NR CAB EQ MOD DLY RVB VOL); `index`: the param's XML ID (0..14). */
+  async setParam(block: number, index: number, value: number): Promise<void> {
+    if (!this.#fxids) this.#remember((await this.#session.readEditBuffer()).image);
+    const fxid = this.#fxids?.[block];
+    if (fxid === undefined) throw new RangeError(`The GP-200 has no block ${block}`);
+    await this.#session.setParam(block, index, fxid, value);
+  }
+
+  async setBlockEnabled(block: number, on: boolean): Promise<void> {
+    await this.#session.setBlockEnabled(block, on);
+  }
+
+  /** The pedal does not keep the old params: callers send the new model's params (or re-read the edit buffer). */
+  async setModel(block: number, fxid: number): Promise<void> {
+    this.#expectEcho(`model:${block}:${fxid >>> 0}`);
+    await this.#session.setModel(block, fxid);
+    if (this.#fxids) this.#fxids = this.#fxids.map((f, k) => (k === block ? fxid >>> 0 : f));
+  }
+
+  async setPatchVolume(volume: number): Promise<void> {
+    await this.#session.setPatchVolume(volume);
+  }
+
+  async setBpm(bpm: number): Promise<void> {
+    await this.#session.setTempo(Math.max(BPM_RANGE[0], Math.min(BPM_RANGE[1], Math.round(bpm))));
+  }
+
+  /** 0x1006 state dump. Values are keyed by the GP-200 setting names (gp200-globals.ts GP200_GLOBAL_SPECS). */
+  async readGlobals(): Promise<Gp200GlobalsSnapshot> {
+    const g = await this.#session.readGlobals();
+    return toGlobals(g.values, g.firmware);
+  }
+
+  /** GP-200 setting names only; anything else (a GP-5 setting, a destructive id) is a RangeError. */
+  clampGlobal(name: GlobalName | Gp200GlobalName, value: number): number {
+    return clampGp200Global(name, value);
+  }
+
+  /** One setting as 0x1008 {id, value} (clamped). Never the full 0x1007 write, never a destructive id. */
+  async setGlobal(name: GlobalName | Gp200GlobalName, value: number): Promise<void> {
+    const spec = gp200GlobalSpec(name);
+    await this.#session.setGlobal(spec.name, clampGp200Global(spec.name, value));
+  }
+
+  /** The 10 SnapTone slots: 0-4 AMP, 5-9 DST. */
+  async readSnapTones(): Promise<SlotName[]> {
+    return toTable(await this.#session.readSnapToneNames());
+  }
+
+  async readUserIRs(): Promise<SlotName[]> {
+    return toTable(await this.#session.readIrNames());
+  }
+
+  /**
+   * `file`: the 8840-byte VTSI clone the SnapTone conversion makes (cut to the GP-200's 1024 IR taps here) or a
+   * 4744-byte GP-200 SnapTone. The GP-5 family's 2696-byte upload file has lost those taps and is refused.
+   */
+  async uploadSnapTone(slot: number, name: string, file: Uint8Array, opts: ProgressOptions = {}): Promise<string> {
+    if (file.byteLength === GP5_SNAPTONE_FILE_BYTES)
+      throw new RangeError("This SnapTone was made for the GP-5 or GP-50. Convert the capture again for the GP-200.");
+    return (await this.#session.uploadSnapTone(slot, name, file, { confirm: true, onProgress: opts.onProgress })).entry.name;
+  }
+
+  /** `data`: 24-bit samples at 44.1 kHz as int32 LE, up to 1024 (4096 bytes); a 512-sample GP-5 block also works. */
+  async uploadUserIr(slot: number, name: string, data: Uint8Array, opts: ProgressOptions = {}): Promise<string> {
+    return (await this.#session.uploadUserIr(slot, name, irSamples(data), { confirm: true, onProgress: opts.onProgress })).entry.name;
+  }
+
+  subscribe(listener: (event: DriverEvent) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  close(): Promise<void> {
+    this.#listeners.clear();
+    return this.#session.close();
+  }
+}

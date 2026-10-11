@@ -7,6 +7,7 @@ import { webDevice } from "./device";
 import { webSnapTone } from "./snaptone";
 import { webSong } from "./song";
 import { webUpdate } from "./update";
+import { webGp200Catalog } from "./gp200-catalog";
 
 export const webHost: HostApi = {
   kind: "web",
@@ -19,4 +20,5 @@ export const webHost: HostApi = {
   snaptone: webSnapTone,
   song: webSong,
   update: webUpdate,
+  gp200Catalog: webGp200Catalog,
 };
