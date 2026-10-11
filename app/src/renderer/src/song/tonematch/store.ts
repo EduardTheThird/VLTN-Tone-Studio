@@ -44,7 +44,7 @@ let running: AbortController | null = null;
  * analysed before any pedal was ever connected; that proposal comes from DEFAULT_DEVICE's catalog and is rebuilt for
  * the real model when one connects (the useDevice subscription below).
  */
-const targetDevice = (d: Pick<DeviceState, "preset" | "device">): DeviceKey => d.preset?.device ?? d.device ?? DEFAULT_DEVICE;
+export const targetDevice = (d: Pick<DeviceState, "preset" | "device">): DeviceKey => d.preset?.device ?? d.device ?? DEFAULT_DEVICE;
 
 /** Proposals pick models from the GP-5 family's catalog; another model gets a plain refusal. */
 function proposeFor(analysis: GuitarAnalysis, device: DeviceKey): Proposal {
@@ -60,7 +60,8 @@ export const useToneMatch = create<ToneMatchState>((set, get) => ({
 
   async analyse() {
     const guitar = useSong.getState().stems?.guitar;
-    if (!guitar) return;
+    // No proposal can be made for the GP-200 family (the panel says why): the analysis waits for a GP-5 family pedal.
+    if (!guitar || !isGp5Family(targetDevice(useDevice.getState()))) return;
     running?.abort();
     const ctrl = new AbortController();
     running = ctrl;
@@ -113,11 +114,13 @@ export const useToneMatch = create<ToneMatchState>((set, get) => ({
   },
 }));
 
-// Another pedal model (a GP-50 after a GP-5): the proposal has to come from that pedal's catalog.
+// Another pedal model (a GP-50 after a GP-5): the proposal has to come from that pedal's catalog. A GP-200 family
+// pedal gets none; a GP-5 family pedal after it gets the analysis that waited.
 useDevice.subscribe((s, prev) => {
   const device = targetDevice(s);
-  if (device === targetDevice(prev)) return;
+  if (device === targetDevice(prev) || !isGp5Family(device)) return;
   const { analysis, proposal } = useToneMatch.getState();
+  if (!analysis && !isGp5Family(targetDevice(prev))) return void useToneMatch.getState().analyse();
   if (!analysis || !proposal || proposal.device === device) return;
   try {
     useToneMatch.setState({ proposal: proposeFor(analysis, device) });

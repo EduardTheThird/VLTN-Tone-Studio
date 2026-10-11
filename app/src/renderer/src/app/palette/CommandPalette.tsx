@@ -177,7 +177,7 @@ function useGroups(close: () => void): Group[] {
       },
       render: (ranges) => (
         <>
-          <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
+          <span className="min-w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
           <Name text={n.name} ranges={ranges} className="flex-1" />
           {n.slot === slot ? <Badge>Current</Badge> : !connected ? <Hint>Last read</Hint> : recent.includes(n.slot) ? <Hint>Recent</Hint> : null}
         </>
@@ -214,6 +214,8 @@ function useGroups(close: () => void): Group[] {
         icon: Guitar,
         hint: `Match a song's guitar tone on the ${pedalName(lastDevice)}`,
         words: ["tone match", "match", "guitar", "song", "stems", "preset", "ir"],
+        // Proposals come from the GP-5 family's catalogs only (song/tonematch/store.ts)
+        blocked: catalog ? undefined : `Not for the ${pedalName(catalogDevice)} yet`,
         run: go("song", "tone"),
       }),
       actionEntry({ id: "split-song", label: "Split a song into stems", icon: AudioLines, words: ["stems", "song", "separate", "guitar", "vocals", "drums"], run: go("song", "stems") }),
@@ -306,7 +308,7 @@ function useGroups(close: () => void): Group[] {
         const capture = roleOf(profile.captureBlock(t.slot));
         return {
           id: `snaptone:${t.slot}`,
-          search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot },
+          search: { primary: t.name, secondary: ["SnapTone", profile.captureBlock(t.slot), "capture", "nam"], slot: t.slot },
           verb: `set ${profile.captureBlock(t.slot)} model`,
           blocked: preset && connected ? pedal : needsPedal,
           run: () => {
@@ -403,7 +405,7 @@ function useResults(groups: Group[], query: string) {
             id: `uses:${slot}`,
             render: () => (
               <>
-                <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(slot)}</span>
+                <span className="min-w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(slot)}</span>
                 <span className="flex-1 truncate">{e.search.primary}</span>
                 <span className="shrink-0 text-xs text-silkscreen-3">
                   <Name text={title} ranges={hit.ranges} />

@@ -4,7 +4,8 @@ import { ConfirmWriteDialog } from "@/components/write/ConfirmWriteDialog";
 import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { describeSummary, summarize } from "@/components/write/preset-summary";
 import { describeError } from "@/components/write/write-helpers";
-import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
+import { notifyError, notifySuccess, notifyWriteDone, showToast } from "@/app/notify";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { requestPresetSwitch } from "@/app/preset-switch";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
@@ -20,7 +21,7 @@ import { SlotPickerDialog, type SlotPick } from "./SlotPickerDialog";
 import { CollectionDialogs, type CollectionDialog } from "./CollectionDialogs";
 import { RenameConfirmDialog } from "./RenameConfirmDialog";
 import { importPicked } from "./import";
-import { clearSteps, copySteps, moveSteps, swapSteps } from "./plans";
+import { INIT_NAME, clearSteps, copySteps, moveSteps, swapSteps } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
 const nameOf = (slot: number) => useDevice.getState().names[slot]?.name ?? emptyName();
@@ -276,9 +277,24 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         });
       },
       clearSlots(slots) {
-        // The GP-200 family has no empty slot to copy: every slot always holds a patch.
+        // The GP-200 family has no empty slot to copy: every slot always holds a patch, so it gets an init patch.
         if (profileOrDefault(useDevice.getState().device).emptyName === null) {
-          notifyError("Nothing to clear to", new Error(`The ${pedal()} has no empty slots: every slot always holds a patch. Write another preset over it instead.`));
+          if (!useGp200Catalog.getState().catalog) {
+            showToast({
+              tone: "fault",
+              title: "Import the effect list first",
+              body: `The init patch holds a model in every block, and the ${pedal()}'s models come from the effect list. Import it on the Device screen.`,
+              action: { label: "Open Device", run: () => useNav.getState().go("device") },
+            });
+            return;
+          }
+          setBulk({
+            title: `Reset ${slotList(slots)} to the init patch?`,
+            description: `${slots.length === 1 ? "It becomes" : "Each becomes"} an init patch named ${INIT_NAME}, with every block off. Tone Studio writes ${slots.length === 1 ? "it" : "them"} and reads each one back to check it.`,
+            action: `Reset ${slotList(slots)}`,
+            steps: clearSteps(slots),
+            doneTitle: `Reset ${slotList(slots)} to the init patch`,
+          });
           return;
         }
         const used = slots.filter((s) => !isEmptyName(nameOf(s)));
@@ -296,6 +312,8 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         });
       },
       duplicateSlot(slot) {
+        // No empty slot to fill on the GP-200 family: choose the slot to replace.
+        if (profileOrDefault(useDevice.getState().device).emptyName === null) return a.copySlots([slot]);
         const names = useDevice.getState().names;
         const empty = names.find((n) => n.slot > slot && isEmptyName(n.name)) ?? names.find((n) => isEmptyName(n.name));
         if (!empty) {

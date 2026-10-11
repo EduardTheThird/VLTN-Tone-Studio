@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { host } from "@/host";
 import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { pedalName, profileOrDefault } from "@/state/device-model";
 import type { OpenFile } from "@/state/ui";
 import { prepareUserIr, type UserIrFile } from "@/userir/convert";
 import { notifyError, notifySuccess } from "@/app/notify";
@@ -255,7 +255,7 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
     setError(null);
     setProgress(0);
     readOpenFile(file)
-      .then((bytes) => current && setIr(prepareUserIr(bytes)))
+      .then((bytes) => current && setIr(prepareUserIr(bytes, profileOrDefault(useDevice.getState().device).userIr.samples)))
       .catch((e) => current && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       current = false;

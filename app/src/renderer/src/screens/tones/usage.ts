@@ -1,7 +1,6 @@
 import { profileFor, type DeviceProfile } from "@shared/devices";
-import { parsePrst } from "@/gp5/lib/prst.mjs";
-import { blockCodes } from "@/state/device-model";
-import type { Gp5FamilyKey } from "@/state/device-types";
+import type { PresetState } from "@/state/device-types";
+import { toPresetState } from "@/state/preset-codec";
 
 export interface PresetRef {
   slot: number;
@@ -9,7 +8,7 @@ export interface PresetRef {
 }
 
 export interface UsageIndex {
-  /** SnapTone slot (GP-5: 0–79) → presets whose engaged NS block plays it */
+  /** SnapTone slot (GP-5: 0–79) → presets whose engaged capture block plays it */
   snaptone: Map<number, PresetRef[]>;
   /** User IR slot (GP-5: 0–19) → presets whose engaged CAB block plays it */
   ir: Map<number, PresetRef[]>;
@@ -25,30 +24,26 @@ export function slotOfFxid(fxid: number, profile: Pick<DeviceProfile, "snapTone"
 }
 
 /**
- * Index which presets use which SnapTone / User IR slot. A SnapTone counts only when NS is engaged: a
- * bypassed NS block still stores some SnapTone number the preset never plays. A User IR counts whenever
- * CAB selects it, because an engaged SnapTone bypasses CAB and the IR comes back when NS is off.
+ * Index which presets use which SnapTone / User IR slot. A SnapTone counts only in its capture block (NS on the GP-5
+ * family, AMP or DST on the GP-200 family) while that block is engaged: a bypassed block still stores some SnapTone
+ * number the preset never plays. A User IR counts whenever CAB selects it, because an engaged SnapTone bypasses CAB on
+ * the GP-5 family and the IR comes back when NS is off.
  * Each preset is read with its own model's block layout and slot tables (a backup may mix GP-5 and GP-50 files).
  */
 export function buildUsage(presets: { slot: number | null; name: string; prst: Uint8Array }[]): UsageIndex {
   const index: UsageIndex = { snaptone: new Map(), ir: new Map() };
   for (const p of presets) {
     if (p.slot === null || p.slot < 0) continue;
-    let parsed: { device: string; blocks: { enabled: boolean; fxid: number }[] };
+    let parsed: PresetState;
     try {
-      parsed = parsePrst(p.prst);
+      parsed = toPresetState(p.slot, p.prst);
     } catch {
       continue;
     }
-    // parsePrst reads GP-5 family presets only.
-    const device = parsed.device as Gp5FamilyKey;
-    const codes = blockCodes(device);
-    const ns = parsed.blocks[codes.indexOf("NS")];
-    const cab = parsed.blocks[codes.indexOf("CAB")];
-    for (const b of [ns, cab]) {
-      if (!b || (b === ns && !b.enabled)) continue;
-      const hit = slotOfFxid(b.fxid, profileFor(device));
-      if (!hit) continue;
+    const profile = profileFor(parsed.device);
+    for (const b of parsed.blocks) {
+      const hit = slotOfFxid(b.fxid, profile);
+      if (!hit || (hit.kind === "snaptone" ? b.code !== profile.captureBlock(hit.slot) || !b.enabled : b.code !== "CAB")) continue;
       const map = hit.kind === "snaptone" ? index.snaptone : index.ir;
       map.set(hit.slot, [...(map.get(hit.slot) ?? []), { slot: p.slot, name: p.name }]);
     }

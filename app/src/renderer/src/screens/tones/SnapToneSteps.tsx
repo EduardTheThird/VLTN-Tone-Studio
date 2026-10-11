@@ -3,7 +3,7 @@ import { FileAudio, RotateCcw } from "lucide-react";
 import { snapToneLabel } from "@shared/devices";
 import { SIGNAL_IN_SUITE } from "@shared/host/snaptone";
 import type { T3kModel } from "@shared/host/tones";
-import { ARCH_LABEL, firstEmptySlot, isEmptySlotName, sanitizeSlotName } from "@shared/tone3000";
+import { ARCH_LABEL, firstEmptySlot, isEmptySlot, sanitizeSlotName } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -51,8 +51,8 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
     return "pending";
   };
   const slot = send.proposedSlot;
-  const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot)?.name;
-  const replacing = occupant && !isEmptySlotName(occupant) ? occupant : null;
+  const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot);
+  const replacing = occupant && !isEmptySlot(occupant) ? occupant.name : null;
   const slotText = slot === null ? "a user slot" : snapToneLabel(profile.key, slot);
   const writeLabel = replacing ? `Replace ${replacing} in ${slotText}` : `Write to ${slotText}`;
   const linkedText = send.linkedSlot === null ? "" : snapToneLabel(profile.key, send.linkedSlot);
@@ -135,7 +135,9 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
       </Step>
 
       <Step n={5} status={status(5)} title={phase === "linked" ? `Linked to ${linkedText} on your ${pedal}` : "Link the new SnapTone"}>
-        {phase !== "linked" && <span className="text-pretty text-silkscreen-3">The NS block then shows this tone's image for that slot.</span>}
+        {phase !== "linked" && (
+          <span className="text-pretty text-silkscreen-3">The {profile.captureBlock(slot ?? profile.snapTone.userRange[0])} block then shows this tone's image for that slot.</span>
+        )}
         {phase === "linked" && send.linkedSlot !== null && <UseOnGp5 isIr={false} slot={send.linkedSlot} />}
       </Step>
     </ol>
@@ -150,8 +152,8 @@ export function SnapToneSlotPicker({ value, onChange, disabled }: { value: numbe
   if (!snapTones) return null;
   const userSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
-    const name = snapTones.find((s) => s.slot === slot)?.name ?? "";
-    return `${snapToneLabel(key, slot)}${isEmptySlotName(name) ? ", empty" : `, ${name}`}`;
+    const entry = snapTones.find((s) => s.slot === slot) ?? { name: "" };
+    return `${snapToneLabel(key, slot)}${isEmptySlot(entry) ? ", empty" : `, ${entry.name}`}`;
   };
   return (
     <Select value={value === null ? "" : String(value)} onValueChange={(v) => onChange(Number(v))} disabled={disabled}>

@@ -67,7 +67,7 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
                   target === slot && "bg-lamp-glow shadow-[inset_0_0_0_1.5px_var(--lamp)] hover:bg-lamp-glow",
                 )}
               >
-                <span className="w-5 text-xs font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
+                <span className="min-w-5 text-xs font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
                 <span className={cn("truncate", empty ? "text-silkscreen-4" : "font-semibold text-silkscreen")}>{empty ? "Empty" : nameOf(slot)}</span>
               </button>
             );

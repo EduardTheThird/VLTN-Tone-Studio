@@ -94,6 +94,7 @@ function useLibraryWiring() {
   const backingUp = useDevice((s) => s.busy?.kind === "backup");
   const drag = useLibrary((s) => s.drag);
   const connected = useDevice((s) => s.status === "connected");
+  const resets = useProfile().emptyName === null;
 
   useCommand("import-presets", () => actions.importFiles());
   useCommand("backup-pedal", () => void runBackupNow());
@@ -132,7 +133,7 @@ function useLibraryWiring() {
           { keys: ["Shift"], label: "click range" },
           ...(connected ? [{ keys: ["Enter"], label: "play on pedal" }] : []),
           { keys: ["F2"], label: "rename" },
-          { keys: ["Del"], label: "clear" },
+          { keys: ["Del"], label: resets ? "reset to init patch" : "clear" },
         ],
   );
 }

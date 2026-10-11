@@ -1,6 +1,11 @@
 // Multi-slot write plans (copy, move, swap, clear) as lists of "slot ← content of another slot" steps.
 // Only slots whose content changes get a step; everything is read up front, then written one by one.
 // A GP-50 can also clear, copy and move inside the pedal (NativeOp); the steps then only preview the result.
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import type { Gp200Catalog } from "@/gp200/lib/catalog.mjs";
+import { buildPrst, encodePatchImage } from "@/gp200/lib/prst.mjs";
+import { defaultParamsFor, modelsFor } from "@/state/preset-codec";
+import { profileFor, type DeviceKey } from "@shared/devices";
 
 export interface Step {
   /** Slot that gets written */
@@ -39,6 +44,24 @@ export function swapSteps(a: number, b: number): Step[] {
 
 export function clearSteps(slots: number[]): Step[] {
   return slots.map((slot) => ({ slot, from: "blank" as const }));
+}
+
+/** Name of the init patch a GP-200 family slot is reset to. */
+export const INIT_NAME = "INIT";
+
+/**
+ * The "blank" of the GP-200 family, which has no empty slots: an init patch with the first model of every block in the
+ * effect catalog at its defaults, every block off, named INIT. Written like any preset (full write, read back), not
+ * with the pedal's own reset command, which hasn't been tested on hardware. Throws without a catalog: every block of a
+ * GP-200 patch holds a model.
+ */
+export function gp200InitPatch(device: DeviceKey, catalog: Gp200Catalog | null = useGp200Catalog.getState().catalog): Uint8Array {
+  const blocks = profileFor(device).blocks.map((_, k) => {
+    const fxid = modelsFor(device, k, catalog)[0]?.fxid;
+    if (fxid === undefined) throw new Error("Resetting a slot needs the GP-200 effect list: the init patch holds a model in every block. Import the list on the Device screen.");
+    return { fxid, enabled: false, params: defaultParamsFor(device, k, fxid, catalog) };
+  });
+  return buildPrst(encodePatchImage({ name: INIT_NAME, blocks }));
 }
 
 /** Slots whose current content must be read before writing (sources), in ascending order. */

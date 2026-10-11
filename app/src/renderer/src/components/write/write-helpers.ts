@@ -1,6 +1,6 @@
 // Shared write helpers: the "Back up slot first" snapshot and user-facing error copy.
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { DeviceError, useDevice } from "@/state/device";
 import { pedalName, slotLabel } from "@/state/device-model";
 import { emptyName } from "@/screens/library/store";
 import { REPLACED_ID, type LocalPreset } from "@shared/host/files";
@@ -46,6 +46,8 @@ export function describeError(e: unknown, slot?: number): string {
   const pedal = pedalName(device);
   const err: { code?: string; message?: string } | null = e && typeof e === "object" ? e : null;
   const where = slot === undefined ? "The slot" : `Slot ${slotLabel(device, slot)}`;
+  // Mid-sentence: only the first letter drops, GP-200 labels keep theirs ("slot 12-C")
+  const inSentence = where[0].toLowerCase() + where.slice(1);
   switch (err?.code) {
     case "unsaved":
       return "This switches presets on the pedal, which would drop your unsaved changes. Save or discard them on the Rig first.";
@@ -57,12 +59,14 @@ export function describeError(e: unknown, slot?: number): string {
     case "timeout":
       return `The ${pedal} stopped answering. ${where} was not changed. Check the USB cable and try again.`;
     case "verify":
-      return /unchanged|acknowledged/.test(err.message ?? "")
-        ? `The ${pedal} didn't acknowledge every frame and discarded the write. ${where} was not changed.`
-        : `The read-back differs from what was sent. Retry, or restore ${where.toLowerCase()} from the backup.`;
+      if (/unchanged|acknowledged/.test(err.message ?? "")) return `The ${pedal} didn't acknowledge every frame and discarded the write. ${where} was not changed.`;
+      // The GP-200 family acknowledges no frames: when its read-back stays silent, the write may or may not have landed.
+      if (/did not answer/.test(err.message ?? "")) return `The ${pedal} didn't answer when Tone Studio read ${inSentence} back, so the write isn't confirmed. Retry, or restore ${inSentence} from the backup.`;
+      return `The read-back differs from what was sent. Retry, or restore ${inSentence} from the backup.`;
     case "length":
     case "unsafe":
-      return "Tone Studio stopped this write because the data looked wrong. Nothing was sent.";
+      // The store's own refusals (a model not tested for writes yet, a locked feature) are already plain language.
+      return e instanceof DeviceError ? e.message : "Tone Studio stopped this write because the data looked wrong. Nothing was sent.";
     case "unsupported":
       return err.message ?? "This needs the desktop app.";
     default:

@@ -83,7 +83,7 @@ vi.mock("@/state/device", () => {
 });
 
 vi.mock("@/app/notify", () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }));
-vi.mock("@/snaptone/convert", () => ({ convertToSnapTone: vi.fn() }));
+vi.mock("@/snaptone/convert", () => ({ convertToClone: vi.fn(), snapToneFile: vi.fn() }));
 
 const TONE = 42;
 
@@ -149,10 +149,10 @@ describe("User IR UI helpers", () => {
   });
 
   it("says what part of the IR the pedal keeps", () => {
-    expect(irSummary({ data: new Uint8Array(2048), sourceRate: 44100, sourceFrames: 2048, truncated: true })).toBe(
+    expect(irSummary({ data: new Uint8Array(2048), samples: 512, sourceRate: 44100, sourceFrames: 2048, truncated: true })).toBe(
       "Uses the first 11.6 ms (512 samples at 44.1 kHz) of this 46.4 ms IR; the pedal keeps no more.",
     );
-    expect(irSummary({ data: new Uint8Array(2048), sourceRate: 48000, sourceFrames: 480, truncated: false })).toBe(
+    expect(irSummary({ data: new Uint8Array(2048), samples: 512, sourceRate: 48000, sourceFrames: 480, truncated: false })).toBe(
       "Uses all 10.0 ms of it; the pedal keeps up to 11.6 ms (512 samples at 44.1 kHz). Resampled from 48 kHz.",
     );
   });

@@ -76,7 +76,10 @@ function SlotInspector({ slot }: { slot: number }) {
   const job = useLibrary((s) => s.job);
   const actions = useLibraryActions();
   const pedal = usePedalName();
-  const label = useProfile().slotLabel(slot);
+  const profile = useProfile();
+  const label = profile.slotLabel(slot);
+  // The GP-200 family has no empty slots: a slot is reset to an init patch instead of cleared
+  const clearLabel = profile.emptyName === null ? `Reset slot ${label} to init patch` : `Clear slot ${label}`;
   const name = names[slot]?.name ?? emptyName();
   const empty = isEmptyName(name);
   const connected = status === "connected";
@@ -158,8 +161,8 @@ function SlotInspector({ slot }: { slot: number }) {
             variant="ghost"
             size="icon-sm"
             className="ml-auto text-led-fault hover:text-led-fault"
-            aria-label={`Clear slot ${label}`}
-            title={`Clear slot ${label}`}
+            aria-label={clearLabel}
+            title={clearLabel}
             disabled={!writable || empty}
             onClick={() => actions.clearSlots([slot])}
           >
@@ -240,7 +243,8 @@ function MultiInspector({ slots }: { slots: number[] }) {
   const bodies = useLibrary((s) => s.bodies);
   const actions = useLibraryActions();
   const pedal = usePedalName();
-  const { slotLabel } = useProfile();
+  const { slotLabel, emptyName: pedalEmptyName } = useProfile();
+  const resets = pedalEmptyName === null;
   const both = slots.length === 2;
   const usedSlots = slots.filter((s) => !isEmptyName(names[s]?.name));
 
@@ -254,7 +258,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
             const s = bodies[slot] ? summarize(bodies[slot].prst) : null;
             const ok = s && s.name === name;
             return (
-              <li key={slot} className="grid h-8 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 px-1.5 text-[13px]">
+              <li key={slot} className="grid h-8 grid-cols-[minmax(22px,auto)_minmax(0,1fr)_auto] items-center gap-3 px-1.5 text-[13px]">
                 <span className="text-sm font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
                 <span className={cn("truncate font-semibold text-silkscreen", isEmptyName(name) && "font-medium text-silkscreen-4")}>{isEmptyName(name) ? "Empty" : name}</span>
                 <MiniChain chain={ok ? s : null} />
@@ -263,7 +267,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
           })}
         </ul>
         <p className="text-sm text-pretty text-silkscreen-3">
-          {both ? "Swapping writes both slots on the pedal." : "Copying, moving and clearing write these slots on the pedal."} You confirm before anything is stored.
+          {both ? "Swapping writes both slots on the pedal." : `Copying, moving and ${resets ? "resetting" : "clearing"} write these slots on the pedal.`} You confirm before anything is stored.
         </p>
       </div>
       <Actions>
@@ -292,7 +296,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
           <AddToCollection disabled={!connected} onAdd={(id) => void actions.addSlotsToCollection(slots, id)} />
           <Button variant="ghost" size="sm" className="ml-auto text-led-fault hover:text-led-fault" disabled={!writable || !usedSlots.length} onClick={() => actions.clearSlots(slots)}>
             <Trash2Icon data-icon="inline-start" />
-            Clear {usedSlots.length === 1 ? "1 slot" : `${usedSlots.length} slots`}
+            {resets ? "Reset" : "Clear"} {usedSlots.length === 1 ? "1 slot" : `${usedSlots.length} slots`}
           </Button>
         </div>
       </Actions>

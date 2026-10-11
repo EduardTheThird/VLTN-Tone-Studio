@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { profileFor } from "@shared/devices";
 import { prepareUserIr } from "./convert";
+
+/** Samples a User IR keeps: 512 on the GP-5 family, 1024 on the GP-200 family. */
+const GP5 = profileFor("gp5").userIr.samples;
+const GP200 = profileFor("gp200").userIr.samples;
 
 /** RIFF/WAVE file around raw interleaved sample bytes. */
 function wavFile(opts: { format?: number; channels?: number; rate: number; bits: number; data: Uint8Array; extraChunk?: boolean }): Uint8Array {
@@ -42,7 +47,7 @@ const samplesOf = (d: Uint8Array) => Array.from({ length: 512 }, (_, i) => int32
 
 describe("prepareUserIr", () => {
   it("passes a 24-bit 44.1 kHz mono Dirac through unchanged", () => {
-    const ir = prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24([0x7fffff, -2, 0, 0]), extraChunk: true }));
+    const ir = prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24([0x7fffff, -2, 0, 0]), extraChunk: true }), GP5);
     expect(ir.data.length).toBe(2048);
     expect(Array.from(ir.data.subarray(0, 8))).toEqual([0xff, 0xff, 0x7f, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     expect(ir.data.subarray(8).every((b) => b === 0)).toBe(true);
@@ -55,7 +60,7 @@ describe("prepareUserIr", () => {
     const v = new DataView(bytes.buffer);
     v.setInt16(0, 32767, true); // left: impulse
     for (let i = 0; i < frames; i++) v.setInt16(i * 4 + 2, i % 2 ? 20000 : -20000, true); // right: loud noise that must not leak in
-    const ir = prepareUserIr(wavFile({ channels: 2, rate: 48000, bits: 16, data: bytes }));
+    const ir = prepareUserIr(wavFile({ channels: 2, rate: 48000, bits: 16, data: bytes }), GP5);
     expect(ir).toMatchObject({ sourceRate: 48000, sourceFrames: 1024, truncated: true }); // 1024 * 44.1/48 = 940 > 512
     const s = samplesOf(ir.data);
     const peakAt = s.reduce((best, x, i) => (Math.abs(x) > Math.abs(s[best]) ? i : best), 0);
@@ -66,28 +71,39 @@ describe("prepareUserIr", () => {
     // The right channel's noise must not leak in: the same left channel alone gives the same block.
     const mono = new Uint8Array(frames * 2);
     new DataView(mono.buffer).setInt16(0, 32767, true);
-    expect(prepareUserIr(wavFile({ rate: 48000, bits: 16, data: mono })).data).toEqual(ir.data);
+    expect(prepareUserIr(wavFile({ rate: 48000, bits: 16, data: mono }), GP5).data).toEqual(ir.data);
   });
 
   it("reads 32-bit float input at 44.1 kHz with JUCE's 24-bit rounding", () => {
     const f = Float32Array.from([0.5, -0.25, 2, -2]);
-    const ir = prepareUserIr(wavFile({ format: 3, rate: 44100, bits: 32, data: new Uint8Array(f.buffer) }));
+    const ir = prepareUserIr(wavFile({ format: 3, rate: 44100, bits: 32, data: new Uint8Array(f.buffer) }), GP5);
     expect(samplesOf(ir.data).slice(0, 5)).toEqual([0x400000, -0x200000, 0x7fffff, -0x800000, 0]);
   });
 
   it("keeps the first 512 samples of a longer IR and flags it as truncated", () => {
     const long = Array.from({ length: 600 }, (_, i) => i + 1);
-    const ir = prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24(long) }));
+    const ir = prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24(long) }), GP5);
     expect(ir.truncated).toBe(true);
     expect(int32At(ir.data, 511)).toBe(512);
   });
 
+  it("keeps 1024 samples for the GP-200 family", () => {
+    const long = Array.from({ length: 1100 }, (_, i) => i + 1);
+    const ir = prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24(long) }), GP200);
+    expect(ir).toMatchObject({ samples: 1024, truncated: true });
+    expect(ir.data.length).toBe(4096);
+    expect(int32At(ir.data, 600)).toBe(601);
+    expect(int32At(ir.data, 1023)).toBe(1024);
+    // The GP-5 family keeps the first 512 of the same IR, byte for byte
+    expect(prepareUserIr(wavFile({ rate: 44100, bits: 24, data: pcm24(long) }), GP5).data).toEqual(ir.data.subarray(0, 2048));
+  });
+
   it("refuses files it cannot use, with a readable message", () => {
-    expect(() => prepareUserIr(new TextEncoder().encode("not a wave file at all"))).toThrow(/not a WAV file/);
+    expect(() => prepareUserIr(new TextEncoder().encode("not a wave file at all"), GP5)).toThrow(/not a WAV file/);
     const noData = wavFile({ rate: 44100, bits: 24, data: new Uint8Array(0) });
     noData.set([0x6a, 0x75, 0x6e, 0x6b], noData.length - 8); // rename "data" to "junk"
-    expect(() => prepareUserIr(noData)).toThrow(/no audio data/);
-    expect(() => prepareUserIr(wavFile({ rate: 44100, bits: 24, data: new Uint8Array(0) }))).toThrow(/contains no audio/);
-    expect(() => prepareUserIr(wavFile({ format: 3, rate: 44100, bits: 64, data: new Uint8Array(8) }))).toThrow(/isn't supported/);
+    expect(() => prepareUserIr(noData, GP5)).toThrow(/no audio data/);
+    expect(() => prepareUserIr(wavFile({ rate: 44100, bits: 24, data: new Uint8Array(0) }), GP5)).toThrow(/contains no audio/);
+    expect(() => prepareUserIr(wavFile({ format: 3, rate: 44100, bits: 64, data: new Uint8Array(8) }), GP5)).toThrow(/isn't supported/);
   });
 });
