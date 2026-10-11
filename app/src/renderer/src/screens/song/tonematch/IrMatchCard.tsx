@@ -12,7 +12,7 @@ import { IR_RATE, IR_TAPS, MATCH_HI_HZ, MATCH_LO_HZ, MAX_CORRECTION_DB, response
 import { isSessionLive, MIN_PLAYING_S, RECORD_S, useIrMatch } from "@/song/tonematch/ir-store";
 import { useToneMatch } from "@/song/tonematch/store";
 import type { Level } from "@/song/tonematch/recorder";
-import { useDevice, usePedalName } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import type { OpenFile } from "@/state/ui";
 import { CurvePlot, type CurveSeries } from "./CurvePlot";
 import { Section } from "./parts";
@@ -85,6 +85,7 @@ function Result({ result, playedS }: { result: MatchedIr; playedS: number }) {
   const [sendFile, setSendFile] = useState<OpenFile | null>(null);
   const fileName = irFileName(songName);
   const pedal = usePedalName();
+  const kept = useProfile().userIr.samples;
 
   const save = async () => {
     try {
@@ -103,7 +104,7 @@ function Result({ result, playedS }: { result: MatchedIr; playedS: number }) {
     <div className="flex flex-col gap-3">
       <CurvePlot title="Correction between your recording and the song, and the matched IR's response" series={resultSeries(result)} />
       <p className="text-[12px] text-pretty text-silkscreen-3">
-        From {playedS.toFixed(0)} s of playing. A {IR_TAPS}-sample minimum-phase IR at 44.1 kHz; the {pedal} keeps its first 512 samples (11.6 ms), and a minimum-phase IR puts its energy first. It
+        From {playedS.toFixed(0)} s of playing. A {IR_TAPS}-sample minimum-phase IR at 44.1 kHz; the {pedal} keeps its first {kept} samples ({((kept / IR_RATE) * 1000).toFixed(1)} ms), and a minimum-phase IR puts its energy first. It
         follows the song from {MATCH_LO_HZ} Hz to {MATCH_HI_HZ / 1000} kHz (at most ±{MAX_CORRECTION_DB} dB) and rolls off like a cabinet outside that. Write it to a User IR slot,
         then pick that slot in the CAB block.
       </p>
