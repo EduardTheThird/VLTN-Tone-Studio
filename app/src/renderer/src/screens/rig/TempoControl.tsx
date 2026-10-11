@@ -6,17 +6,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useDevice, usePedalName } from "@/state/device";
 import { editBpm } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
-import { BPM_MAX, BPM_MIN, tap } from "./tempo";
+import { tap } from "./tempo";
 
-/** Where a tempo edit goes: live where the pedal has a tempo command (GP-50 extras), else with the save. */
+/** Where a tempo edit goes: live where the pedal has a tempo command (GP-50 extras, GP-200), else with the save. */
 function useTempoNote(): string {
   const pedal = usePedalName();
   const mode = useLiveMode("liveBpm");
   return mode === "live" ? `Plays on the ${pedal} right away. Save the preset to keep it.` : saveOnlyNote(mode, "The new tempo", pedal);
 }
 
-/** Rig header tempo: the preset's BPM with a field and a tap button; taps are averaged in the app. */
-export function TempoControl({ bpm, disabled }: { bpm: number; disabled: boolean }) {
+/** Rig header tempo: the preset's BPM with a field and a tap button; taps are averaged in the app. `range`: the model's. */
+export function TempoControl({ bpm, range, disabled }: { bpm: number; range: { min: number; max: number }; disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(String(bpm));
   const taps = useRef<number[]>([]);
@@ -32,7 +32,7 @@ export function TempoControl({ bpm, disabled }: { bpm: number; disabled: boolean
   };
 
   const onTap = () => {
-    const next = tap(taps.current, performance.now());
+    const next = tap(taps.current, performance.now(), range);
     taps.current = next.taps;
     if (next.bpm !== null) editBpm(next.bpm);
   };
@@ -48,10 +48,10 @@ export function TempoControl({ bpm, disabled }: { bpm: number; disabled: boolean
         </PopoverTrigger>
         <PopoverContent align="start" className="flex w-[260px] flex-col gap-3">
           <label htmlFor={inputId} className="text-sm font-[550] text-silkscreen-2">
-            Tempo ({BPM_MIN}–{BPM_MAX} BPM)
+            Tempo ({range.min}–{range.max} BPM)
           </label>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="icon-sm" aria-label="Slower" onClick={() => editBpm(bpm - 1)} disabled={bpm <= BPM_MIN}>
+            <Button variant="outline" size="icon-sm" aria-label="Slower" onClick={() => editBpm(bpm - 1)} disabled={bpm <= range.min}>
               <MinusIcon aria-hidden />
             </Button>
             <Input
@@ -66,7 +66,7 @@ export function TempoControl({ bpm, disabled }: { bpm: number; disabled: boolean
                 else if (e.key === "Escape") setDraft(String(bpm));
               }}
             />
-            <Button variant="outline" size="icon-sm" aria-label="Faster" onClick={() => editBpm(bpm + 1)} disabled={bpm >= BPM_MAX}>
+            <Button variant="outline" size="icon-sm" aria-label="Faster" onClick={() => editBpm(bpm + 1)} disabled={bpm >= range.max}>
               <PlusIcon aria-hidden />
             </Button>
           </div>

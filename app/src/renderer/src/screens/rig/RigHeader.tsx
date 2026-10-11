@@ -131,7 +131,7 @@ export function RigHeader({ preset, connected }: Props) {
           ) : (
             <span>No unsaved changes</span>
           )}
-          <TempoControl bpm={preset.bpm} disabled={!editable} />
+          <TempoControl bpm={preset.bpm} range={profile.tempo} disabled={!editable} />
           <FootswitchControl preset={preset} disabled={!editable} />
           {preset.exp && <ExpControl preset={preset} exp={preset.exp} disabled={!editable} />}
         </div>
