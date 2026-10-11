@@ -23,6 +23,7 @@ export const webTones: TonesApi = {
   prepareIr: desktopOnly("Downloading from TONE3000"),
   prepareSnapTone: desktopOnly("Downloading from TONE3000"),
   readLocalIr: desktopOnly("Opening files by path"),
+  readIr: desktopOnly("Reading downloaded impulse responses"),
   link: desktopOnly("Linking slots to TONE3000 tones"),
   local: async () => [],
   onEvent: () => () => {},

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { profileFor } from "@shared/devices";
 import { CheckIcon, ChevronDownIcon, EllipsisIcon, GitCompareArrowsIcon, Redo2Icon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
 import { keyLabel } from "@/app/keys";
 import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
@@ -9,29 +10,34 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { PresetState } from "@/state/device-types";
+import { slotNameError } from "@/state/device-model";
 import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
+import { ExpControl } from "./ExpControl";
+import { FootswitchControl } from "./FootswitchControl";
+import { PatchPanel } from "./PatchPanel";
+import { TempoControl } from "./TempoControl";
 import { useHistory } from "./history";
 import { useRig } from "./rig-store";
-
-const pad = (n: number) => String(n).padStart(2, "0");
-/** overlays.md F: 10 printable ASCII characters. */
-const NAME_MAX = 10;
-const BAD_CHAR = /[^\x20-\x7e]/;
 
 interface Props {
   preset: PresetState;
   connected: boolean;
 }
 
-/** Preset name, unsaved count, tempo, FS chips; undo/redo, Compare with saved, Discard, Save split button. */
+/**
+ * Preset name, unsaved count, tempo, footswitches (CTRL), EXP (GP-50) or patch settings (GP-200 family); undo/redo,
+ * Compare with saved, Discard, Save split button.
+ */
 export function RigHeader({ preset, connected }: Props) {
   const saved = useDevice((s) => s.saved);
   const unsaved = useDevice((s) => s.unsavedChanges);
   const busy = useDevice((s) => s.busy);
   const names = useDevice((s) => s.names);
+  const pedal = usePedalName();
+  const profile = profileFor(preset.device);
   const canUndo = useHistory((s) => s.past.length > 0);
   const canRedo = useHistory((s) => s.future.length > 0);
   const compare = useRig((s) => s.compare);
@@ -76,7 +82,7 @@ export function RigHeader({ preset, connected }: Props) {
 
   const exportPrst = async () => {
     try {
-      const where = await host.files.exportPresets([{ fileName: `${pad(preset.slot)}-${preset.name.trim() || "Preset"}.prst`, prst: preset.prst }]);
+      const where = await host.files.exportPresets([{ fileName: `${profile.slotLabel(preset.slot)}-${preset.name.trim() || "Preset"}.prst`, prst: preset.prst }]);
       if (where) notifySuccess(`Exported ${preset.name}`, where);
     } catch (e) {
       notifyError("Couldn't export the preset", e);
@@ -101,8 +107,8 @@ export function RigHeader({ preset, connected }: Props) {
     target === null
       ? ""
       : target === preset.slot
-        ? `Overwrite ${saved?.name ?? preset.name} in slot ${pad(target)}?`
-        : `Write ${preset.name} to slot ${pad(target)}?`;
+        ? `Overwrite ${saved?.name ?? preset.name} in slot ${profile.slotLabel(target)}?`
+        : `Write ${preset.name} to slot ${profile.slotLabel(target)}?`;
   const replacingName = target === null ? "" : target === preset.slot ? (saved?.name ?? preset.name) : (names[target]?.name ?? "");
 
   return (
@@ -115,7 +121,7 @@ export function RigHeader({ preset, connected }: Props) {
             className={cn("m-0 truncate text-[32px] leading-[1.05] font-bold tracking-[-0.02em]", !connected && "text-silkscreen-2")}
             onDoubleClick={() => editable && setRenaming(true)}
           >
-            <span className="mr-3 font-semibold text-silkscreen-4">{pad(preset.slot)}</span>
+            <span className="mr-3 font-semibold text-silkscreen-4">{profile.slotLabel(preset.slot)}</span>
             {preset.name}
           </h1>
         )}
@@ -129,11 +135,10 @@ export function RigHeader({ preset, connected }: Props) {
           ) : (
             <span>No unsaved changes</span>
           )}
-          <span className="flex items-center gap-1.5">
-            Tempo <b className="font-semibold text-silkscreen">{preset.bpm} BPM</b>
-          </span>
-          <FsChips label="FS1" blocks={preset.footswitches.fs1} preset={preset} />
-          <FsChips label="FS2" blocks={preset.footswitches.fs2} preset={preset} />
+          <TempoControl bpm={preset.bpm} range={profile.tempo} disabled={!editable} />
+          <FootswitchControl preset={preset} disabled={!editable} />
+          {preset.exp && <ExpControl preset={preset} exp={preset.exp} disabled={!editable} />}
+          {preset.gp200 && <PatchPanel preset={preset} fields={preset.gp200} disabled={!editable} />}
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -184,11 +189,11 @@ export function RigHeader({ preset, connected }: Props) {
               <span tabIndex={connected ? -1 : 0}>
                 <Button disabled={!editable} onClick={() => saveTarget(preset.slot)} className="rounded-r-none pr-3">
                   <SaveIcon aria-hidden />
-                  {busy?.kind === "write" ? `Writing ${Math.round(busy.progress * 100)}%` : `Save to slot ${pad(preset.slot)}`}
+                  {busy?.kind === "write" ? `Writing ${Math.round(busy.progress * 100)}%` : `Save to slot ${profile.slotLabel(preset.slot)}`}
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{!connected ? "Connect the GP-5 to save" : compare ? "Go back to your edits to save" : keyLabel(["Mod", "S"])}</TooltipContent>
+            <TooltipContent>{!connected ? `Connect the ${pedal} to save` : compare ? "Go back to your edits to save" : keyLabel(["Mod", "S"])}</TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -198,7 +203,7 @@ export function RigHeader({ preset, connected }: Props) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem disabled={!editable} onSelect={() => saveTarget(preset.slot)}>
-                Save to slot {pad(preset.slot)}
+                Save to slot {profile.slotLabel(preset.slot)}
                 <DropdownMenuShortcut>{keyLabel(["Mod", "S"])}</DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem disabled={!editable} onSelect={() => setSlotPicker(true)}>
@@ -219,18 +224,18 @@ export function RigHeader({ preset, connected }: Props) {
         <CommandInput placeholder="Find a slot by number or name" />
         <CommandList className="max-h-[360px]">
           <CommandEmpty>No slot matches</CommandEmpty>
-          <CommandGroup heading="GP-5 slots">
+          <CommandGroup heading={`${pedal} slots`}>
             {names.map((n) => (
               <CommandItem
                 key={n.slot}
-                value={`${pad(n.slot)} ${n.name}`}
+                value={`${profile.slotLabel(n.slot)} ${n.name}`}
                 disabled={n.slot === preset.slot}
                 onSelect={() => {
                   setSlotPicker(false);
                   saveTarget(n.slot);
                 }}
               >
-                <span className="w-6 font-semibold text-silkscreen-3 tabular-nums">{pad(n.slot)}</span>
+                <span className="min-w-6 shrink-0 font-semibold whitespace-nowrap text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
                 <span className="flex-1 truncate">{n.name}</span>
                 {n.slot === preset.slot && <span className="text-xs text-silkscreen-3">This preset</span>}
               </CommandItem>
@@ -247,7 +252,7 @@ export function RigHeader({ preset, connected }: Props) {
           slot={target}
           replacing={replacingName.trim() ? { name: replacingName, detail: target === preset.slot ? `Saved version of ${replacingName}` : undefined } : null}
           incoming={{ name: preset.name, detail: unsaved > 0 ? `As edited now, including ${unsaved === 1 ? "1 unsaved change" : `${unsaved} unsaved changes`}` : "As shown on the Rig", prst: preset.prst }}
-          action={`Write to slot ${pad(target)}`}
+          action={`Write to slot ${profile.slotLabel(target)}`}
           onConfirm={async ({ backupFirst }) => {
             const slot = target;
             await useDevice.getState().saveToSlot(slot);
@@ -271,34 +276,16 @@ function IconTip({ label, keys, children }: { label: string; keys: string[]; chi
   );
 }
 
-function FsChips({ label, blocks, preset }: { label: string; blocks: number[]; preset: PresetState }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      {label}
-      <span className="flex gap-1">
-        {blocks.length === 0 && <span className="text-silkscreen-4">none</span>}
-        {blocks.map((b) => {
-          const code = preset.blocks[b]?.code ?? "?";
-          return (
-            <span key={b} className="inline-flex h-5 items-center gap-[5px] rounded-pill px-[7px] text-xs font-semibold text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam-strong)]">
-              <span className="size-1.5 rounded-full" style={{ background: `var(--block-${code.toLowerCase()})` }} />
-              {code}
-            </span>
-          );
-        })}
-      </span>
-    </span>
-  );
-}
-
-/** overlays.md F: inline rename with a 10-character counter; commits on the pedal immediately. */
+/** Inline rename with a character counter (the model's name length); commits on the pedal immediately. */
 function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }) {
   const [value, setValue] = useState(preset.name.trimEnd());
   const [busy, setBusy] = useState(false);
-  const bad = BAD_CHAR.exec(value)?.[0];
+  const pedal = usePedalName();
+  const profile = profileFor(preset.device);
+  const nameLength = profile.nameLength;
   const trimmed = value.trimEnd();
-  const error = bad ? `The GP-5 can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed === "" ? "A slot needs a name." : null;
-  const atLimit = value.length >= NAME_MAX;
+  const error = slotNameError(value, pedal);
+  const atLimit = value.length >= nameLength;
   const slot = preset.slot;
   const before = preset.name;
 
@@ -308,13 +295,13 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
     setBusy(true);
     try {
       await useDevice.getState().rename(slot, trimmed);
-      notifySuccess(`Slot ${pad(slot)} renamed to ${trimmed}`, undefined, {
+      notifySuccess(`Slot ${profile.slotLabel(slot)} renamed to ${trimmed}`, undefined, {
         label: "Undo",
         run: () => useDevice.getState().rename(slot, before.trimEnd()),
       });
       onDone();
     } catch (e) {
-      notifyError(`Couldn't rename slot ${pad(slot)}`, e);
+      notifyError(`Couldn't rename slot ${profile.slotLabel(slot)}`, e);
       setBusy(false);
     }
   };
@@ -322,13 +309,13 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <span className="text-[32px] leading-[1.05] font-semibold text-silkscreen-4">{pad(slot)}</span>
+        <span className="text-[32px] leading-[1.05] font-semibold text-silkscreen-4">{profile.slotLabel(slot)}</span>
         <input
           autoFocus
-          aria-label={`Name of slot ${pad(slot)}`}
+          aria-label={`Name of slot ${profile.slotLabel(slot)}`}
           aria-invalid={!!error}
           value={value}
-          maxLength={NAME_MAX}
+          maxLength={nameLength}
           disabled={busy}
           onChange={(e) => setValue(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -340,12 +327,14 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
             if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) onDone();
           }}
           className={cn(
-            "h-10 w-[240px] rounded-sm bg-well px-3 text-[26px] font-bold text-silkscreen shadow-[inset_0_0_0_1px_var(--glass-edge)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--silkscreen)]",
+            "h-10 max-w-[40vw] rounded-sm bg-well px-3 text-[26px] font-bold text-silkscreen shadow-[inset_0_0_0_1px_var(--glass-edge)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--silkscreen)]",
             error && "shadow-[inset_0_0_0_1.5px_var(--led-fault)] focus-visible:shadow-[inset_0_0_0_1.5px_var(--led-fault)]",
           )}
+          // room for the longest name in wide letters (W ≈ 1.05em at this weight) plus the padding
+          style={{ width: `calc(${nameLength * 1.1}em + 24px)` }}
         />
         <span className={cn("text-xs tabular-nums", atLimit ? "text-led-warn" : "text-silkscreen-3")}>
-          {value.length}/{NAME_MAX}
+          {value.length}/{nameLength}
         </span>
         <Button variant="ghost" size="icon-sm" aria-label="Rename on pedal" disabled={!!error || busy} onClick={() => void commit()}>
           <CheckIcon aria-hidden />
@@ -355,7 +344,7 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
         </Button>
       </div>
       <span role={error ? "alert" : undefined} className={cn("text-xs", error ? "text-led-fault" : "text-led-warn")}>
-        {error ?? (atLimit ? "The GP-5 stores 10 characters. Further typing is ignored." : "")}
+        {error ?? (atLimit ? `The ${pedal} stores ${nameLength} characters. Further typing is ignored.` : "")}
       </span>
     </div>
   );

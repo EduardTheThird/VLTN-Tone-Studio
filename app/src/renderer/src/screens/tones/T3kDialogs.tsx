@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
+import { pedalName, profileOrDefault } from "@/state/device-model";
 import type { OpenFile } from "@/state/ui";
 import { prepareUserIr, type UserIrFile } from "@/userir/convert";
 import { notifyError, notifySuccess } from "@/app/notify";
@@ -16,9 +17,10 @@ import { closeFlow, closeLinkChoice, closeSplash, continueFromSplash, irSlotLabe
 import { ToneImage } from "./ToneImage";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
 
-/** TONE3000 partnership splash (overlays.html E), before the first sign-in from any entry point. */
+/** TONE3000 partnership splash, before the first sign-in from any entry point. */
 export function SplashDialog() {
   const open = useTones((s) => s.splashOpen);
+  const model = usePedalNameOrBoth();
   return (
     <Dialog open={open} onOpenChange={(o) => !o && closeSplash()}>
       <DialogContent className="max-w-[460px] gap-5 p-7" showCloseButton={false}>
@@ -45,7 +47,7 @@ export function SplashDialog() {
           </li>
           <li className="flex gap-2.5">
             <Filter className="size-4 flex-none text-silkscreen-3" aria-hidden />
-            NAM A1 and A2 captures both work: Tone Studio turns them into GP-5 SnapTones.
+            NAM A1 and A2 captures both work: Tone Studio turns them into {model} SnapTones.
           </li>
         </ul>
         <DialogFooter>
@@ -226,7 +228,7 @@ async function readOpenFile(file: OpenFile): Promise<Uint8Array> {
 }
 
 /**
- * A WAV opened, dropped or made by Tone Match: convert it for the GP-5 and write it to the User IR slot the user
+ * A WAV opened, dropped or made by Tone Match: convert it for the pedal and write it to the User IR slot the user
  * picks. The Write button is the confirmation; an occupied slot says what it replaces.
  */
 export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClose: () => void }) {
@@ -238,9 +240,11 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
   const [progress, setProgress] = useState(0);
   const connected = useDevice((s) => s.status === "connected");
   const userIRs = useDevice((s) => s.userIRs);
+  const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
   const blocker = useIrWriteBlocker(slot);
   const replacing = irOccupant(userIRs, slot);
+  const pedal = usePedalName();
 
   useEffect(() => {
     if (!file) return;
@@ -251,7 +255,7 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
     setError(null);
     setProgress(0);
     readOpenFile(file)
-      .then((bytes) => current && setIr(prepareUserIr(bytes)))
+      .then((bytes) => current && setIr(prepareUserIr(bytes, profileOrDefault(useDevice.getState().device).userIr.samples)))
       .catch((e) => current && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       current = false;
@@ -263,8 +267,8 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
     if (file && connected && !userIRs && !busy) void readSlots();
   }, [file, connected, userIRs, busy]);
   useEffect(() => {
-    if (file && slot === null && userIRs) setSlot(firstEmptySlot("ir", userIRs));
-  }, [file, slot, userIRs]);
+    if (file && slot === null && userIRs) setSlot(firstEmptySlot("ir", userIRs, device));
+  }, [file, slot, userIRs, device]);
 
   const write = async () => {
     if (!file || !ir || slot === null) return;
@@ -273,7 +277,7 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
     setProgress(0);
     try {
       const stored = await useDevice.getState().uploadUserIr(slot, name, ir.data, { onProgress: setProgress });
-      notifySuccess(`Wrote ${irSlotLabel(slot)} on your GP-5`, `${file.name} is in the slot as ${stored}.`);
+      notifySuccess(`Wrote ${irSlotLabel(slot)} on your ${pedalName(useDevice.getState().device)}`, `${file.name} is in the slot as ${stored}.`);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -288,7 +292,7 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
       <DialogContent className="max-w-[480px]">
         <DialogHeader>
           <DialogTitle>Write {file?.name} to a User IR slot</DialogTitle>
-          <DialogDescription>Tone Studio converts the WAV for the GP-5 and writes it over USB. Nothing changes on the pedal until you press Write.</DialogDescription>
+          <DialogDescription>Tone Studio converts the WAV for the {pedal} and writes it over USB. Nothing changes on the pedal until you press Write.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 text-[12px]">
           {ir ? <p className="text-pretty text-silkscreen-3">{irSummary(ir)}</p> : !error && <Spinner aria-label="Checking the file" />}

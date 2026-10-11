@@ -1,4 +1,4 @@
-// Records the GP-5's USB audio (or any audio input) for the IR match: getUserMedia with every voice-call
+// Records the pedal's USB audio (or any audio input) for the IR match: getUserMedia with every voice-call
 // processing switched off, as the capture editor's live input does, into an AudioWorklet that hands back mono PCM.
 import workletUrl from "./recorder-worklet.js?url";
 
@@ -7,7 +7,7 @@ export interface AudioInput {
   label: string;
 }
 
-/** The GP-5 shows up as a USB audio device named after the pedal or Valeton. */
+/** The GP-5 / GP-50 shows up as a USB audio device named after the pedal or Valeton. */
 export const isGp5Input = (label: string) => /gp-?5|valeton/i.test(label);
 
 /** Audio inputs. Labels need the microphone permission, so this asks for it once when they're blank. */

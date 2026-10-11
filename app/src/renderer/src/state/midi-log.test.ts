@@ -1,47 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { CC, encode, packetize } from "@/gp5/lib/protocol.mjs";
-import { MidiLogDecoder, RingBuffer } from "./midi-log";
+import * as gp200 from "@/gp200/lib/protocol.mjs";
+import { generatePatch } from "@/gp200/lib/mock-device.mjs";
+import { MIDI_LOG_CAP, MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
+import type { MidiLogEntry } from "./device-types";
 
-describe("RingBuffer", () => {
-  it("keeps items oldest first until full", () => {
-    const r = new RingBuffer<number>(3);
-    r.push(1);
-    r.push(2);
-    expect(r.toArray()).toEqual([1, 2]);
-    expect(r.size).toBe(2);
-  });
+describe("midiLog", () => {
+  const line = (n: number): MidiLogEntry => ({ dir: "out", text: String(n) }) as MidiLogEntry;
 
-  it("drops the oldest item when over capacity", () => {
-    const r = new RingBuffer<number>(3);
-    for (let i = 1; i <= 7; i++) r.push(i);
-    expect(r.toArray()).toEqual([5, 6, 7]);
-    expect(r.size).toBe(3);
-    expect(r.last(2)).toEqual([6, 7]);
-    expect(r.last(10)).toEqual([5, 6, 7]);
-  });
-
-  it("stays bounded at the monitor cap", () => {
-    const r = new RingBuffer<number>(2000);
-    for (let i = 0; i < 5000; i++) r.push(i);
-    const all = r.toArray();
-    expect(all.length).toBe(2000);
-    expect(all[0]).toBe(3000);
-    expect(all.at(-1)).toBe(4999);
-  });
-
-  it("clear empties it and keeps working", () => {
-    const r = new RingBuffer<string>(2);
-    r.push("a");
-    r.push("b");
-    r.push("c");
-    r.clear();
-    expect(r.toArray()).toEqual([]);
-    r.push("d");
-    expect(r.toArray()).toEqual(["d"]);
-  });
-
-  it("rejects a non-positive capacity", () => {
-    expect(() => new RingBuffer(0)).toThrow(RangeError);
+  it("keeps lines oldest first, capped at MIDI_LOG_CAP, and clears", () => {
+    midiLog.length = 0;
+    for (let i = 0; i < MIDI_LOG_CAP + 5; i++) pushMidiLog(line(i));
+    expect(midiLog.length).toBe(MIDI_LOG_CAP);
+    expect(midiLog[0].text).toBe("5");
+    expect(midiLog.at(-1)!.text).toBe(String(MIDI_LOG_CAP + 4));
+    midiLog.length = 0;
+    pushMidiLog(line(1));
+    expect(midiLog.map((l) => l.text)).toEqual(["1"]);
   });
 });
 
@@ -85,5 +60,63 @@ describe("MidiLogDecoder", () => {
     expect(d.line("tx", req)!.text).toBe("Read preset names");
     const reply = Uint8Array.from([0x12, 0x10, 1, 3, 1, 0, 0]);
     expect(d.line("rx", frames([...reply])[0], { raw: reply })!.text).toBe("Reply: pedal settings (7 bytes)");
+  });
+
+  it("names models from the connected pedal's catalog", () => {
+    const [wah] = frames(encode.setModel(1, 0x05000008)); // PRE C-Wah exists on the GP-50 only
+    expect(new MidiLogDecoder(undefined, () => "gp50").line("tx", wah)!.text).toBe("PRE model C-Wah");
+    expect(new MidiLogDecoder(undefined, () => "gp5").line("tx", wah)!.text).toBe("PRE model 0x5000008");
+  });
+
+  it("decodes the GP-50 commands and notifications readably", () => {
+    const d = new MidiLogDecoder(undefined, () => "gp50");
+    const tx = (payload: number[]) => frames(payload).map((f) => d.line("tx", f)!.text).at(-1);
+    expect(tx(encode.setFootswitchMasks([2, 6], [7]))).toBe("Footswitches FS1 DST MOD, FS2 DLY");
+    expect(tx(encode.setOrder([0, 1, 2, 9, 3, 4, 5, 6, 7, 8]))).toBe("Chain order NR PRE DST NS AMP CAB EQ MOD DLY RVB");
+    expect(tx(encode.setPatchSetting(0x2002, 120))).toBe("Tempo 120 BPM");
+    expect(tx(encode.setPatchSetting(0x2004, 13))).toBe("EXP minimum 13%");
+    expect(tx(encode.deletePreset(5))).toBe("Clear slot 5");
+    expect(tx(encode.pastePreset(7, 3))).toBe("Copy slot 3 to slot 7");
+    expect(tx(encode.movePreset(3, 9))).toBe("Move slot 3 to slot 9");
+    expect(tx(encode.exportPreset(12))).toBe("Read stored preset of slot 12");
+    expect(tx(encode.read(0x45))).toBe("Read unsaved-edits flag");
+    const listChanged = [0x12, 0x1b, 2, 0, 0, 0];
+    expect(d.line("rx", frames(listChanged)[0], { raw: Uint8Array.from(listChanged) })!.text).toBe("Pedal: Preset names changed");
+  });
+});
+
+describe("MidiLogDecoder on the GP-200", () => {
+  type Msg = { cmd: number; payload: Uint8Array };
+  const tx = (d: MidiLogDecoder, msg: Msg) => gp200.encodeFrames(msg).map((f) => d.line("tx", f)!.text);
+  /** A pedal message as the GP-200 session logs it: the last frame, with what it decoded. */
+  const rx = (d: MidiLogDecoder, msg: Msg) => d.line("rx", gp200.encodeFrames(msg, gp200.CHUNK.DEVICE).at(-1)!, gp200.decodeMessage(msg))!.text;
+
+  it("decodes outgoing selects, reads, edits and settings, naming the param when known", () => {
+    const d = new MidiLogDecoder((block, index) => (block === 3 && index === 0 ? "Gain" : undefined), () => "gp200");
+    const { encode: e, PATCH_SETTING, GLOBALS } = gp200;
+    expect(tx(d, e.select(46))).toEqual(["Select preset 12-C"]);
+    expect(tx(d, e.readStored(5))).toEqual(["Read slot 02-B"]);
+    expect(tx(d, e.param(0, { block: 3, paramId: 0, fxid: 0x07000001, value: 42 }))).toEqual(["AMP Gain 42"]);
+    expect(tx(d, e.blockEnabled(0, 2, false))).toEqual(["DST off"]);
+    expect(tx(d, e.patchSetting(0, PATCH_SETTING.TEMPO, 120))).toEqual(["Tempo 120 BPM"]);
+    expect(tx(d, e.global(GLOBALS.inputMode.id, 2))).toEqual(["Global Input mode Line"]);
+    expect(tx(d, e.globalEq(30, 60))).toEqual(["Global EQ value 30 60"]);
+  });
+
+  it("reassembles a full write: partial frames, then the slot it writes", () => {
+    const lines = tx(new MidiLogDecoder(), gp200.encode.fullWrite(5, generatePatch(5)));
+    expect(lines).toHaveLength(7);
+    expect(lines[0]).toBe("Frame 1 of 7");
+    expect(lines.at(-1)).toBe("Write slot 02-B (7 frames)");
+  });
+
+  it("describes what the session decoded from the pedal, and its warnings", () => {
+    const d = new MidiLogDecoder();
+    const { rec, concat, CMD, STATUS } = gp200;
+    expect(rx(d, { cmd: CMD.SET, payload: rec.system(0, 7) })).toBe("Pedal: Preset 02-D selected");
+    expect(rx(d, { cmd: CMD.SET, payload: concat([rec.header(1, 5), generatePatch(5)]) })).toBe("Reply: slot 02-B");
+    expect(rx(d, { cmd: CMD.SET, payload: rec.status(STATUS.DIRTY, 1) })).toBe("Pedal: Active preset edited");
+    expect(d.line("warn", new Uint8Array(), { kind: "resend", what: "read slot 5", attempt: 1 })!.text).toBe("No reply to read slot 5: sending it again (try 2)");
+    expect(d.line("warn", new Uint8Array(), { kind: "verify", slot: 5, attempt: 1, offset: 9 })!.text).toBe("Slot 02-B didn't read back the same after write 1");
   });
 });

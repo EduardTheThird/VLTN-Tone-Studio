@@ -6,10 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notifyError } from "@/app/notify";
 import { host, isElectron } from "@/host";
-import { useDevice } from "@/state/device";
+import { useDevice, useProfile } from "@/state/device";
 import { runBackupNow } from "@/screens/library/backup-now";
 import { useLibrary } from "@/screens/library/store";
 import type { CollectionInfo } from "@shared/host/files";
+import { listNames } from "@shared/devices";
+import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 import { restoreEntries, type RestoreSource } from "./restore";
 import { RestoreDialog } from "./RestoreDialog";
 import { useAppSettings } from "./settings-store";
@@ -32,6 +34,7 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
   const collections = useLibrary((s) => s.collections);
   const refreshCollections = useLibrary((s) => s.refreshCollections);
   const busy = useDevice((s) => s.busy);
+  const { slotCount, backupSeconds } = useProfile();
   const backupBeforeWrite = useAppSettings((s) => s.settings.backupBeforeWrite);
   const patchSettings = useAppSettings((s) => s.patch);
   const [restore, setRestore] = useState<RestoreSource | null>(null);
@@ -41,8 +44,10 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     void refreshCollections().catch(() => {});
   }, [refreshCollections]);
 
+  const device = useDevice((s) => s.device);
   const backups = collections.filter((c) => c.kind === "backup");
-  const last = backups[0];
+  // "Last full backup" means the last one of this pedal's model; the table lists both models.
+  const last = backups.find((c) => !device || c.device === device);
   const backingUp = busy?.kind === "backup";
   const blocked = offline || !!busy;
 
@@ -50,8 +55,11 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     setLoading(c.id);
     try {
       const presets = await host.files.listPresets(c.id);
-      const { entries, skipped } = restoreEntries(presets.map((p) => ({ fileName: p.fileName, slot: p.slot, bytes: p.prst })));
-      setRestore({ title: dirOf(c), location: c.path ?? c.id, entries, skipped });
+      const { entries, converted, skipped } = restoreEntries(
+        presets.map((p) => ({ fileName: p.fileName, slot: p.slot, bytes: p.prst })),
+        useDevice.getState().device,
+      );
+      setRestore({ title: dirOf(c), location: c.path ?? c.id, entries, converted, skipped });
     } catch (e) {
       notifyError("Couldn't read the backup", e);
     } finally {
@@ -63,12 +71,12 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     try {
       const picked = await host.files.pickPrstFolder();
       if (!picked) return;
-      const { entries, skipped } = restoreEntries(picked.files);
+      const { entries, converted, skipped } = restoreEntries(picked.files, useDevice.getState().device);
       if (!entries.length) {
-        notifyError("Nothing to restore", new Error(`${picked.name} has no GP-5 presets with a slot number (NN-Name.prst).`));
+        notifyError("Nothing to restore", new Error(`${picked.name} has no ${listNames(SUPPORTED_DEVICE_KEYS)} presets with a slot number (NN-Name.prst).`));
         return;
       }
-      setRestore({ title: picked.name, location: picked.path ?? picked.name, entries, skipped });
+      setRestore({ title: picked.name, location: picked.path ?? picked.name, entries, converted, skipped });
     } catch (e) {
       notifyError("Couldn't read the folder", e);
     }
@@ -80,7 +88,7 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
         <h2 id="bk-title" className="text-[15px] font-[650] text-balance">
           Backups
         </h2>
-        <p className="mt-0.5 text-sm text-pretty text-silkscreen-3">A full backup copies all 100 preset slots from the pedal into .prst files on this computer.</p>
+        <p className="mt-0.5 text-sm text-pretty text-silkscreen-3">A full backup copies all {slotCount} preset slots from the pedal into .prst files on this computer.</p>
       </div>
 
       <div className="flex items-end gap-4 border-b pt-1 pb-4">
@@ -112,7 +120,7 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
               Back up now
             </Button>
           )}
-          <span className="text-xs text-silkscreen-3">Takes about 75 seconds</span>
+          <span className="text-xs text-silkscreen-3">Takes about {backupSeconds} seconds</span>
         </div>
       </div>
 

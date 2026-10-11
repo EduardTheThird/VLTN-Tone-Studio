@@ -12,7 +12,7 @@ import { IR_RATE, IR_TAPS, MATCH_HI_HZ, MATCH_LO_HZ, MAX_CORRECTION_DB, response
 import { isSessionLive, MIN_PLAYING_S, RECORD_S, useIrMatch } from "@/song/tonematch/ir-store";
 import { useToneMatch } from "@/song/tonematch/store";
 import type { Level } from "@/song/tonematch/recorder";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import type { OpenFile } from "@/state/ui";
 import { CurvePlot, type CurveSeries } from "./CurvePlot";
 import { Section } from "./parts";
@@ -84,6 +84,8 @@ function Result({ result, playedS }: { result: MatchedIr; playedS: number }) {
   const songName = useSong((s) => s.source?.name);
   const [sendFile, setSendFile] = useState<OpenFile | null>(null);
   const fileName = irFileName(songName);
+  const pedal = usePedalName();
+  const kept = useProfile().userIr.samples;
 
   const save = async () => {
     try {
@@ -102,7 +104,7 @@ function Result({ result, playedS }: { result: MatchedIr; playedS: number }) {
     <div className="flex flex-col gap-3">
       <CurvePlot title="Correction between your recording and the song, and the matched IR's response" series={resultSeries(result)} />
       <p className="text-[12px] text-pretty text-silkscreen-3">
-        From {playedS.toFixed(0)} s of playing. A {IR_TAPS}-sample minimum-phase IR at 44.1 kHz; the GP-5 keeps its first 512 samples (11.6 ms), and a minimum-phase IR puts its energy first. It
+        From {playedS.toFixed(0)} s of playing. A {IR_TAPS}-sample minimum-phase IR at 44.1 kHz; the {pedal} keeps its first {kept} samples ({((kept / IR_RATE) * 1000).toFixed(1)} ms), and a minimum-phase IR puts its energy first. It
         follows the song from {MATCH_LO_HZ} Hz to {MATCH_HI_HZ / 1000} kHz (at most ±{MAX_CORRECTION_DB} dB) and rolls off like a cabinet outside that. Write it to a User IR slot,
         then pick that slot in the CAB block.
       </p>
@@ -130,6 +132,7 @@ export function IrMatchCard() {
   const level = useIrMatch((s) => s.level);
   const seconds = useIrMatch((s) => s.seconds);
   const connected = useDevice((s) => s.status === "connected" && s.preset !== null);
+  const pedal = usePedalName();
   const auditionBusy = useToneMatch((s) => s.audition.kind === "applying" || s.audition.kind === "restoring");
   const live = isSessionLive(step);
 
@@ -144,7 +147,7 @@ export function IrMatchCard() {
   return (
     <Section title="Match the cabinet with an IR">
       <p className="text-[12px] text-pretty text-silkscreen-3">
-        The GP-5 is also a USB audio interface. Tone Studio turns its CAB block off, records you playing about {RECORD_S} s in the song's style, compares that with the
+        The {pedal} is also a USB audio interface. Tone Studio turns its CAB block off, records you playing about {RECORD_S} s in the song's style, compares that with the
         guitar in the song and designs an impulse response (IR) to use in place of the cabinet. Audition the proposed preset first, so the amp is close.
       </p>
 
@@ -154,7 +157,7 @@ export function IrMatchCard() {
             <Mic data-icon="inline-start" />
             Start the IR match
           </Button>
-          {!connected && <span className="text-[12px] text-silkscreen-3">Connect the GP-5 first; the recording goes through it.</span>}
+          {!connected && <span className="text-[12px] text-silkscreen-3">Connect the {pedal} first; the recording goes through it.</span>}
         </div>
       )}
 
@@ -171,7 +174,7 @@ export function IrMatchCard() {
           <Meter level={level} />
           {step.kind === "ready" ? (
             <p className="text-[12px] text-pretty text-silkscreen-2">
-              The CAB block is off now (it comes back when you finish). Pick the GP-5 as the input, check the meter moves when you play without reaching the top,
+              The CAB block is off now (it comes back when you finish). Pick the {pedal} as the input, check the meter moves when you play without reaching the top,
               then record the part, or something like it, the way the song plays it.
             </p>
           ) : (

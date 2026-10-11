@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, useProfile } from "@/state/device";
 import type { Step } from "./plans";
-import { isEmptyName } from "./store";
+import { emptyName, isEmptyName } from "./store";
 
 export interface SlotPick {
   title: string;
@@ -12,7 +12,7 @@ export interface SlotPick {
   confirmLabel: (slot: number) => string;
   /** Pre-selected target */
   initial: number | null;
-  /** Steps the choice would write (null = not possible from there, e.g. past slot 99) */
+  /** Steps the choice would write (null = not possible from there, e.g. past the last slot) */
   preview: (target: number) => Step[] | null;
   /** Content name for "blank"/file sources in the preview */
   sourceName?: (from: Step["from"]) => string;
@@ -22,6 +22,7 @@ export interface SlotPick {
 /** Choose a target slot and preview what changes before the confirmation dialog. */
 export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null; onOpenChange(open: boolean): void }) {
   const names = useDevice((s) => s.names);
+  const { slotCount, slotLabel } = useProfile();
   const [target, setTarget] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -31,9 +32,9 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
   }, [pick]);
 
   if (!pick) return null;
-  const nameOf = (slot: number) => names[slot]?.name ?? "GP-5";
+  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const steps = target === null ? null : pick.preview(target);
-  const label = (from: Step["from"]) => (typeof from === "number" ? `${String(from).padStart(2, "0")} ${nameOf(from)}` : (pick.sourceName?.(from) ?? "Empty preset"));
+  const label = (from: Step["from"]) => (typeof from === "number" ? `${slotLabel(from)} ${nameOf(from)}` : (pick.sourceName?.(from) ?? "Empty preset"));
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -48,7 +49,7 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
           aria-label="Target slot"
           className="grid min-h-0 flex-1 grid-cols-2 gap-0.5 overflow-auto rounded-lg bg-well p-1.5"
         >
-          {Array.from({ length: 100 }, (_, slot) => {
+          {Array.from({ length: slotCount }, (_, slot) => {
             const empty = isEmptyName(nameOf(slot));
             const possible = pick.preview(slot) !== null;
             return (
@@ -66,7 +67,7 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
                   target === slot && "bg-lamp-glow shadow-[inset_0_0_0_1.5px_var(--lamp)] hover:bg-lamp-glow",
                 )}
               >
-                <span className="w-5 text-xs font-semibold text-silkscreen-3 tabular-nums">{String(slot).padStart(2, "0")}</span>
+                <span className="min-w-5 text-xs font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
                 <span className={cn("truncate", empty ? "text-silkscreen-4" : "font-semibold text-silkscreen")}>{empty ? "Empty" : nameOf(slot)}</span>
               </button>
             );
@@ -74,14 +75,14 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
         </div>
         <div className="min-h-[52px] text-sm" aria-live="polite">
           {steps === null ? (
-            <p className="text-silkscreen-3">{target === null ? "Choose a slot." : "That runs past slot 99. Choose an earlier slot."}</p>
+            <p className="text-silkscreen-3">{target === null ? "Choose a slot." : `That runs past slot ${slotLabel(slotCount - 1)}. Choose an earlier slot.`}</p>
           ) : steps.length === 0 ? (
             <p className="text-silkscreen-3">Nothing changes from there. Choose another slot.</p>
           ) : (
             <ul className="flex flex-col gap-0.5">
               {steps.slice(0, 4).map((s) => (
                 <li key={s.slot} className="truncate text-silkscreen-2">
-                  <span className="text-silkscreen-3 tabular-nums">Slot {String(s.slot).padStart(2, "0")}:</span> {label(s.from)}
+                  <span className="text-silkscreen-3 tabular-nums">Slot {slotLabel(s.slot)}:</span> {label(s.from)}
                   {!isEmptyName(nameOf(s.slot)) && <span className="text-silkscreen-3"> (was {nameOf(s.slot)})</span>}
                 </li>
               ))}

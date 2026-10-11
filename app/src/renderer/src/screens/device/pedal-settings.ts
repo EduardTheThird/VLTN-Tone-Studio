@@ -1,0 +1,54 @@
+// What the Pedal settings faceplate shows for a model: its settings table (state/device-model globalSpecsFor), grouped
+// like the pedal's menu, and the control each setting gets. Pure: no store access, no React.
+import { globalSpecsFor, isGp5Family, visibleGlobals } from "@/state/device-model";
+import type { DeviceKey, Globals, SettingSpec } from "@/state/device-types";
+import { GP200_GLOBAL_SPECS } from "@/state/driver/gp200-globals";
+
+export type SettingsGroupKey = SettingSpec["group"];
+
+/** "dial" for numbers, "toggle" for Off/On, "select" for any other list of choices. */
+export type ControlKind = "dial" | "toggle" | "select";
+
+export interface SettingsGroup {
+  group: SettingsGroupKey;
+  title: string;
+  items: SettingSpec[];
+}
+
+const GROUP_TITLES: Readonly<Record<SettingsGroupKey, string>> = {
+  audio: "Audio",
+  recording: "Recording",
+  controls: "Controls",
+  midi: "MIDI",
+  display: "Display",
+  power: "Power",
+};
+
+const GROUP_ORDER = Object.keys(GROUP_TITLES) as SettingsGroupKey[];
+
+/** The settings `device` shows, grouped in menu order; only groups with entries. */
+export function settingsGroups(device: DeviceKey | null, globals: Globals | null, firmware: string | null): SettingsGroup[] {
+  const specs = visibleGlobals(globalSpecsFor(device), globals, firmware);
+  return GROUP_ORDER.map((group) => ({ group, title: GROUP_TITLES[group], items: specs.filter((s) => s.group === group) })).filter((g) => g.items.length > 0);
+}
+
+export function controlKind(spec: SettingSpec): ControlKind {
+  if (spec.kind === "number") return "dial";
+  const labels = spec.labels ?? [];
+  return labels.length === 2 && labels[0] === "Off" && labels[1] === "On" ? "toggle" : "select";
+}
+
+/** Caption under a dial: "−20 to 20 dB", "0 to 100". */
+export function rangeCaption(spec: SettingSpec): string {
+  const min = `${spec.min < 0 ? "−" : ""}${Math.abs(spec.min)}`;
+  return `${min} to ${spec.max}${spec.unit ? ` ${spec.unit}` : ""}`;
+}
+
+/**
+ * True when settings record [a, b] (GP-5 family: 0x10 record address; GP-200 family: a = 0x1008 id) is in `device`'s
+ * table. GP-200 family: the family's table, so a record of a setting another model has isn't listed as unknown.
+ */
+export function isNamedRecord(device: DeviceKey | null, a: number, b: number): boolean {
+  const specs: readonly SettingSpec[] = device && !isGp5Family(device) ? GP200_GLOBAL_SPECS : globalSpecsFor(device);
+  return specs.some((g) => (g.addr ? g.addr[0] === a && g.addr[1] === b : g.id === a));
+}

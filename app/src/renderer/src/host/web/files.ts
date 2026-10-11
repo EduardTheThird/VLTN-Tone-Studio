@@ -11,21 +11,26 @@ import {
   type NewPreset,
   type PickedFile,
 } from "@shared/host/files";
+import { MAX_PRST_BYTES, PRST_MODELS, profileFor, sniffPrst, type DeviceKey } from "@shared/devices";
 import {
-  MAX_PRST_BYTES,
   backupDirName,
   collectionDirName,
+  commonModel,
   isSafePresetFileName,
+  parseBackupDirName,
   parseCollectionId,
   presetFileName,
   uniqueFileName,
 } from "@shared/files-naming";
+import { pickFiles } from "./pick-files";
 
 interface CollectionRow {
   id: string;
   kind: CollectionKind;
   title: string;
   createdAt: string;
+  /** Backups only; rows saved before GP-50 support have none (their id names the model, see info) */
+  device?: DeviceKey;
 }
 
 interface PresetRow {
@@ -105,7 +110,8 @@ const toPreset = (r: PresetRow): LocalPreset => ({
 
 async function info(row: CollectionRow): Promise<CollectionInfo> {
   const count = await done((await db()).transaction("presets").objectStore("presets").index("collection").count(row.id));
-  return { ...row, count, path: null };
+  const device = row.kind === "backup" ? (row.device ?? parseBackupDirName(parseCollectionId(row.id)?.dir ?? "")?.device ?? null) : null;
+  return { ...row, device, count, path: null };
 }
 
 async function requireLibrary(id: string): Promise<CollectionRow> {
@@ -128,7 +134,7 @@ async function putPresets(collectionId: string, items: NewPreset[]): Promise<Loc
   const taken = existing.map((r) => r.fileName);
   let seq = existing.reduce((m, r) => Math.max(m, r.seq), 0);
   const rows: PresetRow[] = items.map((item) => {
-    const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot);
+    const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot, sniffPrst(item.prst));
     const fileName = uniqueFileName(preferred, taken);
     taken.push(fileName);
     return {
@@ -153,24 +159,10 @@ async function readFiles(files: File[]): Promise<PickedFile[]> {
   return Promise.all(
     files.map(async (f): Promise<PickedFile> => {
       if (!/\.prst$/i.test(f.name)) return { fileName: f.name, path: null, bytes: null, error: "Not a .prst preset file." };
-      if (f.size > MAX_PRST_BYTES) return { fileName: f.name, path: null, bytes: null, error: "Not a GP-5 or GP-50 preset." };
+      if (f.size > MAX_PRST_BYTES) return { fileName: f.name, path: null, bytes: null, error: `Not a ${PRST_MODELS} preset.` };
       return { fileName: f.name, path: null, bytes: new Uint8Array(await f.arrayBuffer()), error: null };
     }),
   );
-}
-
-/** Open the browser's file picker; resolves with the chosen files ([] when cancelled). */
-function chooseFiles(opts: { multiple: boolean; directory: boolean }): Promise<File[]> {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".prst";
-    input.multiple = opts.multiple;
-    if (opts.directory) input.webkitdirectory = true;
-    input.addEventListener("change", () => resolve(Array.from(input.files ?? [])), { once: true });
-    input.addEventListener("cancel", () => resolve([]), { once: true });
-    input.click();
-  });
 }
 
 function download(fileName: string, bytes: Uint8Array) {
@@ -199,9 +191,17 @@ export const webFiles: FilesApi = {
 
   async saveBackup(slots) {
     if (!slots.length) throw new HostError("invalid", "Nothing to back up");
+    const device = commonModel(slots.map((s) => s.prst));
+    if (!device) throw new HostError("invalid", "A backup holds the presets of one pedal model");
     const now = new Date();
     const dirs = (await allCollections()).filter((c) => c.kind === "backup").map((c) => parseCollectionId(c.id)!.dir);
-    const row: CollectionRow = { id: `backups/${backupDirName(now, dirs)}`, kind: "backup", title: "GP-5 backup", createdAt: now.toISOString() };
+    const row: CollectionRow = {
+      id: `backups/${backupDirName(now, dirs, device)}`,
+      kind: "backup",
+      title: `${profileFor(device).name} backup`,
+      createdAt: now.toISOString(),
+      device,
+    };
     const tx = (await db()).transaction("collections", "readwrite");
     tx.objectStore("collections").put(row);
     await finished(tx);
@@ -258,11 +258,11 @@ export const webFiles: FilesApi = {
   },
 
   async pickPrstFiles() {
-    return readFiles(await chooseFiles({ multiple: true, directory: false }));
+    return readFiles(await pickFiles(".prst", { multiple: true }));
   },
 
   async pickPrstFolder() {
-    const files = (await chooseFiles({ multiple: true, directory: true })).filter((f) => /\.prst$/i.test(f.name));
+    const files = (await pickFiles(".prst", { multiple: true, directory: true })).filter((f) => /\.prst$/i.test(f.name));
     if (!files.length) return null;
     files.sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }));
     const folder = files[0].webkitRelativePath.split("/")[0] || "Folder";

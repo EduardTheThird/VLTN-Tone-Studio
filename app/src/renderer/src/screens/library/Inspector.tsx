@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ArrowDownToLineIcon, ArrowUpDownIcon, CableIcon, CopyIcon, DownloadIcon, FolderPlusIcon, HardDriveDownloadIcon, InfoIcon, PencilIcon, ScanSearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -6,18 +6,20 @@ import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { GearFor, paramTitle } from "@/components/gear";
 import { MiniChain } from "@/components/write/MiniChain";
+import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
-import { BLOCK_CODES } from "@/state/device-types";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
+import { isGp5Family, profileOrDefault, slotNameError, switchLabel } from "@/state/device-model";
+import { EXP_TARGETS } from "@/gp5/lib/protocol.mjs";
+import { PRST_MODELS, profileFor } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { formatDay } from "./dnd";
 import { writableCollections } from "./LocalPane";
-import { isEmptyName, useLibrary } from "./store";
+import { emptyName, isEmptyName, useLibrary } from "./store";
 
 const CORE = [2, 9, 3, 4, 5];
-const NAME_RE = /^[\x20-\x7E]*$/;
 
 /** Inspector body for the current selection: one slot, several slots, or a preset on this computer. */
 export function Inspector({ onClose }: { onClose?: () => void }) {
@@ -73,7 +75,12 @@ function SlotInspector({ slot }: { slot: number }) {
   const renaming = useLibrary((s) => s.renaming === slot);
   const job = useLibrary((s) => s.job);
   const actions = useLibraryActions();
-  const name = names[slot]?.name ?? "GP-5";
+  const pedal = usePedalName();
+  const profile = useProfile();
+  const label = profile.slotLabel(slot);
+  // The GP-200 family has no empty slots: a slot is reset to an init patch instead of cleared
+  const clearLabel = profile.emptyName === null ? `Reset slot ${label} to init patch` : `Clear slot ${label}`;
+  const name = names[slot]?.name ?? emptyName();
   const empty = isEmptyName(name);
   const connected = status === "connected";
   const writable = connected && !busy;
@@ -81,7 +88,7 @@ function SlotInspector({ slot }: { slot: number }) {
   const prst = activeSlot === slot && saved ? saved.prst : body?.prst;
   const parsed = prst ? summarize(prst) : null;
   const summary = parsed && parsed.name === name ? parsed : null;
-  const source = activeSlot === slot && saved ? "Read from the GP-5" : body ? (body.from === "backup" ? `Chain from the backup of ${formatDay(body.at)}` : "Read from the GP-5") : null;
+  const source = activeSlot === slot && saved ? `Read from the ${pedal}` : body ? (body.from === "backup" ? `Chain from the backup of ${formatDay(body.at)}` : `Read from the ${pedal}`) : null;
 
   return (
     <>
@@ -89,7 +96,8 @@ function SlotInspector({ slot }: { slot: number }) {
         title={empty ? "Empty slot" : name}
         meta={
           <>
-            Slot {slot} on GP-5{active && ", playing now"}
+            Slot {label} on {pedal}
+            {active && ", playing now"}
           </>
         }
       >
@@ -99,7 +107,7 @@ function SlotInspector({ slot }: { slot: number }) {
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-silkscreen">{empty ? "Empty slot" : name}</h2>
             {!empty && (
-              <Button variant="ghost" size="icon-sm" aria-label="Rename" title={connected ? "Rename (F2)" : "Rename needs the GP-5"} disabled={!connected} onClick={() => useLibrary.setState({ renaming: slot })}>
+              <Button variant="ghost" size="icon-sm" aria-label="Rename" title={connected ? "Rename (F2)" : `Rename needs the ${pedal}`} disabled={!connected} onClick={() => useLibrary.setState({ renaming: slot })}>
                 <PencilIcon />
               </Button>
             )}
@@ -121,7 +129,7 @@ function SlotInspector({ slot }: { slot: number }) {
             <p className="text-pretty text-silkscreen-2">The chain of this slot hasn't been read yet. Back up now reads every slot; reading just this one switches the pedal to it for a moment and back.</p>
             <Button variant="outline" size="sm" disabled={!writable || unsaved > 0 || job !== null} onClick={() => void actions.readSlot(slot)}>
               <ScanSearchIcon data-icon="inline-start" />
-              {job ? "Reading…" : "Read from GP-5"}
+              {job ? "Reading…" : `Read from ${pedal}`}
             </Button>
             {unsaved > 0 && <p className="text-xs text-silkscreen-3">Save or discard your unsaved changes on the Rig first.</p>}
           </div>
@@ -153,8 +161,8 @@ function SlotInspector({ slot }: { slot: number }) {
             variant="ghost"
             size="icon-sm"
             className="ml-auto text-led-fault hover:text-led-fault"
-            aria-label={`Clear slot ${slot}`}
-            title={`Clear slot ${slot}`}
+            aria-label={clearLabel}
+            title={clearLabel}
             disabled={!writable || empty}
             onClick={() => actions.clearSlots([slot])}
           >
@@ -171,10 +179,11 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
   const actions = useLibraryActions();
   const inputRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
+  const pedal = usePedalName();
+  const { nameLength, slotLabel } = useProfile();
   useEffect(() => inputRef.current?.select(), []);
   const trimmed = value.replace(/\s+$/, "");
-  const bad = [...value].find((c) => !NAME_RE.test(c));
-  const error = bad ? `The GP-5 can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed ? null : "A slot needs a name.";
+  const error = slotNameError(value, pedal);
   const cancel = () => useLibrary.setState({ renaming: null });
   const commit = () => {
     if (error || trimmed === name) return cancel();
@@ -187,11 +196,11 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
         <Input
           ref={inputRef}
           value={value}
-          maxLength={10}
-          aria-label={`New name for slot ${slot}`}
+          maxLength={nameLength}
+          aria-label={`New name for slot ${slotLabel(slot)}`}
           aria-describedby={hintId}
           aria-invalid={error ? true : undefined}
-          onChange={(e) => setValue(e.target.value.slice(0, 10))}
+          onChange={(e) => setValue(e.target.value.slice(0, nameLength))}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               // Keep Enter from also activating the confirmation dialog's focused button.
@@ -215,8 +224,10 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
         <FieldError id={hintId}>{error}</FieldError>
       ) : (
         <div id={hintId} className="flex justify-between gap-3 text-xs text-silkscreen-3">
-          <span className="text-pretty">{value.length >= 10 ? "The GP-5 stores 10 characters. Further typing is ignored." : "The GP-5 shows up to 10 characters."}</span>
-          <span className={cn("tabular-nums", value.length >= 10 && "text-led-warn")}>{value.length}/10</span>
+          <span className="text-pretty">{value.length >= nameLength ? `The ${pedal} stores ${nameLength} characters. Further typing is ignored.` : `The ${pedal} shows up to ${nameLength} characters.`}</span>
+          <span className={cn("tabular-nums", value.length >= nameLength && "text-led-warn")}>
+            {value.length}/{nameLength}
+          </span>
         </div>
       )}
     </Field>
@@ -231,36 +242,39 @@ function MultiInspector({ slots }: { slots: number[] }) {
   const connected = useDevice((s) => s.status === "connected");
   const bodies = useLibrary((s) => s.bodies);
   const actions = useLibraryActions();
+  const pedal = usePedalName();
+  const { slotLabel, emptyName: pedalEmptyName } = useProfile();
+  const resets = pedalEmptyName === null;
   const both = slots.length === 2;
   const usedSlots = slots.filter((s) => !isEmptyName(names[s]?.name));
 
   return (
     <>
-      <Head title={`${slots.length} slots selected`} meta="On GP-5" />
+      <Head title={`${slots.length} slots selected`} meta={`On ${pedal}`} />
       <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto">
         <ul className="flex flex-col gap-0.5 rounded-lg bg-well p-1.5">
           {slots.map((slot) => {
-            const name = names[slot]?.name ?? "GP-5";
+            const name = names[slot]?.name ?? emptyName();
             const s = bodies[slot] ? summarize(bodies[slot].prst) : null;
             const ok = s && s.name === name;
             return (
-              <li key={slot} className="grid h-8 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 px-1.5 text-[13px]">
-                <span className="text-sm font-semibold text-silkscreen-3 tabular-nums">{String(slot).padStart(2, "0")}</span>
+              <li key={slot} className="grid h-8 grid-cols-[minmax(22px,auto)_minmax(0,1fr)_auto] items-center gap-3 px-1.5 text-[13px]">
+                <span className="text-sm font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
                 <span className={cn("truncate font-semibold text-silkscreen", isEmptyName(name) && "font-medium text-silkscreen-4")}>{isEmptyName(name) ? "Empty" : name}</span>
-                <MiniChain order={ok ? s.order : undefined} enabled={ok ? s.blocks.map((b) => b.enabled) : null} />
+                <MiniChain chain={ok ? s : null} />
               </li>
             );
           })}
         </ul>
         <p className="text-sm text-pretty text-silkscreen-3">
-          {both ? "Swapping writes both slots on the pedal." : "Copying, moving and clearing write these slots on the pedal."} You confirm before anything is stored.
+          {both ? "Swapping writes both slots on the pedal." : `Copying, moving and ${resets ? "resetting" : "clearing"} write these slots on the pedal.`} You confirm before anything is stored.
         </p>
       </div>
       <Actions>
         {both ? (
           <Button disabled={!writable} onClick={() => actions.swapSlots(slots[0], slots[1])}>
             <ArrowUpDownIcon data-icon="inline-start" />
-            Swap slots {slots[0]} and {slots[1]}
+            Swap slots {slotLabel(slots[0])} and {slotLabel(slots[1])}
           </Button>
         ) : (
           <Button disabled={!writable || !usedSlots.length} onClick={() => actions.copySlots(slots)}>
@@ -282,7 +296,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
           <AddToCollection disabled={!connected} onAdd={(id) => void actions.addSlotsToCollection(slots, id)} />
           <Button variant="ghost" size="sm" className="ml-auto text-led-fault hover:text-led-fault" disabled={!writable || !usedSlots.length} onClick={() => actions.clearSlots(slots)}>
             <Trash2Icon data-icon="inline-start" />
-            Clear {usedSlots.length === 1 ? "1 slot" : `${usedSlots.length} slots`}
+            {resets ? "Reset" : "Clear"} {usedSlots.length === 1 ? "1 slot" : `${usedSlots.length} slots`}
           </Button>
         </div>
       </Actions>
@@ -295,9 +309,11 @@ function MultiInspector({ slots }: { slots: number[] }) {
 function LocalInspector({ p }: { p: LocalPreset }) {
   const collections = useLibrary((s) => s.collections);
   const writable = useDevice((s) => s.status === "connected" && s.busy === null);
+  const device = useDevice((s) => s.device);
   const actions = useLibraryActions();
   const collection = collections.find((c) => c.id === p.collectionId);
   const s = summarize(p.prst);
+  const conversion = s ? conversionFor(s, device) : null;
   const restore = collection?.kind === "backup" && p.slot !== null;
 
   return (
@@ -306,10 +322,10 @@ function LocalInspector({ p }: { p: LocalPreset }) {
       <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto">
         {s ? (
           <>
-            {s.device === "gp50" && (
+            {conversion && (
               <p className="flex items-start gap-1.5 text-sm text-pretty text-silkscreen-2">
                 <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                Made on a GP-50. Converted for the GP-5 when you write it{s.gp50Only.length ? `; ${s.gp50Only.join(", ")} has no GP-5 equivalent and is left empty.` : "."}
+                {conversionNote(conversion)}
               </p>
             )}
             <ChainPreview s={s} />
@@ -317,13 +333,13 @@ function LocalInspector({ p }: { p: LocalPreset }) {
             {p.source && <p className="text-xs text-silkscreen-3">From {p.source}, added {formatDay(p.addedAt)}</p>}
           </>
         ) : (
-          <p className="text-sm text-led-fault">This file can't be read as a GP-5 or GP-50 preset.</p>
+          <p className="text-sm text-led-fault">This file can't be read as a {PRST_MODELS} preset.</p>
         )}
       </div>
       <Actions>
         <Button disabled={!writable || !s} onClick={() => actions.writeLocal(p)}>
           <ArrowDownToLineIcon data-icon="inline-start" />
-          {restore ? `Restore to slot ${p.slot}…` : "Write to slot…"}
+          {restore && collection ? `Restore to slot ${profileOrDefault(collection.device).slotLabel(p.slot!)}…` : "Write to slot…"}
         </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={() => void actions.exportLocal([p])}>
@@ -384,7 +400,8 @@ function valueText(b: SummaryBlock): string {
   const p = b.model?.params.find((x) => x.index === 0) ?? b.model?.params[0];
   if (!p) return "";
   const v = b.params[p.index];
-  if (p.options?.length) return p.options[Math.round(v)] ?? "";
+  const label = p.labels?.[Math.round(v - p.min)];
+  if (label !== undefined) return `${paramTitle(p.name)} ${label}`;
   const n = Number.isInteger(p.step) ? Math.round(v) : Math.round(v * 10) / 10;
   return `${paramTitle(p.name)} ${n}${p.unit ? ` ${p.unit}` : ""}`;
 }
@@ -405,16 +422,20 @@ function ChainRow({ b, replaced }: { b: SummaryBlock; replaced: boolean }) {
 }
 
 function ChainPreview({ s }: { s: PresetSummary }) {
-  const seq = s.order.length === 10 ? s.order : [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
-  const start = seq.findIndex((i) => CORE.includes(i));
-  const nsOn = s.blocks[9].enabled;
-  const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && (i === 3 || i === 4)} />;
+  const codes = profileFor(s.device).blocks;
+  const gp5 = isGp5Family(s.device);
+  const seq = s.order.length === codes.length ? s.order : gp5 ? [0, 1, 2, 9, 3, 4, 5, 6, 7, 8] : codes.map((_, i) => i);
+  // The GP-5 family's fixed core (DST NS AMP CAB EQ) is framed; the GP-200 family has none
+  const start = gp5 ? seq.findIndex((i) => CORE.includes(i)) : seq.length;
+  const nsOn = !!s.blocks[codes.indexOf("NS")]?.enabled;
+  const replacedByNs = [codes.indexOf("AMP"), codes.indexOf("CAB")];
+  const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && replacedByNs.includes(i)} />;
   return (
     <section aria-label="Chain" className="flex flex-col gap-1.5">
       <h3 className="text-[13px] font-semibold text-silkscreen">Chain</h3>
       <div className="flex shrink-0 flex-col rounded-lg bg-well px-1.5 py-1">
         {seq.slice(0, start).map(row)}
-        <div className="my-[3px] flex flex-col border-y border-seam-strong py-[3px]">{seq.slice(start, start + 5).map(row)}</div>
+        {start < seq.length && <div className="my-[3px] flex flex-col border-y border-seam-strong py-[3px]">{seq.slice(start, start + 5).map(row)}</div>}
         {seq.slice(start + 5).map(row)}
         {nsOn && (
           <p className="flex items-center gap-1.5 px-1.5 pt-0.5 text-xs text-silkscreen-3">
@@ -427,22 +448,33 @@ function ChainPreview({ s }: { s: PresetSummary }) {
   );
 }
 
-function FsChips({ blocks }: { blocks: number[] }) {
+function FsChips({ blocks, codes }: { blocks: number[]; codes: readonly string[] }) {
   if (!blocks.length) return <span className="text-sm text-silkscreen-3">None</span>;
   return (
     <span className="col-span-3 flex flex-wrap gap-1">
       {blocks.map((k) => (
         <span key={k} className="inline-flex h-5 items-center gap-[5px] rounded-full px-[7px] text-xs font-semibold tracking-[0.04em] text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam-strong)]">
-          <span className="size-1.5 rounded-full" style={{ background: `var(--block-${BLOCK_CODES[k].toLowerCase()})` }} aria-hidden />
-          {BLOCK_CODES[k]}
+          <span className="size-1.5 rounded-full" style={{ background: `var(--block-${codes[k].toLowerCase()})` }} aria-hidden />
+          {codes[k]}
         </span>
       ))}
     </span>
   );
 }
 
+/** "DLY Time 0–100%", "Volume 0–100" or "Off": what the preset's EXP pedal (GP-50) sweeps. */
+function expText(s: PresetSummary): string {
+  const exp = s.exp!;
+  if (!exp.on) return "Off";
+  if (exp.targetModule === 0) return `Volume ${exp.volMin}–${exp.volMax}`;
+  const code = EXP_TARGETS[exp.targetModule];
+  const param = s.blocks.find((b) => b.code === code)?.model?.params[exp.targetParam];
+  return `${code}${param ? ` ${paramTitle(param.name)}` : ""} ${exp.paramMin}–${exp.paramMax}%`;
+}
+
 function Patch({ s }: { s: PresetSummary }) {
   const key = "text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase";
+  const codes = profileFor(s.device).blocks;
   return (
     <dl className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
       <dt className={key}>Volume</dt>
@@ -451,14 +483,20 @@ function Patch({ s }: { s: PresetSummary }) {
       <dd className="font-semibold text-silkscreen">
         {s.bpm} <small className="text-xs font-medium text-silkscreen-3">BPM</small>
       </dd>
-      <dt className={key}>FS1</dt>
-      <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs1} />
-      </dd>
-      <dt className={key}>FS2</dt>
-      <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs2} />
-      </dd>
+      {s.footswitches.map((blocks, i) => (
+        <Fragment key={i}>
+          <dt className={key}>{switchLabel(s.device, i)}</dt>
+          <dd className="col-span-3">
+            <FsChips blocks={blocks} codes={codes} />
+          </dd>
+        </Fragment>
+      ))}
+      {s.exp && (
+        <>
+          <dt className={key}>EXP</dt>
+          <dd className="col-span-3 font-semibold text-silkscreen">{expText(s)}</dd>
+        </>
+      )}
     </dl>
   );
 }

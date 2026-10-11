@@ -13,6 +13,7 @@ import {
   decodeImportSnapTone,
   encodeImportSnapTone,
   sanitizeSnapToneName,
+  sanitizeUserIrName,
 } from "../lib/snaptone.mjs";
 
 const load = (n) => new Uint8Array(readFileSync(new URL(`../fixtures/${n}`, import.meta.url)));
@@ -47,11 +48,20 @@ test("damaged clone data and files are refused", () => {
   assert.match(checkSnapToneFile(clone), /2696/);
 });
 
-test("names follow Suite's rule: allowed ASCII only, 10 characters, X when empty", () => {
-  assert.equal(sanitizeSnapToneName("5150 Red Channel"), "5150 Red C");
+test("SnapTone names follow Suite 2.1.0's import rule: letters and digits only, .nam dropped, 10 characters, X when empty", () => {
+  assert.equal(sanitizeSnapToneName("5150 Red Channel"), "5150RedCha");
   assert.equal(sanitizeSnapToneName("Żółw$Amp"), "wAmp");
+  assert.equal(sanitizeSnapToneName("My-Amp_v2.nam"), "MyAmpv2");
+  assert.equal(sanitizeSnapToneName("Plexi (1968)!"), "Plexi1968");
   assert.equal(sanitizeSnapToneName("   "), "X");
   assert.equal(sanitizeSnapToneName("ąę"), "X");
+  assert.equal(sanitizeSnapToneName(".nam"), "X");
+});
+
+test("User IR names keep Suite's per-character rule (punctuation and spaces stay)", () => {
+  assert.equal(sanitizeUserIrName("5150 Red Channel"), "5150 Red C");
+  assert.equal(sanitizeUserIrName("Cab-1 (V30)$"), "Cab-1 (V30");
+  assert.equal(sanitizeUserIrName("   "), "X");
 });
 
 test("import payload: 11 25, fxId of the slot, name, 2696-byte file in 146 frames", () => {
@@ -77,11 +87,11 @@ test("uploadSnapTone needs confirm, writes a user slot and verifies it in the 0x
   await assert.rejects(s.uploadSnapTone(12, "Lead", file, { confirm: true }), { code: "unsafe" });
   const steps = [];
   const r = await s.uploadSnapTone(62, "Lead Ch$", file, { confirm: true, onProgress: (d) => steps.push(d) });
-  assert.deepEqual(r, { frames: 146, name: "Lead Ch", slot: 62 });
+  assert.deepEqual(r, { frames: 146, name: "LeadCh", slot: 62 });
   assert.equal(steps.at(-1), 146);
   assert.deepEqual(dev.snapToneFiles.get(62), file);
   const table = await s.readSnapTones();
-  assert.deepEqual({ name: table[62].name, flag: table[62].flag }, { name: "Lead Ch", flag: 0 });
+  assert.deepEqual({ name: table[62].name, flag: table[62].flag }, { name: "LeadCh", flag: 0 }, "verified by the 0x24 read-back");
   assert.deepEqual(dev.violations, []);
   await s.close();
 });

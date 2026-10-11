@@ -1,10 +1,10 @@
-import { app, dialog, type BrowserWindow, type OpenDialogOptions } from "electron";
+import { app, type BrowserWindow, type OpenDialogOptions } from "electron";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { readSignalWav } from "@shared/host/snaptone";
 import { HostError } from "@shared/ipc";
 import { loadSettings } from "./app";
-import { handle } from "./handle";
+import { handle, showOpenDialog } from "./handle";
 
 // Valeton's test signal for the SnapTone conversion (see src/shared/host/snaptone.ts). A checked copy is kept in
 // userData/snaptone; until then it comes from the build (local builds with the git-ignored fixture) or the
@@ -57,13 +57,12 @@ export function registerSnapToneIpc(getWindow: () => BrowserWindow | null): void
   handle("snaptone:hasSignal", async () => (await findSignal()) !== null);
   handle("snaptone:signal", () => findSignal());
   handle("snaptone:chooseSignal", async () => {
-    const win = getWindow();
     const opts: OpenDialogOptions = {
       title: `Choose Valeton's ${SIGNAL_NAME}`,
       properties: ["openFile"],
       filters: [{ name: "WAV audio", extensions: ["wav"] }],
     };
-    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    const res = await showOpenDialog(getWindow(), opts);
     const path = res.canceled ? null : res.filePaths[0];
     if (!path) return null;
     return keep(path, new Uint8Array(await readFile(path)));

@@ -25,7 +25,7 @@ import {
   Upload,
   Usb,
 } from "lucide-react";
-import { MODELS } from "@/gp5/lib/catalog.mjs";
+import { modelsFor } from "@/gp5/lib/catalog.mjs";
 import { parsePrst } from "@/gp5/lib/prst.mjs";
 import { useLibrary } from "@/screens/library/store";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +33,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { isElectron } from "@/host";
-import { useDevice } from "@/state/device";
-import { BLOCK_CODES, type ModelInfo } from "@/state/device-types";
+import { useDevice, useProfile } from "@/state/device";
+import { DEFAULT_DEVICE, blockCodes, isGp5Family, pedalName } from "@/state/device-model";
+import { snapToneLabel } from "@shared/devices";
+import type { BlockCode, ModelInfo } from "@/state/device-types";
 import { runCommand, useUi, type AppCommand } from "@/state/ui";
 import { useNav, type Screen } from "@/state/nav";
 import { keyLabel } from "../keys";
@@ -49,7 +51,7 @@ interface Entry {
   search: Searchable;
   /** Enter verb shown in the footer: "load preset", "set AMP model", "run" */
   verb: string;
-  /** Why it can't run right now ("Needs the GP-5"); disabled when set */
+  /** Why it can't run right now ("Needs the GP-50"); disabled when set */
   blocked?: string;
   run(): void;
   render(ranges: readonly Range[]): ReactNode;
@@ -62,11 +64,6 @@ interface Group {
   idle?: number;
   limit: number;
 }
-
-const pad = (n: number) => String(n).padStart(2, "0");
-const BLOCK_VAR: Record<string, string> = Object.fromEntries(BLOCK_CODES.map((c) => [c, `var(--block-${c.toLowerCase()})`]));
-const CATALOG = MODELS as ModelInfo[];
-const NEEDS_PEDAL = "Needs the GP-5";
 
 /** fxid per block of a .prst body, cached per byte array (bodies come from the last backup or read). */
 const fxidCache = new WeakMap<Uint8Array, number[]>();
@@ -104,7 +101,7 @@ const Keys = ({ keys }: { keys: string[] }) => <Kbd className="h-5 rounded-xs bg
 
 function BlockChip({ code }: { code: string }) {
   return (
-    <span className="inline-flex w-10 shrink-0 items-center gap-1.5 text-xs font-bold text-silkscreen-2" style={{ "--c": BLOCK_VAR[code] } as React.CSSProperties}>
+    <span className="inline-flex w-10 shrink-0 items-center gap-1.5 text-xs font-bold text-silkscreen-2" style={{ "--c": `var(--block-${code.toLowerCase()})` } as React.CSSProperties}>
       <span className="size-2 rounded-pill bg-(--c)" aria-hidden />
       {code}
     </span>
@@ -138,11 +135,19 @@ function useGroups(close: () => void): Group[] {
   const snapTones = useDevice((s) => s.snapTones);
   const userIRs = useDevice((s) => s.userIRs);
   const busy = useDevice((s) => s.busy);
+  const lastDevice = useDevice((s) => s.device);
+  const profile = useProfile();
   const recent = useUi((s) => s.recentSlots);
   const connected = status === "connected";
 
   return useMemo(() => {
-    const pedal = connected ? (busy ? `Wait for the ${busy.kind}` : undefined) : NEEDS_PEDAL;
+    // Model catalog: the live preset's model, else the connected (or last connected) pedal's, else DEFAULT_DEVICE's
+    // for browsing before any pedal was connected. Only the GP-5 family has a model catalog.
+    const catalogDevice = preset?.device ?? lastDevice ?? DEFAULT_DEVICE;
+    const catalog = isGp5Family(catalogDevice) ? catalogDevice : null;
+    const codes: readonly BlockCode[] = catalog ? blockCodes(catalog) : [];
+    const needsPedal = `Needs the ${pedalName(lastDevice)}`;
+    const pedal = connected ? (busy ? `Wait for the ${busy.kind}` : undefined) : needsPedal;
     const cmd = (c: AppCommand) => () => {
       close();
       runCommand(c);
@@ -151,7 +156,7 @@ function useGroups(close: () => void): Group[] {
       close();
       useNav.getState().go(screen, param);
     };
-    const nn = slot === null ? null : pad(slot);
+    const nn = slot === null ? null : profile.slotLabel(slot);
 
     // Presets: current, then recents, then the rest in slot order.
     const order = [...(slot !== null ? [slot] : []), ...recent.filter((s) => s !== slot)];
@@ -172,7 +177,7 @@ function useGroups(close: () => void): Group[] {
       },
       render: (ranges) => (
         <>
-          <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{pad(n.slot)}</span>
+          <span className="min-w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
           <Name text={n.name} ranges={ranges} className="flex-1" />
           {n.slot === slot ? <Badge>Current</Badge> : !connected ? <Hint>Last read</Hint> : recent.includes(n.slot) ? <Hint>Recent</Hint> : null}
         </>
@@ -180,13 +185,21 @@ function useGroups(close: () => void): Group[] {
     }));
 
     const actions: Entry[] = [
-      actionEntry({ id: "backup", label: "Back up now", icon: HardDriveDownload, hint: "All 100 slots, about 75 s", words: ["backup"], blocked: pedal, run: cmd("backup-pedal") }),
+      actionEntry({
+        id: "backup",
+        label: "Back up now",
+        icon: HardDriveDownload,
+        hint: `All ${profile.slotCount} slots, about ${profile.backupSeconds} s`,
+        words: ["backup"],
+        blocked: pedal,
+        run: cmd("backup-pedal"),
+      }),
       actionEntry({
         id: "compare",
         label: "Compare with saved",
         icon: GitCompareArrows,
         hint: unsaved ? `${unsaved} change${unsaved === 1 ? "" : "s"}` : "No changes",
-        blocked: preset ? undefined : NEEDS_PEDAL,
+        blocked: preset ? undefined : needsPedal,
         run: cmd("compare-with-saved"),
       }),
       actionEntry({ id: "save", label: nn ? `Save to slot ${nn}` : "Save to slot", icon: Save, keys: ["Mod", "S"], blocked: pedal, run: cmd("save-to-slot") }),
@@ -199,15 +212,17 @@ function useGroups(close: () => void): Group[] {
         id: "tone-match",
         label: "Tone match",
         icon: Guitar,
-        hint: "Match a song's guitar tone on the GP-5",
+        hint: `Match a song's guitar tone on the ${pedalName(lastDevice)}`,
         words: ["tone match", "match", "guitar", "song", "stems", "preset", "ir"],
+        // Proposals come from the GP-5 family's catalogs only (song/tonematch/store.ts)
+        blocked: catalog ? undefined : `Not for the ${pedalName(catalogDevice)} yet`,
         run: go("song", "tone"),
       }),
       actionEntry({ id: "split-song", label: "Split a song into stems", icon: AudioLines, words: ["stems", "song", "separate", "guitar", "vocals", "drums"], run: go("song", "stems") }),
       actionEntry({ id: "backups-folder", label: "Open backups folder", icon: FolderOpen, run: cmd("open-backups-folder") }),
       actionEntry({
         id: "reconnect",
-        label: connected ? "Reconnect" : "Connect the GP-5",
+        label: connected ? "Reconnect" : `Connect the ${pedalName(lastDevice)}`,
         icon: Unplug,
         words: ["connect", "usb", "midi"],
         blocked: busy ? `Wait for the ${busy.kind}` : undefined,
@@ -254,14 +269,14 @@ function useGroups(close: () => void): Group[] {
       ] as const
     ).map(([screen, label, icon, n]) => actionEntry({ id: `go-${screen}`, label: `Go to ${label}`, icon, keys: ["Mod", "Shift", n], words: ["screen", "open"], run: go(screen) }));
 
-    const models: Entry[] = CATALOG.map((m) => {
-      const block = BLOCK_CODES.indexOf(m.block);
+    const models: Entry[] = (catalog ? (modelsFor(catalog) as ModelInfo[]) : []).map((m) => {
+      const block = codes.indexOf(m.block);
       const inUse = preset?.blocks[block]?.fxid === m.fxid;
       return {
         id: `model:${m.fxid}`,
         search: { primary: m.title, secondary: [m.block, m.name, m.type, m.origin ?? ""] },
         verb: `set ${m.block} model`,
-        blocked: inUse ? undefined : preset && connected ? pedal : NEEDS_PEDAL,
+        blocked: inUse ? undefined : preset && connected ? pedal : needsPedal,
         run: () => {
           close();
           if (inUse) return useUi.getState().focusRig({ block, picker: false });
@@ -278,35 +293,37 @@ function useGroups(close: () => void): Group[] {
               <Name text={m.title} ranges={ranges} className="font-semibold" />
               <span className="truncate text-xs text-silkscreen-3">{m.origin ?? m.type}</span>
             </span>
-            {inUse ? <Badge>In use</Badge> : <Hint>{connected && preset ? `Set on ${m.block}` : NEEDS_PEDAL}</Hint>}
+            {inUse ? <Badge>In use</Badge> : <Hint>{connected && preset ? `Set on ${m.block}` : needsPedal}</Hint>}
           </>
         ),
       };
     });
 
-    const NS = BLOCK_CODES.indexOf("NS");
-    const CAB = BLOCK_CODES.indexOf("CAB");
+    // Roles by the model's block layout: a SnapTone loads into its slot's capture block (NS, or AMP/DST on the GP-200)
+    const roleOf = (code: string) => profile.blocks.indexOf(code);
+    const CAB = roleOf("CAB");
     const tones: Entry[] = [
       ...(snapTones ?? []).map((t) => {
-        const fxid = (0x0f000000 | t.slot) >>> 0;
+        const fxid = (profile.snapTone.fxidBase + t.slot) >>> 0;
+        const capture = roleOf(profile.captureBlock(t.slot));
         return {
           id: `snaptone:${t.slot}`,
-          search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot + 1 },
-          verb: "set NS model",
-          blocked: preset && connected ? pedal : NEEDS_PEDAL,
+          search: { primary: t.name, secondary: ["SnapTone", profile.captureBlock(t.slot), "capture", "nam"], slot: t.slot },
+          verb: `set ${profile.captureBlock(t.slot)} model`,
+          blocked: preset && connected ? pedal : needsPedal,
           run: () => {
             close();
             useDevice
               .getState()
-              .setModel(NS, fxid)
-              .then(() => useUi.getState().focusRig({ block: NS, picker: false }))
+              .setModel(capture, fxid)
+              .then(() => useUi.getState().focusRig({ block: capture, picker: false }))
               .catch((e) => notifyError(`Couldn't load ${t.name}`, e));
           },
           render: (ranges: readonly Range[]) => (
             <>
               <AudioWaveform className="size-4 text-silkscreen-3" aria-hidden />
               <Name text={t.name} ranges={ranges} className="flex-1" />
-              <Hint>SnapTone slot {t.slot + 1}</Hint>
+              <Hint>{snapToneLabel(profile.key, t.slot)}</Hint>
             </>
           ),
         } satisfies Entry;
@@ -340,13 +357,14 @@ function useGroups(close: () => void): Group[] {
       { heading: "Tones", entries: tones, idle: 3, limit: 5 },
       { heading: "Go to", entries: screens, limit: 5 },
     ];
-  }, [names, slot, connected, unsaved, preset, snapTones, userIRs, busy, recent, close]);
+  }, [names, slot, connected, unsaved, preset, lastDevice, profile, snapTones, userIRs, busy, recent, close]);
 }
 
 /** Ranked, grouped results for `query` (groups ordered by their best hit while typing). */
 function useResults(groups: Group[], query: string) {
   const bodies = useLibrary((s) => s.bodies);
   const preset = useDevice((s) => s.preset);
+  const profile = useProfile();
   return useMemo(() => {
     const q = query.trim();
     if (!q) {
@@ -380,14 +398,14 @@ function useResults(groups: Group[], query: string) {
         const fxid = fx.find((f) => byFxid.has(f));
         if (fxid === undefined) continue;
         const hit = byFxid.get(fxid)!;
-        const title = CATALOG.find((m) => m.fxid === fxid)?.title ?? "";
+        const title = hit.entry.search.primary;
         uses.push({
           entry: {
             ...e,
             id: `uses:${slot}`,
             render: () => (
               <>
-                <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{pad(slot)}</span>
+                <span className="min-w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(slot)}</span>
                 <span className="flex-1 truncate">{e.search.primary}</span>
                 <span className="shrink-0 text-xs text-silkscreen-3">
                   <Name text={title} ranges={hit.ranges} />
@@ -406,10 +424,10 @@ function useResults(groups: Group[], query: string) {
       }
     }
     return ranked;
-  }, [groups, query, bodies, preset]);
+  }, [groups, query, bodies, preset, profile]);
 }
 
-/** Command palette (overlays.md D): Ctrl/Cmd K, title-bar Search, menu View › Command palette. */
+/** Command palette: Ctrl/Cmd K, title-bar Search, menu View › Command palette. */
 export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
   const setOpen = useUi((s) => s.setPaletteOpen);

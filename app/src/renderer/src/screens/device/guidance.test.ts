@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceHostStatus } from "@shared/host/device";
 import type { ConnectionErrorCode } from "@/state/device-types";
-import { refineConnectionError } from "@/state/device";
+import { refineConnectionError } from "@/state/connection-error";
 import { connectionView, diagnosticChecks, formatWhen, requestErrorLine, type GuidanceInput } from "./guidance";
 
 const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
@@ -15,7 +15,10 @@ const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
   ...over,
 });
 const gp5 = { vendorId: 0x84ef, productId: 0x0184, product: "GP-5" };
+const gp50 = { vendorId: 0x84ef, productId: 0x018a, product: "GP-50" };
 const updater = { vendorId: 0x84ef, productId: 0x0185, product: "Valeton Upgrade" };
+const gp200 = { vendorId: 0x84ef, productId: 0x002a, product: "GP-200" };
+const gp200Updater = { vendorId: 0x84ef, productId: 0x002b, product: null };
 
 const err = (code: ConnectionErrorCode, input: Partial<GuidanceInput> = {}) =>
   connectionView({ status: "error", error: { code, message: code }, mode: "webmidi", hostStatus: null, platform: "linux", ...input });
@@ -74,6 +77,36 @@ describe("connectionView", () => {
     expect(v.steps.some((s) => s.includes("USB Audio Device"))).toBe(true);
   });
 
+  it("a GP-50 on USB is a supported pedal: driver guidance names it, never update mode", () => {
+    const v = err("not-found", { platform: "win32", hostStatus: host({ usb: [gp50], driver: "usbmidi2" }) });
+    expect(v.kind).toBe("driver");
+    expect(v.statusText).toBe("GP-50 found, but its driver hides the MIDI port");
+    expect(v.steps[0]).toContain("GP-50");
+  });
+
+  it("names the last connected model, or both models when none is known", () => {
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp50" }).statusText).toBe("Connecting to the GP-50");
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50 / GP-200 / GP-200LT / GP-200JR");
+  });
+
+  it("names the GP-200 on the port or on USB, never the remembered GP-50", () => {
+    const remembered = { mode: "webmidi", platform: "linux", device: "gp50" } as const;
+    const connecting = connectionView({ ...remembered, status: "connecting", error: null, hostStatus: null, portName: "GP-200 MIDI 1" });
+    expect(connecting.statusText).toBe("Connecting to the GP-200");
+    expect(err("timeout", { ...remembered, portName: "GP-200LT MIDI 1" }).detail).toBe("A device answered, but not like a GP-200LT");
+    expect(connectionView({ ...remembered, status: "disconnected", error: null, hostStatus: host({ usb: [gp200] }) }).statusText).toBe("GP-200 not connected");
+    // A simulated GP-200 is named by its port while it syncs; once connected the store's model names it
+    expect(connectionView({ ...remembered, mode: "mock", status: "connecting", error: null, hostStatus: null, portName: "GP-200JR (simulated)" }).statusText).toBe("Connecting to the GP-200JR");
+  });
+
+  it("sends GP-200 owners to Valeton's own tools, GP-5 owners to Valeton Suite", () => {
+    expect(err("bootloader", { device: "gp200" }).note).toMatch(/Finish the update in Valeton's updater/);
+    expect(err("bootloader", { device: "gp50" }).note).toMatch(/Finish the update in Valeton Suite/);
+    const driver = (usb: typeof gp200) => err("not-found", { platform: "win32", hostStatus: host({ usb: [usb], driver: "usbmidi2" }) }).steps[0];
+    expect(driver(gp200)).toBe("Plug the GP-200 in, switch it on and close Valeton's GP-200 editor.");
+    expect(driver(gp50)).toBe("Plug the GP-50 in, switch it on and close Valeton Suite.");
+  });
+
   it("no pedal on USB = plug-in guidance listing the visible ports", () => {
     const v = connectionView({
       status: "error",
@@ -101,12 +134,21 @@ describe("connectionView", () => {
     expect(err("bootloader")).toMatchObject({ kind: "bootloader", chip: "Update mode", action: "none", offline: true });
   });
 
+  it("unsupported model: says which pedal, sends nothing, offers Check again", () => {
+    const v = connectionView({ status: "error", error: { code: "unsupported-model", message: "GP-200 support is coming in a later version of Tone Studio." }, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp5" });
+    expect(v).toMatchObject({ kind: "unsupported-model", led: "warn", action: "check", offline: true, detail: "GP-200 support is coming in a later version of Tone Studio." });
+    expect(v.note).toMatch(/simulated GP-5, GP-50, GP-200, GP-200LT or GP-200JR/);
+  });
+
   it("timeout after bytes arrived = wrong device / firmware", () => {
-    expect(err("timeout").kind).toBe("wrong-device");
+    const v = err("timeout", { device: "gp5" });
+    expect(v.kind).toBe("wrong-device");
+    expect(v.detail).toBe("A device answered, but not like a GP-5");
+    expect(v.note).not.toMatch(/not a GP-50/);
   });
 
   it("every connection error code maps to a view with text", () => {
-    const codes: ConnectionErrorCode[] = ["unsupported", "insecure", "permission", "no-sysex", "broken-browser", "not-found", "busy", "timeout", "bootloader", "unknown"];
+    const codes: ConnectionErrorCode[] = ["unsupported", "insecure", "permission", "no-sysex", "broken-browser", "not-found", "busy", "timeout", "bootloader", "unsupported-model", "unknown"];
     for (const code of codes) {
       const v = err(code);
       expect(v.state.length).toBeGreaterThan(0);
@@ -125,8 +167,18 @@ describe("refineConnectionError", () => {
     expect(refineConnectionError({ code: "not-found", message: "" }, host()).code).toBe("not-found");
     expect(refineConnectionError({ code: "not-found", message: "" }, null).code).toBe("not-found");
   });
-  it("never treats a GP-50 as update mode", () => {
-    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [{ vendorId: 0x84ef, productId: 0x018a, product: "GP-50" }] })).code).toBe("not-found");
+  it("never treats a GP-50 as update mode, even next to another Valeton device", () => {
+    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp50] })).code).toBe("not-found");
+    expect(refineConnectionError({ code: "busy", message: "" }, host({ usb: [gp50, updater] })).code).toBe("busy");
+  });
+  it("reports a GP-200 on USB without a MIDI port as that model, its updater as update mode", () => {
+    const notFound = refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200] }));
+    expect(notFound.code).toBe("not-found");
+    expect(connectionView({ status: "error", error: notFound, mode: "webmidi", hostStatus: host({ usb: [gp200] }), platform: "linux", device: "gp5" }).detail).toBe(
+      "Found on USB, but there is no GP-200 MIDI port",
+    );
+    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200Updater] })).code).toBe("bootloader");
+    expect(refineConnectionError({ code: "permission", message: "" }, host({ usb: [gp200] })).code).toBe("permission");
   });
 });
 
@@ -152,6 +204,17 @@ describe("diagnosticChecks", () => {
     const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "win32", hostStatus: host({ usb: [gp5], driver: "usbmidi2", suiteRunning: true }) });
     expect(checks.find((c) => c.id === "driver")?.state).toBe("fault");
     expect(checks.find((c) => c.id === "access")?.state).toBe("warn");
+  });
+
+  it("reports a GP-50 on USB with its product id", () => {
+    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "linux", hostStatus: host({ usb: [gp50] }) });
+    expect(checks[0]).toMatchObject({ state: "ok", detail: "Valeton GP-50 found, 84EF:018A" });
+    expect(checks[2].detail).toBe("No GP-50 MIDI port");
+  });
+
+  it("reports other Valeton devices as faults", () => {
+    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "linux", hostStatus: host({ usb: [updater] }) });
+    expect(checks[0]).toMatchObject({ state: "fault", detail: "Other Valeton device: 84EF:0185" });
   });
 
   it("browser without WebMIDI reports the browser row as a fault", () => {

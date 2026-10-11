@@ -1,14 +1,16 @@
 import { useDevice } from "@/state/device";
+import { profileOrDefault } from "@/state/device-model";
 import { useUi } from "@/state/ui";
 import { notifyError } from "./notify";
 
 /**
- * Switch the pedal to `slot` (wraps 0–99). With unsaved edits this opens the shell's
+ * Switch the pedal to `slot` (wraps around the pedal's slots). With unsaved edits this opens the shell's
  * "Save your changes to …?" AlertDialog instead (overlays.md B); the dialog finishes the switch.
  */
 export async function requestPresetSwitch(slot: number): Promise<void> {
-  const target = ((slot % 100) + 100) % 100;
   const d = useDevice.getState();
+  const { slotCount } = profileOrDefault(d.device);
+  const target = ((slot % slotCount) + slotCount) % slotCount;
   if (d.status !== "connected" || d.busy || target === d.slot) return;
   if (d.unsavedChanges > 0) {
     useUi.getState().setSwitchTarget(target);

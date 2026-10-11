@@ -1,6 +1,8 @@
 // Library screen state: local collections, the known body of each pedal slot, and the slot selection.
 import { create } from "zustand";
 import { host } from "@/host";
+import { useDevice } from "@/state/device";
+import { isEmptySlotName, profileOrDefault } from "@/state/device-model";
 import type { BackupEntry } from "@/state/device-types";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 
@@ -28,7 +30,7 @@ export interface LibraryState {
   localSelected: string | null;
 
   bodies: Record<number, SlotBody>;
-  /** Slots selected in the GP-5 list, ascending */
+  /** Slots selected in the pedal's slot list, ascending */
   selected: number[];
   anchor: number | null;
   focus: number | null;
@@ -53,11 +55,23 @@ export interface LibraryState {
   selectLocal(id: string | null): void;
 }
 
-export const isEmptyName = (name: string | undefined) => !name || name.trim() === "GP-5";
+/** A slot name meaning "no user preset" on the connected (or last) pedal; before the first connection either model's. */
+export const isEmptyName = (name: string | undefined) => !name || isEmptySlotName(name, useDevice.getState().device);
 
-/** Load bodies from the newest backup once, so chains show without stepping through presets on the pedal. */
+/**
+ * The name an empty slot has on the connected (or last) pedal; DEFAULT_DEVICE's before the first connection. Models
+ * without empty slots (GP-200 family) give "", which isEmptyName also reads as empty, so a slot whose name is not
+ * known yet never shows a made-up name.
+ */
+export const emptyName = (): string => profileOrDefault(useDevice.getState().device).emptyName ?? "";
+
+/**
+ * Load bodies from the newest backup of the current pedal's model once, so chains show without stepping through
+ * presets on the pedal. Before the first connection the model is unknown and nothing is loaded.
+ */
 async function loadNewestBackup(collections: CollectionInfo[]): Promise<Record<number, SlotBody>> {
-  const newest = collections.find((c) => c.kind === "backup");
+  const device = useDevice.getState().device;
+  const newest = device ? collections.find((c) => c.kind === "backup" && c.device === device) : undefined;
   if (!newest) return {};
   const presets = await host.files.listPresets(newest.id);
   const out: Record<number, SlotBody> = {};
@@ -146,3 +160,16 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     set({ localSelected: id });
   },
 }));
+
+// Another pedal model (or the first pedal) connected: known bodies belong to the old model's slots, so start over
+// from the newest backup of the new model; reads from the new pedal arrive afterwards and win.
+useDevice.subscribe((s, prev) => {
+  if (s.device === prev.device) return;
+  useLibrary.setState({ bodies: {} });
+  const { collections, collectionsLoaded } = useLibrary.getState();
+  if (!collectionsLoaded) return;
+  void loadNewestBackup(collections).then(
+    (fromBackup) => useLibrary.setState({ bodies: { ...fromBackup, ...useLibrary.getState().bodies } }),
+    () => {},
+  );
+});

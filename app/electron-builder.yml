@@ -39,7 +39,7 @@ publish:
 # single-instance handler forwards it to the running window, which opens it in the Library.
 fileAssociations:
   - ext: prst
-    name: GP-5 preset
+    name: Valeton preset
     description: Valeton GP-5 / GP-50 preset
     mimeType: application/x-valeton-prst
     role: Editor
@@ -51,7 +51,7 @@ linux:
     - deb
   category: Audio
   maintainer: grzmol <grzmol@users.noreply.github.com>
-  synopsis: Editor and librarian for the Valeton GP-5
+  synopsis: Editor and librarian for the Valeton GP-5 and GP-50
   # WebMIDI goes through ALSA sequencer (/dev/snd/seq); users outside the "audio" group are told how to fix
   # it by Device › Diagnostics.
   mimeTypes:

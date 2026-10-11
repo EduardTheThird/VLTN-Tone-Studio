@@ -4,9 +4,12 @@ import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { DEFAULT_DEVICE, pedalName, presetDevice, profileOrDefault } from "@/state/device-model";
+import { profileFor, snapToneLabel } from "@shared/devices";
+import type { DeviceKey } from "@/state/device-types";
 import { notifySuccess } from "@/app/notify";
 import type { PresetRef } from "./usage";
-import { convertToSnapTone } from "@/snaptone/convert";
+import { convertToClone, snapToneFile } from "@/snaptone/convert";
 import { prepareUserIr, type UserIrFile } from "@/userir/convert";
 
 export interface ListState {
@@ -38,16 +41,21 @@ export interface SendState {
   error: string | null;
   /** SnapTone: the checked NAM file */
   check: NamCheck | null;
-  /** SnapTone: the converted 2696-byte file, kept for retrying the write */
+  /** SnapTone: the converted clone, kept for retrying the write; the upload file for the connected pedal is cut from it */
   file: Uint8Array | null;
-  /** IR: the converted 2048-byte User IR block and what was cut, kept for retrying the write */
+  /** IR: the converted User IR block and what was cut, kept for retrying the write */
   ir: UserIrFile | null;
-  /** Target slot chosen by the user: SnapTone 50–79, User IR 0–19 (shown as User IR 1–20) */
+  /** Target slot chosen by the user, in the pedal's user range (GP-5: SnapTone 50–79, User IR 0–19 shown as User IR 1–20) */
   proposedSlot: number | null;
   linkedSlot: number | null;
   /** Edited .nam text from the capture editor, used instead of the download */
   text: string | null;
+  /** SnapTone: cab IR baked into the clone (null: amp only) */
+  cabIr: CabIrChoice | null;
 }
+
+/** A cab IR to bake into a SnapTone: a downloaded TONE3000 IR tone or a WAV file picked from disk. */
+export type CabIrChoice = { kind: "tone"; toneId: number; name: string } | { kind: "file"; name: string; wav: Uint8Array };
 
 /** Slot context menu: pick which downloaded tone a slot holds. */
 export interface LinkChoice {
@@ -146,7 +154,7 @@ export async function loadRecords(): Promise<void> {
 /** User IR slots are 0-based on the wire and 1-based on the pedal and in Valeton Suite ("User IR 1" = slot 0). */
 export const irSlotLabel = (slot: number) => `User IR ${slot + 1}`;
 
-export const slotLabel = (kind: "snaptone" | "ir", slot: number) => (kind === "ir" ? irSlotLabel(slot) : `SnapTone slot ${slot}`);
+export const slotLabel = (kind: "snaptone" | "ir", slot: number) => (kind === "ir" ? irSlotLabel(slot) : snapToneLabel(useDevice.getState().device ?? DEFAULT_DEVICE, slot));
 
 function storeRecord(r: ToneRecord) {
   set((s) => ({ records: { ...s.records, [r.tone_id]: r } }));
@@ -253,30 +261,54 @@ export async function readSlots(): Promise<void> {
   }
 }
 
-/** Index "used in" from the newest backup in the Library (plus the live preset, which is always known). */
+/**
+ * Index "used in" from the newest Library backup of the connected (or last) pedal model, plus the live preset,
+ * which is always known. A backup of the other model says nothing about this pedal's slots.
+ */
 export async function loadUsage(): Promise<void> {
   try {
-    const cols = await host.files.listCollections();
-    const backup = cols.find((c) => c.kind === "backup");
-    if (!backup) {
-      set({ usage: null });
+    const device = useDevice.getState().device;
+    const backups = (await host.files.listCollections()).filter((c) => c.kind === "backup");
+    for (const backup of backups) {
+      const presets = await host.files.listPresets(backup.id);
+      if (device && !presets.some((p) => isDevicePreset(p.prst, device))) continue;
+      const date = new Date(backup.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+      set({ usage: { presets: presets.map((p) => ({ slot: p.slot ?? -1, name: p.name, prst: p.prst })), source: `the backup from ${date}` } });
       return;
     }
-    const presets = await host.files.listPresets(backup.id);
-    const date = new Date(backup.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-    set({ usage: { presets: presets.map((p) => ({ slot: p.slot ?? -1, name: p.name, prst: p.prst })), source: `the backup from ${date}` } });
+    set({ usage: null });
   } catch {
     set({ usage: null });
   }
 }
 
-// ---------------------------------------------------------------------------------- send to GP-5
+/** A preset of `device`'s file format (a GP-200 family file names no model, so it counts for the GP-200, LT and JR). */
+function isDevicePreset(prst: Uint8Array, device: DeviceKey): boolean {
+  try {
+    return profileFor(presetDevice(prst)).prst === profileFor(device).prst;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------------- send to the pedal
+
+const pedal = () => pedalName(useDevice.getState().device);
+/**
+ * Slot links belong to the pedal the slots were read from. A link is only made right after an upload to the connected
+ * pedal or from its read slot tables, so the model is known; without one there is no slot to link.
+ */
+function linkDevice(): DeviceKey {
+  const device = useDevice.getState().device;
+  if (!device) throw new Error("Connect the pedal first: a slot link needs the pedal model the slot is on.");
+  return device;
+}
 
 /**
  * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
- * it is sent instead of the TONE3000 download.
+ * it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
  */
-export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string } = {}): void {
+export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string; cabIr?: CabIrChoice | null } = {}): void {
   const cur = get().send[toneId];
   if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked") return;
   const d = useDevice.getState();
@@ -297,16 +329,25 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
         check: null,
         file: null,
         ir: null,
-        proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs),
+        proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs, d.device),
         linkedSlot: null,
         text: opts.text ?? null,
+        cabIr: kind === "snaptone" ? (opts.cabIr ?? null) : null,
       },
     },
   }));
 }
 
-export function updateDraft(toneId: number, patch: Partial<Pick<SendState, "modelId" | "name" | "proposedSlot">>): void {
-  patchSend(toneId, patch);
+/** A different cab IR makes the converted file stale, so the draft goes back to step 1. */
+export function updateDraft(toneId: number, patch: Partial<Pick<SendState, "modelId" | "name" | "proposedSlot" | "cabIr">>): void {
+  const stale = "cabIr" in patch && get().send[toneId]?.file;
+  patchSend(toneId, stale ? { ...patch, file: null, phase: "idle", step: 1, progress: 0, error: null } : patch);
+}
+
+/** The WAV bytes of a cab IR choice (a tone's file is read from disk, never downloaded here). */
+function cabIrWav(choice: CabIrChoice | null): Promise<Uint8Array | undefined> {
+  if (!choice) return Promise.resolve(undefined);
+  return choice.kind === "file" ? Promise.resolve(choice.wav) : host.tones.readIr(choice.toneId);
 }
 
 /** Running SnapTone conversions, so cancelSend can stop the worker. */
@@ -341,7 +382,7 @@ export async function runSend(toneId: number): Promise<void> {
       const source = await host.tones.prepareIr(req);
       storeRecord(source.record);
       patchSend(toneId, { step: 2 });
-      patchSend(toneId, { phase: "ready", step: 3, ir: prepareUserIr(source.wav) });
+      patchSend(toneId, { phase: "ready", step: 3, ir: prepareUserIr(source.wav, profileOrDefault(useDevice.getState().device).userIr.samples) });
     } catch (e) {
       sendError(toneId, e);
     }
@@ -353,7 +394,8 @@ export async function runSend(toneId: number): Promise<void> {
     const source = await host.tones.prepareSnapTone(req);
     storeRecord(source.record);
     patchSend(toneId, { phase: "converting", step: 3, check: source.check, progress: 0 });
-    const file = await convertToSnapTone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal);
+    const wav = await cabIrWav(s.cabIr);
+    const file = await convertToClone(source.text, (progress) => patchSend(toneId, { progress }), abort.signal, wav);
     patchSend(toneId, { phase: "ready", step: 4, file, progress: 0 });
   } catch (e) {
     if (!abort.signal.aborted) sendError(toneId, e);
@@ -371,11 +413,11 @@ export async function writeSnapTone(toneId: number): Promise<void> {
   const slot = s.proposedSlot;
   patchSend(toneId, { phase: "writing", step: 4, error: null, progress: 0 });
   try {
-    const stored = await useDevice.getState().uploadSnapTone(slot, s.name, s.file, { onProgress: (progress) => patchSend(toneId, { progress }) });
-    const rec = await host.tones.link(toneId, { kind: "snaptone", slot, slotName: stored });
+    const stored = await useDevice.getState().uploadSnapTone(slot, s.name, snapToneFile(s.file, linkDevice()), { onProgress: (progress) => patchSend(toneId, { progress }) });
+    const rec = await host.tones.link(toneId, { kind: "snaptone", slot, slotName: stored, device: linkDevice() });
     storeRecord(rec);
     patchSend(toneId, { phase: "linked", step: 5, linkedSlot: slot });
-    notifySuccess(`Wrote ${slotLabel("snaptone", slot)} on your GP-5`, rec.title);
+    notifySuccess(`Wrote ${slotLabel("snaptone", slot)} on your ${pedal()}`, rec.title);
   } catch (e) {
     patchSend(toneId, { phase: "error", error: message(e) });
   }
@@ -389,10 +431,10 @@ export async function writeUserIr(toneId: number): Promise<void> {
   patchSend(toneId, { phase: "writing", step: 4, error: null, progress: 0 });
   try {
     const stored = await useDevice.getState().uploadUserIr(slot, s.name, s.ir.data, { onProgress: (progress) => patchSend(toneId, { progress }) });
-    const rec = await host.tones.link(toneId, { kind: "ir", slot, slotName: stored });
+    const rec = await host.tones.link(toneId, { kind: "ir", slot, slotName: stored, device: linkDevice() });
     storeRecord(rec);
     patchSend(toneId, { phase: "linked", step: 5, linkedSlot: slot });
-    notifySuccess(`Wrote ${irSlotLabel(slot)} on your GP-5`, rec.title);
+    notifySuccess(`Wrote ${irSlotLabel(slot)} on your ${pedal()}`, rec.title);
   } catch (e) {
     patchSend(toneId, { phase: "error", error: message(e) });
   }
@@ -409,11 +451,11 @@ export async function linkSlot(toneId: number, kind: "snaptone" | "ir", slot: nu
   const d = useDevice.getState();
   const table = kind === "snaptone" ? d.snapTones : d.userIRs;
   const slotName = table?.find((s) => s.slot === slot)?.name ?? "";
-  const rec = await host.tones.link(toneId, { kind, slot, slotName });
+  const rec = await host.tones.link(toneId, { kind, slot, slotName, device: linkDevice() });
   storeRecord(rec);
   patchSend(toneId, { phase: "linked", linkedSlot: slot });
   set({ linkChoice: null });
-  notifySuccess(`Linked to ${slotLabel(kind, slot)} on your GP-5`, rec.title);
+  notifySuccess(`Linked to ${slotLabel(kind, slot)} on your ${pedal()}`, rec.title);
   return rec;
 }
 

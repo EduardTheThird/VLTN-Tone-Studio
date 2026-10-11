@@ -1,6 +1,7 @@
-// Web Worker: NAM text + Valeton's test signal in, 2696-byte SnapTone file out (about 10 s of CPU, kept off the UI thread).
+// Web Worker: NAM text + Valeton's test signal (+ an optional cab IR WAV) in, the 8840-byte SnapTone clone out (about
+// 10 s of CPU, kept off the UI thread). Each pedal family's upload file is cut from the clone (convert.ts snapToneFile).
 import { readSignalWav } from "@shared/host/snaptone";
-import { cloneToSnapToneFile } from "@/gp5/lib/snaptone.mjs";
+import { readWavMono } from "@/userir/convert";
 import a1KernelUrl from "./a1kernel.wasm?url";
 import a2KernelUrl from "./a2kernel.wasm?url";
 import { namToCloneBlob } from "./pipeline";
@@ -17,9 +18,9 @@ async function fetchKernel(arch: "A1" | "A2"): Promise<ArrayBuffer> {
 self.onmessage = async (e: MessageEvent<ConvertRequest>) => {
   try {
     const excitation = readSignalWav(e.data.signalWav);
-    const blob = await namToCloneBlob(e.data.namText, excitation, fetchKernel, (phase, fraction) => post({ type: "progress", phase, fraction }));
-    const file = cloneToSnapToneFile(blob);
-    post({ type: "done", file }, [file.buffer]);
+    const cabIr = e.data.cabIrWav && readWavMono(e.data.cabIrWav);
+    const clone = await namToCloneBlob(e.data.namText, excitation, fetchKernel, (phase, fraction) => post({ type: "progress", phase, fraction }), cabIr);
+    post({ type: "done", clone }, [clone.buffer]);
   } catch (err) {
     post({ type: "error", message: err instanceof Error ? err.message : String(err) });
   }

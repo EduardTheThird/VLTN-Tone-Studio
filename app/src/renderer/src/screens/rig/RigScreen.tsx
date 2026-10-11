@@ -5,7 +5,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSettings } from "@/screens/device/settings-store";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useUi } from "@/state/ui";
 import { AmpCabView, AmpStrip } from "./AmpCabView";
@@ -26,11 +26,12 @@ const HINTS = [
   { keys: ["M"], label: "change model" },
 ];
 
-/** Rig: the active preset drawn as gear, edited live on the pedal (design/screens/rig.md). */
+/** Rig: the active preset drawn as gear, edited live on the pedal. */
 export function RigScreen() {
   const preset = useDevice((s) => s.preset);
   const saved = useDevice((s) => s.saved);
   const status = useDevice((s) => s.status);
+  const pedal = usePedalName();
   const group = useRig((s) => s.group);
   const showValues = useAppSettings((s) => s.settings.showValues);
   const settingsLoaded = useAppSettings((s) => s.loaded);
@@ -56,7 +57,7 @@ export function RigScreen() {
     if (!rigFocus || !p) return;
     const rig = useRig.getState();
     rig.select(rigFocus.block);
-    rig.setGroup(groupOf(p.order, rigFocus.block));
+    rig.setGroup(groupOf(p.device, p.order, rigFocus.block));
     rig.openPicker(rigFocus.picker ? { block: rigFocus.block, highlight: rigFocus.fxid } : null);
     useUi.getState().clearRigFocus();
   }, [rigFocus, preset]);
@@ -81,11 +82,11 @@ export function RigScreen() {
           <EmptyMedia variant="icon">
             <UsbIcon aria-hidden />
           </EmptyMedia>
-          <EmptyTitle>Connect your GP-5 to see its preset</EmptyTitle>
+          <EmptyTitle>Connect your {pedal} to see its preset</EmptyTitle>
           <EmptyDescription>The Rig shows the preset that is active on the pedal and plays every change on it as you turn the knobs.</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Button onClick={() => useNav.getState().go("device")}>Connect the GP-5</Button>
+          <Button onClick={() => useNav.getState().go("device")}>Connect the {pedal}</Button>
         </EmptyContent>
       </Empty>
     );
@@ -129,11 +130,11 @@ function useRigKeys(readOnly: boolean) {
         const dir = e.key === "ArrowLeft" ? -1 : 1;
         if (e.altKey) {
           if (readOnly || sel === null) return;
-          const next = nudge(p.order, sel, dir);
+          const next = nudge(p.device, p.order, sel, dir);
           e.preventDefault();
           if (next) {
             editOrder(next);
-            rig.setGroup(groupOf(next, sel));
+            rig.setGroup(groupOf(p.device, next, sel));
           }
           return;
         }
@@ -142,7 +143,7 @@ function useRigKeys(readOnly: boolean) {
         const nextIdx = sel === null ? (dir > 0 ? 0 : p.order.length - 1) : Math.max(0, Math.min(p.order.length - 1, i + dir));
         const b = p.order[nextIdx];
         rig.select(b);
-        rig.setGroup(groupOf(p.order, b));
+        rig.setGroup(groupOf(p.device, p.order, b));
         return;
       }
       if (e.altKey || sel === null || readOnly) return;
@@ -159,9 +160,10 @@ function useRigKeys(readOnly: boolean) {
   }, [readOnly]);
 }
 
+/** While connecting: the model may not be known yet (the remembered one can be another model), so no name. */
 function RigSkeleton() {
   return (
-    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label="Reading the GP-5">
+    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label="Reading the pedal">
       <Skeleton className="h-9 w-72 rounded-sm" />
       <Skeleton className="h-4 w-96 rounded-sm" />
       <Skeleton className="h-20 w-full rounded-xl" />

@@ -1,4 +1,4 @@
-import { app, dialog, net, type BrowserWindow } from "electron";
+import { app, net, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { MODEL_CHECKSUM_ERROR, modelDownloadError, SEPARATION_MODEL, type ModelProgress } from "@shared/host/song";
 import { sanitizeFileName } from "@shared/files-naming";
 import { HostError } from "@shared/ipc";
-import { handle } from "./handle";
+import { handle, showOpenDialog, showSaveDialog } from "./handle";
 
 // The Song screen's separation model (src/shared/host/song.ts): downloaded on first use into userData/models,
 // resumed from a `.part` file after an interrupted download, checked against the pinned SHA-256 and only then
@@ -101,11 +101,11 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     if (names.length === 1) {
       const name = sanitizeFileName(names[0], "Audio");
       const opts = { title, defaultPath: join(app.getPath("music"), name), filters: [{ name: "WAV audio", extensions: ["wav"] }] };
-      const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+      const res = await showSaveDialog(win, opts);
       target = res.canceled || !res.filePath ? null : { kind: "file", path: res.filePath };
     } else {
       const opts = { title, defaultPath: app.getPath("music"), properties: ["openDirectory", "createDirectory"] as ("openDirectory" | "createDirectory")[] };
-      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+      const res = await showOpenDialog(win, opts);
       target = res.canceled || !res.filePaths[0] ? null : { kind: "dir", path: res.filePaths[0] };
     }
     return target?.path ?? null;

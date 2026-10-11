@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { host, isElectron } from "@/host";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
 import { useNav } from "@/state/nav";
 import { useCommand, useFileHandler, useStatusHints, useUi, type OpenFile } from "@/state/ui";
 import { modKey } from "@/app/keys";
@@ -63,6 +63,7 @@ export function TonesScreen() {
   const tab = useTones((s) => s.tab);
   const status = useDevice((s) => s.status);
   const hasSlots = useDevice((s) => s.snapTones !== null && s.userIRs !== null);
+  const device = useDevice((s) => s.device);
   const param = useNav((s) => s.param);
   const [localIr, setLocalIr] = useState<OpenFile | null>(null);
   const signedIn = account?.status === "signed-in";
@@ -70,9 +71,13 @@ export function TonesScreen() {
   useEffect(() => {
     void loadAccount();
     void loadRecords();
-    void loadUsage();
     return host.tones.onEvent((ev) => onSendProgress(ev.toneId, ev.step, ev.received, ev.total));
   }, []);
+
+  // "Used in" comes from a backup of this pedal model.
+  useEffect(() => {
+    void loadUsage();
+  }, [device]);
 
   // Read the slot tables once per connection (the link step re-runs on every read).
   useEffect(() => {
@@ -142,10 +147,11 @@ function useShortcuts() {
 function Head() {
   const account = useTones((s) => s.account);
   const user = account?.user;
+  const pedal = usePedalName();
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
       <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-semibold tracking-[-0.01em] text-balance">Tones</h1>
-      <p className="col-start-1 row-start-2 mt-1.5 text-[12px] text-pretty text-silkscreen-3 @max-[799px]:col-span-2">NAM captures and IRs from TONE3000, and what's on your GP-5.</p>
+      <p className="col-start-1 row-start-2 mt-1.5 text-[12px] text-pretty text-silkscreen-3 @max-[799px]:col-span-2">NAM captures and IRs from TONE3000, and what's on your {pedal}.</p>
       <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3 @max-[799px]:row-span-1 @max-[799px]:self-center">
         <span className="text-[12px] font-extrabold tracking-[0.02em] whitespace-nowrap text-silkscreen" aria-label="TONE3000">
           TONE3000
@@ -199,6 +205,7 @@ function ToneLists() {
   const compatOnly = useTones((s) => s.compatOnly);
   const lists = useTones((s) => s.lists);
   const signedIn = account?.status === "signed-in";
+  const model = usePedalNameOrBoth();
 
   return (
     <Tabs value={tab} onValueChange={(v) => useTones.setState({ tab: v as ToneListKind })} className="min-h-0 flex-1 gap-3.5">
@@ -227,10 +234,10 @@ function ToneLists() {
         <div className="ml-auto flex h-8 items-center gap-2">
           <Switch id="gp5-compatible" checked={compatOnly} onCheckedChange={(v) => useTones.setState({ compatOnly: v })} aria-describedby="gp5-compatible-hint" />
           <Label htmlFor="gp5-compatible" className="text-[12px] font-normal text-silkscreen-2">
-            GP-5 compatible only
+            {model} compatible only
           </Label>
           <span id="gp5-compatible-hint" className="sr-only">
-            Hides tones the GP-5 can't load from the list already loaded
+            Hides tones the {model} can't load from the list already loaded
           </span>
         </div>
       </div>

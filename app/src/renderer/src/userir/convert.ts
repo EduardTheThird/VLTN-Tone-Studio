@@ -1,17 +1,20 @@
-// WAV -> GP-5 User IR data block, as Valeton Suite 2.1.0 prepares an IR (see .claude/skills/gp5-reverse-engineering/
-// userir.md §1): channel 0, r8brain resample to 44.1 kHz, JUCE 24-bit rounding, first 512 samples. Two Suite quirks
-// are fixed on purpose: chunks are walked instead of read at fixed offsets, and stereo 24-bit/44.1 kHz files use
-// channel 0 instead of being sent interleaved. Clean mono files give the same bytes as Suite.
+// WAV -> User IR data block, as Valeton Suite 2.1.0 prepares an IR (static RE of its code): channel 0, r8brain
+// resample to 44.1 kHz, JUCE 24-bit rounding, the first samples the pedal keeps (512 on the GP-5 family, 1024 on the
+// GP-200 family: profile.userIr.samples). Two Suite quirks are fixed on purpose: chunks are walked instead of read at
+// fixed offsets, and stereo 24-bit/44.1 kHz files use channel 0 instead of being sent interleaved. Clean mono files
+// give the same bytes as Suite.
 
-import { USER_IR, encodeUserIrData } from "@/gp5/lib/userir.mjs";
+import { USER_IR } from "@/gp5/lib/userir.mjs";
 import { convertSampleRate } from "@/snaptone/htkpa";
 
 export interface UserIrFile {
-  /** 2048-byte data block for Gp5Session.uploadUserIr */
+  /** `samples` 24-bit samples as int32 LE (2048 bytes on the GP-5 family, 4096 on the GP-200 family), for uploadUserIr */
   data: Uint8Array;
+  /** Samples at 44.1 kHz the pedal keeps */
+  samples: number;
   sourceRate: number;
   sourceFrames: number;
-  /** The IR was longer than the 512 samples (11.6 ms at 44.1 kHz) the pedal keeps */
+  /** The IR was longer than the `samples` the pedal keeps */
   truncated: boolean;
 }
 
@@ -77,32 +80,59 @@ function to24(x: number): number {
   return Math.floor(Math.floor(c * 0x7fffffff + 0.5) / 256);
 }
 
-/** Parse a WAV file and turn it into the 2048-byte User IR block the GP-5 takes. Throws a user-facing Error. */
-export function prepareUserIr(wav: Uint8Array): UserIrFile {
+/** int32 LE per sample: the sign-extended 24-bit value (not left-justified), as both families store a User IR. */
+function encodeSamples(samples24: Int32Array): Uint8Array {
+  const out = new Uint8Array(samples24.length * 4);
+  const view = new DataView(out.buffer);
+  samples24.forEach((s, i) => {
+    if (s < -0x800000 || s > 0x7fffff) throw new RangeError(`User IR sample ${i} is not a 24-bit integer: ${s}`);
+    view.setInt32(i * 4, s, true);
+  });
+  return out;
+}
+
+/** Parse a WAV file down to its format and channel 0 as -1..1 floats. Throws a user-facing Error. */
+function decodeWav(wav: Uint8Array): { fmt: WavFormat; samples: Float32Array } {
   const { fmt, data } = readChunks(wav);
   if (fmt.channels < 1 || fmt.rate < 1) throw new Error("This WAV file has an invalid format header.");
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const read = sampleReader(fmt, view);
   if (!read) throw new Error(`This WAV encoding isn't supported (format ${fmt.format}, ${fmt.bits}-bit). Use 16-, 24- or 32-bit PCM or 32-bit float.`);
   const frameBytes = (fmt.bits / 8) * fmt.channels;
-  const sourceFrames = Math.floor(data.length / frameBytes);
-  if (sourceFrames === 0) throw new Error("This WAV file contains no audio.");
+  const frames = Math.floor(data.length / frameBytes);
+  if (frames === 0) throw new Error("This WAV file contains no audio.");
+  const samples = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) samples[i] = read(i * frameBytes);
+  return { fmt, samples };
+}
+
+/** Channel 0 of a WAV file as -1..1 floats, at the file's own rate. Throws a user-facing Error. */
+export function readWavMono(wav: Uint8Array): { samples: Float32Array; rate: number } {
+  const { fmt, samples } = decodeWav(wav);
+  return { samples, rate: fmt.rate };
+}
+
+/**
+ * Parse a WAV file and turn it into the User IR block a pedal keeping `samples` samples takes (profile.userIr.samples).
+ * Throws a user-facing Error.
+ */
+export function prepareUserIr(wav: Uint8Array, samples: number): UserIrFile {
+  const { fmt, samples: source } = decodeWav(wav);
+  const sourceFrames = source.length;
 
   // Zero-filled: shorter IRs are padded with silence, as Suite does.
-  const samples24 = new Int32Array(USER_IR.SAMPLES);
+  const samples24 = new Int32Array(samples);
   let frames44 = sourceFrames;
   if (fmt.rate === USER_IR.RATE && fmt.format === FORMAT_PCM && fmt.bits === 24) {
-    // Suite's direct path: the 24-bit values go to the pedal untouched.
-    const n = Math.min(sourceFrames, USER_IR.SAMPLES);
-    for (let i = 0; i < n; i++) samples24[i] = Math.round(read(i * frameBytes) * 0x800000);
+    // Suite's direct path: the 24-bit values go to the pedal untouched (int / 2^23 is exact in a float).
+    const n = Math.min(sourceFrames, samples);
+    for (let i = 0; i < n; i++) samples24[i] = Math.round(source[i] * 0x800000);
   } else {
-    let ch0: Float32Array = new Float32Array(sourceFrames);
-    for (let i = 0; i < sourceFrames; i++) ch0[i] = read(i * frameBytes);
-    if (fmt.rate !== USER_IR.RATE) ch0 = convertSampleRate(ch0, fmt.rate, USER_IR.RATE);
+    const ch0 = fmt.rate === USER_IR.RATE ? source : convertSampleRate(source, fmt.rate, USER_IR.RATE);
     frames44 = ch0.length;
     if (frames44 === 0) throw new Error("This IR is too short to use.");
-    const n = Math.min(frames44, USER_IR.SAMPLES);
+    const n = Math.min(frames44, samples);
     for (let i = 0; i < n; i++) samples24[i] = to24(ch0[i]);
   }
-  return { data: encodeUserIrData(samples24), sourceRate: fmt.rate, sourceFrames, truncated: frames44 > USER_IR.SAMPLES };
+  return { data: encodeSamples(samples24), samples, sourceRate: fmt.rate, sourceFrames, truncated: frames44 > samples };
 }

@@ -1,5 +1,5 @@
 /*
- * Command palette matching (overlays.md D): names, slot numbers ("64"), block codes ("dly") and the gear a
+ * Command palette matching: names, slot numbers ("64"), block codes ("dly") and the gear a
  * model is based on ("mesa"). Every query word must match somewhere; the item's score is the mean of its
  * word scores. Ranges point into `primary` so the palette can bold matched characters.
  */

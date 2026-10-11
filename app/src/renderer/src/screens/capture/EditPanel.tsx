@@ -18,6 +18,7 @@ import { useCapture, useShownRecipe, type EditTab } from "./store";
 import { fmtInt, PANEL, useCaptureTitle, useToneRecord } from "./parts";
 import { ViewingBar } from "./Versions";
 import { useTones } from "@/screens/tones/store";
+import { usePedalNameOrBoth } from "@/state/device";
 
 const NS = "var(--block-ns)";
 
@@ -54,6 +55,7 @@ export function EditPanel({ versionsButton }: { versionsButton: ReactNode }) {
   const { tab, set } = useCapture();
   const recipe = useShownRecipe();
   const readOnly = useCapture((s) => s.viewing !== null);
+  const model = usePedalNameOrBoth();
   if (!recipe) return null;
   const isA2 = loaded.info.arch.kind === "A2";
   return (
@@ -73,7 +75,7 @@ export function EditPanel({ versionsButton }: { versionsButton: ReactNode }) {
               </TabsTrigger>
             )}
             <TabsTrigger value="shape" aria-keyshortcuts="Control+4">
-              Shape before GP-5
+              Shape before {model}
             </TabsTrigger>
           </TabsList>
           {versionsButton}
@@ -287,6 +289,7 @@ function LevelTab({ recipe, info, readOnly }: { recipe: CaptureRecipe; info: Nam
 
 function SizeTab({ recipe, info, readOnly }: { recipe: CaptureRecipe; info: NamInfo; readOnly: boolean }) {
   const edit = useCapture((s) => s.edit);
+  const model = usePedalNameOrBoth();
   if (info.arch.kind !== "A2") return null;
   const full = info.arch.submodels.find((s) => s.size === "full");
   const lite = info.arch.submodels.find((s) => s.size === "lite");
@@ -322,7 +325,7 @@ function SizeTab({ recipe, info, readOnly }: { recipe: CaptureRecipe; info: NamI
           </RadioGroupPrimitive.Item>
         ))}
       </RadioGroupPrimitive.Root>
-      <p className="text-[12px] text-silkscreen-3">The GP-5 SnapTone is made from the largest size the exported file keeps, like Valeton Suite does.</p>
+      <p className="text-[12px] text-silkscreen-3">The {model} SnapTone is made from the largest size the exported file keeps, like Valeton Suite does.</p>
     </>
   );
 }
@@ -347,6 +350,7 @@ function ShapeTab({ recipe, info, readOnly }: { recipe: CaptureRecipe; info: Nam
   const record = useToneRecord();
   const image = useTones((st) => (record?.image_url ? (st.images[record.image_url] ?? undefined) : undefined));
   const title = useCaptureTitle();
+  const model = usePedalNameOrBoth();
   const s = recipe.shaping;
   const isA2 = info.arch.kind === "A2";
   const dial = (d: DialDef) => {
@@ -372,7 +376,7 @@ function ShapeTab({ recipe, info, readOnly }: { recipe: CaptureRecipe; info: Nam
         <Badge variant="warn" className="flex-none">
           Not lossless
         </Badge>
-        Heard in {isA2 ? "A and B" : "A"} and kept with the version for making a GP-5 version. Your {isA2 ? "A2 " : ""}file stays as captured.
+        Heard in {isA2 ? "A and B" : "A"} and kept with the version for making a {model} version. Your {isA2 ? "A2 " : ""}file stays as captured.
       </div>
       <div className="relative flex items-center justify-between gap-2 rounded-lg bg-well px-3 pt-3.5 pb-3 before:absolute before:inset-x-4 before:top-1/2 before:h-0.5 before:bg-cable">
         <DialGroup title="Before the capture">{PRE.map(dial)}</DialGroup>

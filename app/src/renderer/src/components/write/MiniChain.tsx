@@ -1,23 +1,29 @@
 import { cn } from "@/lib/utils";
-import { BLOCK_CODES } from "@/state/device-types";
+import { profileFor } from "@shared/devices";
+import { isGp5Family } from "@/state/device-model";
+import type { PresetSummary } from "./preset-summary";
 
 const CORE = [2, 9, 3, 4, 5];
 const DEFAULT_ORDER = [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
 
 /**
- * Ten 11px chips in the preset's chain order with the fixed core (DST NS AMP CAB EQ) bracketed.
- * Engaged = filled in the block color; bypassed = hollow on the cable. `enabled` null = no data (dashed cable).
+ * One 11px chip per block in the preset's chain order, with the GP-5 family's fixed core (DST NS AMP CAB EQ) bracketed.
+ * Engaged = filled in the block color; bypassed = hollow on the cable. `chain` null = no data (dashed cable).
  */
-export function MiniChain({ order, enabled, className }: { order?: number[]; enabled: boolean[] | null; className?: string }) {
-  if (!enabled) {
+export function MiniChain({ chain, className }: { chain: Pick<PresetSummary, "device" | "order" | "blocks"> | null; className?: string }) {
+  if (!chain) {
     return (
       <span className={cn("relative inline-flex h-[18px] w-[150px] items-center", className)} aria-label="Chain not read yet">
         <span className="h-0 w-full border-t border-dashed border-seam-strong" />
       </span>
     );
   }
-  const seq = order && order.length === 10 ? order : DEFAULT_ORDER;
-  const coreStart = seq.findIndex((i) => CORE.includes(i));
+  const codes = profileFor(chain.device).blocks;
+  const gp5 = isGp5Family(chain.device);
+  const enabled = chain.blocks.map((b) => b.enabled);
+  const seq = chain.order.length === codes.length ? chain.order : gp5 ? DEFAULT_ORDER : codes.map((_, i) => i);
+  // The GP-200 family has no fixed core: one flat row
+  const coreStart = gp5 ? seq.findIndex((i) => CORE.includes(i)) : seq.length;
   const before = seq.slice(0, coreStart);
   const core = seq.slice(coreStart, coreStart + CORE.length);
   const after = seq.slice(coreStart + CORE.length);
@@ -25,10 +31,10 @@ export function MiniChain({ order, enabled, className }: { order?: number[]; ena
     <span
       key={i}
       className={cn("relative size-[11px] rounded-[2px]", enabled[i] ? "" : "bg-enclosure shadow-[inset_0_0_0_1px_var(--seam-strong)]")}
-      style={enabled[i] ? { background: `var(--block-${BLOCK_CODES[i].toLowerCase()})` } : undefined}
+      style={enabled[i] ? { background: `var(--block-${codes[i].toLowerCase()})` } : undefined}
     />
   );
-  const on = seq.filter((i) => enabled[i]).map((i) => BLOCK_CODES[i]);
+  const on = seq.filter((i) => enabled[i]).map((i) => codes[i]);
   return (
     <span
       role="img"
@@ -39,7 +45,7 @@ export function MiniChain({ order, enabled, className }: { order?: number[]; ena
       )}
     >
       {before.map(chip)}
-      <span className="relative inline-flex gap-[3px] rounded-[10px] bg-well px-[3px] py-0.5 shadow-[inset_0_0_0_1px_var(--seam-strong)]">{core.map(chip)}</span>
+      {core.length > 0 && <span className="relative inline-flex gap-[3px] rounded-[10px] bg-well px-[3px] py-0.5 shadow-[inset_0_0_0_1px_var(--seam-strong)]">{core.map(chip)}</span>}
       {after.map(chip)}
     </span>
   );

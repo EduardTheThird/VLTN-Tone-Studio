@@ -1,5 +1,5 @@
-// Cabinet IR matching: the correction between the GP-5's cab-less output (recorded through its USB audio) and the
-// song's guitar stem, as a minimum-phase FIR at the GP-5's IR rate.
+// Cabinet IR matching: the correction between the pedal's cab-less output (recorded through its USB audio) and the
+// song's guitar stem, as a minimum-phase FIR at the pedal's IR rate.
 //
 // 1. Both LTAS curves (ltas.ts, already 1/3-octave smoothed) are normalised to their mean level in 200 Hz–4 kHz,
 //    and the correction is stem − recording, limited to ±MAX_CORRECTION_DB.
@@ -11,7 +11,7 @@
 import { fft } from "./fft";
 import { bandMean, interpolateDb, type Ltas } from "./ltas";
 
-/** GP-5 user IRs are 44.1 kHz. */
+/** GP-5 / GP-50 user IRs are 44.1 kHz. */
 export const IR_RATE = 44100;
 export const IR_TAPS = 1024;
 export const MAX_CORRECTION_DB = 15;

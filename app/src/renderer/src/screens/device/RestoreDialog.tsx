@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { describeError, notifySuccess } from "@/app/notify";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { RestoreError } from "@/state/device-types";
 import { runBackupNow } from "@/screens/library/backup-now";
 import { isEmptyName } from "@/screens/library/store";
@@ -25,7 +26,7 @@ import { useAppSettings } from "./settings-store";
 type Failure = { message: string; done: number[]; failed: number | null; notStarted: number[] };
 
 /**
- * Restore AlertDialog (device.md › Backups, `#restore`): names the source, which slots are replaced and what is
+ * Restore AlertDialog: names the source, which slots are replaced and what is
  * in them now, offers a full backup first, then writes slot by slot with read-back verification.
  */
 export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource | null; onOpenChange: (open: boolean) => void }) {
@@ -33,6 +34,8 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   const busy = useDevice((s) => s.busy);
   const unsaved = useDevice((s) => s.unsavedChanges);
   const connected = useDevice((s) => s.status === "connected");
+  const pedal = usePedalName();
+  const { slotCount, slotLabel, backupSeconds } = useProfile();
   const backupDefault = useAppSettings((s) => s.settings.backupBeforeWrite);
   const [backupFirst, setBackupFirst] = useState(backupDefault);
   const [phase, setPhase] = useState<"confirm" | "backup" | "restore">("confirm");
@@ -52,10 +55,13 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   if (!source) return null;
   const entries = pending ?? source.entries;
   const slots = entries.map((e) => e.slot);
-  const all = slots.length === 100;
+  const all = slots.length === slotCount;
   const used = slots.filter((s) => !isEmptyName(names[s]?.name)).length;
   const running = phase !== "confirm";
   const count = `${slots.length} ${slots.length === 1 ? "slot" : "slots"}`;
+  const inList = new Set(slots);
+  const converted = source.converted.filter((c) => inList.has(c.slot));
+  const lossy = converted.filter((c) => c.dropped.length > 0);
 
   const run = async (list: RestoreSource["entries"], retry: boolean) => {
     setFailure(null);
@@ -76,7 +82,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
         signal: abort.current.signal,
         onProgress: (done, total) => void host.app.setProgress(done / total).catch(() => {}),
       });
-      notifySuccess(`${count} restored`, `${describeSlots(slots)} now hold the presets from ${source.title}. Each slot was checked by reading it back.`);
+      notifySuccess(`${count} restored`, `${describeSlots(slots, slotLabel)} now hold the presets from ${source.title}. Each slot was checked by reading it back.`);
       onOpenChange(false);
     } catch (e) {
       if (e instanceof RestoreError) setFailure({ message: e.failed === null ? e.message : describeError(e.cause), done: e.done, failed: e.failed, notStarted: e.notStarted });
@@ -104,10 +110,10 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
       <AlertDialogContent className="sm:max-w-[520px]">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {all ? "Restore all 100 slots" : `Restore ${count}`} from {source.title}?
+            {all ? `Restore all ${slotCount} slots` : `Restore ${count}`} from {source.title}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {all ? "Every preset on the GP-5 is replaced with the copy in this backup." : `${describeSlots(slots)} on the GP-5 are replaced with the copies in this folder.`} Presets you changed since then are
+            {all ? `Every preset on the ${pedal} is replaced with the copy in this backup.` : `${describeSlots(slots, slotLabel)} on the ${pedal} are replaced with the copies in this folder.`} Presets you changed since then are
             lost unless you back them up first.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -119,7 +125,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
           </dd>
           <dt className="text-silkscreen-3">Replaces</dt>
           <dd className="text-silkscreen">
-            {describeSlots(slots)} on the pedal, now {used} {used === 1 ? "preset" : "presets"} and {slots.length - used} empty {slots.length - used === 1 ? "slot" : "slots"}
+            {describeSlots(slots, slotLabel)} on the pedal, now {used} {used === 1 ? "preset" : "presets"} and {slots.length - used} empty {slots.length - used === 1 ? "slot" : "slots"}
           </dd>
           <dt className="text-silkscreen-3">Checks</dt>
           <dd className="text-silkscreen">Each slot is read back after writing. Keep the pedal connected until it finishes.</dd>
@@ -129,6 +135,22 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
               <dd className="max-h-20 overflow-auto text-silkscreen-2">
                 {source.skipped.map((s) => (
                   <div key={s}>{s}</div>
+                ))}
+              </dd>
+            </>
+          )}
+          {converted.length > 0 && (
+            <>
+              <dt className="text-silkscreen-3">Converted</dt>
+              <dd className="max-h-24 overflow-auto text-silkscreen-2">
+                <div className="text-pretty">
+                  {converted.length === 1 ? "1 preset was" : `${converted.length} presets were`} made on a {pedalName(converted[0].from)} and {converted.length === 1 ? "is" : "are"} converted
+                  for your {pedal}.{lossy.length > 0 ? " These blocks have no equivalent and are left empty:" : ""}
+                </div>
+                {lossy.map((c) => (
+                  <div key={c.slot}>
+                    Slot {slotLabel(c.slot)} {c.name}: {c.dropped.join(", ")}
+                  </div>
                 ))}
               </dd>
             </>
@@ -146,7 +168,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             <Checkbox id={checkId} checked={backupFirst} disabled={running} onCheckedChange={(v) => setBackupFirst(v === true)} className="mt-px" />
             <Label htmlFor={checkId} className="flex flex-col items-start gap-0.5 text-sm">
               <b className="font-semibold">Back up the pedal first</b>
-              <span className="font-normal text-silkscreen-3">Saves what is on the pedal now to a new folder. Takes about 75 seconds.</span>
+              <span className="font-normal text-silkscreen-3">Saves what is on the pedal now to a new folder. Takes about {backupSeconds} seconds.</span>
             </Label>
           </div>
         )}
@@ -160,10 +182,10 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
 
         {failure && (
           <div role="alert" className="flex flex-col gap-1 rounded-lg bg-well px-3.5 py-3 text-sm">
-            <b className="font-semibold text-silkscreen">{failure.failed === null ? "The restore stopped" : `Slot ${String(failure.failed).padStart(2, "0")} failed after 3 attempts`}</b>
+            <b className="font-semibold text-silkscreen">{failure.failed === null ? "The restore stopped" : `Slot ${slotLabel(failure.failed)} failed after 3 attempts`}</b>
             <span className="text-pretty text-silkscreen-2">{failure.message}</span>
-            <span className="text-silkscreen-3">Done: {failure.done.length ? describeSlots(failure.done) : "none"}</span>
-            <span className="text-silkscreen-3">Not started: {failure.notStarted.length ? describeSlots(failure.notStarted) : "none"}</span>
+            <span className="text-silkscreen-3">Done: {failure.done.length ? describeSlots(failure.done, slotLabel) : "none"}</span>
+            <span className="text-silkscreen-3">Not started: {failure.notStarted.length ? describeSlots(failure.notStarted, slotLabel) : "none"}</span>
           </div>
         )}
 
@@ -179,7 +201,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             (failure.failed !== null || failure.notStarted.length > 0) && (
               <Button variant="destructive" disabled={!connected || running} onClick={retryFrom}>
                 <RefreshCw aria-hidden />
-                Retry from slot {String(failure.failed ?? failure.notStarted[0]).padStart(2, "0")}
+                Retry from slot {slotLabel(failure.failed ?? failure.notStarted[0])}
               </Button>
             )
           ) : (

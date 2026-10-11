@@ -9,8 +9,9 @@ import { notifyError, notifySuccess } from "@/app/notify";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { getMidiLog, useDevice } from "@/state/device";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { formatLogLine } from "@/state/midi-log";
-import { clock, diagnosticChecks, type Check, type CheckState } from "./guidance";
+import { clock, diagnosticChecks, vendorApps, type Check, type CheckState } from "./guidance";
 import { buildReport } from "./report";
 import { MidiLog } from "./MidiLog";
 
@@ -31,12 +32,14 @@ export function useChecks(): Check[] {
   const mode = useDevice((s) => s.mode);
   const hostStatus = useDevice((s) => s.hostStatus);
   const portName = useDevice((s) => s.portName);
+  const device = useDevice((s) => s.device);
   return diagnosticChecks({
     status,
     error,
     mode,
     hostStatus,
     portName,
+    device,
     platform: host.platform,
     webmidi: typeof navigator.requestMIDIAccess === "function",
     chrome: hostStatus?.versions.chrome ?? null,
@@ -54,6 +57,7 @@ export async function currentReport(checks: Check[]): Promise<string> {
     status: d.status,
     mode: d.mode,
     portName: d.portName,
+    device: attachedDevice(d),
     connectionError: d.error,
     lastError: d.lastError,
     monitor: d.monitor ? getMidiLog() : null,
@@ -72,7 +76,7 @@ export async function copyReport(checks: Check[]): Promise<void> {
 async function saveReport(checks: Check[]): Promise<void> {
   try {
     const d = new Date();
-    const name = `gp5-diagnostics-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.txt`;
+    const name = `valeton-diagnostics-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.txt`;
     const path = await host.device.saveReport(await currentReport(checks), name);
     if (path) notifySuccess("Diagnostic report saved", path);
   } catch (e) {
@@ -95,6 +99,9 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
   const monitor = useDevice((s) => s.monitor);
   const setMonitor = useDevice((s) => s.setMonitor);
   const clearMidiLog = useDevice((s) => s.clearMidiLog);
+  const attached = useDevice((s) => attachedDevice(s));
+  const pedal = pedalName(attached);
+  const apps = vendorApps(attached);
   const [checking, setChecking] = useState(false);
 
   const checkAgain = useCallback(async () => {
@@ -175,16 +182,18 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
           <span>
             <b className="font-semibold text-silkscreen">If the pedal doesn't show up on Windows 11</b>
             <br />
-            <span className="text-xs text-silkscreen-3">Windows 11 updates since February 2026 can attach a MIDI driver that hides the GP-5</span>
+            <span className="text-xs text-silkscreen-3">Windows 11 updates since February 2026 can attach a MIDI driver that hides the {pedal}</span>
           </span>
           <ChevronDown className="ml-auto size-4 shrink-0 text-silkscreen-3 transition-transform group-data-[state=open]/guide:rotate-180 motion-reduce:transition-none" aria-hidden />
         </CollapsibleTrigger>
         <CollapsibleContent className="pr-3 pb-3 pl-[38px] text-sm text-silkscreen-2">
           <p className="mb-2 text-pretty">The pedal is fine. Windows gave it the new "USB MIDI 2.0" driver, which Valeton software and this app can't use. Give it the "USB Audio Device" driver instead:</p>
           <ol className="mb-2.5 flex list-decimal flex-col gap-1 pl-[18px] marker:font-semibold marker:text-silkscreen-3">
-            <li>Plug the GP-5 in, switch it on and close Valeton Suite.</li>
             <li>
-              Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find the GP-5.
+              Plug the {pedal} in, switch it on and close {apps.editor}.
+            </li>
+            <li>
+              Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find the {pedal}.
             </li>
             <li>
               Right-click it, choose <b className="font-semibold text-silkscreen">Update driver</b>, then <b className="font-semibold text-silkscreen">Browse my computer</b>, then{" "}
@@ -196,7 +205,7 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
             <li>Unplug the pedal, plug it back in, then press Check again.</li>
           </ol>
           <p className="mb-2 text-pretty text-silkscreen-3">
-            A firmware update puts the pedal in update mode, which Windows treats as a separate device. If an update in Valeton Suite stops at 0%, repeat these steps while the pedal shows its update screen.
+            A firmware update puts the pedal in update mode, which Windows treats as a separate device. If an update in {apps.updater} stops at 0%, repeat these steps while the pedal shows its update screen.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => void checkAgain()} disabled={checking}>
