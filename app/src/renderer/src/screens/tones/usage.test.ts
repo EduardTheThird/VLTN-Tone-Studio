@@ -32,7 +32,7 @@ describe("slotOfFxid", () => {
 
 describe("buildUsage on the bundled backup", () => {
   const index = buildUsage(presets);
-  it("finds the presets that play each user SnapTone (design/screens/tones.md data)", () => {
+  it("finds the presets that play each user SnapTone", () => {
     expect(index.snaptone.get(51)).toEqual([{ slot: 53, name: "ALEXI-1" }]);
     expect(index.snaptone.get(52)).toEqual([{ slot: 54, name: "Grzmol" }]);
     expect(index.snaptone.get(53)).toEqual([{ slot: 51, name: "ALEXI-CUST" }]);

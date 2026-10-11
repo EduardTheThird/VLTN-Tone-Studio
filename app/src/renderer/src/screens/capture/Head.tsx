@@ -1,5 +1,6 @@
 import { ChevronLeft, CircleCheck, Download, EllipsisVertical, ExternalLink, FileUp, FolderOpen, Redo2, RotateCcw, Undo2 } from "lucide-react";
 import { gearLabel, licenseLabel, linkedSlotOn } from "@shared/tone3000";
+import { snapToneLabel } from "@shared/devices";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { host, isElectron } from "@/host";
 import { notifyError, notifySuccess } from "@/app/notify";
-import { useDevice, usePedalNameOrBoth } from "@/state/device";
+import { useDevice } from "@/state/device";
+import { DEFAULT_DEVICE, pedalNameOrBoth } from "@/state/device-model";
+import type { DeviceKey } from "@/state/device-types";
 import { useNav } from "@/state/nav";
 import { ToneImage } from "@/screens/tones/ToneImage";
 import { formatKhz, type NamInfo } from "./nam/model";
@@ -25,11 +28,13 @@ export interface Verdict {
 
 /**
  * Pedal compatibility of the open capture (head pill and pipeline). `linkedSlot`: the SnapTone slot linked on this
- * pedal model (see linkedSlotOn); `pedal`: "GP-5", "GP-50", or "GP-5 / GP-50" before the first connection.
+ * pedal model (see linkedSlotOn); `device`: the connected (or last) pedal, null before the first connection.
  */
-export function verdictOf(info: NamInfo, linkedSlot: number | null, pedal: string): Verdict {
+export function verdictOf(info: NamInfo, linkedSlot: number | null, device: DeviceKey | null): Verdict {
+  const pedal = pedalNameOrBoth(device);
   if (info.unsupported) return { tone: "fault", label: "Can't convert this capture", reason: info.unsupported };
-  if (linkedSlot !== null) return { tone: "on", label: `Linked to slot ${linkedSlot} on your ${pedal}`, reason: `This tone is linked to a user SnapTone slot on your ${pedal}.` };
+  if (linkedSlot !== null)
+    return { tone: "on", label: `Linked to ${snapToneLabel(device ?? DEFAULT_DEVICE, linkedSlot)} on your ${pedal}`, reason: `This tone is linked to a user SnapTone slot on your ${pedal}.` };
   const reason =
     info.arch.kind === "A1"
       ? `NAM A1 ${info.arch.size}: Tone Studio turns it into a SnapTone the way Valeton Suite does and writes it to the pedal.`
@@ -48,7 +53,7 @@ export function Head({ onOpenFile }: { onOpenFile: () => void }) {
   const { info, source } = loaded;
   const arch = archLabel(info);
   const device = useDevice((s) => s.device);
-  const verdict = verdictOf(info, linkedSlotOn(record, "snaptone", device), usePedalNameOrBoth());
+  const verdict = verdictOf(info, linkedSlotOn(record, "snaptone", device), device);
   const nextN = (loaded.versions.at(-1)?.n ?? 0) + 1;
 
   const onExport = async () => {

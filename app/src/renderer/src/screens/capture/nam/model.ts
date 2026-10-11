@@ -1,4 +1,4 @@
-// NAM `.nam` JSON: parse, inspect, lossless transforms, serialize. Pure (no I/O), see design/nam-a2.md.
+// NAM `.nam` JSON: parse, inspect, lossless transforms, serialize. Pure (no I/O).
 // A2 = `SlimmableContainer` (NAM 0.7.x) holding one WaveNet per size (max_value 0.5 = Lite, 1.0 = Full).
 // A1 = a single `WaveNet` (0.5.x layout: `kernel_size`, `head_size` per layer array).
 import type { CaptureMetadata, CaptureSize } from "@shared/host/capture";

@@ -86,10 +86,10 @@ describe("inspectNam", () => {
   it("accepts an A2 the way Valeton Suite does, and Head calls it ready", () => {
     const info = inspectNam(parseNam(tinyA2));
     expect(info.unsupported).toBeNull();
-    expect(verdictOf(info, null, "GP-50")).toMatchObject({ tone: "on", label: "Ready for GP-50" });
-    expect(verdictOf(info, 7, "GP-5")).toMatchObject({ tone: "on", label: "Linked to slot 7 on your GP-5" });
+    expect(verdictOf(info, null, "gp50")).toMatchObject({ tone: "on", label: "Ready for GP-50" });
+    expect(verdictOf(info, 57, "gp5")).toMatchObject({ tone: "on", label: "Linked to SnapTone 57 on your GP-5" });
     const bad = inspectNam({ ...parseNam(tinyA2), sample_rate: 22050 });
-    expect(verdictOf(bad, null, "GP-50")).toMatchObject({ tone: "fault", reason: bad.unsupported });
+    expect(verdictOf(bad, null, "gp50")).toMatchObject({ tone: "fault", reason: bad.unsupported });
   });
 
   it("marks the level as not editable when head_scale isn't the last weight", () => {

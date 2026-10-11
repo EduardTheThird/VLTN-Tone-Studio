@@ -89,7 +89,7 @@ export async function togglePlay(state: { playing: boolean }, source: AuditionSo
   }
 }
 
-/** Transport, DI source, level match, compare and the rendered preview (design: Audition strip). */
+/** Transport, DI source, level match, compare and the rendered preview. */
 export function AuditionStrip({ play, setPlay }: { play: PlayState; setPlay: (p: Partial<PlayState>) => void }) {
   const loaded = useCapture((s) => s.loaded)!;
   const { choice, source, levelMatched, set } = useCapture();

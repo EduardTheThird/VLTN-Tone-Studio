@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { FileAudio, RotateCcw } from "lucide-react";
+import { snapToneLabel } from "@shared/devices";
 import { SIGNAL_IN_SUITE } from "@shared/host/snaptone";
 import type { T3kModel } from "@shared/host/tones";
 import { ARCH_LABEL, firstEmptySlot, isEmptySlotName, sanitizeSlotName } from "@shared/tone3000";
@@ -15,8 +16,8 @@ import { readSlots, runSend, updateDraft, writeSnapTone, type SendState } from "
 import { Step, StepError, UseOnGp5, kb, type StepStatus } from "./SendSteps";
 
 /**
- * Send a NAM capture to the pedal as a SnapTone (tones.md "The Send to GP-5 flow"): download, check, convert
- * in the app, write the chosen user slot over USB, link. No Valeton Suite involved. Same on GP-5 and GP-50.
+ * Send a NAM capture to the pedal as a SnapTone: download, check, convert in the app, write the chosen user slot
+ * over USB, link. No Valeton Suite involved. Same on GP-5 and GP-50.
  */
 export function SnapToneSteps({ send, model }: { send: SendState; model: T3kModel | undefined }) {
   const { phase, step, error } = send;
@@ -27,6 +28,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
   const busy = useDevice((s) => s.busy);
   const hasSignal = useTestSignal((s) => s.has);
   const pedal = usePedalName();
+  const profile = useProfile();
 
   useEffect(() => {
     if (phase === "idle") return;
@@ -51,8 +53,9 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
   const slot = send.proposedSlot;
   const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot)?.name;
   const replacing = occupant && !isEmptySlotName(occupant) ? occupant : null;
-  const slotText = slot === null ? "a user slot" : `slot ${slot}`;
-  const writeLabel = replacing ? `Replace ${replacing} in slot ${slot}` : `Write to ${slotText}`;
+  const slotText = slot === null ? "a user slot" : snapToneLabel(profile.key, slot);
+  const writeLabel = replacing ? `Replace ${replacing} in ${slotText}` : `Write to ${slotText}`;
+  const linkedText = send.linkedSlot === null ? "" : snapToneLabel(profile.key, send.linkedSlot);
   const canEdit = phase === "idle" || phase === "ready" || (phase === "error" && step !== 3);
   const canWrite = connected && slot !== null && !busy;
   const modelLabel = model ? `${model.name}, ${ARCH_LABEL(model)}` : "the model";
@@ -115,7 +118,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
         {phase === "error" && step === 3 && <StepError error={error} />}
       </Step>
 
-      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote slot ${send.linkedSlot}` : `Write ${slotText} on the ${pedal}`}>
+      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote ${linkedText}` : `Write ${slotText} on the ${pedal}`}>
         {replacing && phase !== "linked" && <span className="text-silkscreen-2">Replaces {replacing}. A SnapTone can't be read back from the pedal, so keep the original file if you want it again.</span>}
         {phase === "writing" && <Progress value={send.progress * 100} className="mt-1 w-56" aria-label="SnapTone write progress" />}
         {phase === "error" && step === 4 && <StepError error={error} />}
@@ -131,7 +134,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
         )}
       </Step>
 
-      <Step n={5} status={status(5)} title={phase === "linked" ? `Linked to slot ${send.linkedSlot} on your ${pedal}` : "Link the new SnapTone"}>
+      <Step n={5} status={status(5)} title={phase === "linked" ? `Linked to ${linkedText} on your ${pedal}` : "Link the new SnapTone"}>
         {phase !== "linked" && <span className="text-pretty text-silkscreen-3">The NS block then shows this tone's image for that slot.</span>}
         {phase === "linked" && send.linkedSlot !== null && <UseOnGp5 isIr={false} slot={send.linkedSlot} />}
       </Step>
@@ -142,12 +145,13 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
 /** User SnapTone slot (GP-5: 50–79) with what it holds now; nothing when the pedal's list isn't read. */
 export function SnapToneSlotPicker({ value, onChange, disabled }: { value: number | null; onChange: (slot: number) => void; disabled?: boolean }) {
   const snapTones = useDevice((s) => s.snapTones);
-  const [first, last] = useProfile().snapTone.userRange;
+  const { snapTone, key } = useProfile();
+  const [first, last] = snapTone.userRange;
   if (!snapTones) return null;
   const userSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
     const name = snapTones.find((s) => s.slot === slot)?.name ?? "";
-    return `Slot ${slot}${isEmptySlotName(name) ? ", empty" : `, ${name}`}`;
+    return `${snapToneLabel(key, slot)}${isEmptySlotName(name) ? ", empty" : `, ${name}`}`;
   };
   return (
     <Select value={value === null ? "" : String(value)} onValueChange={(v) => onChange(Number(v))} disabled={disabled}>

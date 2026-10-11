@@ -4,7 +4,8 @@ import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { pedalName, presetDevice } from "@/state/device-model";
+import { DEFAULT_DEVICE, pedalName, presetDevice } from "@/state/device-model";
+import { snapToneLabel } from "@shared/devices";
 import type { DeviceKey } from "@/state/device-types";
 import { notifySuccess } from "@/app/notify";
 import type { PresetRef } from "./usage";
@@ -148,7 +149,7 @@ export async function loadRecords(): Promise<void> {
 /** User IR slots are 0-based on the wire and 1-based on the pedal and in Valeton Suite ("User IR 1" = slot 0). */
 export const irSlotLabel = (slot: number) => `User IR ${slot + 1}`;
 
-export const slotLabel = (kind: "snaptone" | "ir", slot: number) => (kind === "ir" ? irSlotLabel(slot) : `SnapTone slot ${slot}`);
+export const slotLabel = (kind: "snaptone" | "ir", slot: number) => (kind === "ir" ? irSlotLabel(slot) : snapToneLabel(useDevice.getState().device ?? DEFAULT_DEVICE, slot));
 
 function storeRecord(r: ToneRecord) {
   set((s) => ({ records: { ...s.records, [r.tone_id]: r } }));

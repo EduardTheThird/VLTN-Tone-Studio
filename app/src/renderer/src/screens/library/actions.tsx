@@ -1,7 +1,7 @@
 // Library actions (shared by the panes through context) and the dialogs they open.
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { ConfirmWriteDialog } from "@/components/write/ConfirmWriteDialog";
-import { conversionNote } from "@/components/write/conversion";
+import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { describeSummary, summarize } from "@/components/write/preset-summary";
 import { describeError } from "@/components/write/write-helpers";
 import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
@@ -9,7 +9,7 @@ import { requestPresetSwitch } from "@/app/preset-switch";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
 import type { DeviceFeature } from "@/state/device-types";
-import { pedalName, prepareForDevice, presetDevice, profileOrDefault } from "@/state/device-model";
+import { pedalName, prepareForDevice, presetDevice, profileOrDefault, slotLabel } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import type { OpenFile } from "@/state/ui";
 import { IMPORTED_ID, type CollectionInfo, type LocalPreset, type PickedFile } from "@shared/host/files";
@@ -30,7 +30,9 @@ const pedal = () => pedalName(useDevice.getState().device);
 const slotCount = () => profileOrDefault(useDevice.getState().device).slotCount;
 /** The connected pedal can run `feature` itself now (GP-50 with its extras on) */
 const can = (feature: DeviceFeature) => useDevice.getState().can(feature);
-const slotList = (slots: number[]) => (slots.length === 2 ? `slots ${slots[0]} and ${slots[1]}` : slots.length === 1 ? `slot ${slots[0]}` : `${slots.length} slots`);
+/** What the pedal shows for `slot` ("07", "12-C"), for copy built outside React */
+const label = (slot: number) => slotLabel(useDevice.getState().device, slot);
+const slotList = (slots: number[]) => (slots.length === 2 ? `slots ${label(slots[0])} and ${label(slots[1])}` : slots.length === 1 ? `slot ${label(slots[0])}` : `${slots.length} slots`);
 
 /** Body the app knows for `slot` and still trusts (its name matches the pedal's current name). */
 export function knownBody(slot: number): Uint8Array | null {
@@ -55,11 +57,11 @@ async function readSlots(slots: number[], verb: string): Promise<{ slot: number;
     for (const [i, slot] of slots.entries()) {
       let prst = knownBody(slot);
       if (!offline && !(d.slot === slot && prst)) {
-        useLibrary.setState({ job: { label: `${verb}: reading slot ${slot}`, progress: i / slots.length } });
+        useLibrary.setState({ job: { label: `${verb}: reading slot ${label(slot)}`, progress: i / slots.length } });
         prst = d.slot === slot && d.saved ? d.saved.prst : await useDevice.getState().readPreset(slot);
         lib.setBody(slot, prst, "pedal");
       }
-      if (!prst) throw new Error(`Slot ${slot} hasn't been read yet. Connect the ${pedal()} or wait for the backup to finish.`);
+      if (!prst) throw new Error(`Slot ${label(slot)} hasn't been read yet. Connect the ${pedal()} or wait for the backup to finish.`);
       out.push({ slot, name: nameOf(slot), prst });
     }
   } finally {
@@ -136,14 +138,14 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
     const planCopy = (slots: number[], target: number) => {
       const steps = copySteps(slots, target, slotCount());
       if (!steps?.length) return;
-      const title = slots.length === 1 ? `Copy ${nameOf(slots[0])} to slot ${target}?` : `Copy ${slots.length} slots to slots ${target}–${target + slots.length - 1}?`;
-      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} is now also in slot ${target}` : `Copied ${slots.length} slots`;
+      const title = slots.length === 1 ? `Copy ${nameOf(slots[0])} to slot ${label(target)}?` : `Copy ${slots.length} slots to slots ${label(target)}–${label(target + slots.length - 1)}?`;
+      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} is now also in slot ${label(target)}` : `Copied ${slots.length} slots`;
       // One source can't overwrite a slot a later step reads, so the pedal can copy it itself.
       if (slots.length === 1 && can("copyPreset")) {
         setBulk({
           title,
           description: `The ${pedal()} copies the preset inside the pedal.`,
-          action: `Copy to slot ${target}`,
+          action: `Copy to slot ${label(target)}`,
           steps,
           native: { kind: "copy", from: slots[0], to: target },
           doneTitle,
@@ -153,7 +155,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       setBulk({
         title,
         description: `Tone Studio reads the presets from the ${pedal()}, writes them to the new slots and reads each one back to check it.`,
-        action: steps.length === 1 ? `Write to slot ${target}` : `Write ${steps.length} slots`,
+        action: steps.length === 1 ? `Write to slot ${label(target)}` : `Write ${steps.length} slots`,
         steps,
         doneTitle,
       });
@@ -162,13 +164,13 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
     const planMove = (slots: number[], target: number) => {
       const steps = moveSteps(slots, target, slotCount());
       if (!steps?.length) return;
-      const title = slots.length === 1 ? `Move ${nameOf(slots[0])} to slot ${target}?` : `Move ${slots.length} slots to slot ${target}?`;
-      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} moved to slot ${target}` : `Moved ${slots.length} slots`;
+      const title = slots.length === 1 ? `Move ${nameOf(slots[0])} to slot ${label(target)}?` : `Move ${slots.length} slots to slot ${label(target)}?`;
+      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} moved to slot ${label(target)}` : `Moved ${slots.length} slots`;
       if (slots.length === 1 && can("movePreset")) {
         setBulk({
           title,
           description: `The ${pedal()} moves it inside the pedal; the slots in between shift by one.`,
-          action: `Move to slot ${target}`,
+          action: `Move to slot ${label(target)}`,
           steps,
           native: { kind: "move", from: slots[0], to: target },
           doneTitle,
@@ -226,7 +228,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         setPick({
           title: `Write ${preset.name} to…`,
           description: `Choose the slot on the ${pedal()}. You confirm before anything is written.`,
-          confirmLabel: (s) => `Continue with slot ${s}`,
+          confirmLabel: (s) => `Continue with slot ${label(s)}`,
           initial,
           preview: (s) => [{ slot: s, from: "blank" }],
           sourceName: () => preset.name,
@@ -241,7 +243,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         setPick({
           title: `Copy ${slotList(slots)} to…`,
           description: "Choose where the first one goes; the others follow in order.",
-          confirmLabel: (s) => `Continue with slot ${s}`,
+          confirmLabel: (s) => `Continue with slot ${label(s)}`,
           initial: useDevice.getState().names.find((n) => isEmptyName(n.name))?.slot ?? null,
           preview: (s) => copySteps(slots, s, slotCount()),
           onPick: (s) => {
@@ -255,7 +257,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         setPick({
           title: `Move ${slotList(slots)} to…`,
           description: "Choose the new position. The slots in between shift to make room.",
-          confirmLabel: (s) => `Continue with slot ${s}`,
+          confirmLabel: (s) => `Continue with slot ${label(s)}`,
           initial: null,
           preview: (s) => moveSteps(slots, s, slotCount()),
           onPick: (s) => {
@@ -266,11 +268,11 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       },
       swapSlots(x, y) {
         setBulk({
-          title: `Swap slots ${x} and ${y}?`,
-          description: `${nameOf(x)} goes to slot ${y} and ${nameOf(y)} to slot ${x}. Both are read back to check them.`,
-          action: `Swap slots ${x} and ${y}`,
+          title: `Swap slots ${label(x)} and ${label(y)}?`,
+          description: `${nameOf(x)} goes to slot ${label(y)} and ${nameOf(y)} to slot ${label(x)}. Both are read back to check them.`,
+          action: `Swap slots ${label(x)} and ${label(y)}`,
           steps: swapSteps(x, y),
-          doneTitle: `Swapped slots ${x} and ${y}`,
+          doneTitle: `Swapped slots ${label(x)} and ${label(y)}`,
         });
       },
       clearSlots(slots) {
@@ -321,7 +323,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
           const items = await readSlots(slots, "Add to collection");
           await host.files.addPresets(
             collectionId,
-            items.map((i) => ({ name: i.name, prst: i.prst, slot: i.slot, source: `Slot ${i.slot} on ${pedal()}` })),
+            items.map((i) => ({ name: i.name, prst: i.prst, slot: i.slot, source: `Slot ${label(i.slot)} on ${pedal()}` })),
           );
           const lib = useLibrary.getState();
           await lib.refreshCollections();
@@ -368,7 +370,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         try {
           await readSlots([slot], "Read");
         } catch (e) {
-          notifyError(`Couldn't read slot ${slot}`, new Error(describeError(e, slot)));
+          notifyError(`Couldn't read slot ${label(slot)}`, new Error(describeError(e, slot)));
         }
       },
       renameSlot(slot, name) {
@@ -400,7 +402,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** A local .prst onto a pedal slot (overlays A1/A2), converted for the connected pedal's model when it differs. */
+/** A local .prst onto a pedal slot, converted for the connected pedal's model when it differs. */
 function FileWriteDialog({ write, onClose }: { write: FileWrite; onClose(): void }) {
   const { slot, preset, collection } = write;
   const names = useDevice((s) => s.names);
@@ -417,13 +419,13 @@ function FileWriteDialog({ write, onClose }: { write: FileWrite; onClose(): void
   const restoring = collection?.kind === "backup" || collection?.kind === "replaced";
   const verb = restoring ? "Restore" : empty ? "Write" : "Replace";
   const title = empty
-    ? `${restoring ? "Restore" : "Write"} ${preset.name} to slot ${slot}?`
+    ? `${restoring ? "Restore" : "Write"} ${preset.name} to slot ${label(slot)}?`
     : activeSlot === slot
-      ? `Overwrite ${current} in slot ${slot}?`
+      ? `Overwrite ${current} in slot ${label(slot)}?`
       : restoring
-        ? `Restore ${preset.name} to slot ${slot}?`
-        : `Replace ${current} in slot ${slot}?`;
-  const action = dropped.length ? `Write without ${dropped.map((d) => d.split(" ")[0]).join(", ")}` : empty ? `Write to slot ${slot}` : `${verb === "Restore" ? "Restore" : "Replace"} slot ${slot}`;
+        ? `Restore ${preset.name} to slot ${label(slot)}?`
+        : `Replace ${current} in slot ${label(slot)}?`;
+  const action = dropped.length ? `Write without ${dropped.map((d) => d.split(" ")[0]).join(", ")}` : empty ? `Write to slot ${label(slot)}` : `${verb === "Restore" ? "Restore" : "Replace"} slot ${label(slot)}`;
 
   return (
     <ConfirmWriteDialog
@@ -436,7 +438,7 @@ function FileWriteDialog({ write, onClose }: { write: FileWrite; onClose(): void
       action={action}
       notes={
         prepared.converted && device ? (
-          <p className="rounded-lg bg-well px-3.5 py-2.5 text-sm text-pretty text-silkscreen-2">{conversionNote({ from: prepared.from, to: device, dropped })}</p>
+          <p className="rounded-lg bg-well px-3.5 py-2.5 text-sm text-pretty text-silkscreen-2">{conversionNote(conversionFor(summarize(preset.prst)!, device)!)}</p>
         ) : undefined
       }
       onConfirm={async ({ backupFirst }) => {

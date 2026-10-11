@@ -3,7 +3,7 @@ import { parsePrst } from "@/gp5/lib/prst.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
 import { profileFor } from "@shared/devices";
 import { blockCodes, modelsMissingOn } from "@/state/device-model";
-import type { BlockCode, Gp5FamilyKey, ModelInfo, SlotName } from "@/state/device-types";
+import type { BlockCode, ExpSettings, Gp5FamilyKey, ModelInfo, SlotName } from "@/state/device-types";
 
 export interface SummaryBlock {
   index: number;
@@ -27,6 +27,20 @@ export interface PresetSummary {
   footswitches: { fs1: number[]; fs2: number[] };
   /** Blocks whose model only exists on the GP-50, e.g. "PRE (PRE C-Wah)"; dropped when converting to the GP-5 */
   gp50Only: string[];
+  /** EXP pedal settings stored with the preset (GP-50); null on models without them */
+  exp: ExpSettings | null;
+  /** Time/Rate params set to follow the tempo (GP-50 Sync on), e.g. "DLY Time" */
+  synced: string[];
+}
+
+/** "DLY Time" for every Time/Rate param whose Sync toggle is on (GP-50). */
+function syncedParams(blocks: readonly SummaryBlock[]): string[] {
+  return blocks.flatMap((b) =>
+    (b.model?.params ?? []).filter((p) => p.syncs !== undefined && b.params[p.index] >= 0.5).flatMap((toggle) => {
+      const bound = b.model?.params.find((p) => p.index === toggle.syncs);
+      return bound ? [`${b.code} ${bound.name}`] : [];
+    }),
+  );
 }
 
 const cache = new WeakMap<Uint8Array, PresetSummary | null>();
@@ -52,6 +66,9 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
       bpm: p.settings.bpm,
       footswitches: { fs1: p.footswitches.fs1, fs2: p.footswitches.fs2 },
       gp50Only: modelsMissingOn(prst, "gp5"),
+      // parsePrst (JS) adds `exp`, typed as ExpSettings in session.d.mts, to the settings of GP-50 presets only.
+      exp: "exp" in p.settings ? (p.settings.exp as ExpSettings) : null,
+      synced: syncedParams(blocks),
     };
   } catch {
     out = null;

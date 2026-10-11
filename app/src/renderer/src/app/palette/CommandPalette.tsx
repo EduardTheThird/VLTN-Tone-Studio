@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { isElectron } from "@/host";
 import { useDevice, useProfile } from "@/state/device";
 import { DEFAULT_DEVICE, blockCodes, isGp5Family, pedalName } from "@/state/device-model";
+import { snapToneLabel } from "@shared/devices";
 import type { BlockCode, ModelInfo } from "@/state/device-types";
 import { runCommand, useUi, type AppCommand } from "@/state/ui";
 import { useNav, type Screen } from "@/state/nav";
@@ -63,9 +64,6 @@ interface Group {
   idle?: number;
   limit: number;
 }
-
-/** GP-5 backup time for the hint; other models list their slot count only. */
-const GP5_BACKUP_HINT = "about 75 s";
 
 /** fxid per block of a .prst body, cached per byte array (bodies come from the last backup or read). */
 const fxidCache = new WeakMap<Uint8Array, number[]>();
@@ -191,7 +189,7 @@ function useGroups(close: () => void): Group[] {
         id: "backup",
         label: "Back up now",
         icon: HardDriveDownload,
-        hint: profile.family === "gp5" ? `All ${profile.slotCount} slots, ${GP5_BACKUP_HINT}` : `All ${profile.slotCount} slots`,
+        hint: `All ${profile.slotCount} slots, about ${profile.backupSeconds} s`,
         words: ["backup"],
         blocked: pedal,
         run: cmd("backup-pedal"),
@@ -306,7 +304,7 @@ function useGroups(close: () => void): Group[] {
         const fxid = (profile.snapTone.fxidBase + t.slot) >>> 0;
         return {
           id: `snaptone:${t.slot}`,
-          search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot + 1 },
+          search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot },
           verb: "set NS model",
           blocked: preset && connected ? pedal : needsPedal,
           run: () => {
@@ -321,7 +319,7 @@ function useGroups(close: () => void): Group[] {
             <>
               <AudioWaveform className="size-4 text-silkscreen-3" aria-hidden />
               <Name text={t.name} ranges={ranges} className="flex-1" />
-              <Hint>SnapTone slot {t.slot + 1}</Hint>
+              <Hint>{snapToneLabel(profile.key, t.slot)}</Hint>
             </>
           ),
         } satisfies Entry;
@@ -425,7 +423,7 @@ function useResults(groups: Group[], query: string) {
   }, [groups, query, bodies, preset, profile]);
 }
 
-/** Command palette (overlays.md D): Ctrl/Cmd K, title-bar Search, menu View › Command palette. */
+/** Command palette: Ctrl/Cmd K, title-bar Search, menu View › Command palette. */
 export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
   const setOpen = useUi((s) => s.setPaletteOpen);

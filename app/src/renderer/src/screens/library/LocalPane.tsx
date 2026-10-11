@@ -8,7 +8,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MiniChain } from "@/components/write/MiniChain";
-import { conversionFor, conversionNote, isLossy } from "@/components/write/conversion";
+import { conversionFor, droppedSentence, isLossy, listConversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize } from "@/components/write/preset-summary";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
@@ -198,7 +198,14 @@ function PresetList() {
   const query = useLibrary((s) => s.localQuery);
   const actions = useLibraryActions();
   const pedal = usePedalName();
+  const device = useDevice((s) => s.device);
   const current = collections.find((c) => c.id === currentId);
+  // What converting changes is the same for every preset of one model, so it is said once above the list.
+  const conversionNotes = useMemo(() => {
+    if (!device) return [];
+    const models = new Set(presets.flatMap((p) => summarize(p.prst)?.device ?? []));
+    return [...models].flatMap((from) => listConversionNote(from, device) ?? []);
+  }, [presets, device]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -238,6 +245,12 @@ function PresetList() {
           onChange={(e) => useLibrary.setState({ localQuery: e.target.value })}
         />
       </InputGroup>
+      {conversionNotes.map((note) => (
+        <p key={note} className="flex items-start gap-1.5 px-1 text-xs text-pretty text-silkscreen-3">
+          <RefreshCwIcon className="mt-px size-3 shrink-0" aria-hidden />
+          {note}
+        </p>
+      ))}
       <div role="listbox" aria-label={current.title} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto pb-1">
         {loading && !presets.length && Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-[76px] shrink-0 rounded-lg" />)}
         {!loading && !presets.length && (
@@ -280,9 +293,10 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
   const pedal = usePedalName();
   const actions = useLibraryActions();
   const s = summarize(p.prst);
-  // Cards flag only conversions that can drop blocks (GP-50 → GP-5) or are refused; lossless notes live in the inspector.
+  // The list says once what converting changes; cards only name the blocks this preset loses.
   const conversion = s ? conversionFor(s, device) : null;
   const lossy = conversion && isLossy(conversion) ? conversion : null;
+  const dropped = lossy ? droppedSentence(lossy) : "";
   const lead = s ? ampOrSnapTone(s, snapTones) : null;
   const targets = writableCollections(collections).filter((c) => c.id !== collection.id);
 
@@ -318,10 +332,10 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
             {lead && <span className="truncate">{lead.title}</span>}
             <span className="truncate">{p.fileName}</span>
           </span>
-          {lossy && (
+          {dropped && (
             <span className="flex items-start gap-1.5 text-xs text-pretty text-silkscreen-3">
               <RefreshCwIcon className="mt-px size-3 shrink-0" aria-hidden />
-              {conversionNote(lossy)}
+              {dropped}
             </span>
           )}
           {!s && (
@@ -336,7 +350,7 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
         <ContextMenuGroup>
           <ContextMenuItem disabled={!connected || !s} onSelect={() => actions.writeLocal(p)}>
             <ArrowDownToLineIcon />
-            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${p.slot}…` : "Write to slot…") : `Write to slot (needs the ${pedal})`}
+            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${slotLabel(collection.device, p.slot)}…` : "Write to slot…") : `Write to slot (needs the ${pedal})`}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void actions.exportLocal([p])}>
             <DownloadIcon />

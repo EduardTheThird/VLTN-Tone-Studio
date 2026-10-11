@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { host } from "@/host";
-import { usePedalName, useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { writeFrameCount } from "@/state/device-model";
 import { cn } from "@/lib/utils";
 import { MiniChain } from "./MiniChain";
@@ -47,7 +47,7 @@ export interface ConfirmWriteDialogProps {
 
 type Phase = "confirm" | "backup" | "write";
 
-/** The one write confirmation (overlays.md A1/A2): facts, optional backup, progress, errors in place. */
+/** The one write confirmation: facts, optional backup, progress, errors in place. */
 export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing, incoming, action, description, notes, onConfirm }: ConfirmWriteDialogProps) {
   const [backupFirst, setBackupFirst] = useState(true);
   const [phase, setPhase] = useState<Phase>("confirm");
@@ -57,6 +57,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
   const busy = useDevice((s) => s.busy);
   const connected = useDevice((s) => s.status === "connected");
   const pedal = usePedalName();
+  const label = useProfile().slotLabel(slot);
   const frameTotal = useMemo(() => writeFrameCount(incoming.prst), [incoming.prst]);
   const checkboxId = useId();
   const running = phase !== "confirm";
@@ -89,7 +90,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
 
   const changeBackup = (on: boolean) => {
     setBackupFirst(on);
-    // The choice is remembered (overlays.md A1).
+    // The choice is remembered for the next write.
     void host.app.setSettings({ backupBeforeWrite: on }).catch(() => {});
   };
 
@@ -119,12 +120,12 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
     <AlertDialog open={open} onOpenChange={(o) => !running && onOpenChange(o)}>
       <AlertDialogContent className="max-w-[480px] gap-4" onEscapeKeyDown={(e) => running && e.preventDefault()}>
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-balance">{running ? `Writing ${incoming.name} to slot ${slot}` : title}</AlertDialogTitle>
+          <AlertDialogTitle className="text-balance">{running ? `Writing ${incoming.name} to slot ${label}` : title}</AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
             {running
               ? `Keep the ${pedal} connected until the check finishes.`
               : (description ??
-                `The ${pedal} stores the preset in slot ${slot}. Tone Studio reads the slot back afterwards to check that every byte arrived.${replacing ? " The pedal has no undo." : ""}`)}
+                `The ${pedal} stores the preset in slot ${label}. Tone Studio reads the slot back afterwards to check that every byte arrived.${replacing ? " The pedal has no undo." : ""}`)}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -132,7 +133,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
           <div className="flex flex-col gap-3">
             <ol className="flex flex-col gap-2 text-sm">
               {doBackup && (
-                <Step n={1} state={phase === "backup" ? "run" : "done"} label={phase === "backup" ? `Backing up slot ${slot}` : `Backed up slot ${slot}`} detail={backedUp ?? "Reading it from the pedal"} />
+                <Step n={1} state={phase === "backup" ? "run" : "done"} label={phase === "backup" ? `Backing up slot ${label}` : `Backed up slot ${label}`} detail={backedUp ?? "Reading it from the pedal"} />
               )}
               <Step
                 n={doBackup ? 2 : 1}
@@ -140,7 +141,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
                 label={verifying ? "Sent the preset" : "Sending the preset"}
                 detail={`${frames} of ${frameTotal} frames acknowledged`}
               />
-              <Step n={doBackup ? 3 : 2} state={verifying ? "run" : "todo"} label="Verifying" detail={`Reading slot ${slot} back`} />
+              <Step n={doBackup ? 3 : 2} state={verifying ? "run" : "todo"} label="Verifying" detail={`Reading slot ${label} back`} />
             </ol>
             <Progress value={verifying ? 92 : pct} aria-label="Write progress" />
           </div>
@@ -158,7 +159,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
                   <dd className="min-w-0 text-silkscreen">{incoming.detail}</dd>
                 </>
               )}
-              <dt className="text-silkscreen-3">Slot {slot} now</dt>
+              <dt className="text-silkscreen-3">Slot {label} now</dt>
               <dd className="min-w-0 text-silkscreen">
                 {replacing ? (
                   <>
@@ -181,7 +182,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
               />
               <Label htmlFor={checkboxId} className={cn("flex flex-col items-start gap-0.5 font-normal", canBackUp ? "text-silkscreen" : "text-silkscreen-3")}>
                 <span>
-                  Back up slot {slot} first{!replacing && " (not needed, the slot is empty)"}
+                  Back up slot {label} first{!replacing && " (not needed, the slot is empty)"}
                 </span>
                 {replacing && <span className="text-xs text-pretty text-silkscreen-3">{backupHint}</span>}
               </Label>

@@ -1,7 +1,7 @@
-// Shared write helpers: the "Back up slot first" snapshot and user-facing error copy (overlays.md G).
+// Shared write helpers: the "Back up slot first" snapshot and user-facing error copy.
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { pedalName, slotLabel } from "@/state/device-model";
 import { emptyName } from "@/screens/library/store";
 import { REPLACED_ID, type LocalPreset } from "@shared/host/files";
 
@@ -26,7 +26,7 @@ export async function resolveBackupSource(slot: number): Promise<BackupSource> {
   const newest = (await host.files.listCollections().catch(() => [])).find((c) => c.kind === "backup" && c.device === d.device);
   const copy = newest ? (await host.files.listPresets(newest.id).catch(() => [])).find((p) => p.slot === slot) : undefined;
   if (newest && copy && copy.name === name) return { kind: "backup", prst: copy.prst, at: newest.createdAt };
-  return { kind: "none", reason: `Reading slot ${slot} would drop your unsaved changes, and no backup has its current preset.` };
+  return { kind: "none", reason: `Reading slot ${slotLabel(d.device, slot)} would drop your unsaved changes, and no backup has its current preset.` };
 }
 
 /** Save what is in `slot` now to the "Replaced presets" collection. */
@@ -36,15 +36,16 @@ export async function backUpSlot(slot: number, source?: BackupSource): Promise<L
   const d = useDevice.getState();
   const name = d.names[slot]?.name ?? emptyName();
   const prst = src.kind === "pedal" ? await d.readPreset(slot) : src.prst;
-  const [saved] = await host.files.addPresets(REPLACED_ID, [{ name, prst, slot, source: `Slot ${slot} on ${pedalName(d.device)}` }]);
+  const [saved] = await host.files.addPresets(REPLACED_ID, [{ name, prst, slot, source: `Slot ${slotLabel(d.device, slot)} on ${pedalName(d.device)}` }]);
   return saved;
 }
 
 /** Plain-language reason for a failed pedal or file operation. */
 export function describeError(e: unknown, slot?: number): string {
-  const pedal = pedalName(useDevice.getState().device);
+  const { device } = useDevice.getState();
+  const pedal = pedalName(device);
   const err: { code?: string; message?: string } | null = e && typeof e === "object" ? e : null;
-  const where = slot === undefined ? "The slot" : `Slot ${slot}`;
+  const where = slot === undefined ? "The slot" : `Slot ${slotLabel(device, slot)}`;
   switch (err?.code) {
     case "unsaved":
       return "This switches presets on the pedal, which would drop your unsaved changes. Save or discard them on the Rig first.";

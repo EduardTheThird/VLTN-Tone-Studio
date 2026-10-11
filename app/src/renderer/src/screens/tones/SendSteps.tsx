@@ -48,7 +48,7 @@ export function Step({ n, status, title, children }: { n: number; status: StepSt
 }
 
 /**
- * Send an IR to the pedal (tones.md "The Send to GP-5 flow"): download, check and convert in the app, pick a User IR
+ * Send an IR to the pedal: download, check and convert in the app, pick a User IR
  * slot, write it over USB, link. No Valeton Suite involved. SnapTones: SnapToneSteps.
  */
 export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel | undefined }) {

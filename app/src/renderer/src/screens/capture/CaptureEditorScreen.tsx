@@ -40,7 +40,7 @@ async function openNamFiles(files: OpenFile[]) {
   }
 }
 
-/** Capture editor (design/screens/capture-editor.md): inspect and edit a NAM capture, versions, SnapTone readiness. */
+/** Capture editor: inspect and edit a NAM capture, versions, SnapTone readiness. */
 export function CaptureEditorScreen() {
   const param = useNav((s) => s.param);
   const status = useCapture((s) => s.status);
@@ -88,7 +88,7 @@ export function CaptureEditorScreen() {
   useCommand("undo", () => useCapture.getState().undo(), status === "ready");
   useCommand("redo", () => useCapture.getState().redo(), status === "ready");
 
-  // Screen keys (design: Keyboard). Ctrl/Cmd S, Z and Shift Z arrive as commands from the shell.
+  // Screen keys. Ctrl/Cmd S, Z and Shift Z arrive as commands from the shell.
   useEffect(() => {
     if (status !== "ready") return;
     const onKey = (e: KeyboardEvent) => {

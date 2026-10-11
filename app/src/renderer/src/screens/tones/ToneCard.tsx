@@ -1,5 +1,6 @@
 import { forwardRef, useEffect } from "react";
 import { CircleCheck, CircleX, ExternalLink, Heart, Link2, Speaker } from "lucide-react";
+import { snapToneLabel } from "@shared/devices";
 import type { T3kTone, ToneRecord } from "@shared/host/tones";
 import { gearLabel, slotLinkOn, toneVerdict, verdictLabel, type Verdict } from "@shared/tone3000";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -9,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalNameOrBoth, useProfile } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { DEFAULT_DEVICE, pedalName } from "@/state/device-model";
 import type { DeviceKey } from "@/state/device-types";
 import { irSlotLabel, requestImage, useTones } from "./store";
 import { ToneImage } from "./ToneImage";
@@ -34,7 +35,7 @@ export function CreatorAvatar({ username, url, className }: { username: string; 
 export function linkLabel(record: ToneRecord | undefined, device: DeviceKey | null): string | null {
   const link = slotLinkOn(record, device);
   if (!link) return null;
-  const slot = link.kind === "snaptone" ? `SnapTone ${link.slot}` : irSlotLabel(link.slot);
+  const slot = link.kind === "snaptone" ? snapToneLabel(link.other ?? device ?? DEFAULT_DEVICE, link.slot) : irSlotLabel(link.slot);
   return link.other ? `Linked to ${slot} on your ${pedalName(link.other)}` : `Linked to ${slot}`;
 }
 

@@ -10,7 +10,8 @@ import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
-import { blockCodes, slotNameError } from "@/state/device-model";
+import { blockCodes, profileOrDefault, slotNameError } from "@/state/device-model";
+import { EXP_TARGETS } from "@/gp5/lib/protocol.mjs";
 import type { BlockCode } from "@/state/device-types";
 import { PRST_MODELS } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
@@ -76,6 +77,7 @@ function SlotInspector({ slot }: { slot: number }) {
   const job = useLibrary((s) => s.job);
   const actions = useLibraryActions();
   const pedal = usePedalName();
+  const label = useProfile().slotLabel(slot);
   const name = names[slot]?.name ?? emptyName();
   const empty = isEmptyName(name);
   const connected = status === "connected";
@@ -92,7 +94,7 @@ function SlotInspector({ slot }: { slot: number }) {
         title={empty ? "Empty slot" : name}
         meta={
           <>
-            Slot {slot} on {pedal}
+            Slot {label} on {pedal}
             {active && ", playing now"}
           </>
         }
@@ -157,8 +159,8 @@ function SlotInspector({ slot }: { slot: number }) {
             variant="ghost"
             size="icon-sm"
             className="ml-auto text-led-fault hover:text-led-fault"
-            aria-label={`Clear slot ${slot}`}
-            title={`Clear slot ${slot}`}
+            aria-label={`Clear slot ${label}`}
+            title={`Clear slot ${label}`}
             disabled={!writable || empty}
             onClick={() => actions.clearSlots([slot])}
           >
@@ -176,7 +178,7 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
   const pedal = usePedalName();
-  const { nameLength } = useProfile();
+  const { nameLength, slotLabel } = useProfile();
   useEffect(() => inputRef.current?.select(), []);
   const trimmed = value.replace(/\s+$/, "");
   const error = slotNameError(value, pedal);
@@ -193,7 +195,7 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
           ref={inputRef}
           value={value}
           maxLength={nameLength}
-          aria-label={`New name for slot ${slot}`}
+          aria-label={`New name for slot ${slotLabel(slot)}`}
           aria-describedby={hintId}
           aria-invalid={error ? true : undefined}
           onChange={(e) => setValue(e.target.value.slice(0, nameLength))}
@@ -269,7 +271,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
         {both ? (
           <Button disabled={!writable} onClick={() => actions.swapSlots(slots[0], slots[1])}>
             <ArrowUpDownIcon data-icon="inline-start" />
-            Swap slots {slots[0]} and {slots[1]}
+            Swap slots {slotLabel(slots[0])} and {slotLabel(slots[1])}
           </Button>
         ) : (
           <Button disabled={!writable || !usedSlots.length} onClick={() => actions.copySlots(slots)}>
@@ -334,7 +336,7 @@ function LocalInspector({ p }: { p: LocalPreset }) {
       <Actions>
         <Button disabled={!writable || !s} onClick={() => actions.writeLocal(p)}>
           <ArrowDownToLineIcon data-icon="inline-start" />
-          {restore ? `Restore to slot ${p.slot}…` : "Write to slot…"}
+          {restore && collection ? `Restore to slot ${profileOrDefault(collection.device).slotLabel(p.slot!)}…` : "Write to slot…"}
         </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={() => void actions.exportLocal([p])}>
@@ -455,6 +457,16 @@ function FsChips({ blocks, codes }: { blocks: number[]; codes: readonly BlockCod
   );
 }
 
+/** "DLY Time 0–100%", "Volume 0–100" or "Off": what the preset's EXP pedal (GP-50) sweeps. */
+function expText(s: PresetSummary): string {
+  const exp = s.exp!;
+  if (!exp.on) return "Off";
+  if (exp.targetModule === 0) return `Volume ${exp.volMin}–${exp.volMax}`;
+  const code = EXP_TARGETS[exp.targetModule];
+  const param = s.blocks.find((b) => b.code === code)?.model?.params[exp.targetParam];
+  return `${code}${param ? ` ${paramTitle(param.name)}` : ""} ${exp.paramMin}–${exp.paramMax}%`;
+}
+
 function Patch({ s }: { s: PresetSummary }) {
   const key = "text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase";
   const codes = blockCodes(s.device);
@@ -474,6 +486,12 @@ function Patch({ s }: { s: PresetSummary }) {
       <dd className="col-span-3">
         <FsChips blocks={s.footswitches.fs2} codes={codes} />
       </dd>
+      {s.exp && (
+        <>
+          <dt className={key}>EXP</dt>
+          <dd className="col-span-3 font-semibold text-silkscreen">{expText(s)}</dd>
+        </>
+      )}
     </dl>
   );
 }

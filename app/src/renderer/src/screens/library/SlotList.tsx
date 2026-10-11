@@ -169,7 +169,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
     } else if (mod && e.key.toLowerCase() === "c" && selected.length) {
       e.preventDefault();
       clipboard = selected;
-      setAnnounce(`Copied ${selected.length === 1 ? `slot ${selected[0]}` : `${selected.length} slots`}. Focus a slot and press Ctrl V to paste.`);
+      setAnnounce(`Copied ${selected.length === 1 ? `slot ${profile.slotLabel(selected[0])}` : `${selected.length} slots`}. Focus a slot and press Ctrl V to paste.`);
     } else if (mod && e.key.toLowerCase() === "v" && clipboard.length && focus !== null && writable) {
       e.preventDefault();
       actions.copySlots(clipboard, focus);
@@ -191,7 +191,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
       setOver(slot);
       const row = rows[slot];
       const what = drag?.kind === "local" ? drag.preset.name : drag?.kind === "slots" ? (drag.slots.length === 1 ? rows[drag.slots[0]]?.name : `${drag.slots.length} slots`) : "the file";
-      setAnnounce(`Drop to ${row?.empty ? "write" : "replace"} ${what} ${row?.empty ? "to" : "in"} slot ${slot}`);
+      setAnnounce(`Drop to ${row?.empty ? "write" : "replace"} ${what} ${row?.empty ? "to" : "in"} slot ${profile.slotLabel(slot)}`);
     }
   };
   const onDrop = (e: DragEvent, slot: number) => {
@@ -322,11 +322,12 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
   const connected = useDevice((s) => s.status === "connected");
   const writable = useWritable();
   const actions = useLibraryActions();
+  const { slotLabel } = useProfile();
   const n = selected.length;
   const allUsedEmpty = selected.every((s) => isEmptyName(names[s]?.name));
   const readable = connected || selected.every((s) => knownBody(s) !== null);
   const checked = visibleSelected === 0 ? false : visibleSelected === visible.length ? true : "indeterminate";
-  const swapTip = n === 2 ? `Swap slots ${selected[0]} and ${selected[1]}` : "Select two slots to swap them";
+  const swapTip = n === 2 ? `Swap slots ${slotLabel(selected[0])} and ${slotLabel(selected[1])}` : "Select two slots to swap them";
 
   return (
     <div role="toolbar" aria-label="Selected slots" className="mt-2.5 flex h-11 shrink-0 items-center gap-0.5 border-y border-border px-1.5">
@@ -449,7 +450,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
           )}
         >
           <span role="gridcell" className="flex items-center">
-            <Checkbox checked={selected} aria-label={`Select slot ${slot}`} tabIndex={-1} onClick={(e) => e.stopPropagation()} onCheckedChange={() => onToggle(slot)} />
+            <Checkbox checked={selected} aria-label={`Select slot ${slotLabel(slot)}`} tabIndex={-1} onClick={(e) => e.stopPropagation()} onCheckedChange={() => onToggle(slot)} />
           </span>
           <span role="gridcell" className={cn("text-sm font-semibold tabular-nums", selected ? "text-silkscreen" : "text-silkscreen-3", drop && "text-lamp", empty && !drop && "font-medium text-silkscreen-4")}>
             {slotLabel(slot)}

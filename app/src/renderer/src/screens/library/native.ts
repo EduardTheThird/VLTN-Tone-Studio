@@ -2,6 +2,7 @@
 // pedal do it. The store re-reads the names (and the active preset when it was affected) afterwards.
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { slotLabel } from "@/state/device-model";
 import { REPLACED_ID } from "@shared/host/files";
 import { slotsToRead, type NativeOp, type Step } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
@@ -47,21 +48,21 @@ export async function readAndBackUp(job: {
   /** `done` of `reads` slots read so far */
   onStatus?(text: string, done: number, reads: number): void;
 }): Promise<{ replaced: number[]; toRead: number[]; backedUp: boolean }> {
-  const names = useDevice.getState().names;
+  const { names, device } = useDevice.getState();
   const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const replaced = job.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
   const backUp = job.backUp && replaced.length > 0 && !job.backedUp;
   const toRead = backUp ? [...new Set([...job.sources, ...replaced])].sort((a, b) => a - b) : job.sources;
   for (const [i, slot] of toRead.entries()) {
     if (job.read.has(slot)) continue;
-    job.onStatus?.(`Reading slot ${slot}`, i, toRead.length);
+    job.onStatus?.(`Reading slot ${slotLabel(device, slot)}`, i, toRead.length);
     job.read.set(slot, await readSlot(slot));
   }
   if (backUp) {
     job.onStatus?.("Saving the replaced slots", toRead.length, toRead.length);
     await host.files.addPresets(
       REPLACED_ID,
-      replaced.map((slot) => ({ name: nameOf(slot), prst: job.read.get(slot)!, slot, source: `Slot ${slot} on ${job.pedal}` })),
+      replaced.map((slot) => ({ name: nameOf(slot), prst: job.read.get(slot)!, slot, source: `Slot ${slotLabel(device, slot)} on ${job.pedal}` })),
     );
   }
   return { replaced, toRead, backedUp: job.backedUp || backUp };

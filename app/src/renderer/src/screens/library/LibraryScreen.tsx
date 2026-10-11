@@ -146,7 +146,7 @@ function LibraryHead() {
   const unsaved = useDevice((s) => s.unsavedChanges);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
-  const { slotCount } = useProfile();
+  const { slotCount, backupSeconds } = useProfile();
   const [, tick] = useState(0);
   // The last backup of this pedal's model (a GP-5 backup says little about a connected GP-50).
   const newest = collections.find((c) => c.kind === "backup" && (!device || c.device === device));
@@ -168,9 +168,9 @@ function LibraryHead() {
       <div role="status" className="flex w-[420px] flex-col gap-1.5">
         <div className="flex justify-between gap-3 text-sm text-silkscreen-3">
           <span>
-            Backing up slot <b className="font-semibold text-silkscreen">{Math.min(slotCount, done + 1)}</b> of {slotCount}
+            Backing up preset <b className="font-semibold text-silkscreen">{Math.min(slotCount, done + 1)}</b> of {slotCount}
           </span>
-          <span>{left === null ? "About 75 s in total" : `About ${left} s left`}</span>
+          <span>{left === null ? `About ${backupSeconds} s in total` : `About ${left} s left`}</span>
         </div>
         <Progress value={backup.progress * 100} aria-label="Backup progress" />
       </div>
@@ -208,7 +208,7 @@ function LibraryHead() {
         <Button
           variant="outline"
           disabled={status !== "connected" || busy !== null || unsaved > 0}
-          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? `Connect the ${pedal} to back it up` : `Reads all ${slotCount} slots, about 75 s`}
+          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? `Connect the ${pedal} to back it up` : `Reads all ${slotCount} slots, about ${backupSeconds} s`}
           onClick={() => void runBackupNow()}
         >
           <HardDriveDownloadIcon data-icon="inline-start" />

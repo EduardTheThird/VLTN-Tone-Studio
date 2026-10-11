@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, RefreshCw } from "lucide-react";
+import { snapToneLabel } from "@shared/devices";
 import type { ToneRecord } from "@shared/host/tones";
 import { isEmptySlotName, slotLinkOn } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
@@ -214,10 +215,10 @@ function SlotCell({
   readOnly?: boolean;
 }) {
   const empty = isEmptySlotName(slot.name);
-  const label = kind === "snaptone" ? `SnapTone ${slot.slot}` : irSlotLabel(slot.slot);
+  const profile = useProfile();
+  const label = kind === "snaptone" ? snapToneLabel(profile.key, slot.slot) : irSlotLabel(slot.slot);
   const stale = link && link.gp5.slotName && link.gp5.slotName !== slot.name;
   const records = useTones((s) => s.records);
-  const profile = useProfile();
   const linkable = Object.values(records).filter((r) => (kind === "snaptone" ? r.format === "nam" : r.format === "ir"));
 
   const onClick = () => {
@@ -240,7 +241,7 @@ function SlotCell({
       ? "Empty"
       : [
           link ? `Linked to ${link.title} on TONE3000${stale ? ` (the pedal now calls it ${slot.name})` : ""}` : null,
-          usedIn.length ? `Used in ${usedIn.map((p) => `${p.slot} ${p.name}`).join(", ")}` : "Not used by any preset",
+          usedIn.length ? `Used in ${usedIn.map((p) => `${profile.slotLabel(p.slot)} ${p.name}`).join(", ")}` : "Not used by any preset",
           note,
         ]
           .filter(Boolean)

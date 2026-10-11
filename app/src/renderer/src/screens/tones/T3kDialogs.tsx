@@ -17,7 +17,7 @@ import { closeFlow, closeLinkChoice, closeSplash, continueFromSplash, irSlotLabe
 import { ToneImage } from "./ToneImage";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
 
-/** TONE3000 partnership splash (overlays.html E), before the first sign-in from any entry point. */
+/** TONE3000 partnership splash, before the first sign-in from any entry point. */
 export function SplashDialog() {
   const open = useTones((s) => s.splashOpen);
   const model = usePedalNameOrBoth();

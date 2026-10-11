@@ -13,7 +13,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
 import { applyEdits } from "@/gp5/lib/prst.mjs";
-import { usePedalName, useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { emptyName, useLibrary } from "./store";
 
 /** Rename on the pedal: name only, the sound is unchanged. Keeps the known body's chain in step. */
@@ -26,6 +26,7 @@ async function renameOnPedal(slot: number, name: string) {
 export function RenameConfirmDialog({ request, onClose }: { request: { slot: number; name: string } | null; onClose(): void }) {
   const names = useDevice((s) => s.names);
   const pedal = usePedalName();
+  const { slotLabel } = useProfile();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!request) return null;
@@ -37,7 +38,7 @@ export function RenameConfirmDialog({ request, onClose }: { request: { slot: num
     setError(null);
     try {
       await renameOnPedal(slot, name);
-      notifySuccess(`Slot ${slot} renamed to ${name}`, undefined, { label: "Undo", run: () => renameOnPedal(slot, old) });
+      notifySuccess(`Slot ${slotLabel(slot)} renamed to ${name}`, undefined, { label: "Undo", run: () => renameOnPedal(slot, old) });
       onClose();
     } catch (e) {
       setError(describeError(e, slot));
@@ -59,7 +60,7 @@ export function RenameConfirmDialog({ request, onClose }: { request: { slot: num
       <AlertDialogContent className="max-w-[440px]">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Rename slot {slot} to {name}?
+            Rename slot {slotLabel(slot)} to {name}?
           </AlertDialogTitle>
           <AlertDialogDescription>
             The {pedal} stores the new name for {old}. Only the name changes; the sound stays the same.

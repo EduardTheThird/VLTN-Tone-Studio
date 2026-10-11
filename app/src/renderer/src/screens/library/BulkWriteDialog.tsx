@@ -119,7 +119,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
       for (let i = written.current; i < steps.length; i++) {
         const step = steps[i];
         failedAt.slot = step.slot;
-        setStatus(`Writing slot ${step.slot} (${i + 1} of ${steps.length})`);
+        setStatus(`Writing slot ${slotLabel(step.slot)} (${i + 1} of ${steps.length})`);
         setProgress((toRead.length + i) / total);
         const prst = read.current.get(step.from)!;
         await useDevice.getState().writePreset(step.slot, prst);
