@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
@@ -51,6 +51,8 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
   // The pedal whose More controls strip is open
   const [moreFor, setMoreFor] = useState<number | null>(null);
+  const selected = useRig((s) => s.selected);
+  const rowRef = useRef<HTMLDivElement>(null);
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
   const nsSlot = ns >= 0 ? snapToneName(preset.blocks[ns], snapTones, device) : "";
@@ -63,6 +65,17 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
     : view === "before" && nsOn
       ? `NS is on, so ${nsSlot} plays in place of the amp and cab.`
       : `${orderHint(device, preset.order, view, preset.blocks.map((b) => b.code))}${orderNote && ` ${orderNote}`}`;
+
+  // A GP-200 board can hold up to 10 pedals: scroll the row (only the row) to keep the selected one in view
+  useEffect(() => {
+    const row = rowRef.current;
+    const el = row?.querySelector<HTMLElement>(`[data-block="${selected}"]`);
+    if (!row || !el) return;
+    const r = row.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    if (e.left < r.left) row.scrollBy({ left: e.left - r.left - 12 });
+    else if (e.right > r.right) row.scrollBy({ left: e.right - r.right + 12 });
+  }, [selected, view, preset.order]);
 
   const onDragOver = (target: number) => (e: DragEvent<HTMLDivElement>) => {
     if (drag === null) return;
@@ -93,7 +106,12 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
       style={{ backgroundImage: `url(${pedalboardUrl})` }}
     >
       <BoardHead title={view === "before" ? "Before the amp" : "After the amp"} hint={hint} keys />
-      <div role="list" aria-label="Pedals in signal order" className={cn("relative flex min-h-0 flex-1 items-start justify-center gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:none]", readOnly && "opacity-70")}>
+      <div
+        ref={rowRef}
+        role="list"
+        aria-label="Pedals in signal order"
+        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:thin]", readOnly && "opacity-70")}
+      >
         {blocks.map((b) =>
           b === ns && nsOn ? (
             <NsColumn key={b} block={preset.blocks[ns]} readOnly={readOnly} name={nsSlot} device={device} />
@@ -278,6 +296,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         role="listitem"
         aria-label={`${block.code} ${label}, ${block.enabled ? "on" : "off"}${isMovable(device, block.index) ? ", movable" : ""}`}
         aria-current={selected || undefined}
+        data-block={block.index}
         draggable={movable}
         onPointerDownCapture={onPointerDownCapture}
         onDragStart={(e) => {
@@ -292,7 +311,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        className={cn("relative flex min-w-0 flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2", movable && "cursor-grab", dragging && "opacity-50")}
+        className={cn("relative flex flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2", movable && "cursor-grab", dragging && "opacity-50")}
       >
         {dropSide && <span aria-hidden className={cn("absolute top-10 bottom-10 w-[3px] rounded-pill bg-silkscreen", dropSide === "before" ? "-left-[13px]" : "-right-[13px]")} />}
         <ModelButton block={block} label={label} selected={selected} disabled={readOnly} />
@@ -335,6 +354,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
         role="listitem"
         aria-label={`NS ${name}, on`}
         aria-current={selected || undefined}
+        data-block={block.index}
         onPointerDownCapture={() => useRig.getState().select(block.index)}
         className="relative flex w-[clamp(420px,36vw,520px)] flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2"
       >
