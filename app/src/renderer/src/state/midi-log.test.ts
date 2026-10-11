@@ -1,47 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { CC, encode, packetize } from "@/gp5/lib/protocol.mjs";
-import { MidiLogDecoder, RingBuffer } from "./midi-log";
+import { MIDI_LOG_CAP, MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
+import type { MidiLogEntry } from "./device-types";
 
-describe("RingBuffer", () => {
-  it("keeps items oldest first until full", () => {
-    const r = new RingBuffer<number>(3);
-    r.push(1);
-    r.push(2);
-    expect(r.toArray()).toEqual([1, 2]);
-    expect(r.size).toBe(2);
-  });
+describe("midiLog", () => {
+  const line = (n: number): MidiLogEntry => ({ dir: "out", text: String(n) }) as MidiLogEntry;
 
-  it("drops the oldest item when over capacity", () => {
-    const r = new RingBuffer<number>(3);
-    for (let i = 1; i <= 7; i++) r.push(i);
-    expect(r.toArray()).toEqual([5, 6, 7]);
-    expect(r.size).toBe(3);
-    expect(r.last(2)).toEqual([6, 7]);
-    expect(r.last(10)).toEqual([5, 6, 7]);
-  });
-
-  it("stays bounded at the monitor cap", () => {
-    const r = new RingBuffer<number>(2000);
-    for (let i = 0; i < 5000; i++) r.push(i);
-    const all = r.toArray();
-    expect(all.length).toBe(2000);
-    expect(all[0]).toBe(3000);
-    expect(all.at(-1)).toBe(4999);
-  });
-
-  it("clear empties it and keeps working", () => {
-    const r = new RingBuffer<string>(2);
-    r.push("a");
-    r.push("b");
-    r.push("c");
-    r.clear();
-    expect(r.toArray()).toEqual([]);
-    r.push("d");
-    expect(r.toArray()).toEqual(["d"]);
-  });
-
-  it("rejects a non-positive capacity", () => {
-    expect(() => new RingBuffer(0)).toThrow(RangeError);
+  it("keeps lines oldest first, capped at MIDI_LOG_CAP, and clears", () => {
+    midiLog.length = 0;
+    for (let i = 0; i < MIDI_LOG_CAP + 5; i++) pushMidiLog(line(i));
+    expect(midiLog.length).toBe(MIDI_LOG_CAP);
+    expect(midiLog[0].text).toBe("5");
+    expect(midiLog.at(-1)!.text).toBe(String(MIDI_LOG_CAP + 4));
+    midiLog.length = 0;
+    pushMidiLog(line(1));
+    expect(midiLog.map((l) => l.text)).toEqual(["1"]);
   });
 });
 

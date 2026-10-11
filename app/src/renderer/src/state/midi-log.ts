@@ -1,4 +1,4 @@
-// MIDI monitor: a bounded ring buffer of tx/rx lines fed by the Gp5Session `log` option, and the decoder that
+// MIDI monitor: a capped list of tx/rx lines fed by the Gp5Session `log` option, and the decoder that
 // turns raw frames into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32").
 import { BLOCKS, CC, CMD, EXP_TARGETS, KIND, READ, Reassembler, decodeMessage, globalsFor, parseSysex, patchSettingByRecord } from "@/gp5/lib/protocol.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
@@ -6,46 +6,12 @@ import type { DeviceKey, GlobalSpec, MidiLogEntry } from "./device-types";
 
 export const MIDI_LOG_CAP = 2000;
 
-/** Fixed-capacity FIFO: pushing past capacity drops the oldest item. */
-export class RingBuffer<T> {
-  #items: (T | undefined)[];
-  #start = 0;
-  #size = 0;
+/** MIDI monitor lines, oldest first; `pushMidiLog` drops the oldest past MIDI_LOG_CAP. */
+export const midiLog: MidiLogEntry[] = [];
 
-  constructor(readonly capacity: number) {
-    if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError(`capacity must be a positive integer, got ${capacity}`);
-    this.#items = new Array(capacity);
-  }
-
-  get size() {
-    return this.#size;
-  }
-
-  push(item: T): void {
-    const end = (this.#start + this.#size) % this.capacity;
-    this.#items[end] = item;
-    if (this.#size < this.capacity) this.#size++;
-    else this.#start = (this.#start + 1) % this.capacity;
-  }
-
-  /** Oldest first. */
-  toArray(): T[] {
-    const out = new Array<T>(this.#size);
-    for (let i = 0; i < this.#size; i++) out[i] = this.#items[(this.#start + i) % this.capacity] as T;
-    return out;
-  }
-
-  /** The newest `n` items, oldest first. */
-  last(n: number): T[] {
-    const all = this.toArray();
-    return all.slice(Math.max(0, all.length - n));
-  }
-
-  clear(): void {
-    this.#items = new Array(this.capacity);
-    this.#start = 0;
-    this.#size = 0;
-  }
+export function pushMidiLog(line: MidiLogEntry): void {
+  midiLog.push(line);
+  if (midiLog.length > MIDI_LOG_CAP) midiLog.shift();
 }
 
 const hex = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0").toUpperCase()).join(" ");

@@ -102,7 +102,7 @@ describe("useGp200Catalog", () => {
     expect(s.status).toBe("ready");
     expect(s.source).toBe(SOURCE);
     expect(s.catalog?.meta.source).toBe("algorithm.xml");
-    expect(s.counts).toEqual({ models: 5, uniqueModels: 4, controls: 8, perBlock: { PRE: 2, DST: 2, AMP: 1 } });
+    expect(s.counts).toEqual({ uniqueModels: 4, controls: 8, perBlock: { PRE: 2, DST: 2, AMP: 1 } });
     expect(typeof s.savedAt).toBe("string");
 
     useGp200Catalog.setState(initial, true);

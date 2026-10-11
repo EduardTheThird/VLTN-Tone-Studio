@@ -2,18 +2,19 @@
 // memory writes run only after the user confirmed them. Screens use `useDevice`.
 import { create } from "zustand";
 import { applyEdits, bodyOf, parsePrst, validateFootswitches, validateOrder } from "@/gp5/lib/prst.mjs";
-import { EXP_FIELDS, PATCH_SETTINGS } from "@/gp5/lib/protocol.mjs";
+import { PATCH_SETTINGS } from "@/gp5/lib/protocol.mjs";
 import { SYNC_ON_DIVISION, clampParam, displayedParam, modelByFxid } from "@/gp5/lib/catalog.mjs";
 import { host } from "@/host";
 import { type DeviceProfile } from "@shared/devices";
 import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
-import { MIDI_LOG_CAP, MidiLogDecoder, RingBuffer } from "./midi-log";
+import { MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
 import { DEFAULT_DEVICE, blockCodes, gateFeatures, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
 import { SendQueue } from "./send-queue";
+import { diffPresets } from "./unsaved-diff";
 import {
   RestoreError,
   type BlockState,
@@ -85,29 +86,6 @@ export function toPresetState(slot: number, prst: Uint8Array): PresetState {
   };
 }
 
-/** Number of user-visible differences (params, on/off, models, order, volume, tempo, footswitches, EXP fields). */
-export function countChanges(a: PresetState | null, b: PresetState | null): number {
-  if (!a || !b) return 0;
-  let n = 0;
-  a.blocks.forEach((x, k) => {
-    const y = b.blocks[k];
-    if (x.enabled !== y.enabled) n++;
-    if (x.fxid !== y.fxid) {
-      n++;
-      return;
-    }
-    x.params.forEach((v, i) => {
-      if (Math.abs(v - y.params[i]) > 1e-3) n++;
-    });
-  });
-  if (a.order.join() !== b.order.join()) n++;
-  if (a.volume !== b.volume) n++;
-  if (a.bpm !== b.bpm) n++;
-  if (a.footswitches.fs1.join() !== b.footswitches.fs1.join() || a.footswitches.fs2.join() !== b.footswitches.fs2.join()) n++;
-  if (a.exp && b.exp) for (const f of EXP_FIELDS as (keyof typeof a.exp)[]) if (a.exp[f] !== b.exp[f]) n++;
-  return n;
-}
-
 // ------------------------------------------------------------------------------------------- store
 
 let driver: DeviceDriver | null = null;
@@ -123,13 +101,12 @@ const localEdits = new Map<string, number>();
 let connectAttempt = 0;
 let watchTimer: number | undefined;
 /** MIDI monitor lines (only filled while the monitor is on). */
-const midiLog = new RingBuffer<MidiLogEntry>(MIDI_LOG_CAP);
 let logNotifyTimer: number | undefined;
 
 /** Advanced access for diagnostics and tests (the open connection); not for screens' normal use. */
 export const getDriver = () => driver;
 /** MIDI monitor lines, oldest first (re-read when `midiLogVersion` changes). */
-export const getMidiLog = (): MidiLogEntry[] => midiLog.toArray();
+export const getMidiLog = (): MidiLogEntry[] => [...midiLog];
 
 export const useDevice = create<DeviceState>((set, get) => {
   const requireDriver = () => {
@@ -156,7 +133,7 @@ export const useDevice = create<DeviceState>((set, get) => {
   /** Replace the live preset (and optionally the saved copy) and recount changes. */
   const setPreset = (preset: PresetState, saved?: PresetState) => {
     const s = saved ?? get().saved;
-    set({ preset, ...(saved ? { saved } : {}), unsavedChanges: countChanges(preset, s) });
+    set({ preset, ...(saved ? { saved } : {}), unsavedChanges: s ? diffPresets(s, preset).length : 0 });
   };
 
   /** Apply .prst edits to the live preset (applyEdits validates: RangeError on an illegal order or footswitch set). */
@@ -196,7 +173,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     if (!get().monitor) return;
     const line = logDecoder.line(dir, bytes, decoded);
     if (!line) return;
-    midiLog.push(line);
+    pushMidiLog(line);
     if (logNotifyTimer === undefined)
       logNotifyTimer = window.setTimeout(() => {
         logNotifyTimer = undefined;
@@ -461,7 +438,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     clearMidiLog() {
-      midiLog.clear();
+      midiLog.length = 0;
       set({ midiLogVersion: get().midiLogVersion + 1 });
     },
 

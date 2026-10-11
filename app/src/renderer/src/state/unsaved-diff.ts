@@ -30,6 +30,9 @@ const EXP_ROWS: { field: keyof ExpSettings; label: string; show: (e: ExpSettings
   { field: "volMax", label: "EXP volume maximum", show: (e) => `${e.volMax}%` },
 ];
 
+/** Param differences at or below this are float noise, not edits. */
+const PARAM_EPSILON = 1e-3;
+
 /** Differences between the live preset and the saved one, in chain-storage order. */
 export function diffPresets(saved: PresetState, now: PresetState): ChangeRow[] {
   const rows: ChangeRow[] = [];
@@ -41,7 +44,7 @@ export function diffPresets(saved: PresetState, now: PresetState): ChangeRow[] {
       rows.push({ block, parameter: "Model", saved: s.model?.title ?? "Unknown model", now: b.model?.title ?? "Unknown model" });
     } else {
       b.params.forEach((v, p) => {
-        if (v === s.params[p]) return;
+        if (Math.abs(v - s.params[p]) <= PARAM_EPSILON) return;
         // Each side with its own spec: a Sync toggle turns a Time in ms into a note division.
         const info = b.model?.params.find((x) => x.index === p);
         const savedInfo = s.model?.params.find((x) => x.index === p) ?? info;

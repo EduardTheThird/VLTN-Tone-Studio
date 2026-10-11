@@ -12,7 +12,7 @@ export interface Gp200XmlFile {
   text: string;
 }
 
-/** The kept catalog. `catalog` is the gp200/lib catalog object (checked with isCatalogShape on both sides). */
+/** The kept catalog. `catalog` is the gp200/lib catalog object (the host checks it with isCatalogShape). */
 export interface StoredGp200Catalog {
   catalog: unknown;
   /** Where the algorithm.xml came from (path or file name) */

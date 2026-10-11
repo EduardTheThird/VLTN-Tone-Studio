@@ -2,7 +2,7 @@
 // id table (gp200/lib/protocol.mjs GLOBALS). Facts: static RE of the GP-200 editor 1.8.0. The destructive 0x1008 ids
 // (delete User IR, delete SnapTone, reset footswitches) and the full 0x1007 write are no settings: nothing here
 // reaches them, and the session refuses them on the wire as well.
-import { DESTRUCTIVE_GLOBAL_IDS, GLOBALS, SELECT_ID, type GlobalName as Gp200GlobalName, type Gp200FamilyKey } from "@/gp200/lib/protocol.mjs";
+import { DESTRUCTIVE_GLOBAL_IDS, GLOBALS, SELECT_ID, type GlobalName as Gp200GlobalName } from "@/gp200/lib/protocol.mjs";
 import type { GlobalRecord, GlobalSpec } from "../device-types";
 
 export type { Gp200GlobalName };
@@ -13,8 +13,6 @@ export interface Gp200GlobalSpec extends Omit<GlobalSpec, "name" | "addr" | "sin
   name: Gp200GlobalName;
   /** 0x1008 id */
   id: number;
-  /** Models that have the setting; absent = every model of the family */
-  only?: readonly Gp200FamilyKey[];
 }
 
 const OFF_ON = ["Off", "On"] as const;
@@ -81,7 +79,8 @@ export const GP200_GLOBAL_SPECS: readonly Gp200GlobalSpec[] = Object.freeze([
   spec("fsMode", { label: "Footswitch mode", group: "controls", labels: ["Preset", "Stomp", "User"] }),
   spec("bankSelectMode", { label: "Bank select", group: "controls", labels: ["Wait for a patch", "Direct"] }),
   spec("exp1AB", { label: "EXP 1 A/B", group: "controls", labels: ["A", "B"] }),
-  spec("exp1Mode", { label: "EXP/FS 1 jack", group: "controls", labels: JACK_MODES, only: ["gp200lt"] }),
+  // GP-200LT only (its second EXP/FS jack)
+  spec("exp1Mode", { label: "EXP/FS 1 jack", group: "controls", labels: JACK_MODES }),
   spec("exp2Mode", { label: "EXP/FS 2 jack", group: "controls", labels: JACK_MODES }),
   spec("extFs1", { label: "External footswitch 1", group: "controls", labels: FS_FUNCTIONS }),
   spec("extFs2", { label: "External footswitch 2", group: "controls", labels: FS_FUNCTIONS }),
@@ -100,11 +99,6 @@ export const GP200_GLOBAL_SPECS: readonly Gp200GlobalSpec[] = Object.freeze([
 
 const BY_NAME: Readonly<Record<string, Gp200GlobalSpec>> = Object.fromEntries(GP200_GLOBAL_SPECS.map((s) => [s.name, s]));
 
-/** The settings of `device` (the LT has a second EXP/FS jack). */
-export function gp200GlobalsFor(device: Gp200FamilyKey): Gp200GlobalSpec[] {
-  return GP200_GLOBAL_SPECS.filter((s) => !s.only || s.only.includes(device));
-}
-
 /**
  * The spec of a setting the app may change, or a RangeError: unknown names (e.g. a GP-5 setting) and anything that
  * would map to the patch select or a destructive id.
@@ -113,10 +107,6 @@ export function gp200GlobalSpec(name: string): Gp200GlobalSpec {
   const s = Object.hasOwn(BY_NAME, name) ? BY_NAME[name] : undefined;
   if (!s || s.id === SELECT_ID || DESTRUCTIVE_GLOBAL_IDS.includes(s.id)) throw new RangeError(`The GP-200 has no setting ${name}`);
   return s;
-}
-
-export function isGp200GlobalName(name: string): name is Gp200GlobalName {
-  return Object.hasOwn(BY_NAME, name);
 }
 
 /** The value the pedal stores for `value`: whole numbers within the setting's range. */

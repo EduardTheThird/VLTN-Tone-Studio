@@ -66,13 +66,10 @@ export interface ProgressOptions {
  * The optional members exist only for the `features` the connected model lists; the store checks `features` first.
  */
 export interface DeviceDriver {
-  readonly family: DeviceFamily;
   /** MIDI port name, or the simulator's */
   readonly portName: string;
   /** Connected model; null until identified */
   readonly device: DeviceKey | null;
-  /** Detect the model (talks to the pedal when not known yet). */
-  identify(): Promise<DeviceKey>;
   /** Connect handshake: model, slot names, active slot and preset, pedal settings. */
   sync(): Promise<SyncSnapshot>;
 

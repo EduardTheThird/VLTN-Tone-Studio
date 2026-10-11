@@ -51,7 +51,6 @@ function irSamples(data: Uint8Array): Int32Array {
 }
 
 export class Gp200Driver implements DeviceDriver {
-  readonly family = "gp200";
   /** "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006. */
   readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm"];
   readonly #session: Gp200Session;
@@ -145,11 +144,6 @@ export class Gp200Driver implements DeviceDriver {
     return this.#session.device;
   }
 
-  /** Firmware version the pedal reported ("1.8.0"), null until connected. */
-  get firmware(): string | null {
-    return this.#session.firmware;
-  }
-
   /** Connect FSM (identity, SOFTWARE_STATE, globals). Update mode → Gp200UpdaterError, and nothing more is sent. */
   async identify(): Promise<DeviceKey> {
     if (!this.#session.device) {
@@ -168,7 +162,7 @@ export class Gp200Driver implements DeviceDriver {
    */
   async sync(opts: ProgressOptions = {}): Promise<SyncSnapshot> {
     const device = await this.identify();
-    const snap = await this.#session.sync({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    const snap = await this.#session.sync({ onProgress: opts.onProgress });
     const image = this.#remember(snap.editBuffer.image);
     return {
       device,
@@ -181,7 +175,7 @@ export class Gp200Driver implements DeviceDriver {
 
   /** Every slot is read for its name (about 3 s on the pedal). */
   async readNames(opts: ProgressOptions = {}): Promise<SlotName[]> {
-    const names = await this.#session.readPresetNames({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    const names = await this.#session.readPresetNames({ onProgress: opts.onProgress });
     return names.map((n) => ({ slot: n.slot, name: n.name }));
   }
 
@@ -240,7 +234,7 @@ export class Gp200Driver implements DeviceDriver {
 
   /** Stored reads of every slot; nothing is selected. */
   async backupAll(opts: ProgressOptions = {}): Promise<BackupEntry[]> {
-    const entries = await this.#session.backupAll({ onProgress: (done, total) => opts.onProgress?.(done, total) });
+    const entries = await this.#session.backupAll({ onProgress: opts.onProgress });
     return entries.map((e) => ({ slot: e.slot, name: e.name, prst: e.prst }));
   }
 

@@ -28,6 +28,13 @@ describe("diffPresets", () => {
     expect(diffPresets(preset(), preset())).toEqual([]);
   });
 
+  it("ignores param float noise up to 1e-3", () => {
+    const now = preset((b) => {
+      b[2].params[0] = 10.0005;
+    });
+    expect(diffPresets(preset(), now)).toEqual([]);
+  });
+
   it("lists param changes with names and enum labels", () => {
     const now = preset((b) => {
       b[2].params[1] = 60;

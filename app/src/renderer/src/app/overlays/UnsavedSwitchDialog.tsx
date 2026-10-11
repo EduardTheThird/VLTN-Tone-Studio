@@ -14,7 +14,7 @@ import { useDevice, useProfile } from "@/state/device";
 import { useUi } from "@/state/ui";
 import { describeError } from "../notify";
 import { switchNow } from "../preset-switch";
-import { diffPresets, type ChangeRow } from "../unsaved-diff";
+import { diffPresets, type ChangeRow } from "@/state/unsaved-diff";
 
 const MAX_ROWS = 5;
 

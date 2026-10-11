@@ -3,14 +3,12 @@
 // call load() once (startup, or when a GP-200 connects) before relying on it.
 import { create } from "zustand";
 import { buildCatalogFromXml, type Gp200Catalog } from "@/gp200/lib/catalog.mjs";
-import { isCatalogShape, type StoredGp200Catalog } from "@shared/host/gp200-catalog";
+import type { StoredGp200Catalog } from "@shared/host/gp200-catalog";
 import { host } from "@/host";
 
 export type Gp200CatalogStatus = "none" | "loading" | "ready" | "error";
 
 export interface Gp200CatalogCounts {
-  /** Model entries (a few models sit in two blocks) */
-  models: number;
   /** Distinct models (fxids) */
   uniqueModels: number;
   /** Knobs, switches and menus */
@@ -48,15 +46,14 @@ export const NOT_FOUND =
   "Tone Studio couldn't find the GP-200 editor on this computer. Install Valeton's GP-200 editor, or choose its algorithm.xml yourself.";
 
 function countsOf(catalog: Gp200Catalog): Gp200CatalogCounts {
-  const { algEntries, uniqueCodes, controls, perModule } = catalog.meta.counts;
-  return { models: algEntries, uniqueModels: uniqueCodes, controls, perBlock: { ...perModule } };
+  const { uniqueCodes, controls, perModule } = catalog.meta.counts;
+  return { uniqueModels: uniqueCodes, controls, perBlock: { ...perModule } };
 }
 
 const EMPTY = { status: "none", catalog: null, source: null, savedAt: null, counts: null } as const;
 
 function readyState(kept: StoredGp200Catalog) {
-  // the host checked the shape (isCatalogShape) when it read the file; check again, it is persisted data
-  if (!isCatalogShape(kept.catalog)) throw new Error("The saved GP-200 effect list is damaged. Import algorithm.xml again.");
+  // the host checked the shape (isCatalogShape) when it read the file
   const catalog = kept.catalog as Gp200Catalog;
   return { status: "ready" as const, catalog, source: kept.source, savedAt: kept.savedAt, counts: countsOf(catalog), error: null };
 }

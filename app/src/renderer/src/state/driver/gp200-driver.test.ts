@@ -7,7 +7,7 @@ import { applyPatchEdits, buildPrst, isGp200Prst, parsePatch, parsePrst } from "
 import { profileFor } from "@shared/devices";
 import type { DriverEvent } from "./types";
 import { Gp200Driver, Gp200UpdaterError } from "./gp200-driver";
-import { GP200_GLOBAL_SPECS, gp200GlobalsFor } from "./gp200-globals";
+import { GP200_GLOBAL_SPECS } from "./gp200-globals";
 
 // The session's pacing scaled down (the simulator's gap/deaf checks with it), so a 256-slot sync takes well under 1 s.
 const timing = { frameGapMs: 1, multiChunkPauseMs: 20, identityGapMs: 5, selectSettleMs: 2, replyTimeoutMs: 300, globalsPushMs: 300, uploadTimeoutMs: 2000, saveTimeoutMs: 500 };
@@ -212,9 +212,7 @@ describe("Gp200Driver settings", () => {
     expect(dev.violations.filter((v) => v.kind === "danger")).toEqual([]);
   });
 
-  it("lists the settings per model (the LT has a second EXP/FS jack)", () => {
-    expect(gp200GlobalsFor("gp200lt").map((s) => s.name)).toContain("exp1Mode");
-    expect(gp200GlobalsFor("gp200").map((s) => s.name)).not.toContain("exp1Mode");
+  it("gives every enum setting one label per value", () => {
     for (const s of GP200_GLOBAL_SPECS) if (s.labels) expect(s.max - s.min + 1).toBe(s.labels.length);
   });
 });

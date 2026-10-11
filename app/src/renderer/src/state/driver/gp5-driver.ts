@@ -89,7 +89,6 @@ function toDriverEvents(msg: DecodedMessage, device: Gp5FamilyKey | null): Drive
 }
 
 export class Gp5Driver implements DeviceDriver {
-  readonly family = "gp5";
   readonly #session: Gp5Session;
   readonly #listeners = new Set<(e: DriverEvent) => void>();
 
