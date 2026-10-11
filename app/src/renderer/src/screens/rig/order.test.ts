@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupOf, groupsOf, joinAnd, moveBlock, moveToGroup, nudge, orderHint } from "./order";
+import { chainItems, gapLabel, groupOf, groupsOf, joinAnd, loopRange, moveBlock, moveLoopNode, moveToGroup, nudge, orderHint } from "./order";
 import type { Gp200Edit } from "@/state/device-types";
 import { MERGE_MS, invert, pushEdit, type Edit } from "./history";
 
@@ -32,6 +32,32 @@ describe("GP-200 family chains", () => {
     expect(moveToGroup("gp200", GP200, 9, "before")).toEqual([0, 1, 2, 9, 3, 4, 5, 6, 7, 8, 10]);
     expect(nudge("gp200", GP200, 5, -1)).toEqual([0, 1, 2, 3, 5, 4, 6, 7, 8, 9, 10]);
     expect(orderHint("gp200", GP200, "before", CODES)).toBe("Drag a pedal to reorder. PRE, WAH and DST can move.");
+  });
+
+  it("draws the FX loop nodes in their gaps, as stored", () => {
+    expect(chainItems(GP200, { sendPos: 4, returnPos: 4 }).slice(2, 8)).toEqual([{ block: 2 }, { block: 3 }, { node: "send" }, { node: "return" }, { block: 4 }, { block: 5 }]);
+    expect(chainItems(GP200, { sendPos: 4, returnPos: 6 }).map((i) => ("node" in i ? i.node : i.block))).toEqual([0, 1, 2, 3, "send", 4, 5, "return", 6, 7, 8, 9, 10]);
+    // positions the pedal doesn't take still draw: 0 at the input, past the end at the output, a return ahead of the send
+    expect(chainItems(GP200, { sendPos: 0, returnPos: 40 })).toMatchObject({ 0: { node: "send" }, 12: { node: "return" } });
+    expect(chainItems(GP200, { sendPos: 6, returnPos: 2 }).filter((i) => "node" in i)).toEqual([{ node: "return" }, { node: "send" }]);
+    expect([gapLabel(GP200, 4, CODES), gapLabel(GP200, 11, CODES), gapLabel(GP200, 0, CODES)]).toEqual(["after AMP", "after VOL", "before PRE"]);
+  });
+
+  it("moves a loop node only where the pedal takes it: 1..11, the return never ahead of the send", () => {
+    const loop = { sendPos: 4, returnPos: 6 };
+    expect(moveLoopNode(loop, "send", 1, 11)).toEqual({ sendPos: 1, returnPos: 6 });
+    expect(moveLoopNode(loop, "send", 6, 11)).toEqual({ sendPos: 6, returnPos: 6 });
+    expect(moveLoopNode(loop, "return", 11, 11)).toEqual({ sendPos: 4, returnPos: 11 });
+    expect(moveLoopNode(loop, "send", 7, 11)).toBeNull();
+    expect(moveLoopNode(loop, "return", 3, 11)).toBeNull();
+    expect(moveLoopNode(loop, "send", 0, 11)).toBeNull();
+    expect(moveLoopNode(loop, "return", 12, 11)).toBeNull();
+    expect(moveLoopNode(loop, "send", 4, 11)).toBeNull();
+    // a stored 0/0 pair: the return moves first, then the send can follow
+    expect(moveLoopNode({ sendPos: 0, returnPos: 0 }, "send", 1, 11)).toBeNull();
+    expect(moveLoopNode({ sendPos: 0, returnPos: 0 }, "return", 1, 11)).toEqual({ sendPos: 0, returnPos: 1 });
+    expect(loopRange(loop, "send", 11)).toEqual([1, 6]);
+    expect(loopRange(loop, "return", 11)).toEqual([4, 11]);
   });
 });
 

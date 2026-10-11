@@ -1,13 +1,17 @@
-import { useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
-import { Capture, Dial, GearFor, knobsForBlock, modelTitle, paramTitle } from "@/components/gear";
+import { Capture, Dial, GearFor, artFor, knobsForBlock, modelTitle, moreControls, paramTitle } from "@/components/gear";
+import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { useDevice, usePedalName } from "@/state/device";
+import { isGp5Family } from "@/state/device-model";
 import type { BlockState, PresetState } from "@/state/device-types";
+import { useNav } from "@/state/nav";
 import { BlockMenu } from "./BlockMenu";
 import { editEnabled, editOrder, editParam } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
@@ -48,9 +52,15 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const nsOn = ns >= 0 && preset.blocks[ns].enabled;
   const [drag, setDrag] = useState<number | null>(null);
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
+  // The pedal whose More controls strip is open
+  const [moreFor, setMoreFor] = useState<number | null>(null);
+  const selected = useRig((s) => s.selected);
+  const rowRef = useRef<HTMLDivElement>(null);
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
   const nsSlot = ns >= 0 ? snapToneName(preset.blocks[ns], snapTones, device) : "";
+  // A SnapTone shows its slot name (NS on the GP-5 family, AMP or DST on the GP-200 family)
+  const nameOf = (b: BlockState) => (artFor(b) === "capture" ? snapToneName(b, snapTones, device) : modelTitle(b));
   const orderNote = saveOnlyNote(useLiveMode("liveOrder"), "The new order", pedal);
 
   const hint = readOnly
@@ -58,6 +68,17 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
     : view === "before" && nsOn
       ? `NS is on, so ${nsSlot} plays in place of the amp and cab.`
       : `${orderHint(device, preset.order, view, preset.blocks.map((b) => b.code))}${orderNote && ` ${orderNote}`}`;
+
+  // A GP-200 board can hold up to 10 pedals: scroll the row (only the row) to keep the selected one in view
+  useEffect(() => {
+    const row = rowRef.current;
+    const el = row?.querySelector<HTMLElement>(`[data-block="${selected}"]`);
+    if (!row || !el) return;
+    const r = row.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    if (e.left < r.left) row.scrollBy({ left: e.left - r.left - 12 });
+    else if (e.right > r.right) row.scrollBy({ left: e.right - r.right + 12 });
+  }, [selected, view, preset.order]);
 
   const onDragOver = (target: number) => (e: DragEvent<HTMLDivElement>) => {
     if (drag === null) return;
@@ -88,7 +109,12 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
       style={{ backgroundImage: `url(${pedalboardUrl})` }}
     >
       <BoardHead title={view === "before" ? "Before the amp" : "After the amp"} hint={hint} keys />
-      <div role="list" aria-label="Pedals in signal order" className={cn("relative flex min-h-0 flex-1 items-start justify-center gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:none]", readOnly && "opacity-70")}>
+      <div
+        ref={rowRef}
+        role="list"
+        aria-label="Pedals in signal order"
+        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:thin]", readOnly && "opacity-70")}
+      >
         {blocks.map((b) =>
           b === ns && nsOn ? (
             <NsColumn key={b} block={preset.blocks[ns]} readOnly={readOnly} name={nsSlot} device={device} />
@@ -109,24 +135,44 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
               }}
               onDragOver={onDragOver(b)}
               onDrop={onDrop}
-              nsName={nsSlot}
+              name={nameOf(preset.blocks[b])}
+              moreOpen={moreFor === b}
+              onMore={() => setMoreFor(moreFor === b ? null : b)}
             />
           ),
         )}
       </div>
+      {moreFor !== null && blocks.includes(moreFor) && (
+        <MoreControls block={preset.blocks[moreFor]} name={nameOf(preset.blocks[moreFor])} readOnly={readOnly} onClose={() => setMoreFor(null)} />
+      )}
     </section>
   );
 }
 
+/** A GP-200 family pedal is connected and no effect list is imported, so its blocks show as unknown models. */
+export function useNeedsCatalog(): boolean {
+  const gp200 = useDevice((s) => s.status === "connected" && s.device !== null && !isGp5Family(s.device));
+  const status = useGp200Catalog((s) => s.status);
+  return gp200 && (status === "none" || status === "error");
+}
+
+const CATALOG_HINT = "Blocks show as unknown models until you import the effect list from Valeton's GP-200 editor.";
+
 export function BoardHead({ title, hint, keys }: { title: string; hint: string; keys?: boolean }) {
+  const needsCatalog = useNeedsCatalog();
+  const shown = needsCatalog ? CATALOG_HINT : hint;
   return (
     <div className="relative -mx-2.5 -mt-1.5 flex items-center gap-4 self-stretch rounded-lg bg-[rgb(10_10_12/0.66)] px-3.5 py-2">
       <h2 className="m-0 shrink-0 text-[15px] font-semibold">{title}</h2>
-      <span className="min-w-0 truncate text-sm text-silkscreen-3" title={hint}>
-        {hint}
+      <span className="min-w-0 truncate text-sm text-silkscreen-3" title={shown}>
+        {shown}
       </span>
       <span className="grow" />
-      {keys && (
+      {needsCatalog ? (
+        <Button size="sm" variant="secondary" className="-my-1 shrink-0" onClick={() => useNav.getState().go("device")}>
+          Import on the Device screen
+        </Button>
+      ) : keys && (
         <span className="flex shrink-0 items-center gap-1 text-sm whitespace-nowrap text-silkscreen-3 max-[1320px]:hidden">
           <Kbd>←</Kbd>
           <Kbd>→</Kbd> pedal <Kbd>Space</Kbd> on/off <Kbd>M</Kbd> change model
@@ -163,11 +209,73 @@ export function ModelButton({ block, label, selected, disabled, className }: { b
   );
 }
 
-function SlotFoot({ block, readOnly, text }: { block: BlockState; readOnly: boolean; text: string }) {
+function SlotFoot({ block, readOnly, text, more }: { block: BlockState; readOnly: boolean; text: string; more?: { count: number; open: boolean; toggle(): void } }) {
   return (
     <div className="flex items-center gap-2 rounded-pill bg-[rgb(10_10_12/0.66)] py-[3px] pr-2.5 pl-1 text-xs text-silkscreen-2">
       <Switch size="sm" checked={block.enabled} disabled={readOnly} onCheckedChange={(on) => editEnabled(block.index, on)} aria-label={`${block.code} on`} />
       <span className="whitespace-nowrap">{text}</span>
+      {more && (
+        <button
+          type="button"
+          aria-expanded={more.open}
+          aria-label={`${more.count} more ${block.code} control${more.count === 1 ? "" : "s"}`}
+          title="More controls"
+          onClick={more.toggle}
+          className="-my-0.5 -mr-1.5 flex items-center gap-1 rounded-pill px-1.5 py-0.5 text-silkscreen-2 hover:bg-white/10 aria-expanded:bg-white/15 aria-expanded:text-silkscreen"
+        >
+          <SlidersHorizontalIcon className="size-3" aria-hidden />
+          {more.count}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Controls a pedal drawing has no room for (GP-200: long delays, wide EQs, SnapTones), in a strip over the board. */
+function MoreControls({ block, name, readOnly, onClose }: { block: BlockState; name: string; readOnly: boolean; onClose(): void }) {
+  const knobs = moreControls(block);
+  if (!knobs.length) return null;
+  const color = `var(--block-${block.code.toLowerCase()})`;
+  return (
+    <div
+      role="group"
+      aria-label={`More ${block.code} controls`}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      className="absolute inset-x-6 bottom-[52px] z-10 flex items-center gap-5 rounded-xl bg-surface-solid/95 py-2.5 pr-2.5 pl-4 shadow-[0_0_0_1px_var(--glass-edge),0_12px_32px_rgb(0_0_0/0.5)] [@media(max-height:820px)]:bottom-11"
+    >
+      <div className="flex w-36 shrink-0 flex-col gap-0.5">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-silkscreen">
+          <span className="size-2 flex-none rounded-full" style={{ background: color }} />
+          <span className="truncate">{name}</span>
+        </span>
+        <span className="text-xs text-silkscreen-3">More {block.code} controls</span>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-4 gap-y-2">
+        {knobs.map((k) =>
+          k.toggle ? (
+            <span key={k.id} className="flex w-[58px] flex-col items-center gap-1.5 text-xs font-medium tracking-wide text-silkscreen-3 uppercase">
+              {paramTitle(k.label)}
+              <Switch size="sm" checked={k.value >= 0.5} disabled={readOnly} onCheckedChange={(on) => editParam(block.index, Number(k.id), on ? 1 : 0)} aria-label={`${name} ${paramTitle(k.label)}`} />
+            </span>
+          ) : (
+            <Dial
+              key={k.id}
+              label={paramTitle(k.label)}
+              ariaLabel={`${name} ${paramTitle(k.label)}`}
+              value={k.value}
+              spec={k}
+              size={34}
+              color={color}
+              disabled={readOnly}
+              onChange={(v) => editParam(block.index, Number(k.id), v)}
+              className="w-[58px]"
+            />
+          ),
+        )}
+      </div>
+      <Button variant="ghost" size="icon" aria-label={`Close more ${block.code} controls`} onClick={onClose}>
+        <XIcon aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -184,14 +292,18 @@ interface SlotProps {
   onDragEnd(): void;
   onDragOver(e: DragEvent<HTMLDivElement>): void;
   onDrop(e: DragEvent): void;
-  nsName: string;
+  /** Model title, or the SnapTone slot name */
+  name: string;
+  /** This pedal's More controls strip is open */
+  moreOpen: boolean;
+  onMore(): void;
 }
 
-function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, onDragStart, onDragEnd, onDragOver, onDrop, nsName }: SlotProps) {
+function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, onDragStart, onDragEnd, onDragOver, onDrop, name: label, moreOpen, onMore }: SlotProps) {
   const selected = useRig((s) => s.selected === block.index);
   const fromControl = useRef(false);
+  const more = moreControls(block).length;
   const movable = isMovable(device, block.index) && !readOnly;
-  const label = block.code === "NS" ? nsName : modelTitle(block);
   const onPointerDownCapture = (e: PointerEvent) => {
     fromControl.current = !!(e.target as HTMLElement).closest("button,[role=slider],[role=switch],input");
     useRig.getState().select(block.index);
@@ -202,6 +314,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         role="listitem"
         aria-label={`${block.code} ${label}, ${block.enabled ? "on" : "off"}${isMovable(device, block.index) ? ", movable" : ""}`}
         aria-current={selected || undefined}
+        data-block={block.index}
         draggable={movable}
         onPointerDownCapture={onPointerDownCapture}
         onDragStart={(e) => {
@@ -216,7 +329,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         onDragEnd={onDragEnd}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        className={cn("relative flex min-w-0 flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2", movable && "cursor-grab", dragging && "opacity-50")}
+        className={cn("relative flex flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2", movable && "cursor-grab", dragging && "opacity-50")}
       >
         {dropSide && <span aria-hidden className={cn("absolute top-10 bottom-10 w-[3px] rounded-pill bg-silkscreen", dropSide === "before" ? "-left-[13px]" : "-right-[13px]")} />}
         <ModelButton block={block} label={label} selected={selected} disabled={readOnly} />
@@ -232,6 +345,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         ) : (
           <GearFor
             block={block}
+            name={label}
             interactive
             disabled={readOnly}
             showValues={showValues}
@@ -240,7 +354,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
             className={cn(GEAR_W, "drop-shadow-[0_18px_24px_rgb(0_0_0/0.6)]", !block.enabled && "saturate-[.2] brightness-50")}
           />
         )}
-        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block)} />
+        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block)} more={more ? { count: more, open: moreOpen, toggle: onMore } : undefined} />
       </div>
     </BlockMenu>
   );
@@ -258,6 +372,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
         role="listitem"
         aria-label={`NS ${name}, on`}
         aria-current={selected || undefined}
+        data-block={block.index}
         onPointerDownCapture={() => useRig.getState().select(block.index)}
         className="relative flex w-[clamp(420px,36vw,520px)] flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2"
       >

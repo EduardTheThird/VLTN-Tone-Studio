@@ -18,6 +18,9 @@ export interface PedalProps extends GearBaseProps {
 
 const isBipolar = (k: GearKnob) => k.min < 0 && k.max > 0;
 
+/** The knobs and switches a pedal drawing has room for (up to 9 and 3, e.g. GP-50 Sweep Eko: S-Sync, D-Sync, Trail). */
+export const pedalControls = (all: readonly GearKnob[]) => ({ knobs: all.filter((k) => !k.toggle).slice(0, 9), toggles: all.filter((k) => k.toggle).slice(0, 3) });
+
 /** Stompbox: matte/noir/frost enclosure, machined knobs with LED value rings, light pipe, steel footswitch. */
 export function Pedal(props: PedalProps) {
   const { block, name, on = true, knobs: all = [], interactive, disabled, showValues, focus, onKnobChange, onToggleOn, finish, color, layout: want, className, style } = props;
@@ -31,9 +34,7 @@ export function Pedal(props: PedalProps) {
       style={style}
       render={(id, active) => {
         const controls: Control[] = [];
-        const knobs = all.filter((k) => !k.toggle).slice(0, 9);
-        // up to three switches (GP-50 Sweep Eko: S-Sync, D-Sync, Trail)
-        const toggles = all.filter((k) => k.toggle).slice(0, 3);
+        const { knobs, toggles } = pedalControls(all);
         const h = hash(name);
         const f = finishFor(name, BLOCK_HEX[block], h, finish, color);
         const light = lum(f.body) > 0.6;

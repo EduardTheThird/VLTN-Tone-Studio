@@ -9,7 +9,12 @@ export interface ValueSpec {
   unit?: string;
   /** Enum values: labels[value - min] is shown instead of the number (MidFreq "220 Hz", a synced Time "1/8D") */
   labels?: readonly string[];
+  /** The end of the range that turns the control off and reads OFF (GP-200 cut filters) */
+  off?: "min" | "max";
 }
+
+/** The value sits at the end of the range that reads OFF. */
+export const isOff = (value: number, spec: ValueSpec) => spec.off !== undefined && value === spec[spec.off];
 
 /** Pixels of vertical drag for the full range (Shift multiplies by FINE_FACTOR). */
 export const DRAG_RANGE_PX = 200;
@@ -72,9 +77,10 @@ export function wheelValue(value: number, deltaY: number, spec: ValueSpec, fine 
   return clampStep(value + (deltaY < 0 ? notch : -notch), spec);
 }
 
-/** Parse a typed value ("320", "320 ms", "-3,5", or one of the enum labels like "1/8D"); null when not a value. */
+/** Parse a typed value ("320", "320 ms", "-3,5", "off", or one of the enum labels like "1/8D"); null when not a value. */
 export function parseTyped(text: string, spec: ValueSpec): number | null {
   const t = text.trim().toLowerCase();
+  if (spec.off && t === "off") return spec[spec.off];
   const label = spec.labels?.findIndex((l) => l.toLowerCase() === t) ?? -1;
   if (label >= 0) return clampStep(spec.min + label, spec);
   const m = /-?\d+(?:[.,]\d+)?/.exec(t);
@@ -82,13 +88,15 @@ export function parseTyped(text: string, spec: ValueSpec): number | null {
   return clampStep(Number(m[0].replace(",", ".")), spec);
 }
 
-/** Display string without unit, using the step's decimals; enum values show their label. */
+/** Display string without unit, using the step's decimals; enum values show their label, the OFF end "OFF". */
 export function formatValue(value: number, spec: ValueSpec): string {
+  if (isOff(value, spec)) return "OFF";
   return spec.labels?.[Math.round(value - spec.min)] ?? value.toFixed(decimalsOf(stepOf(spec)));
 }
 
-/** Value text for assistive tech, e.g. "320 ms" or "1/8D". */
+/** Value text for assistive tech, e.g. "320 ms", "1/8D" or "OFF". */
 export function valueText(value: number, spec: ValueSpec): string {
+  if (isOff(value, spec)) return "OFF";
   const label = spec.labels?.[Math.round(value - spec.min)];
   if (label !== undefined) return label;
   return spec.unit ? `${formatValue(value, spec)} ${spec.unit}` : formatValue(value, spec);

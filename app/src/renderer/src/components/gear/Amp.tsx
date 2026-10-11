@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { fit, voiceFor } from "./art";
+import { fit, voiceFor, voicingOf } from "./art";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
 import { Defs, Grille, KnobArt, T } from "./parts";
 import { paramTitle, type GearBaseProps } from "./types";
 
 export interface AmpProps extends GearBaseProps {
-  /** Catalog amp type: Clean | Drive | Hi Gain | Bass | Acoustic (sets the voicing colour) */
+  /** Catalog amp type: Clean | Drive | Hi Gain | Bass | Acoustic sets the voicing colour and label; others show none */
   type?: string;
 }
 
@@ -62,7 +62,7 @@ export function AmpHead({ name, type, on = true, knobs = [], interactive, disabl
 }
 
 /** Speaker cabinet: perforated grille, cones from the model name (1x8, 2x12, 4x12), "IR" for User IR slots. */
-export function Cab({ name, className, style }: Pick<GearBaseProps, "name" | "className" | "style">) {
+export function Cab({ name, ir, className, style }: Pick<GearBaseProps, "name" | "className" | "style"> & { /** A User IR slot (default: from the name) */ ir?: boolean }) {
   return (
     <GearFrame
       view={[240, 170]}
@@ -71,7 +71,7 @@ export function Cab({ name, className, style }: Pick<GearBaseProps, "name" | "cl
       style={style}
       render={(id) => {
         const m = /(\d)x(\d+)/i.exec(name);
-        const isIR = /User IR|IR\b/i.test(name);
+        const isIR = ir ?? /User IR|IR\b/i.test(name);
         const n = m ? Number(m[1]) : isIR ? 0 : 2;
         const W = 240;
         const H = 170;
@@ -175,7 +175,8 @@ export function AmpPanel({ name, type, on = true, knobs = [], interactive, disab
           );
         });
         controls.push({ kind: "fs", id: "power", label: `${name} power`, on, onToggle: onToggleOn, x: W - 92, y: 42, w: 56, h: 36 });
-        const typeLabel = (type || "Hi Gain").toUpperCase() + " AMP";
+        const voicing = voicingOf(type);
+        const typeLabel = voicing ? `${voicing.toUpperCase()} AMP` : "AMP";
         const art = (
           <>
             <Defs id={id} body="#18181b" />
