@@ -264,8 +264,9 @@ export const useDevice = create<DeviceState>((set, get) => {
       setFeatures(d, mode);
       cacheNames(snap.device, snap.names);
       saveDevice(snap.device);
-      // GP-200 family models come from the user's catalog (the subscription below re-describes the preset once it loads).
-      if (profileFor(snap.device).family === "gp200" && !useGp200Catalog.getState().loaded) void useGp200Catalog.getState().load();
+      // GP-200 family models come from the user's catalog: read it before describing the preset (load() never rejects;
+      // a later import or removal re-describes it through the subscription below).
+      if (profileFor(snap.device).family === "gp200" && !useGp200Catalog.getState().loaded) await useGp200Catalog.getState().load();
       const state = stateOf(snap.slot, snap.prst);
       const saved = await storedCopy(d, state, snap.modified ?? null, false);
       reconnects = 0;

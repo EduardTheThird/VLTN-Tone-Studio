@@ -2,6 +2,8 @@
 // write, the user's effect catalog (absent, then imported), the read-only LT and JR, and a clean protocol log.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { host } from "@/host";
 import { profileFor } from "@shared/devices";
 import { getDriver, useDevice } from "./device";
 import { acksFrames, writeFrameCount } from "./device-model";
@@ -154,6 +156,22 @@ describe("GP-200 in the device store", () => {
   it("leaves no protocol violations in the simulator", () => {
     expect(driver().mock!.violations).toEqual([]);
   });
+});
+
+describe("GP-200 with a catalog imported before it connects", () => {
+  afterAll(async () => {
+    await useGp200Catalog.getState().remove();
+    await store().disconnect();
+  });
+
+  it("describes the first preset with it", async () => {
+    // The simulator's generated amp (0x0700003A) in a synthetic catalog, kept where the app reads it at startup
+    const xml = XML.replace('Name="Test Amp" Module="AMP" Code="117440513"', 'Name="Init Amp" Module="AMP" Code="117440570"');
+    await host.gp200Catalog.save(buildCatalogFromXml(xml), "algorithm.xml");
+    useGp200Catalog.setState({ status: "none", catalog: null, loaded: false });
+    await store().connect("mock", { mockDevice: "gp200" });
+    expect(store().preset!.blocks[3].model?.name).toBe("Init Amp");
+  }, 30_000);
 });
 
 describe.each(["gp200lt", "gp200jr"] as const)("%s: read-only on a real pedal", (key) => {
