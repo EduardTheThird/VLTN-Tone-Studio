@@ -21,8 +21,7 @@ export function SettingsView() {
   const { settings, loaded, load, patch } = useAppSettings();
   const go = useNav((s) => s.go);
   const profile = useProfile();
-  // Nothing to unlock on the connected or remembered pedal (the GP-5 lacks the GP-50's commands; the GP-200 family has
-  // no experimental ones): the switch is shown dimmed.
+  // Nothing to unlock on the connected or remembered pedal (the GP-5 lacks the GP-50's commands): the switch is dimmed.
   const nothingToUnlock = profile.key === "gp5" || Object.keys(EXPERIMENTAL_FEATURES[profile.family]).length === 0;
   const pedal = usePedalName();
 
@@ -67,7 +66,7 @@ export function SettingsView() {
           {/* The setting keeps its stored key (gp50Extras); EXPERIMENTAL_FEATURES lists what it unlocks per family. */}
           <Row
             label="Experimental pedal commands"
-            description={`${nothingToUnlock ? `Nothing to turn on for the ${pedal}. ` : ""}Lets Tone Studio use commands that are known from Valeton's software but not yet tested on a real pedal. GP-50: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. The GP-5 and the GP-200 family have none. Back up your pedal first. The simulator always has them.`}
+            description={`${nothingToUnlock ? `Nothing to turn on for the ${pedal}. ` : ""}Lets Tone Studio use commands that are known from Valeton's software but not yet tested on a real pedal. GP-50: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. GP-200, GP-200LT and GP-200JR: the Global EQ. The GP-5 has none. Back up your pedal first. The simulator always has them.`}
           >
             <Switch
               checked={settings.gp50Extras}

@@ -4,12 +4,12 @@
 // before writing it, refuses the dangerous frames, and sends nothing at all once the pedal reports update mode.
 import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry } from "@/gp200/lib/session.mjs";
 import { MockGp200, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
-import { PATCH_SETTING } from "@/gp200/lib/protocol.mjs";
+import { GLOBAL_EQ_BANDS, PATCH_SETTING, type DecodedMessage } from "@/gp200/lib/protocol.mjs";
 import { buildPrst, parsePatch } from "@/gp200/lib/prst.mjs";
 import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
 import { profileFor, type DeviceKey } from "@shared/devices";
-import type { BackupEntry, ConnectionError, DeviceFeature, GlobalName, Globals, SlotName } from "../device-types";
-import { clampGp200Global, gp200GlobalRecords, gp200GlobalSpec, type Gp200GlobalName, type Gp200Globals } from "./gp200-globals";
+import type { BackupEntry, ConnectionError, DeviceFeature, GlobalEq, GlobalName, Globals, SlotName } from "../device-types";
+import { GP200_EQ_DEFAULTS, clampGp200Eq, clampGp200Global, gp200GlobalRecords, gp200GlobalSpec, type Gp200GlobalName, type Gp200Globals } from "./gp200-globals";
 import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
 
 /** GP-5 family SnapTone upload file (Suite's cut-down clone): too short for the GP-200, which keeps 1024 IR taps. */
@@ -58,10 +58,12 @@ function irSamples(data: Uint8Array): Int32Array {
 }
 
 export class Gp200Driver implements DeviceDriver {
-  /** "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006. */
-  readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm"];
+  /** "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006; "globalEq": 0x1005. */
+  readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm", "globalEq"];
   readonly #session: Gp200Session;
   readonly #listeners = new Set<(e: DriverEvent) => void>();
+  /** Global EQ as the pedal reported it and as set here, over the editor's factory values (no request reads it). */
+  #eq: GlobalEq = { values: GP200_EQ_DEFAULTS, read: false };
   /** Model (fxid) of each block in the edit buffer: the 0x0005 param record names it. null = read it again. */
   #fxids: readonly number[] | null = null;
   /** Counts the times another patch or model took over the edit buffer: a read from before is stale. */
@@ -76,7 +78,13 @@ export class Gp200Driver implements DeviceDriver {
     /** The simulator behind a mock connection (tests and diagnostics), else null */
     readonly mock: MockGp200 | null = null,
   ) {
-    this.#session = new Gp200Session(transport, { log: opts.log, timing: opts.timing });
+    // Global EQ reports may ride in replies the session consumes (with the 0x1007 settings), so they are taken from the
+    // log hook, which sees every decoded message.
+    const log = (dir: string, bytes: Uint8Array, decoded?: unknown) => {
+      if (dir === "rx") this.#takeEq(decoded);
+      opts.log(dir, bytes, decoded);
+    };
+    this.#session = new Gp200Session(transport, { log, timing: opts.timing });
     this.#session.addEventListener("message", (ev) => {
       const e = this.#toDriverEvent((ev as Event & { message: Gp200Event }).message);
       if (e) this.#emit(e);
@@ -143,6 +151,21 @@ export class Gp200Driver implements DeviceDriver {
     }
   }
 
+  /** Global EQ values in a decoded message (0x1004 all, 0x1005 one): keep them and report them. */
+  #takeEq(decoded: unknown) {
+    const values: Record<number, number> = {};
+    let all = false;
+    for (const r of (decoded as Partial<DecodedMessage> | undefined)?.records ?? []) {
+      if (r.kind === "globalEqAll" && r.values.length === GLOBAL_EQ_BANDS) {
+        r.values.forEach((v, i) => (values[i] = v));
+        all = true;
+      } else if (r.kind === "globalEq" && r.index < GLOBAL_EQ_BANDS) values[r.index] = r.value;
+    }
+    if (!Object.keys(values).length) return;
+    this.#eq = { values: this.#eq.values.map((v, i) => values[i] ?? v), read: this.#eq.read || all };
+    this.#emit({ type: "globalEq", values, all });
+  }
+
   /** Another patch or model takes over the edit buffer: forget its models; reads already under way are stale. */
   #forget() {
     this.#fxids = null;
@@ -187,7 +210,7 @@ export class Gp200Driver implements DeviceDriver {
       names: snap.presets.map((p) => ({ slot: p.slot, name: p.name })),
       slot: snap.editBuffer.slot,
       prst: buildPrst(image),
-      globals: snap.globals ? toGlobals(snap.globals, snap.firmware) : null,
+      globals: snap.globals ? { ...toGlobals(snap.globals, snap.firmware), eq: this.#eq } : null,
     };
   }
 
@@ -290,7 +313,7 @@ export class Gp200Driver implements DeviceDriver {
   /** 0x1006 state dump. Values are keyed by the GP-200 setting names (gp200-globals.ts GP200_GLOBAL_SPECS). */
   async readGlobals(): Promise<Gp200GlobalsSnapshot> {
     const g = await this.#session.readGlobals();
-    return toGlobals(g.values, g.firmware);
+    return { ...toGlobals(g.values, g.firmware), eq: this.#eq };
   }
 
   /** Settings of the connected model only; anything else (a GP-5 setting, a destructive id) is a RangeError. */
@@ -302,6 +325,13 @@ export class Gp200Driver implements DeviceDriver {
   async setGlobal(name: GlobalName | Gp200GlobalName, value: number): Promise<void> {
     const spec = gp200GlobalSpec(name, this.device);
     await this.#session.setGlobal(spec.name, clampGp200Global(spec.name, value, this.device));
+  }
+
+  /** One Global EQ value as 0x1005 {index, value}, clamped (gp200EqSpec); the two unused indices are refused. */
+  async setGlobalEq(index: number, value: number): Promise<void> {
+    const v = clampGp200Eq(index, value);
+    this.#eq = { ...this.#eq, values: this.#eq.values.map((x, i) => (i === index ? v : x)) };
+    await this.#session.setGlobalEq(index, v);
   }
 
   /** The 10 SnapTone slots: 0-4 AMP, 5-9 DST. */

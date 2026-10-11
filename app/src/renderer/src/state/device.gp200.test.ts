@@ -3,11 +3,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { GLOBAL_EQ_INDEX } from "@/gp200/lib/protocol.mjs";
 import { host } from "@/host";
 import { profileFor } from "@shared/devices";
 import { getDriver, useDevice } from "./device";
 import { acksFrames, attachedDevice, writeFrameCount } from "./device-model";
 import type { Gp200Driver } from "./driver/gp200-driver";
+import { GP200_EQ_DEFAULTS } from "./driver/gp200-globals";
 import { editPrst, toPresetState } from "./preset-codec";
 
 const stored = new Map<string, string>();
@@ -54,7 +56,7 @@ describe("GP-200 in the device store", () => {
   it("connects without a catalog: every block is there, its model unknown, the GP-200 fields read", () => {
     const s = store();
     expect(s.device).toBe("gp200");
-    expect([...s.features].sort()).toEqual(["exportPreset", "liveBpm"]);
+    expect([...s.features].sort()).toEqual(["exportPreset", "globalEq", "liveBpm"]);
     const p = s.preset!;
     expect(p.blocks).toHaveLength(11);
     expect(p.blocks.every((b) => b.params.length === 15 && b.model === undefined)).toBe(true);
@@ -67,12 +69,24 @@ describe("GP-200 in the device store", () => {
     expect([writeFrameCount(p.prst), acksFrames("gp200")]).toEqual([7, false]);
   });
 
-  it("keeps the export read and live tempo open on a real GP-200 (no experimental gate)", () => {
+  it("keeps the export read and live tempo open on a real GP-200; the Global EQ write is experimental", () => {
     useDevice.setState({ mode: "webmidi" });
     store().setGp50Extras(false);
     expect([...store().features].sort()).toEqual(["exportPreset", "liveBpm"]);
+    expect(store().lockedFeatures).toEqual(["globalEq"]);
+    expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/Experimental pedal commands/);
     useDevice.setState({ mode: "mock" });
     store().setGp50Extras(false);
+  });
+
+  it("sets Global EQ values live, starting from the factory values until the pedal reports its own", async () => {
+    expect(store().globalEq).toEqual({ values: GP200_EQ_DEFAULTS, read: false });
+    store().setGlobalEq(GLOBAL_EQ_INDEX.level, 70.4);
+    store().setGlobalEq(GLOBAL_EQ_INDEX.band2.gain, -30);
+    expect([store().globalEq!.values[GLOBAL_EQ_INDEX.level], store().globalEq!.values[GLOBAL_EQ_INDEX.band2.gain]]).toEqual([70, -20]);
+    await until(async () => expect([driver().mock!.globalEq[GLOBAL_EQ_INDEX.level], driver().mock!.globalEq[GLOBAL_EQ_INDEX.band2.gain]]).toEqual([70, -20]));
+    expect(() => store().setGlobalEq(2, 1)).toThrow(RangeError);
+    expect(store().unsavedChanges).toBe(0);
   });
 
   it("plays param, on/off, volume and tempo edits live; tempo stops at 250", async () => {
@@ -216,6 +230,7 @@ describe.each(["gp200lt", "gp200jr"] as const)("%s: read-only on a real pedal", 
     await expect(store().rename(7, "No")).rejects.toMatchObject(unsafe);
     await expect(store().uploadUserIr(0, "No", new Uint8Array(16))).rejects.toMatchObject(unsafe);
     expect(() => store().setGlobal("inputLevel", 3)).toThrow(/hasn't been tested/);
+    expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/hasn't been tested/);
     store().setVolume(55);
     await until(async () => expect((await onPedal()).volume).toBe(55));
     expect(driver().mock!.violations).toEqual([]);

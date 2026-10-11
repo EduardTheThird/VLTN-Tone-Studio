@@ -194,7 +194,19 @@ export type DeviceFeature =
   /** Copy one slot onto another inside the pedal (GP-50 11 4B) */
   | "copyPreset"
   /** Move a slot in the list, the ones in between shift (GP-50 11 5A) */
-  | "movePreset";
+  | "movePreset"
+  /** Global EQ values set one at a time (GP-200 family 0x1005) */
+  | "globalEq";
+
+/**
+ * Global EQ of the GP-200 family: the 31 values in the order of gp200/lib protocol GLOBAL_EQ_INDEX (ranges:
+ * driver/gp200-globals.ts gp200EqSpec). `read`: the pedal reported all of them; until it does, the values it didn't
+ * report are the editor's factory values (GP200_EQ_DEFAULTS).
+ */
+export interface GlobalEq {
+  values: readonly number[];
+  read: boolean;
+}
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 export type DeviceMode = "webmidi" | "mock";
@@ -273,6 +285,8 @@ export interface DeviceState {
   /** Number of differing params/blocks between preset and saved */
   unsavedChanges: number;
   globals: Globals | null;
+  /** Global EQ of the connected (or last connected) GP-200 family pedal; null on other models */
+  globalEq: GlobalEq | null;
   /** Firmware the pedal reports in its settings (e.g. "1.1.0"), when known */
   firmware: string | null;
   /** Optional capabilities usable now (connected model, simulator or the "Experimental pedal commands" setting) */
@@ -360,6 +374,8 @@ export interface DeviceState {
   /** Move the preset of slot `from` to slot `to`; the slots in between shift by one (movePreset feature) */
   movePreset(from: number, to: number): Promise<void>;
   setGlobal(name: GlobalName, value: number): void;
+  /** One Global EQ value (globalEq feature), clamped to its range; sent live like the settings. RangeError for an unused index */
+  setGlobalEq(index: number, value: number): void;
   readSnapTones(): Promise<SlotName[]>;
   readUserIRs(): Promise<SlotName[]>;
   /**

@@ -11,6 +11,7 @@ import { BackupsPanel } from "./BackupsPanel";
 import { ConnectionHeader } from "./ConnectionHeader";
 import { DiagnosticsPanel, copyReport, useChecks } from "./DiagnosticsPanel";
 import { Gp200CatalogPanel } from "./Gp200CatalogPanel";
+import { GlobalEqPanel } from "./GlobalEqPanel";
 import { connectionView } from "./guidance";
 import { PedalSettings, RawRecords } from "./PedalSettings";
 import { SettingsView } from "./SettingsView";
@@ -75,6 +76,7 @@ function DevicePage() {
       <ConnectionHeader view={view} onShowFix={showFix} />
       <div className="flex flex-col gap-4 px-7 pt-[26px] pb-7">
         <PedalSettings offline={view.offline} />
+        <GlobalEqPanel offline={view.offline} />
         <RawRecords />
         <div className="grid grid-cols-2 items-start gap-4">
           <div className="flex min-w-0 flex-col gap-4">

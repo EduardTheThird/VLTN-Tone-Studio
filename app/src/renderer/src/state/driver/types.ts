@@ -1,7 +1,7 @@
 // What the device store needs from a pedal, whatever its protocol family. One driver per connection; the store
 // (state/device.ts) talks only to this interface. Gp5Driver adapts Gp5Session; the GP-200 family gets its own driver.
 import { DEVICE_KEYS, profileFor, type DeviceFamily, type DeviceKey } from "@shared/devices";
-import type { BackupEntry, DeviceFeature, ExpEdit, ExpSettings, GlobalName, GlobalRecord, Globals, SlotName } from "../device-types";
+import type { BackupEntry, DeviceFeature, ExpEdit, ExpSettings, GlobalEq, GlobalName, GlobalRecord, Globals, SlotName } from "../device-types";
 
 export type { DeviceFeature };
 
@@ -34,6 +34,8 @@ export type DriverEvent =
   | { type: "order"; order: number[] }
   /** A pedal setting changed (menu on the pedal, or the echo of a host write) */
   | { type: "global"; name: GlobalName; value: number }
+  /** The pedal reported Global EQ values, by index (`all`: the whole EQ, GP-200 0x1004) */
+  | { type: "globalEq"; values: Readonly<Record<number, number>>; all: boolean }
   /** Bytes arrived that weren't a valid reply (something answers on the port) */
   | { type: "badframe" };
 
@@ -43,6 +45,8 @@ export interface GlobalsSnapshot {
   records: GlobalRecord[];
   /** Firmware the reply reports, e.g. "1.1.0" */
   firmware?: string;
+  /** Global EQ (globalEq feature): what the pedal reported and was set since connecting, over the factory values */
+  eq?: GlobalEq;
 }
 
 export interface SyncSnapshot {
@@ -133,6 +137,8 @@ export interface DeviceDriver {
   copyPreset?(from: number, to: number): Promise<void>;
   /** "movePreset": move the preset of `from` to `to`; the ones in between shift. */
   movePreset?(from: number, to: number): Promise<void>;
+  /** "globalEq": Global EQ value `index` (GlobalEq order), clamped to its range. */
+  setGlobalEq?(index: number, value: number): Promise<void>;
 }
 
 /** What the factory needs to open a driver. */

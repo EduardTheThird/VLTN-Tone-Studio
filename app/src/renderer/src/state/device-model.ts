@@ -15,12 +15,12 @@ import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
  * Features built on commands known only from static reverse engineering, not yet tested on hardware, per family: on a
  * real pedal they stay off until the user turns on "Experimental pedal commands" (app setting `gp50Extras`); the
  * simulator always has them.
- * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: none (its export read and live tempo are known
- * from hardware work).
+ * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: the Global EQ write (0x1005, known from the
+ * editor's code only); its export read and live tempo are known from hardware work.
  */
 export const EXPERIMENTAL_FEATURES: Readonly<Record<DeviceFamily, Partial<Record<DeviceFeature, true>>>> = {
   gp5: { exportPreset: true, exp: true, liveBpm: true, liveFootswitches: true, liveOrder: true, deletePreset: true, copyPreset: true, movePreset: true },
-  gp200: {},
+  gp200: { globalEq: true },
 };
 
 /** Split the features of a `family` driver into the usable ones and the ones the experimental setting keeps off. */

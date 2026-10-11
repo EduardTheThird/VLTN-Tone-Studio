@@ -10,6 +10,7 @@ import { MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
 import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
+import { clampGp200Eq } from "./driver/gp200-globals";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
 import { clampParamValue, editPrst, orderError, syncParams, toPresetState } from "./preset-codec";
 import { SendQueue } from "./send-queue";
@@ -246,6 +247,11 @@ export const useDevice = create<DeviceState>((set, get) => {
       if (!isEcho(`global:${e.name}`)) set({ globals: { ...(get().globals ?? {}), [e.name]: e.value } });
       return;
     }
+    if (e.type === "globalEq") {
+      const eq = get().globalEq;
+      if (eq) set({ globalEq: { values: eq.values.map((v, i) => (e.values[i] === undefined || isEcho(`eq:${i}`) ? v : e.values[i])), read: eq.read || e.all } });
+      return;
+    }
     try {
       onPresetEvent(e);
     } catch (err) {
@@ -281,6 +287,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         names: snap.names,
         slot: snap.slot,
         globals: snap.globals?.values ?? null,
+        globalEq: snap.globals?.eq ?? null,
         globalRecords: snap.globals?.records ?? null,
         firmware: snap.globals?.firmware ?? null,
         snapTones: null,
@@ -396,6 +403,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     saved: null,
     unsavedChanges: 0,
     globals: null,
+    globalEq: null,
     firmware: null,
     features: [],
     lockedFeatures: [],
@@ -514,7 +522,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         setNames(names);
         await readActive(d, names, true);
         const globals = await d.readGlobals().catch(() => null);
-        if (globals) set({ globals: globals.values, globalRecords: globals.records, firmware: globals.firmware ?? get().firmware });
+        if (globals) set({ globals: globals.values, globalRecords: globals.records, firmware: globals.firmware ?? get().firmware, globalEq: globals.eq ?? get().globalEq });
         set({ lastError: null });
       } catch (e) {
         noteError(e);
@@ -732,6 +740,17 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ globals: { ...(get().globals ?? {}), [name]: v } });
       touch(`global:${name}`);
       sends.push(`global:${name}`, () => d.setGlobal(name, v));
+    },
+
+    setGlobalEq(index, value) {
+      requireWritable();
+      const d = requireFeature("globalEq");
+      const eq = get().globalEq;
+      if (!eq) return;
+      const v = clampGp200Eq(index, value);
+      set({ globalEq: { ...eq, values: eq.values.map((x, i) => (i === index ? v : x)) } });
+      touch(`eq:${index}`);
+      sends.push(`eq:${index}`, () => d.setGlobalEq!(index, v));
     },
 
     async readSnapTones() {
