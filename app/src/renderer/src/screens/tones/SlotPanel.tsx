@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { snapToneLabel } from "@shared/devices";
 import type { ToneRecord } from "@shared/host/tones";
-import { isEmptySlotName, slotLinkOn } from "@shared/tone3000";
+import { isEmptySlot, slotLinkOn } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -101,7 +101,9 @@ export function SlotPanel() {
   const userSlots = userLast - userFirst + 1;
   const snapUser = snapTones?.filter((s) => s.slot >= userFirst && s.slot <= userLast) ?? [];
   const snapFactory = snapTones?.filter((s) => s.slot < userFirst) ?? [];
-  const used = (list: SlotName[]) => list.filter((s) => !isEmptySlotName(s.name)).length;
+  // The block each SnapTone plays in: NS on the GP-5 family, AMP (0-4) or DST (5-9) on the GP-200 family.
+  const byBlock = [...new Set(snapUser.map((s) => profile.captureBlock(s.slot)))].map((block) => ({ block, slots: snapUser.filter((s) => profile.captureBlock(s.slot) === block) }));
+  const used = (list: SlotName[]) => list.filter((s) => !isEmptySlot(s)).length;
   const sourceNote = usage ? `From ${usage.source}` : "Back up the pedal in Library to see which presets use each slot";
 
   let notice: string | null = null;
@@ -136,19 +138,30 @@ export function SlotPanel() {
 
       {snapTones && (
         <section aria-label="SnapTone slots" className="flex flex-col gap-1.5">
-          <SlotsHead title="SnapTone captures" count={`${used(snapUser)} of ${userSlots} user slots used`} />
-          <SlotGrid kind="snaptone" slots={snapUser} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} />
-          <Collapsible>
-            <CollapsibleTrigger className="group flex h-8 w-full items-center gap-1.5 rounded-sm px-2 text-[12px] font-[550] text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam)] hover:bg-accent">
-              <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90 motion-reduce:transition-none" aria-hidden />
-              <span>{`Factory captures 0–${userFirst - 1}`}</span>
-              <span className="grow" />
-              <span className="text-[11px] font-normal text-silkscreen-3">{snapFactory.length}, read-only</span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2">
-              <SlotGrid kind="snaptone" slots={snapFactory} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} readOnly />
-            </CollapsibleContent>
-          </Collapsible>
+          <SlotsHead title="SnapTone captures" count={`${used(snapUser)} of ${userSlots} ${userFirst > 0 ? "user slots" : "slots"} used`} />
+          {byBlock.length > 1 ? (
+            byBlock.map(({ block, slots }) => (
+              <div key={block} role="group" aria-label={`SnapTones in the ${block} block`} className="flex flex-col gap-1">
+                <h4 className="text-[11px] font-semibold text-silkscreen-3">{`${block} ${slots[0].slot}–${slots[slots.length - 1].slot}`}</h4>
+                <SlotGrid kind="snaptone" slots={slots} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} />
+              </div>
+            ))
+          ) : (
+            <SlotGrid kind="snaptone" slots={snapUser} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} />
+          )}
+          {userFirst > 0 && (
+            <Collapsible>
+              <CollapsibleTrigger className="group flex h-8 w-full items-center gap-1.5 rounded-sm px-2 text-[12px] font-[550] text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam)] hover:bg-accent">
+                <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90 motion-reduce:transition-none" aria-hidden />
+                <span>{`Factory captures 0–${userFirst - 1}`}</span>
+                <span className="grow" />
+                <span className="text-[11px] font-normal text-silkscreen-3">{snapFactory.length}, read-only</span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-2">
+                <SlotGrid kind="snaptone" slots={snapFactory} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} readOnly />
+              </CollapsibleContent>
+            </Collapsible>
+          )}
         </section>
       )}
 
@@ -214,7 +227,7 @@ function SlotCell({
   note: string;
   readOnly?: boolean;
 }) {
-  const empty = isEmptySlotName(slot.name);
+  const empty = isEmptySlot(slot);
   const profile = useProfile();
   const label = kind === "snaptone" ? snapToneLabel(profile.key, slot.slot) : irSlotLabel(slot.slot);
   const stale = link && link.gp5.slotName && link.gp5.slotName !== slot.name;

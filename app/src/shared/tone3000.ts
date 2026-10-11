@@ -151,12 +151,22 @@ export function sanitizeSlotName(name: string): string {
 }
 
 /** First empty user SnapTone slot (GP-5: 50–79) or User IR slot (0–19) of `device`; null when none or unknown. */
-export function firstEmptySlot(kind: "snaptone" | "ir", slots: { slot: number; name: string }[] | null, device: DeviceKey | null): number | null {
+export function firstEmptySlot(kind: "snaptone" | "ir", slots: SlotEntry[] | null, device: DeviceKey | null): number | null {
   if (!slots || !device) return null;
   const p = profileFor(device);
   const [first, last] = kind === "snaptone" ? p.snapTone.userRange : p.userIr.userRange;
-  return slots.find((s) => s.slot >= first && s.slot <= last && isEmptySlotName(s.name))?.slot ?? null;
+  return slots.find((s) => s.slot >= first && s.slot <= last && isEmptySlot(s))?.slot ?? null;
 }
 
 /** Pedal slot tables mark empty slots by name: "Empty" (SnapTone) or "User IR n" (IR). */
 export const isEmptySlotName = (name: string) => name === "Empty" || name === "" || /^User IR \d+$/.test(name);
+
+/** A SnapTone or User IR slot as the pedal lists it; `kind` is what the pedal reports for it. */
+export interface SlotEntry {
+  slot: number;
+  name: string;
+  kind?: "user" | "factory" | "empty";
+}
+
+/** The slot holds no capture or IR: the pedal reports it empty (GP-200 family empty slots keep a name, "SnapTone 3"), or its name says so. */
+export const isEmptySlot = (s: Pick<SlotEntry, "name" | "kind">) => s.kind === "empty" || isEmptySlotName(s.name);

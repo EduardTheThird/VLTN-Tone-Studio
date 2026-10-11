@@ -220,6 +220,12 @@ describe("slot helpers", () => {
     expect(firstEmptySlot("ir", [{ slot: 0, name: "A7X" }, { slot: 1, name: "User IR 2" }], "gp50")).toBe(1);
     // GP-200: all 10 SnapTone slots are user slots
     expect(firstEmptySlot("snaptone", [{ slot: 0, name: "AMP-1" }, { slot: 1, name: "" }], "gp200")).toBe(1);
+    // GP-200 empty slots keep a name; the pedal's flag says they are empty
+    const gp200 = [
+      { slot: 0, name: "MY-AMP", kind: "user" as const },
+      { slot: 1, name: "SnapTone 2", kind: "empty" as const },
+    ];
+    expect(firstEmptySlot("snaptone", gp200, "gp200")).toBe(1);
   });
   it("scopes a slot link to the pedal model it was made on; old records are GP-5 links", () => {
     const old = { gp5: { verdict: "ready" as const, snaptoneSlot: 58, slotName: "5150-RED4" } };
