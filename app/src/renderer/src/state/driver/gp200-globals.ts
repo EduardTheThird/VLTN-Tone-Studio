@@ -1,8 +1,10 @@
 // Pedal settings of the GP-200 family: what a settings UI needs (labels, ranges, enum names) on top of the protocol's
-// id table (gp200/lib/protocol.mjs GLOBALS). Facts: static RE of the GP-200 editor 1.8.0. The destructive 0x1008 ids
-// (delete User IR, delete SnapTone, reset footswitches) and the full 0x1007 write are no settings: nothing here
-// reaches them, and the session refuses them on the wire as well.
+// id table (gp200/lib/protocol.mjs GLOBALS). Facts: static RE of the GP-200 editor 1.8.0 and the models' jacks (the
+// GP-200 has 5-pin MIDI and one EXP 2/FS jack, the LT ⅛" TRS MIDI and two EXP/FS jacks, the JR no MIDI jacks). The
+// destructive 0x1008 ids (delete User IR, delete SnapTone, reset footswitches) and the full 0x1007 write are no
+// settings: nothing here reaches them, and the session refuses them on the wire as well.
 import { DESTRUCTIVE_GLOBAL_IDS, GLOBALS, SELECT_ID, type GlobalName as Gp200GlobalName } from "@/gp200/lib/protocol.mjs";
+import { profileFor, type DeviceKey } from "@shared/devices";
 import type { GlobalRecord, GlobalSpec } from "../device-types";
 
 export type { Gp200GlobalName };
@@ -13,6 +15,10 @@ export interface Gp200GlobalSpec extends Omit<GlobalSpec, "name" | "addr" | "sin
   name: Gp200GlobalName;
   /** 0x1008 id */
   id: number;
+  /** The models that have the setting; absent = every model of the family */
+  only?: readonly DeviceKey[];
+  /** The setting's name on models that call it something else */
+  labelOn?: Partial<Record<DeviceKey, string>>;
 }
 
 const OFF_ON = ["Off", "On"] as const;
@@ -62,6 +68,9 @@ function spec(name: Gp200GlobalName, s: SpecInput): Gp200GlobalSpec {
 }
 
 const level = (label: string, group: GlobalSpec["group"]): SpecInput => ({ label, group, min: -20, max: 20, unit: "dB" });
+/** Models with MIDI jacks (DIN on the GP-200, TRS on the LT). */
+const MIDI_JACKS: readonly DeviceKey[] = ["gp200", "gp200lt"];
+const LT: readonly DeviceKey[] = ["gp200lt"];
 
 /** Every setting the GP-200 family reports, in menu order. */
 export const GP200_GLOBAL_SPECS: readonly Gp200GlobalSpec[] = Object.freeze([
@@ -79,39 +88,45 @@ export const GP200_GLOBAL_SPECS: readonly Gp200GlobalSpec[] = Object.freeze([
   spec("fsMode", { label: "Footswitch mode", group: "controls", labels: ["Preset", "Stomp", "User"] }),
   spec("bankSelectMode", { label: "Bank select", group: "controls", labels: ["Wait for a patch", "Direct"] }),
   spec("exp1AB", { label: "EXP 1 A/B", group: "controls", labels: ["A", "B"] }),
-  // GP-200LT only (its second EXP/FS jack)
-  spec("exp1Mode", { label: "EXP/FS 1 jack", group: "controls", labels: JACK_MODES }),
+  spec("exp1Mode", { label: "EXP/FS 1 jack", group: "controls", labels: JACK_MODES, only: LT }),
   spec("exp2Mode", { label: "EXP/FS 2 jack", group: "controls", labels: JACK_MODES }),
-  spec("extFs1", { label: "External footswitch 1", group: "controls", labels: FS_FUNCTIONS }),
-  spec("extFs2", { label: "External footswitch 2", group: "controls", labels: FS_FUNCTIONS }),
-  spec("extFs1Tap", { label: "External footswitch 1, second function", group: "controls", labels: FS_FUNCTIONS }),
-  spec("extFs2Tap", { label: "External footswitch 2, second function", group: "controls", labels: FS_FUNCTIONS }),
-  spec("midiInSource", { label: "MIDI in", group: "midi", labels: ["DIN/TRS only", "USB only", "Both"] }),
-  spec("midiInChannelDin", { label: "MIDI in channel (DIN/TRS)", group: "midi", labels: MIDI_IN_CHANNELS }),
+  // External footswitches: two on the GP-200's EXP 2/FS jack (ids 0x1F, 0x21), four on the LT's two jacks (1-4)
+  spec("extFs1", { label: "External footswitch 1", group: "controls", labels: FS_FUNCTIONS, only: LT }),
+  spec("extFs2", { label: "External footswitch 2", group: "controls", labels: FS_FUNCTIONS, only: LT }),
+  spec("extFs1Tap", { label: "External footswitch 1", labelOn: { gp200lt: "External footswitch 3" }, group: "controls", labels: FS_FUNCTIONS }),
+  spec("extFs2Tap", { label: "External footswitch 2", labelOn: { gp200lt: "External footswitch 4" }, group: "controls", labels: FS_FUNCTIONS }),
+  spec("midiInSource", { label: "MIDI in", group: "midi", labels: ["DIN/TRS only", "USB only", "Both"], only: MIDI_JACKS }),
+  spec("midiInChannelDin", { label: "MIDI in channel (DIN/TRS)", group: "midi", labels: MIDI_IN_CHANNELS, only: MIDI_JACKS }),
   spec("midiInChannelUsb", { label: "MIDI in channel (USB)", group: "midi", labels: MIDI_IN_CHANNELS }),
-  spec("midiOutChannelDin", { label: "MIDI out channel (DIN/TRS)", group: "midi", labels: MIDI_OUT_CHANNELS, min: -1 }),
+  spec("midiOutChannelDin", { label: "MIDI out channel (DIN/TRS)", group: "midi", labels: MIDI_OUT_CHANNELS, min: -1, only: MIDI_JACKS }),
   spec("midiOutChannelUsb", { label: "MIDI out channel (USB)", group: "midi", labels: MIDI_OUT_CHANNELS, min: -1 }),
   spec("clockSource", { label: "Tempo clock source", group: "midi", labels: ["Internal", "DIN/TRS only", "USB only", "External", "Mixed"] }),
-  spec("clockOutDin", { label: "Send clock (DIN/TRS)", group: "midi", labels: OFF_ON }),
+  spec("clockOutDin", { label: "Send clock (DIN/TRS)", group: "midi", labels: OFF_ON, only: MIDI_JACKS }),
   spec("clockOutUsb", { label: "Send clock (USB)", group: "midi", labels: OFF_ON }),
   spec("displayMode", { label: "Display", group: "display", labels: ["Footswitches", "Patch", "Signal chain"] }),
 ]);
 
+/** The settings `device` has, named as on that model, in menu order. */
+export function gp200SpecsFor(device: DeviceKey): Gp200GlobalSpec[] {
+  return GP200_GLOBAL_SPECS.filter((s) => !s.only || s.only.includes(device)).map((s) => (s.labelOn?.[device] ? { ...s, label: s.labelOn[device] } : s));
+}
+
 const BY_NAME: Readonly<Record<string, Gp200GlobalSpec>> = Object.fromEntries(GP200_GLOBAL_SPECS.map((s) => [s.name, s]));
 
 /**
- * The spec of a setting the app may change, or a RangeError: unknown names (e.g. a GP-5 setting) and anything that
- * would map to the patch select or a destructive id.
+ * The spec of a setting the app may change, or a RangeError: unknown names (e.g. a GP-5 setting), settings `device`
+ * doesn't have (when given), and anything that would map to the patch select or a destructive id.
  */
-export function gp200GlobalSpec(name: string): Gp200GlobalSpec {
+export function gp200GlobalSpec(name: string, device?: DeviceKey | null): Gp200GlobalSpec {
   const s = Object.hasOwn(BY_NAME, name) ? BY_NAME[name] : undefined;
-  if (!s || s.id === SELECT_ID || DESTRUCTIVE_GLOBAL_IDS.includes(s.id)) throw new RangeError(`The GP-200 has no setting ${name}`);
+  if (!s || s.id === SELECT_ID || DESTRUCTIVE_GLOBAL_IDS.includes(s.id) || (device && s.only && !s.only.includes(device)))
+    throw new RangeError(`The ${device ? profileFor(device).name : "GP-200"} has no setting ${name}`);
   return s;
 }
 
 /** The value the pedal stores for `value`: whole numbers within the setting's range. */
-export function clampGp200Global(name: string, value: number): number {
-  const s = gp200GlobalSpec(name);
+export function clampGp200Global(name: string, value: number, device?: DeviceKey | null): number {
+  const s = gp200GlobalSpec(name, device);
   if (!Number.isFinite(value)) throw new RangeError(`${s.label}: ${value} is not a number`);
   return Math.max(s.min, Math.min(s.max, Math.round(value)));
 }

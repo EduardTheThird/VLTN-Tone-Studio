@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { pedalName, writesLocked } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useStatusMessage } from "@/state/ui";
 import { BackupsPanel } from "./BackupsPanel";
@@ -41,8 +42,9 @@ function DevicePage() {
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);
   const guideRef = useRef<HTMLDivElement>(null);
+  const locked = view.kind === "connected" && writesLocked(input.device, input.mode);
 
-  useStatusMessage({ led: view.led, text: view.statusText });
+  useStatusMessage({ led: view.led, text: locked ? `Pedal settings are read-only on the ${pedalName(input.device)}` : view.statusText });
 
   // The driver-problem state opens the Windows 11 guide by itself.
   useEffect(() => {

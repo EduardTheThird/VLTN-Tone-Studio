@@ -293,15 +293,15 @@ export class Gp200Driver implements DeviceDriver {
     return toGlobals(g.values, g.firmware);
   }
 
-  /** GP-200 setting names only; anything else (a GP-5 setting, a destructive id) is a RangeError. */
+  /** Settings of the connected model only; anything else (a GP-5 setting, a destructive id) is a RangeError. */
   clampGlobal(name: GlobalName | Gp200GlobalName, value: number): number {
-    return clampGp200Global(name, value);
+    return clampGp200Global(name, value, this.device);
   }
 
   /** One setting as 0x1008 {id, value} (clamped). Never the full 0x1007 write, never a destructive id. */
   async setGlobal(name: GlobalName | Gp200GlobalName, value: number): Promise<void> {
-    const spec = gp200GlobalSpec(name);
-    await this.#session.setGlobal(spec.name, clampGp200Global(spec.name, value));
+    const spec = gp200GlobalSpec(name, this.device);
+    await this.#session.setGlobal(spec.name, clampGp200Global(spec.name, value, this.device));
   }
 
   /** The 10 SnapTone slots: 0-4 AMP, 5-9 DST. */

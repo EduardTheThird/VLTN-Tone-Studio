@@ -221,6 +221,16 @@ describe("Gp200Driver settings", () => {
     expect(dev.violations.filter((v) => v.kind === "danger")).toEqual([]);
   });
 
+  it("refuses the settings of jacks the connected model doesn't have", async () => {
+    const { d, dev } = await connected("gp200jr");
+    const before = dev.log.length;
+    await expect(d.setGlobal("midiInChannelDin", 3)).rejects.toThrow("The GP-200JR has no setting midiInChannelDin");
+    await expect(d.setGlobal("exp1Mode", 1)).rejects.toThrow(RangeError);
+    expect(dev.log.length).toBe(before);
+    await d.setGlobal("midiInChannelUsb", 3);
+    expect(dev.globals.midiInChannelUsb).toBe(3);
+  });
+
   it("gives every enum setting one label per value", () => {
     for (const s of GP200_GLOBAL_SPECS) if (s.labels) expect(s.max - s.min + 1).toBe(s.labels.length);
   });

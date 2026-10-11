@@ -7,7 +7,7 @@ import { encode as gp200Encode, encodeFrames } from "@/gp200/lib/protocol.mjs";
 import { imageOf, withEightCtrl } from "@/gp200/lib/prst.mjs";
 import { PRST_MODELS, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
 import type { DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
-import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
+import { gp200SpecsFor } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
 /**
@@ -32,10 +32,10 @@ export function writesLocked(device: DeviceKey | null, mode: DeviceMode): boolea
   return mode === "webmidi" && device !== null && !profileFor(device).writable;
 }
 
-/** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts). */
+/** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model). */
 export function globalSpecsFor(device: DeviceKey | null): readonly SettingSpec[] {
   if (!device) return [];
-  return isGp5Family(device) ? Object.values(globalsFor(device) as Record<string, GlobalSpec>) : GP200_GLOBAL_SPECS;
+  return isGp5Family(device) ? Object.values(globalsFor(device) as Record<string, GlobalSpec>) : gp200SpecsFor(device);
 }
 
 /** "1.1.0" >= "1.0.5": numeric comparison of dotted versions. */
