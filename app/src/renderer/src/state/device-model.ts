@@ -3,31 +3,31 @@
 // (gp5/lib/prst.mjs); presets never convert across families.
 import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
 import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
-import { PRST_MODELS, profileFor, sniffPrst, type DeviceKey, type DeviceProfile } from "@shared/devices";
+import { PRST_MODELS, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
 import type { DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
 import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
 /**
- * Features built on GP-50 commands known only from static reverse engineering of Valeton Suite 2.1.0, not yet tested
- * on hardware:
- * on a real pedal they stay off until the user turns on "GP-50 extras (experimental)"; the simulator always has them.
+ * Features built on commands known only from static reverse engineering, not yet tested on hardware, per family: on a
+ * real pedal they stay off until the user turns on "GP-50 extras (experimental)"; the simulator always has them.
+ * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: none (its export read and live tempo are known
+ * from hardware work).
  */
-export const EXPERIMENTAL_FEATURES: Readonly<Partial<Record<DeviceFeature, true>>> = {
-  exportPreset: true,
-  exp: true,
-  liveBpm: true,
-  liveFootswitches: true,
-  liveOrder: true,
-  deletePreset: true,
-  copyPreset: true,
-  movePreset: true,
+export const EXPERIMENTAL_FEATURES: Readonly<Record<DeviceFamily, Partial<Record<DeviceFeature, true>>>> = {
+  gp5: { exportPreset: true, exp: true, liveBpm: true, liveFootswitches: true, liveOrder: true, deletePreset: true, copyPreset: true, movePreset: true },
+  gp200: {},
 };
 
-/** Split a driver's features into the usable ones and the ones the experimental setting keeps off. */
-export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, extras: boolean): { features: DeviceFeature[]; locked: DeviceFeature[] } {
-  const open = (f: DeviceFeature) => mode === "mock" || extras || !EXPERIMENTAL_FEATURES[f];
+/** Split the features of a `family` driver into the usable ones and the ones the experimental setting keeps off. */
+export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, extras: boolean, family: DeviceFamily): { features: DeviceFeature[]; locked: DeviceFeature[] } {
+  const open = (f: DeviceFeature) => mode === "mock" || extras || !EXPERIMENTAL_FEATURES[family][f];
   return { features: all.filter(open), locked: all.filter((f) => !open(f)) };
+}
+
+/** True when Tone Studio must not change `device`'s memory: a real pedal of a model not tested yet (profile `writable`). */
+export function writesLocked(device: DeviceKey | null, mode: DeviceMode): boolean {
+  return mode === "webmidi" && device !== null && !profileFor(device).writable;
 }
 
 /** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts). */

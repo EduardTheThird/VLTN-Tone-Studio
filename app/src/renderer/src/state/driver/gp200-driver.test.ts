@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 import type { Gp200FamilyKey } from "@/gp200/lib/session.mjs";
-import type { MockGp200Options } from "@/gp200/lib/mock-device.mjs";
+import { generatePatch, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
 import { crc16Modbus } from "@/gp200/lib/snaptone.mjs";
 import { applyPatchEdits, buildPrst, isGp200Prst, parsePatch, parsePrst } from "@/gp200/lib/prst.mjs";
 import { profileFor } from "@shared/devices";
@@ -9,9 +9,6 @@ import type { DriverEvent } from "./types";
 import { Gp200Driver, Gp200UpdaterError } from "./gp200-driver";
 import { GP200_GLOBAL_SPECS } from "./gp200-globals";
 
-// The session's pacing scaled down (the simulator's gap/deaf checks with it), so a 256-slot sync takes well under 1 s.
-const timing = { frameGapMs: 1, multiChunkPauseMs: 20, identityGapMs: 5, selectSettleMs: 2, replyTimeoutMs: 300, globalsPushMs: 300, uploadTimeoutMs: 2000, saveTimeoutMs: 500 };
-const fastMock = { latencyMs: 0, minGapMs: 0, deafMs: 0 };
 
 let open: Gp200Driver[] = [];
 afterEach(async () => {
@@ -20,7 +17,8 @@ afterEach(async () => {
 });
 
 async function simulate(device: Gp200FamilyKey = "gp200", mock: Omit<MockGp200Options, "type"> = {}): Promise<Gp200Driver> {
-  const d = await Gp200Driver.simulate(device, { log: () => {}, onDisconnect: () => {}, timing, mock: { ...fastMock, ...mock } });
+  // Paced like FAST_SIMULATOR (the default), so a 256-slot sync takes well under 1 s.
+  const d = await Gp200Driver.simulate(device, { log: () => {}, onDisconnect: () => {}, mock });
   open.push(d);
   return d;
 }
@@ -134,6 +132,17 @@ describe("Gp200Driver presets", () => {
     expect(live.blocks[2].params[1]).toBe(12);
     expect(dev.log.every((m) => m.header === null || m.header.a !== 0 || m.header.b === 4)).toBe(true);
     await expect(d.setParam(11, 0, 1)).rejects.toThrow(RangeError);
+  });
+
+  it("drops a param edit whose patch was left while its models were read", async () => {
+    // Slot 0 (active) holds another amp than slot 1, so a param meant for slot 0 can't land on slot 1.
+    const { d, dev } = await connected("gp200", { images: [applyPatchEdits(generatePatch(0), { blocks: { 3: { fxid: 0x07000001 } } })] });
+    await Promise.all([d.setParam(3, 0, 12), d.select(1)]);
+    expect(dev.violations).toEqual([]);
+    expect(parsePatch(dev.editBuffer).blocks[3].params[0]).not.toBe(12);
+    await d.setParam(3, 0, 13);
+    expect(parsePatch(dev.editBuffer).blocks[3].params[0]).toBe(13);
+    expect(dev.violations).toEqual([]);
   });
 
   it("writes a slot with a verified full write and leaves it active", async () => {

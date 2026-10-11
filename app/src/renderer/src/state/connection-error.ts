@@ -13,6 +13,8 @@ const CONNECT_CODES: Record<string, ConnectionErrorCode> = {
   "sysex-denied": "no-sysex",
   "chrome-152": "broken-browser",
   "not-found": "not-found",
+  // Gp200UpdaterError: the pedal answered in firmware update mode
+  bootloader: "bootloader",
 };
 
 /** `device`: the pedal model for the copy; unknown → every supported model ("GP-5 / GP-50"). */
@@ -30,7 +32,8 @@ export function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceK
 
 /**
  * Use the host's USB view to sharpen a failed connect: no port + a Valeton device in update mode = "bootloader";
- * a pedal on USB that this version has no driver for = "unsupported-model" (e.g. a GP-200 in Legacy USB mode, no MIDI).
+ * a pedal on USB that this version has no driver for = "unsupported-model". A supported pedal on USB without a MIDI port
+ * stays "not-found"; the Device screen names it from the host's USB list.
  */
 export function refineConnectionError(error: ConnectionError, status: DeviceHostStatus | null): ConnectionError {
   if (error.code !== "not-found" && error.code !== "busy" && error.code !== "timeout") return error;

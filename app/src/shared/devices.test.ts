@@ -63,7 +63,12 @@ describe("profiles", () => {
     expect(p.snapTone).toEqual({ slots: 10, userRange: [0, 9], fxidBase: 0x0f000000 });
     expect(p.userIr.samples).toBe(1024);
     expect(p.emptyName).toBeNull();
-    expect(p.simulator).toBe(false);
+    expect(p.simulator).toBe(true);
+    expect(p.tempo).toEqual({ min: 40, max: 250 });
+  });
+
+  it("keeps the untested LT and JR read-only", () => {
+    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr"]);
   });
 });
 

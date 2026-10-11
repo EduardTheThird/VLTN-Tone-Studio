@@ -86,7 +86,7 @@ describe("connectionView", () => {
 
   it("names the last connected model, or both models when none is known", () => {
     expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp50" }).statusText).toBe("Connecting to the GP-50");
-    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50");
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50 / GP-200 / GP-200LT / GP-200JR");
   });
 
   it("no pedal on USB = plug-in guidance listing the visible ports", () => {
@@ -119,7 +119,7 @@ describe("connectionView", () => {
   it("unsupported model: says which pedal, sends nothing, offers Check again", () => {
     const v = connectionView({ status: "error", error: { code: "unsupported-model", message: "GP-200 support is coming in a later version of Tone Studio." }, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp5" });
     expect(v).toMatchObject({ kind: "unsupported-model", led: "warn", action: "check", offline: true, detail: "GP-200 support is coming in a later version of Tone Studio." });
-    expect(v.note).toMatch(/simulated GP-5 or GP-50/);
+    expect(v.note).toMatch(/simulated GP-5, GP-50, GP-200, GP-200LT or GP-200JR/);
   });
 
   it("timeout after bytes arrived = wrong device / firmware", () => {
@@ -153,8 +153,12 @@ describe("refineConnectionError", () => {
     expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp50] })).code).toBe("not-found");
     expect(refineConnectionError({ code: "busy", message: "" }, host({ usb: [gp50, updater] })).code).toBe("busy");
   });
-  it("reports a GP-200 on USB as that model, its updater as update mode", () => {
-    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200] }))).toMatchObject({ code: "unsupported-model", message: expect.stringMatching(/^GP-200 /) });
+  it("reports a GP-200 on USB without a MIDI port as that model, its updater as update mode", () => {
+    const notFound = refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200] }));
+    expect(notFound.code).toBe("not-found");
+    expect(connectionView({ status: "error", error: notFound, mode: "webmidi", hostStatus: host({ usb: [gp200] }), platform: "linux", device: "gp5" }).detail).toBe(
+      "Found on USB, but there is no GP-200 MIDI port",
+    );
     expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200Updater] })).code).toBe("bootloader");
     expect(refineConnectionError({ code: "permission", message: "" }, host({ usb: [gp200] })).code).toBe("permission");
   });

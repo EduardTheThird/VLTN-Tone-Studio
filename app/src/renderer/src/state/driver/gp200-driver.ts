@@ -16,10 +16,17 @@ import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, Progres
 const GP5_SNAPTONE_FILE_BYTES = 2696;
 /** User IR data the driver takes: int32 LE samples, at most this many (the pedal stores 1024). */
 const USER_IR_MAX_SAMPLES = profileFor("gp200").userIr.samples;
-/** Live tempo range of a GP-200 patch (BPM). */
-const BPM_RANGE = [40, 250] as const;
 /** How long a select we sent may still come back as the pedal's "patch changed" echo. */
 const ECHO_WINDOW_MS = 1000;
+
+/**
+ * Pacing of the simulator, scaled down on both sides together (the session's waits and MockGp200's gap and deaf-window
+ * checks), so a 256-slot sync takes well under a second and the reads that verify a write don't land in a deaf window.
+ */
+export const FAST_SIMULATOR = {
+  timing: { frameGapMs: 1, multiChunkPauseMs: 20, identityGapMs: 5, selectSettleMs: 2, replyTimeoutMs: 300, globalsPushMs: 300, uploadTimeoutMs: 2000, saveTimeoutMs: 500 },
+  mock: { latencyMs: 0, minGapMs: 0, deafMs: 0 },
+} as const satisfies { timing: Partial<Gp200Timing>; mock: Omit<MockGp200Options, "type"> };
 
 /** Settings snapshot of a GP-200: values keyed by the GP-200 setting names (gp200-globals.ts). */
 export interface Gp200GlobalsSnapshot extends GlobalsSnapshot {
@@ -57,6 +64,8 @@ export class Gp200Driver implements DeviceDriver {
   readonly #listeners = new Set<(e: DriverEvent) => void>();
   /** Model (fxid) of each block in the edit buffer: the 0x0005 param record names it. null = read it again. */
   #fxids: readonly number[] | null = null;
+  /** Counts the times another patch or model took over the edit buffer: a read from before is stale. */
+  #buffer = 0;
   /** Echoes of our own selects and model changes still expected from the pedal: key → deadline (ms) */
   #echoes: readonly { key: string; until: number }[] = [];
 
@@ -81,13 +90,13 @@ export class Gp200Driver implements DeviceDriver {
     return new Gp200Driver(transport, transport.name, opts);
   }
 
-  /** Connect a simulated `device` with the simulator's generated bank (`mock`: fault injection for tests). */
+  /** Connect a simulated `device` with the simulator's generated bank, paced like FAST_SIMULATOR unless `timing` / `mock` say otherwise (fault injection for tests). */
   static async simulate(
     device: Gp200FamilyKey,
     opts: DriverOptions & { timing?: Partial<Gp200Timing>; mock?: Omit<MockGp200Options, "type"> },
   ): Promise<Gp200Driver> {
-    const mock = new MockGp200({ latencyMs: 2, ...opts.mock, type: device });
-    return new Gp200Driver(mock.transport(), `${profileFor(device).name} (simulated)`, opts, mock);
+    const mock = new MockGp200({ ...FAST_SIMULATOR.mock, ...opts.mock, type: device });
+    return new Gp200Driver(mock.transport(), `${profileFor(device).name} (simulated)`, { ...opts, timing: { ...FAST_SIMULATOR.timing, ...opts.timing } }, mock);
   }
 
   #emit(e: DriverEvent) {
@@ -113,11 +122,11 @@ export class Gp200Driver implements DeviceDriver {
     switch (msg.kind) {
       case "patchChanged":
         if (this.#isEcho(`select:${msg.slot}`)) return null;
-        this.#fxids = null;
+        this.#forget();
         return { type: "resync" };
       case "model":
         if (this.#isEcho(`model:${msg.block}:${msg.fxid}`)) return null;
-        this.#fxids = null;
+        this.#forget();
         return { type: "resync" };
       case "chain":
         return { type: "resync" };
@@ -134,10 +143,18 @@ export class Gp200Driver implements DeviceDriver {
     }
   }
 
-  /** Remember the models of an edit buffer image (for setParam). */
-  #remember(image: Uint8Array): Uint8Array {
-    this.#fxids = parsePatch(image).blocks.map((b) => b.fxid);
-    return image;
+  /** Another patch or model takes over the edit buffer: forget its models; reads already under way are stale. */
+  #forget() {
+    this.#fxids = null;
+    this.#buffer++;
+  }
+
+  /** Read the edit buffer and remember its models (for setParam), unless another patch took over meanwhile. */
+  async #readBuffer(): Promise<{ slot: number; image: Uint8Array }> {
+    const buffer = this.#buffer;
+    const read = await this.#session.readEditBuffer();
+    if (buffer === this.#buffer) this.#fxids = parsePatch(read.image).blocks.map((b) => b.fxid);
+    return read;
   }
 
   get device(): DeviceKey | null {
@@ -163,7 +180,8 @@ export class Gp200Driver implements DeviceDriver {
   async sync(opts: ProgressOptions = {}): Promise<SyncSnapshot> {
     const device = await this.identify();
     const snap = await this.#session.sync({ onProgress: opts.onProgress });
-    const image = this.#remember(snap.editBuffer.image);
+    const image = snap.editBuffer.image;
+    this.#fxids = parsePatch(image).blocks.map((b) => b.fxid);
     return {
       device,
       names: snap.presets.map((p) => ({ slot: p.slot, name: p.name })),
@@ -181,19 +199,19 @@ export class Gp200Driver implements DeviceDriver {
 
   /** The edit buffer carries its own (live) name, so `names` is not needed. */
   async readActive(_names: readonly SlotName[]): Promise<{ slot: number; prst: Uint8Array }> {
-    const { slot, image } = await this.#session.readEditBuffer();
-    return { slot, prst: buildPrst(this.#remember(image)) };
+    const { slot, image } = await this.#readBuffer();
+    return { slot, prst: buildPrst(image) };
   }
 
   /** The edit buffer carries its own (live) name, so `name` is not needed. */
   async readEditBuffer(_name: string): Promise<Uint8Array> {
-    return buildPrst(this.#remember((await this.#session.readEditBuffer()).image));
+    return buildPrst((await this.#readBuffer()).image);
   }
 
   /** 0x1008 {0, slot}; the pedal's echo of it is not reported as a pedal-side change. */
   async select(slot: number): Promise<void> {
     this.#expectEcho(`select:${slot}`);
-    this.#fxids = null;
+    this.#forget();
     await this.#session.selectPreset(slot);
   }
 
@@ -221,7 +239,7 @@ export class Gp200Driver implements DeviceDriver {
     if (active) {
       this.#expectEcho(`select:${(slot + 1) % this.#session.slotCount}`);
       this.#expectEcho(`select:${slot}`);
-      this.#fxids = null;
+      this.#forget();
     }
     await this.#session.writePreset(slot, prst, { confirm: true, verify: true, attempts: opts.attempts, onProgress: opts.onProgress });
     if (!active) await this.select(slot);
@@ -240,7 +258,10 @@ export class Gp200Driver implements DeviceDriver {
 
   /** `block`: storage order (PRE WAH DST AMP NR CAB EQ MOD DLY RVB VOL); `index`: the param's XML ID (0..14). */
   async setParam(block: number, index: number, value: number): Promise<void> {
-    if (!this.#fxids) this.#remember((await this.#session.readEditBuffer()).image);
+    const buffer = this.#buffer;
+    if (!this.#fxids) await this.#readBuffer();
+    // Another patch took over while its models were read: the edit was for the one that was left.
+    if (buffer !== this.#buffer) return;
     const fxid = this.#fxids?.[block];
     if (fxid === undefined) throw new RangeError(`The GP-200 has no block ${block}`);
     await this.#session.setParam(block, index, fxid, value);
@@ -262,7 +283,8 @@ export class Gp200Driver implements DeviceDriver {
   }
 
   async setBpm(bpm: number): Promise<void> {
-    await this.#session.setTempo(Math.max(BPM_RANGE[0], Math.min(BPM_RANGE[1], Math.round(bpm))));
+    const { min, max } = profileFor(this.device ?? "gp200").tempo;
+    await this.#session.setTempo(Math.max(min, Math.min(max, Math.round(bpm))));
   }
 
   /** 0x1006 state dump. Values are keyed by the GP-200 setting names (gp200-globals.ts GP200_GLOBAL_SPECS). */

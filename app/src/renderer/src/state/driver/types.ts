@@ -6,7 +6,7 @@ import type { BackupEntry, DeviceFeature, ExpEdit, ExpSettings, GlobalName, Glob
 export type { DeviceFeature };
 
 /** Families with a driver in this build (the factory in ./index.ts has one per entry). */
-export const DRIVER_FAMILIES = ["gp5"] as const satisfies readonly DeviceFamily[];
+export const DRIVER_FAMILIES = ["gp5", "gp200"] as const satisfies readonly DeviceFamily[];
 export type DriverFamily = (typeof DRIVER_FAMILIES)[number];
 
 export function hasDriver(family: DeviceFamily): family is DriverFamily {

@@ -209,7 +209,7 @@ export type ConnectionErrorCode =
   | "busy" // port present but silent / held by Valeton Suite
   | "timeout"
   | "bootloader" // firmware update mode
-  | "unsupported-model" // a pedal this version has no driver for (GP-200 family until wave 2)
+  | "unsupported-model" // a pedal of a family this build has no driver for
   | "unknown";
 
 export interface ConnectionError {

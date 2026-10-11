@@ -72,6 +72,11 @@ export interface DeviceProfile {
   globals: boolean;
   /** The app has a simulator for this model (`?mock=<key>`, Device screen "Simulate a …") */
   simulator: boolean;
+  /**
+   * Tone Studio may change a real unit's memory (presets, names, settings, SnapTone and IR uploads). False until a unit
+   * of the model has been tested; reads and live edits work either way, and the simulator always takes writes.
+   */
+  writable: boolean;
   /** Rough seconds for a full backup (every slot), for UI copy only */
   backupSeconds: number;
 }
@@ -118,6 +123,7 @@ const gp5Family = {
   nameLength: 10,
   globals: true,
   simulator: true,
+  writable: true,
   backupSeconds: 75,
 } as const;
 
@@ -152,7 +158,7 @@ const gp200Family = {
   emptyName: null,
   prst: GP200_PRST,
   globals: true,
-  simulator: false,
+  simulator: true,
   // Estimate, not measured: per-slot read ≈ 1 s multi-chunk pause + frames/reply (gp200/lib/session.mjs pacing) × 256.
   backupSeconds: 300,
 } as const;
@@ -178,10 +184,11 @@ export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freez
     emptyName: "GP-50",
     prst: gp5Prst("GP-50", 552),
   },
-  // Port names are matched case-sensitively, like Valeton's GP-200 editor does.
-  gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], portPattern: /GP-200(?!LT|JR)/, footswitches: 8 },
-  gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], portPattern: /GP-200LT/, footswitches: 4 },
-  gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], portPattern: /GP-200JR/, footswitches: 3 },
+  // Port names are matched case-sensitively, like Valeton's GP-200 editor does. The LT and JR stay read-only until a
+  // unit has been tested: how they identify and what they take is known only from the editor's code.
+  gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], portPattern: /GP-200(?!LT|JR)/, footswitches: 8, writable: true },
+  gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], portPattern: /GP-200LT/, footswitches: 4, writable: false },
+  gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], portPattern: /GP-200JR/, footswitches: 3, writable: false },
 });
 
 export function isDeviceKey(v: unknown): v is DeviceKey {
