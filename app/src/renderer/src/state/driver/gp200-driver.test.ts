@@ -261,7 +261,7 @@ describe("Gp200Driver Global EQ", () => {
     expect((await d.readGlobals()).eq?.values[GLOBAL_EQ_INDEX.band1.gain]).toBe(20);
   });
 
-  it("takes the whole EQ when the pedal reports it, also inside a reply the session waits for", async () => {
+  it("takes the whole EQ when the pedal reports it in one message with its settings", async () => {
     // Device-to-host bytes go through the transport's listener: keep it to play a 0x1004 report next to the settings
     let toHost: ((bytes: Uint8Array) => void) | null = null;
     const transport = MockGp200.prototype.transport;

@@ -67,7 +67,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
             checked={s.on === 1}
             disabled={locked || s.on === undefined}
             onCheckedChange={(v) => useDevice.getState().setGlobal("globalEq", v ? 1 : 0)}
-            aria-label="Global EQ"
+            aria-label="Global EQ on"
           />
           {s.on === 1 ? "On" : "Off"}
         </div>
