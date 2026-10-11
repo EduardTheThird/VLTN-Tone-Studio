@@ -2,10 +2,6 @@
 
 <br>
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=social" alt="Star VLTN Tone Studio on GitHub"></a>
-
-<br>
-
 # VLTN Tone Studio
 
 A desktop editor and librarian for the Valeton GP-5 and GP-50.<br>
