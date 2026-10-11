@@ -77,6 +77,47 @@ export function nudge(device: DeviceKey, order: readonly number[], block: number
   return null;
 }
 
+/**
+ * GP-200 family FX loop: the send and return nodes sit in gaps of the chain, a position counting the blocks in front of
+ * the node in signal order. The pedal takes 1..11 (1 = after the first block, 11 = after the last) and never puts the
+ * return in front of the send (Valeton's GP-200 manual; GP200 Studio's patch docs give the same range).
+ */
+export interface LoopPos {
+  sendPos: number;
+  returnPos: number;
+}
+export type LoopNode = "send" | "return";
+export type ChainItem = { block: number } | { node: LoopNode };
+
+/** Positions `node` can take in a chain of `n` blocks: send 1..return, return send..n (none when the other is off range). */
+export function loopRange(loop: LoopPos, node: LoopNode, n: number): [number, number] {
+  return node === "send" ? [1, Math.min(n, loop.returnPos)] : [Math.max(1, loop.sendPos), n];
+}
+
+/** `loop` with `node` at `pos`, or null when the pedal can't take it there or nothing changes. */
+export function moveLoopNode(loop: LoopPos, node: LoopNode, pos: number, n: number): LoopPos | null {
+  const [lo, hi] = loopRange(loop, node, n);
+  const cur = node === "send" ? loop.sendPos : loop.returnPos;
+  if (!Number.isInteger(pos) || pos < lo || pos > hi || pos === cur) return null;
+  return node === "send" ? { ...loop, sendPos: pos } : { ...loop, returnPos: pos };
+}
+
+/** Blocks in signal order with the loop nodes in their gaps, as stored (a position outside 0..n at the nearer end). */
+export function chainItems(order: readonly number[], loop: LoopPos): ChainItem[] {
+  const at = (p: number) => Math.max(0, Math.min(order.length, p));
+  const items: ChainItem[] = [];
+  for (let gap = 0; gap <= order.length; gap++) {
+    if (at(loop.sendPos) === gap) items.push({ node: "send" });
+    if (at(loop.returnPos) === gap) items.push({ node: "return" });
+    if (gap < order.length) items.push({ block: order[gap] });
+  }
+  return items;
+}
+
+/** Where gap `pos` of the chain is: "after AMP", or "before PRE" for the input end. */
+export const gapLabel = (order: readonly number[], pos: number, codes: readonly string[]) =>
+  pos <= 0 ? `before ${codes[order[0]]}` : `after ${codes[order[Math.min(pos, order.length) - 1]]}`;
+
 /** "A", "A and B", "A, B and C". */
 export const joinAnd = (items: readonly string[]) => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
