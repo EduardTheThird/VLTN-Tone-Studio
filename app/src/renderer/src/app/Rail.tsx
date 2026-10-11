@@ -12,7 +12,7 @@ const ITEMS: { screen: Screen; label: string; icon: LucideIcon }[] = [
 ];
 
 /**
- * Floating glass rail (DESIGN.md › Layout). The capture editor is reached from Tones, so it highlights
+ * Floating glass rail. The capture editor is reached from Tones, so it highlights
  * Tones; Device › Settings highlights Settings.
  */
 export function Rail() {

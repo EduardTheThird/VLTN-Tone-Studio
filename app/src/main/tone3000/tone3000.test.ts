@@ -7,7 +7,7 @@ import { HostError } from "@shared/ipc";
 import type { T3kModel, T3kTone } from "@shared/host/tones";
 import { base64url, codeChallenge, createPkce } from "./pkce";
 import { InvalidGrantError, TokenManager, type TokenSet, type TokenStore } from "./tokens";
-import { buildRecord, listRecords, readRecord, writeRecord } from "./records";
+import { buildRecord, linkRecord, listRecords, readRecord, writeRecord } from "./records";
 
 describe("PKCE", () => {
   it("derives the S256 challenge of the RFC 7636 Appendix B test vector", () => {
@@ -196,6 +196,16 @@ describe("tone records (meta.json)", () => {
     const again = buildRecord(first, tone, models, { model: models[0], file: "1.nam", bytes: 12 }, new Date());
     expect(again.models).toHaveLength(1);
     expect(again.models[0].bytes).toBe(12);
+  });
+
+  it("records the pedal model with a link, replaces an old GP-5 link and clears it on unlink", () => {
+    const now = new Date("2026-10-10T08:00:00Z");
+    const old = { ...buildRecord(null, tone, models, null, now), gp5: { verdict: "ready" as const, snaptoneSlot: 58, slotName: "5150-RED4", linkedAt: "x" } };
+    const linked = linkRecord(old, { kind: "ir", slot: 3, slotName: "MESA", device: "gp50" }, now);
+    expect(linked.gp5).toEqual({ verdict: "ready", irSlot: 3, slotName: "MESA", linkedAt: "2026-10-10T08:00:00.000Z", device: "gp50" });
+    expect(linkRecord(linked, null, now).gp5).toEqual({ verdict: "ready" });
+    expect(linkRecord(old, { kind: "snaptone", slot: 2, slotName: "AMP-3", device: "gp200" }, now).gp5.device).toBe("gp200");
+    expect(() => linkRecord(old, { kind: "ir", slot: 3, slotName: "MESA", device: "gp500" as never }, now)).toThrow(/Unknown pedal model/);
   });
 
   it("lists only folders with a readable meta.json", async () => {

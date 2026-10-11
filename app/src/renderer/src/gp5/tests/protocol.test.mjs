@@ -40,7 +40,8 @@ test("live-edit commands match gp5-editor and TonexOneController vectors", () =>
   assert.equal(one(encode.setParam("AMP", 0, 50)), norm("F0 00 0F 00 01 00 00 00 0E 01 01 04 08 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04 08 04 02 F7"));
   assert.equal(one(encode.setParam("DLY", 1, 500)), norm("F0 00 0D 00 01 00 00 00 0E 01 01 04 08 00 07 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 0F 0A 04 03 F7"));
   assert.equal(one(encode.setPatchVolume(80)), norm("F0 00 0E 00 01 00 00 00 0A 01 01 04 02 00 01 02 00 00 00 00 00 05 00 00 00 00 00 00 00 F7"));
-  assert.equal(one(encode.setGlobal("inputTrim", -6)), norm("F0 0B 0E 00 01 00 00 00 0A 01 01 01 01 00 01 00 03 00 00 00 00 0F 0A 00 00 00 00 00 00 F7"));
+  // globals go out as int32 LE like Valeton Suite (the old signed-byte form sent -6 as FA 00 00 00)
+  assert.equal(one(encode.setGlobal("inputTrim", -6)), norm("F0 0B 01 00 01 00 00 00 0A 01 01 01 01 00 01 00 03 00 00 00 00 0F 0A 0F 0F 0F 0F 0F 0F F7"));
   assert.equal(one(encode.setGlobal("masterVolume", 75)), norm("F0 0D 0A 00 01 00 00 00 0A 01 01 01 01 00 02 00 02 00 00 00 00 04 0B 00 00 00 00 00 00 F7"));
   assert.equal(
     one(encode.savePreset(7, "Clean")),
@@ -56,11 +57,12 @@ test("GP-5 full preset write reproduces the Valeton Suite 2.1.0 capture byte-for
   assert.deepEqual(wire(encode.renamePreset(cap.slot, "Walk")), cap.rename);
 });
 
-test("framing reproduces the independent GP-50 Suite capture (29 frames, total=0x1D)", () => {
+test("GP-50 full preset write reproduces the valeton-gp50 Suite capture byte-for-byte (29 frames, total=0x1D)", () => {
   const cap = JSON.parse(readFileSync(fx("gp50_suite_write_slot0.json"), "utf8"));
-  const prst = Uint8Array.from(Buffer.from(cap.prst_b64, "base64"));
-  const payload = [0x11, 0x4f, cap.slot, 0, 0, 0, ...prst.subarray(0x19)];
-  assert.deepEqual(wire(payload), cap.write);
+  const prst = readFileSync(fx("gp50-US-Lead.prst"));
+  assert.deepEqual(wire(encode.writePreset(cap.slot, prst)), cap.write);
+  assert.equal(parseSysex(fromHex(cap.write[0])).total, 0x1d);
+  assert.throws(() => encode.writePreset(0, prst.subarray(0, 540)), /507 \(GP-5\) or 552 \(GP-50\)/);
 });
 
 test("device frames from captures decode with valid CRC", () => {

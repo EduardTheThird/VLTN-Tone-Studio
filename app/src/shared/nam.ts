@@ -1,6 +1,6 @@
-// NAM file check for the GP-5 SnapTone conversion.
-// Valeton Suite 2.1.0 makes a GP-5 SnapTone from any model its NeuralAmpModelerCore loads (no size or
-// architecture gate in its Dart code; see .claude/skills/gp5-reverse-engineering/snaptone.md). Tone Studio
+// NAM file check for the SnapTone conversion (the same SnapTone format on GP-5 and GP-50).
+// Valeton Suite 2.1.0 makes a SnapTone from any model its NeuralAmpModelerCore loads (no size or
+// architecture gate in its Dart code, static RE of the Suite 2.1.0 Android build). Tone Studio
 // reproduces that conversion for the two families it renders like Suite does:
 //  - NAM A1 WaveNet (standard, lite, feather, nano): 0.5.x passes through; 0.7.x is reshaped to the 0.5.x layout
 //    (for the standard WaveNet the layouts differ only in the config schema; the flat `weights` array, head_scale
@@ -14,7 +14,7 @@ export class NamCheckError extends Error {
   /** The reason alone, for places that already say what failed */
   readonly detail: string;
   constructor(detail: string) {
-    super(`Tone Studio can't make a GP-5 SnapTone from this file. Pick another model or report it to the creator. (${detail})`);
+    super(`Tone Studio can't make a SnapTone from this file. Pick another model or report it to the creator. (${detail})`);
     this.name = "NamCheckError";
     this.detail = detail;
   }
@@ -228,13 +228,13 @@ function examine(model: unknown): { check: NamCheck; reshaped: Json | null } {
   return { check: { version, reshaped: true, arch: "A1", size: assertA1(out) }, reshaped: out };
 }
 
-/** Whether Tone Studio can make a GP-5 SnapTone from a parsed .nam, and from which model family (throws NamCheckError). */
+/** Whether Tone Studio can make a SnapTone from a parsed .nam, and from which model family (throws NamCheckError). */
 export function checkNam(model: unknown): NamCheck {
   return examine(model).check;
 }
 
 /**
- * Parse a downloaded .nam and confirm Tone Studio can make a GP-5 SnapTone from it. A1 comes back in the 0.5.x
+ * Parse a downloaded .nam and confirm Tone Studio can make a SnapTone from it. A1 comes back in the 0.5.x
  * layout (reshaped from 0.7.x when needed); A2 comes back unchanged. Returns the JSON text for the converter.
  */
 export function prepareNam(text: string): { json: string; check: NamCheck } {

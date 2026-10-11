@@ -1,5 +1,5 @@
 // Versions are recipes on top of the original file: metadata, level, size (lossless) and shaping (heard in the
-// audition and kept for the GP-5 conversion; never written into the A2 file).
+// audition and kept for the SnapTone conversion; never written into the A2 file).
 import type { CaptureRecipe, CaptureSize, Shaping } from "@shared/host/capture";
 import { editableMetadata, inspectNam, withMetadata, withOutputGain, withSize, type NamFile, type NamInfo, type TextField } from "./model";
 import { FLAT_SHAPING, SHAPING_RANGES } from "./shaping";

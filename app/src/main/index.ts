@@ -12,9 +12,10 @@ import { registerDeviceIpc } from "./ipc/device";
 import { registerSnapToneIpc } from "./ipc/snaptone";
 import { registerSongIpc } from "./ipc/song";
 import { registerUpdateIpc } from "./ipc/update";
+import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
 import type { AppEvent } from "@shared/ipc";
 
-// One app instance = one MIDI session (the GP-5 port is exclusive on Windows).
+// One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // The packaged renderer is served from app://bundle/ instead of file://, so fetch() and
@@ -123,7 +124,7 @@ async function createWindow() {
         buttons: ["Keep open", "Close anyway"],
         defaultId: 0,
         cancelId: 0,
-        message: "Tone Studio is still writing to or backing up the GP-5",
+        message: "Tone Studio is still writing to or backing up the pedal",
         detail: "Close after it finishes? If you close now, an unfinished write is discarded by the pedal and that slot keeps its old preset.",
       });
       if (choice === 0) return e.preventDefault();
@@ -157,7 +158,7 @@ app.on("open-file", (e, path) => {
 });
 
 app.whenReady().then(async () => {
-  // WebMIDI with SysEx in the renderer (gp5-toolkit), plus audio-only capture for the capture editor's
+  // WebMIDI with SysEx in the renderer (src/renderer/src/gp5/), plus audio-only capture for the capture editor's
   // NAM audition (audio interface input). Nothing else is granted; video is always denied.
   const allowed = new Set(["midi", "midiSysex"]);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => {
@@ -185,6 +186,7 @@ app.whenReady().then(async () => {
   registerSnapToneIpc(getWindow);
   registerSongIpc(getWindow);
   registerUpdateIpc(getWindow);
+  registerGp200CatalogIpc(getWindow);
   buildMenu(getWindow);
   await createWindow();
 

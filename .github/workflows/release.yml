@@ -1,6 +1,7 @@
 # Release: every push to main (a merge from develop) builds macOS, Windows and Linux packages and publishes
 # them as GitHub Release v<version>, where <version> comes from app/package.json. Bump it on develop before merging,
-# and add its "## [<version>]" section to CHANGELOG.md: that section opens the release notes.
+# add its "## [<version>]" section to CHANGELOG.md (that section opens the release notes) and move the README's
+# "### Download v<version>" buttons to the new version.
 name: Release
 
 on:
@@ -37,6 +38,13 @@ jobs:
           fi
           if ! grep -qF "## [$version]" CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no \"## [$version]\" section. Add it on develop, then merge to main again."
+            exit 1
+          fi
+          # README download buttons link straight to this release's files (asset names carry the version).
+          links="$(grep -oE 'releases/download/v[^/"]+/vltn-tone-studio-[^"]+' README.md || true)"
+          stale="$(printf '%s\n' "$links" | grep -v "^releases/download/$tag/vltn-tone-studio-$version-" || true)"
+          if [ -z "$links" ] || [ -n "$stale" ] || ! grep -qF "### Download $tag" README.md || ! grep -qF "(#download-${tag//./})" README.md; then
+            echo "::error::README.md download links are not for $tag. Replace the old version in the \"### Download\" heading, its #download-… anchor and every releases/download/… link, then merge to main again."
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"

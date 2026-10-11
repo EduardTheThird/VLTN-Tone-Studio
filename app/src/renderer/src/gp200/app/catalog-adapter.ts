@@ -1,0 +1,96 @@
+// The user's GP-200 catalog (gp200/lib/catalog.mjs, built from their algorithm.xml) in the app's ModelInfo/ParamInfo
+// shape, so GP-200 blocks render like the GP-5 family's. Param index = the XML control ID (0..14, the f32[15] slot
+// and the 0x0005 param byte); values are wire values (Combox TrueIDs included).
+import type { BlockName } from "@/gp200/lib/protocol.mjs";
+import { defaultValue, modelByFxid, modelsForBlock, optionValues, tempoSyncBinding, type CatalogKnob, type CatalogModel, type Gp200Catalog } from "@/gp200/lib/catalog.mjs";
+import type { ModelInfo, ParamInfo } from "@/state/device-types";
+
+export type Gp200BlockCode = BlockName;
+
+export interface Gp200ParamInfo extends ParamInfo {
+  /** Control kind in the editor */
+  kind: CatalogKnob["kind"];
+  /** Allowed wire values when they are not every value of min..max (labels[value - min] still names each) */
+  values?: readonly number[];
+  /** The minimum shows as OFF (e.g. a Low Cut at 19 Hz) */
+  offAtMin?: boolean;
+}
+
+export interface Gp200ModelInfo extends Omit<ModelInfo, "block" | "params"> {
+  block: Gp200BlockCode;
+  params: Gp200ParamInfo[];
+  /** Cab model Auto CAB Match picks for this amp */
+  cabFxid?: number;
+}
+
+/** What each block holds, as a model's category. */
+export const GP200_BLOCK_TYPES: Readonly<Record<Gp200BlockCode, string>> = {
+  PRE: "Pre effect",
+  WAH: "Wah",
+  DST: "Drive",
+  AMP: "Amp",
+  NR: "Noise gate",
+  CAB: "Cab",
+  EQ: "EQ",
+  MOD: "Modulation",
+  DLY: "Delay",
+  RVB: "Reverb",
+  VOL: "Volume",
+};
+
+/** Labels for option values: labels[value - min], gaps (non-consecutive TrueIDs) named by their value. */
+function optionParam(knob: CatalogKnob): Pick<Gp200ParamInfo, "min" | "max" | "labels" | "values"> {
+  const values = optionValues(knob);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const names = new Map(values.map((v, i) => [v, knob.options?.[i]?.name ?? String(v)]));
+  const labels = Array.from({ length: max - min + 1 }, (_, i) => names.get(min + i) ?? String(min + i));
+  const everyValue = values.length === labels.length;
+  return { min, max, labels, ...(everyValue ? {} : { values }) };
+}
+
+export function toParamInfo(model: CatalogModel, knob: CatalogKnob): Gp200ParamInfo {
+  const base = { name: knob.name, index: knob.id, kind: knob.kind, step: 1, default: defaultValue(knob) };
+  const syncs = tempoSyncBinding(model, knob);
+  const extra = {
+    ...(knob.suffix ? { unit: knob.suffix } : {}),
+    ...(knob.minIsOff ? { offAtMin: true } : {}),
+    ...(knob.kind === "Switch" ? { toggle: true } : {}),
+    ...(syncs && syncs.sync === knob ? { syncs: syncs.target.id } : {}),
+  };
+  if (knob.options?.length) return { ...base, ...optionParam(knob), ...extra };
+  if (knob.kind === "Switch") return { ...base, min: 0, max: 1, ...extra };
+  const min = knob.min ?? 0;
+  return { ...base, min, max: knob.max ?? min, step: knob.step && knob.step > 0 ? knob.step : 1, ...extra };
+}
+
+const MODELS = new WeakMap<CatalogModel, Gp200ModelInfo>();
+
+/** One catalog model as a ModelInfo (memoized per model object); params in the editor's order. */
+export function toModelInfo(model: CatalogModel): Gp200ModelInfo {
+  const hit = MODELS.get(model);
+  if (hit) return hit;
+  const block = model.module as Gp200BlockCode;
+  const info: Gp200ModelInfo = {
+    fxid: model.code,
+    block,
+    name: model.name,
+    title: model.name,
+    type: GP200_BLOCK_TYPES[block] ?? model.module,
+    params: [...model.knobs].sort((a, b) => a.idx - b.idx).map((k) => toParamInfo(model, k)),
+    ...(model.cabCode !== undefined ? { cabFxid: model.cabCode } : {}),
+  };
+  MODELS.set(model, info);
+  return info;
+}
+
+/** The model of `fxid` in `block` (index or code; some fxids sit in two blocks, e.g. boosts in PRE and DST). */
+export function gp200ModelByFxid(catalog: Gp200Catalog, fxid: number, block: number | Gp200BlockCode): Gp200ModelInfo | undefined {
+  const model = modelByFxid(catalog, fxid, block);
+  return model ? toModelInfo(model) : undefined;
+}
+
+/** Every model of `block` (index or code), in the editor's list order. */
+export function gp200ModelsForBlock(catalog: Gp200Catalog, block: number | Gp200BlockCode): Gp200ModelInfo[] {
+  return modelsForBlock(catalog, block).map(toModelInfo);
+}

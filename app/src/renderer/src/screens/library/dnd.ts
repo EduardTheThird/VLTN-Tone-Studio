@@ -1,5 +1,7 @@
 // Drag and drop inside the Library (native HTML5 DnD; the drag image is a ghost card built from the source).
 import type { DragEvent } from "react";
+import { useDevice } from "@/state/device";
+import { pedalName, slotLabel } from "@/state/device-model";
 import { useLibrary, type LibraryDrag } from "./store";
 
 export const LOCAL_MIME = "application/x-gp5-local-preset";
@@ -11,7 +13,7 @@ export function formatDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Ghost: name, origin and the source's MiniChain, in a solid raised card (design: library.css .ghost). */
+/** Ghost: name, origin and the source's MiniChain, in a solid raised card. */
 function ghost(source: HTMLElement, title: string, origin: string): HTMLElement {
   const el = document.createElement("div");
   el.className = "fixed -top-[200px] left-0 flex items-center gap-2.5 rounded-lg bg-surface-solid-raised py-2 pr-3 pl-2.5 text-[13px] text-silkscreen shadow-[0_0_0_1px_var(--seam-strong)]";
@@ -34,9 +36,10 @@ function ghost(source: HTMLElement, title: string, origin: string): HTMLElement 
 export function startDrag(e: DragEvent<HTMLElement>, drag: LibraryDrag, mime: string) {
   e.dataTransfer.effectAllowed = drag.kind === "local" ? "copy" : "copyMove";
   e.dataTransfer.setData(mime, JSON.stringify(drag.kind === "local" ? { id: drag.preset.id, collectionId: drag.preset.collectionId } : drag.slots));
-  const title = drag.kind === "local" ? drag.preset.name : drag.slots.length === 1 ? (e.currentTarget.dataset.name ?? `Slot ${drag.slots[0]}`) : `${drag.slots.length} slots`;
+  const title = drag.kind === "local" ? drag.preset.name : drag.slots.length === 1 ? (e.currentTarget.dataset.name ?? `Slot ${slotLabel(useDevice.getState().device, drag.slots[0])}`) : `${drag.slots.length} slots`;
   const collection = drag.kind === "local" ? useLibrary.getState().collections.find((c) => c.id === drag.preset.collectionId)?.title : null;
-  const el = ghost(e.currentTarget, title, drag.kind === "local" ? `From ${collection ?? "this computer"}` : "From the GP-5. Alt copies");
+  const origin = drag.kind === "local" ? `From ${collection ?? "this computer"}` : `From the ${pedalName(useDevice.getState().device)}. Alt copies`;
+  const el = ghost(e.currentTarget, title, origin);
   e.dataTransfer.setDragImage(el, 16, 16);
   setTimeout(() => el.remove(), 0);
   useLibrary.setState({ drag });

@@ -1,5 +1,6 @@
-// Shading helpers for the gear drawings (port of design/mockups/assets/gear.js). The drawings are the one place
-// with hand-tuned colours: block hues mirror the --block-* tokens because the shading math needs hex values.
+// Shading helpers for the gear drawings. The drawings are the one place
+// with hand-tuned colours: block hues mirror the --block-* tokens because the shading math needs hex values
+// (art.test.ts keeps the two in step).
 import type { BlockCode } from "@/state/device-types";
 
 export const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Variable', Inter, system-ui, sans-serif";
@@ -15,6 +16,9 @@ export const BLOCK_HEX: Record<BlockCode, string> = {
   MOD: "#4f7cff",
   DLY: "#2dd4bf",
   RVB: "#a855f7",
+  // GP-200 family blocks
+  WAH: "#22c55e",
+  VOL: "#e2e8f0",
 };
 
 /** Amp voicing colours by catalog amp type. */
@@ -26,6 +30,8 @@ export const VOICE: Record<string, string> = {
   Acoustic: "#d8a46b",
 };
 export const voiceFor = (type?: string) => (type && VOICE[type]) || VOICE["Hi Gain"];
+/** The amp type when it names a voicing (GP-5 family catalog); GP-200 amps carry only their block's category. */
+export const voicingOf = (type?: string) => (type && Object.hasOwn(VOICE, type) ? type : undefined);
 
 export const hash = (s: string) => {
   let h = 2166136261;
@@ -66,7 +72,7 @@ const WORDS: Record<string, string | null> = {
   pink: "#d95596",
 };
 
-/** Finish from the model name, then the block colour family, then a hash (gear.js finishFor). */
+/** Finish from the model name, then the block colour family, then a hash. */
 export function finishFor(name: string, base: string, h: number, want?: Finish, color?: string): FinishInfo {
   const pick: Finish = want ?? (["matte", "matte", "matte", "noir", "frost"] as const)[(h >>> 9) % 5];
   const word = Object.keys(WORDS).find((w) => new RegExp(`\\b${w}\\b`, "i").test(name));

@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type OpenDialogOptions, type SaveDialogOptions } from "electron";
 import { HostError, type Result } from "@shared/ipc";
 
 /** Register an invoke handler that always resolves to a Result (Electron only serializes Error.message). */
@@ -13,4 +13,14 @@ export function handle<A extends unknown[], T>(channel: string, fn: (event: IpcM
       return { ok: false, error: { code: "internal", message: err?.message ?? String(e) } };
     }
   });
+}
+
+/** Open dialog, modal to the window when there is one. */
+export function showOpenDialog(win: BrowserWindow | null, options: OpenDialogOptions) {
+  return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+}
+
+/** Save dialog, modal to the window when there is one. */
+export function showSaveDialog(win: BrowserWindow | null, options: SaveDialogOptions) {
+  return win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options);
 }

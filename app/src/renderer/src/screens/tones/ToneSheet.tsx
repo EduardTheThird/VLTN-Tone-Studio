@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Info, Wand2 } from "lucide-react";
 import type { T3kModel, T3kTone } from "@shared/host/tones";
 import { HostError } from "@shared/ipc";
-import { ARCH_LABEL, gearLabel, gp5Models, isGp5Model, licenseLabel, modelsVerdict, proposeSlotName, verdictLabel } from "@shared/tone3000";
+import { ARCH_LABEL, gearIncludesCab, gearLabel, gp5Models, isGp5Model, licenseLabel, modelsVerdict, proposeSlotName, slotLinkOn, verdictLabel } from "@shared/tone3000";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -10,15 +10,18 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Skeleton } from "@/components/ui/skeleton";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
+import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
+import { DEFAULT_DEVICE, isGp5Family } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { notifyError } from "@/app/notify";
 import { browse, cancelSend, closeSheet, loadAccount, startSendDraft, updateDraft, useTones } from "./store";
 import { CreatorAvatar } from "./ToneCard";
+import { noCabIrReason } from "./CabIrPicker";
 import { UserIrSteps, UseOnGp5 } from "./SendSteps";
 import { SnapToneSteps } from "./SnapToneSteps";
 import { ToneImage } from "./ToneImage";
 
-/** Tone detail (TONE3000 requirement 6) with the model picker and the Send to GP-5 flow. */
+/** Tone detail (TONE3000 requirement 6) with the model picker and the Send to the pedal flow. */
 export function ToneSheet() {
   const sheet = useTones((s) => s.sheet);
   return (
@@ -39,6 +42,9 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
   const [models, setModels] = useState<T3kModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
+  const model = usePedalNameOrBoth();
 
   useEffect(() => {
     if (!signedIn) return;
@@ -84,7 +90,9 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
     closeSheet();
     useNav.getState().go("capture", String(toneId));
   };
-  const linkedSlot = record?.gp5.snaptoneSlot ?? record?.gp5.irSlot;
+  // Slot numbers only mean something on the pedal model the link was made on.
+  const link = slotLinkOn(record, device);
+  const linkedSlot = link && !link.other ? link.slot : undefined;
 
   return (
     <>
@@ -120,10 +128,12 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
           <Fact label="Updated" value={tone ? tone.updated_at.slice(0, 10) : record ? record.savedAt.slice(0, 10) : "—"} />
           <Fact label="Downloads" value={tone ? tone.downloads_count.toLocaleString() : "—"} />
         </dl>
-        {gear === "amp-cab" && !isIr && (
+        {gearIncludesCab(gear) && !isIr && (
           <p className="-mt-1.5 flex gap-2 text-[12px] text-pretty text-silkscreen-3">
             <Info className="mt-0.5 size-3.5 flex-none" aria-hidden />
-            This capture includes the cab. On the GP-5 a SnapTone replaces both AMP and CAB, so it plays complete.
+            {isGp5Family(device ?? DEFAULT_DEVICE)
+              ? `This capture includes the cab. On the ${model} a SnapTone replaces both AMP and CAB, so it plays complete.`
+              : `This capture includes the cab. On the ${model} CAB still plays after the SnapTone, so turn CAB off where the SnapTone plays.`}
           </p>
         )}
         {tone?.description && (
@@ -139,7 +149,7 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
 
         {!signedIn ? (
           <section className="flex flex-col items-start gap-2 text-[12px] text-silkscreen-2">
-            <p>{account?.status === "expired" ? "Your TONE3000 sign-in expired." : "Sign in to TONE3000 to see this tone's models and send one to the GP-5."}</p>
+            <p>{account?.status === "expired" ? "Your TONE3000 sign-in expired." : `Sign in to TONE3000 to see this tone's models and send one to the ${pedal}.`}</p>
             {account?.configured && (
               <Button size="sm" onClick={() => browse({ prompt: "load_tone", toneId })}>
                 {account?.status === "expired" ? "Sign in again" : "Sign in to TONE3000"}
@@ -191,7 +201,7 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
                       <RadioGroupItem id={id} value={String(m.id)} disabled={!ok} />
                       <span className="min-w-0 grow truncate">{m.name}</span>
                       {!isIr && <span className={cn("w-[92px]", ok ? "text-silkscreen-2" : "text-silkscreen-4")}>{ARCH_LABEL(m)}</span>}
-                      <span className={cn("w-[104px]", ok ? "text-silkscreen-2" : "text-silkscreen-4")}>{ok ? "Works on GP-5" : "Not for GP-5"}</span>
+                      <span className={cn("min-w-[104px]", ok ? "text-silkscreen-2" : "text-silkscreen-4")}>{ok ? `Works on ${model}` : `Not for ${model}`}</span>
                     </label>
                   );
                 })}
@@ -199,7 +209,7 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
             )}
             {!isIr && models && (
               <div className="flex flex-wrap items-center gap-2 text-[12px] text-silkscreen-3">
-                {verdict?.kind === "not-loadable" && <span className="grow">{verdictLabel(verdict)}.</span>}
+                {verdict?.kind === "not-loadable" && <span className="grow">{verdictLabel(verdict, model)}.</span>}
                 <Button variant="ghost" size="sm" onClick={editCapture}>
                   <Wand2 data-icon="inline-start" />
                   Edit capture
@@ -210,13 +220,13 @@ function SheetBody({ toneId, initial }: { toneId: number; initial: T3kTone | nul
         )}
 
         {signedIn && send && (
-          <section aria-label="Send to GP-5" className="flex flex-col gap-2.5">
+          <section aria-label={`Send to ${model}`} className="flex flex-col gap-2.5">
             <div className="flex items-baseline justify-between gap-3 text-[11px]">
-              <h3 className="text-[12px] font-semibold text-silkscreen-2">Send to GP-5</h3>
+              <h3 className="text-[12px] font-semibold text-silkscreen-2">Send to {model}</h3>
               <span className="text-silkscreen-3">Step {stepNo} of 5</span>
             </div>
             {send.text && <p className="text-[12px] text-silkscreen-2">Sends your edited version from the capture editor, made from the selected model.</p>}
-            {isIr ? <UserIrSteps send={send} model={selected} /> : <SnapToneSteps send={send} model={selected} />}
+            {isIr ? <UserIrSteps send={send} model={selected} /> : <SnapToneSteps send={send} model={selected} noCabIr={noCabIrReason(device, gear)} />}
           </section>
         )}
       </div>

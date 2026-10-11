@@ -1,4 +1,4 @@
-// Accessible control layer over the gear art (design/components.md › Gear control layer): transparent focusable
+// Accessible control layer over the gear art: transparent focusable
 // controls positioned from the drawing's own coordinates. The art stays role="img".
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";

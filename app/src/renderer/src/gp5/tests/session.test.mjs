@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { MockGp5 } from "../lib/mock-device.mjs";
-import { applyEdits, parsePrst } from "../lib/prst.mjs";
+import { applyEdits, convertPrst, parsePrst } from "../lib/prst.mjs";
 import { Gp5Session } from "../lib/session.mjs";
 
 const load = (n) => new Uint8Array(readFileSync(new URL(`../fixtures/${n}`, import.meta.url)));
@@ -89,13 +89,49 @@ test("unsolicited pedal events reach listeners", async () => {
   await s.close();
 });
 
-test("backupAll restores the original slot", async () => {
-  const { dev, s } = setup();
+test("backupAll reads every slot and restores the original slot", async () => {
+  const dev = new MockGp5({ presets });
+  const s = new Gp5Session(dev.transport(), { timing: { ...fast, settleMs: 0, postSelectMs: 0, interMessageMs: 0 } });
   await s.selectPreset(1);
   const progress = [];
-  const all = await s.backupAll({ slots: [0, 2, 3], onProgress: (d, t) => progress.push(`${d}/${t}`) });
-  assert.deepEqual(all.map((e) => e.name), ["Puppy", "FF CC", "GP-5"]);
-  assert.deepEqual(progress, ["1/3", "2/3", "3/3"]);
+  const all = await s.backupAll({ onProgress: (d, t) => progress.push(`${d}/${t}`) });
+  assert.equal(all.length, 100);
+  assert.deepEqual(all.slice(0, 4).map((e) => e.name), ["Puppy", "Oerdrive M", "FF CC", "GP-5"]);
+  assert.deepEqual([progress[0], progress.at(-1)], ["1/100", "100/100"]);
   assert.equal(dev.current, 1);
+  await s.close();
+});
+
+const gp50Presets = [load("gp50-US-Lead.prst"), load("gp50-76-VoxUltNAM.prst")];
+
+test("GP-50: the body length identifies the pedal; reads rebuild 552-byte presets", async () => {
+  const dev = new MockGp5({ presets: gp50Presets });
+  const s = new Gp5Session(dev.transport(), { timing: fast });
+  assert.equal(s.device, null);
+  const snap = await s.syncState();
+  assert.equal(snap.device, "gp50");
+  assert.equal(s.device, "gp50");
+  assert.deepEqual(snap.prst, gp50Presets[0]);
+  assert.equal(snap.names[2].name, "GP-50", "empty slots carry the GP-50 default name");
+  assert.deepEqual(await s.readPreset(1, { names: snap.names }), gp50Presets[1]);
+  await s.close();
+});
+
+test("GP-50: writePreset streams 29 frames; a preset of the other model is refused", async () => {
+  const dev = new MockGp5({ presets: gp50Presets });
+  const s = new Gp5Session(dev.transport(), { timing: fast });
+  const edited = applyEdits(gp50Presets[0], { name: "Lead 50", blocks: { DLY: { params: { 3: 1 } } } });
+  const r = await s.writePreset(42, edited, { confirm: true });
+  assert.deepEqual(r, { frames: 29, acked: 29, attempts: 1, verified: true });
+  assert.equal(dev.slots[42].name, "Lead 50");
+  await assert.rejects(s.writePreset(43, presets[0], { confirm: true }), /GP-5 preset but the pedal is a GP-50/);
+  const converted = await s.writePreset(43, convertPrst(presets[0], "gp50"), { confirm: true });
+  assert.ok(converted.verified);
+  await s.close();
+});
+
+test("a GP-5 session refuses a GP-50 preset", async () => {
+  const { s } = setup();
+  await assert.rejects(s.writePreset(10, gp50Presets[0], { confirm: true }), /GP-50 preset but the pedal is a GP-5/);
   await s.close();
 });

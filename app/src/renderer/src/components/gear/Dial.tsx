@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { KnobHit } from "./controls";
-import { formatValue, type ValueSpec } from "./knob-math";
+import { formatValue, isOff, type ValueSpec } from "./knob-math";
 
 export interface DialProps {
   /** Visible label ("In", "Gain") */
@@ -21,7 +21,7 @@ export interface DialProps {
   className?: string;
 }
 
-/** Compact machined dial (mockups' .knob): track + value ring, dark cap, white pointer. Same input model as gear knobs. */
+/** Compact machined dial: track + value ring, dark cap, white pointer. Same input model as gear knobs. */
 export function Dial({ label, ariaLabel, value, spec, onChange, disabled, size = 46, color = "var(--silkscreen-2)", layout = "column", className }: DialProps) {
   const [active, setActive] = useState(false);
   const r = size / 2 - 5;
@@ -66,7 +66,7 @@ export function Dial({ label, ariaLabel, value, spec, onChange, disabled, size =
       {layout === "row" && <span className={cn("text-xs font-medium tracking-wide uppercase", active ? "text-silkscreen" : "text-silkscreen-3")}>{label}</span>}
       <span className={cn("font-semibold text-silkscreen tabular-nums", layout === "row" ? "text-sm" : "text-sm")}>
         {formatValue(value, spec)}
-        {spec.unit && <small className="ml-0.5 text-xs font-medium text-silkscreen-3">{spec.unit}</small>}
+        {spec.unit && !spec.labels && !isOff(value, spec) && <small className="ml-0.5 text-xs font-medium text-silkscreen-3">{spec.unit}</small>}
       </span>
     </div>
   );

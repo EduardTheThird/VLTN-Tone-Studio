@@ -4,12 +4,13 @@
 import { editBlock, snapshot } from "@/screens/rig/edits";
 import type { BlockSnapshot } from "@/screens/rig/history";
 import { useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import type { Proposal, ProposedBlock } from "./proposal";
 
 /** The live preset, or an error the UI can show as is. */
 function livePreset() {
   const d = useDevice.getState();
-  if (d.status !== "connected" || !d.preset) throw new Error("Connect the GP-5 (or the simulated pedal) to audition the proposal.");
+  if (d.status !== "connected" || !d.preset) throw new Error(`Connect the ${pedalName(d.device)} (or the simulated pedal) to audition the proposal.`);
   if (d.busy) throw new Error(`Wait until the ${d.busy.kind} finishes.`);
   return d.preset;
 }
@@ -22,7 +23,10 @@ export function targetOf(block: ProposedBlock, current: BlockSnapshot): BlockSna
 
 /** Play `proposal` on the pedal. Resolves with the blocks as they were, for `restoreBlocks`. */
 export async function auditionProposal(proposal: Proposal): Promise<BlockSnapshot[]> {
-  const before = livePreset().blocks.map(snapshot);
+  const preset = livePreset();
+  // Its models and param slots come from one pedal's catalog; the other model may lack them.
+  if (proposal.device !== preset.device) throw new Error(`This proposal is for the ${pedalName(proposal.device)}, but the ${pedalName(preset.device)} is connected. Analyse again.`);
+  const before = preset.blocks.map(snapshot);
   for (const block of proposal.blocks) {
     const current = useDevice.getState().preset?.blocks[block.index];
     if (!current) throw new Error("The pedal's preset went away during the audition.");

@@ -3,10 +3,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { rebuildPrst } from "@/gp5/lib/prst.mjs";
+import { findParam } from "@/gp5/lib/catalog.mjs";
 import { useHistory } from "@/screens/rig/history";
-import { getMock, getSession, toPresetState, useDevice } from "@/state/device";
-import type { BlockState } from "@/state/device-types";
+import { getDriver, useDevice } from "@/state/device";
+import type { BlockState, Gp5FamilyKey } from "@/state/device-types";
+import { toPresetState } from "@/state/preset-codec";
+import type { Gp5Driver } from "@/state/driver/gp5-driver";
 import { auditionProposal, restoreBlocks } from "./apply";
 import { proposePreset } from "./proposal";
 import { analysisFixture } from "./test-signals";
@@ -23,10 +25,12 @@ const played = (b: BlockState) => ({
 
 /** The blocks in the simulator's live buffer, read over MIDI (queued behind the live edits still in flight). */
 async function pedalBlocks(): Promise<BlockState[]> {
-  const body: Uint8Array = await getSession()!.readCurrentBody();
   const p = useDevice.getState().preset!;
-  return toPresetState(p.slot, rebuildPrst(p.name, body, "gp5")).blocks;
+  return toPresetState(p.slot, await getDriver()!.readEditBuffer(p.name)).blocks;
 }
+
+/** Memory of the simulated pedal (what a write would change). */
+const simulator = () => (getDriver() as Gp5Driver).mock!;
 
 describe("auditionProposal on the simulated pedal", () => {
   beforeAll(async () => {
@@ -37,11 +41,11 @@ describe("auditionProposal on the simulated pedal", () => {
   });
 
   it("plays every proposed block live, records it in the Rig history and writes nothing", async () => {
-    const proposal = proposePreset(analysisFixture());
+    const proposal = proposePreset(analysisFixture(), useDevice.getState().preset!.device as Gp5FamilyKey);
     const before = useDevice.getState().preset!.blocks.map(played);
     const savedBefore = useDevice.getState().saved;
     const slot = useDevice.getState().slot!;
-    const flashBefore = getMock()!.slots[slot].body.slice();
+    const flashBefore = simulator().slots[slot].body.slice();
 
     const snapshots = await auditionProposal(proposal);
     expect(snapshots).toHaveLength(10);
@@ -62,7 +66,7 @@ describe("auditionProposal on the simulated pedal", () => {
     expect(useDevice.getState().preset!.blocks.map(played)).toEqual(live.map(played));
     expect(useDevice.getState().saved).toEqual(savedBefore);
     expect(useDevice.getState().unsavedChanges).toBeGreaterThan(0);
-    expect(getMock()!.slots[slot].body).toEqual(flashBefore);
+    expect(simulator().slots[slot].body).toEqual(flashBefore);
     expect(useHistory.getState().past.some((e) => e.kind === "block" && e.label === "Tone Match AMP")).toBe(true);
 
     await restoreBlocks(snapshots);
@@ -72,6 +76,33 @@ describe("auditionProposal on the simulated pedal", () => {
 
   it("refuses to audition without a connected pedal", async () => {
     await useDevice.getState().disconnect();
-    await expect(auditionProposal(proposePreset(analysisFixture()))).rejects.toThrow(/Connect the GP-5/);
+    await expect(auditionProposal(proposePreset(analysisFixture(), "gp5"))).rejects.toThrow(/Connect the GP-5/);
+  });
+});
+
+describe("auditionProposal on a simulated GP-50", () => {
+  beforeAll(async () => {
+    await useDevice.getState().connect("mock", { mockDevice: "gp50" });
+  });
+  afterAll(async () => {
+    await useDevice.getState().disconnect();
+  });
+
+  it("plays a GP-50 proposal with the GP-50's params, Sync left off", async () => {
+    expect(useDevice.getState().preset!.device).toBe("gp50");
+    const proposal = proposePreset(analysisFixture(), "gp50");
+    const dly = proposal.blocks[7];
+    const sync = findParam(dly.fxid!, "Sync", "gp50");
+    expect(dly.params![sync.index]).toBe(0);
+
+    const snapshots = await auditionProposal(proposal);
+    const live = await pedalBlocks();
+    expect(live[7].model?.name).toBe("Pure");
+    expect(played(live[7]).params).toMatchObject({ Time: 375, Sync: 0 });
+    await restoreBlocks(snapshots);
+  }, 60_000);
+
+  it("refuses a proposal made from the GP-5 catalog", async () => {
+    await expect(auditionProposal(proposePreset(analysisFixture(), "gp5"))).rejects.toThrow(/for the GP-5, but the GP-50 is connected/);
   });
 });

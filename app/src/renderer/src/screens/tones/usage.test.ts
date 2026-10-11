@@ -1,8 +1,9 @@
 /// <reference types="node" />
-// @vitest-environment node
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildPrst, encodePatchImage } from "@/gp200/lib/prst.mjs";
+import { profileFor } from "@shared/devices";
 import { buildUsage, slotOfFxid } from "./usage";
 
 const DIR = join(__dirname, "../../gp5/fixtures/backup");
@@ -14,17 +15,24 @@ const presets = readdirSync(DIR)
   });
 
 describe("slotOfFxid", () => {
+  const gp5 = profileFor("gp5");
   it("maps SnapTone and User IR fxids to 0-based pedal slots", () => {
-    expect(slotOfFxid(0x0f000033)).toEqual({ kind: "snaptone", slot: 51 });
-    expect(slotOfFxid(0x0a100002)).toEqual({ kind: "ir", slot: 2 });
-    expect(slotOfFxid(0x0a000001)).toBeNull();
-    expect(slotOfFxid(0x0f000050)).toBeNull();
+    expect(slotOfFxid(0x0f000033, gp5)).toEqual({ kind: "snaptone", slot: 51 });
+    expect(slotOfFxid(0x0a100002, gp5)).toEqual({ kind: "ir", slot: 2 });
+    expect(slotOfFxid(0x0a000001, gp5)).toBeNull();
+    expect(slotOfFxid(0x0f000050, gp5)).toBeNull();
+  });
+  it("uses the model's slot counts", () => {
+    const gp200 = profileFor("gp200");
+    expect(slotOfFxid(0x0f000009, gp200)).toEqual({ kind: "snaptone", slot: 9 });
+    expect(slotOfFxid(0x0f00000a, gp200)).toBeNull();
+    expect(slotOfFxid(0x0a100013, gp200)).toEqual({ kind: "ir", slot: 19 });
   });
 });
 
 describe("buildUsage on the bundled backup", () => {
   const index = buildUsage(presets);
-  it("finds the presets that play each user SnapTone (design/screens/tones.md data)", () => {
+  it("finds the presets that play each user SnapTone", () => {
     expect(index.snaptone.get(51)).toEqual([{ slot: 53, name: "ALEXI-1" }]);
     expect(index.snaptone.get(52)).toEqual([{ slot: 54, name: "Grzmol" }]);
     expect(index.snaptone.get(53)).toEqual([{ slot: 51, name: "ALEXI-CUST" }]);
@@ -38,5 +46,16 @@ describe("buildUsage on the bundled backup", () => {
   });
   it("skips presets without a slot", () => {
     expect(buildUsage([{ slot: null, name: "x", prst: presets[53].prst }]).snaptone.size).toBe(0);
+  });
+});
+
+describe("buildUsage on GP-200 family presets", () => {
+  it("counts a SnapTone in its engaged AMP or DST block and a User IR in CAB", () => {
+    // Block order: PRE WAH DST AMP NR CAB …; SnapTone 2 plays in AMP, 7 sits in a bypassed DST, User IR 5 in CAB.
+    const blocks = { 2: { fxid: 0x0f000007, enabled: false }, 3: { fxid: 0x0f000002, enabled: true }, 5: { fxid: 0x0a100004, enabled: false } };
+    const index = buildUsage([{ slot: 9, name: "Captured", prst: buildPrst(encodePatchImage({ name: "Captured", blocks })) }]);
+    expect(index.snaptone.get(2)).toEqual([{ slot: 9, name: "Captured" }]);
+    expect(index.snaptone.has(7)).toBe(false);
+    expect(index.ir.get(4)).toEqual([{ slot: 9, name: "Captured" }]);
   });
 });

@@ -9,17 +9,26 @@ import { notifyError } from "@/app/notify";
 import { host, isElectron } from "@/host";
 import { useNav } from "@/state/nav";
 import { loadAccount, setAppKey, signOut, useTones } from "@/screens/tones/store";
+import { listNames } from "@shared/devices";
 import { useAppSettings } from "./settings-store";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
+import { EXPERIMENTAL_FEATURES } from "@/state/device-model";
+import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 import { checkForUpdates, downloadUpdate, installUpdate, openReleasePage, useUpdate } from "@/app/updates";
 
 /** Settings (`?screen=device&param=settings`): how Tone Studio behaves on this computer. */
 export function SettingsView() {
   const { settings, loaded, load, patch } = useAppSettings();
   const go = useNav((s) => s.go);
+  const profile = useProfile();
+  // Nothing to unlock on the connected or remembered pedal (the GP-5 lacks the GP-50's commands): the switch is dimmed.
+  const nothingToUnlock = profile.key === "gp5" || Object.keys(EXPERIMENTAL_FEATURES[profile.family]).length === 0;
+  const pedal = usePedalName();
 
   useEffect(() => {
-    void load().catch((e) => notifyError("Couldn't read the settings", e));
+    void load()
+      .then(() => useDevice.getState().setGp50Extras(useAppSettings.getState().settings.gp50Extras))
+      .catch((e) => notifyError("Couldn't read the settings", e));
     void loadAccount();
   }, [load]);
 
@@ -54,6 +63,25 @@ export function SettingsView() {
           {isElectron && host.platform !== "linux" && (
             <SuitePathRow value={settings.valetonSuitePath} disabled={!loaded} onSave={(valetonSuitePath) => save({ valetonSuitePath })} />
           )}
+          {/* The setting keeps its stored key (gp50Extras); EXPERIMENTAL_FEATURES lists what it unlocks per family. */}
+          <Row
+            label="Experimental pedal commands"
+            description={`${nothingToUnlock ? `Nothing to turn on for the ${pedal}. ` : ""}Lets Tone Studio use commands that are known from Valeton's software but not yet tested on a real pedal. GP-50: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. GP-200, GP-200LT and GP-200JR: the Global EQ. The GP-5 has none. Back up your pedal first. The simulator always has them.`}
+          >
+            <Switch
+              checked={settings.gp50Extras}
+              disabled={!loaded || nothingToUnlock}
+              onCheckedChange={(v) => {
+                useDevice.getState().setGp50Extras(v);
+                // A failed save restores the previous value; the connected session follows it back.
+                void patch({ gp50Extras: v }).catch((e) => {
+                  useDevice.getState().setGp50Extras(useAppSettings.getState().settings.gp50Extras);
+                  notifyError("Couldn't save the setting", e);
+                });
+              }}
+              aria-label="Experimental pedal commands"
+            />
+          </Row>
         </Section>
 
         <Section title="TONE3000 account">
@@ -163,7 +191,7 @@ function PortPatternRow({ value, disabled, onSave }: { value: string | null; dis
   return (
     <Row
       label="MIDI port name"
-      description={`Leave empty to find the pedal automatically (any port named like "GP-5", never "GP-50"). Enter part of a port name to use that port instead, for example a virtual GP-5.`}
+      description={`Leave empty to find the pedal automatically (any port with ${listNames(SUPPORTED_DEVICE_KEYS)} in its name). Enter part of a port name to use that port instead, for example a virtual pedal.`}
     >
       <form
         className="flex min-w-0 flex-1 items-center gap-2"

@@ -93,3 +93,17 @@ describe("typed values", () => {
     expect(valueText(320, time)).toBe("320 ms");
   });
 });
+
+describe("OFF at an end of the range", () => {
+  const lowCut = { min: 19, max: 2000, step: 1, unit: "Hz", off: "min" as const };
+  const highCut = { min: 2000, max: 20001, step: 1, unit: "Hz", off: "max" as const };
+  it("reads OFF only at that end", () => {
+    expect([formatValue(19, lowCut), valueText(19, lowCut), valueText(20, lowCut)]).toEqual(["OFF", "OFF", "20 Hz"]);
+    expect([formatValue(20001, highCut), formatValue(2000, highCut), valueText(20000, highCut)]).toEqual(["OFF", "2000", "20000 Hz"]);
+  });
+  it("takes a typed “off”", () => {
+    expect(parseTyped("off", lowCut)).toBe(19);
+    expect(parseTyped("OFF", highCut)).toBe(20001);
+    expect(parseTyped("off", pct)).toBeNull();
+  });
+});

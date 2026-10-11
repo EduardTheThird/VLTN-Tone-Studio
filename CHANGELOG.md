@@ -2,6 +2,34 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.5.0] - 2026-10-11
+
+### Added
+- **Valeton GP-50 support.** Tone Studio recognises the connected model by itself (from the size of the preset it reads) and works the same on a GP-50 as on a GP-5: live editing, the library, backups and restore, SnapTones and User IRs over USB. A GP-50 has 552-byte presets, sent in 29 frames.
+- **The GP-50's own effects.** On a GP-50 the model picker offers PRE AC Sim, PRE Cry Wah and the CAB AC (Dreadnought) cabinet, and delay and modulation pedals show their *Sync* switch. A GP-5 doesn't show them.
+- **Presets across models.** A GP-5 preset written to a GP-50 is converted without loss. A GP-50 preset written or restored to a GP-5 loses its GP-50-only models, and the confirmation lists them first. Restore accepts backups of either model.
+- **Valeton GP-200, GP-200LT and GP-200JR support.** Tone Studio connects to the GP-200 family (a GP-200R or GP-200X reports as a GP-200) and runs every screen on it:
+  - *Rig*: a flat chain where every block moves, the FX loop's send and return too; CTRL 1–8 assignments per preset; patch settings (EXP 1A/1B/2, Quick Access 1–3, pan, FX loop, drum style, author, note); tempo 40–250 BPM with tap, sent to the pedal live.
+  - *Library*: 256 slots (255 on the JR) labelled like the pedal, `01-A` to `64-D`, with 16-character names and *Reset to init patch*. `.prst` files are 1224 bytes; 1176-byte files from older editors open too.
+  - *Tones*: 10 SnapTone slots (0–4 play in AMP, 5–9 in DST) and 20 User IR slots of 1024 samples, written over USB.
+  - *Device*: the pedal settings of each model and the Global EQ. The MIDI monitor decodes the family's messages.
+- **GP-200 effect list.** Valeton's effect names and knob ranges can't ship with Tone Studio. *Device › GP-200 effect list* reads `algorithm.xml` from your GP-200 editor (*Find automatically* in the desktop app, or *Choose file…*) and keeps it on your computer. Without it, effects show as numbers and their knobs can't be edited.
+- **Experimental pedal commands.** *Settings › Experimental pedal commands* turns on commands known only from Valeton's software, not yet tried on a real pedal: on a GP-50, EXP settings, live tempo, footswitch and chain changes, reading a slot without selecting it, and deleting, copying and moving presets inside the pedal; on the GP-200 family, the Global EQ. It is off by default; the simulator always has them.
+- **Simulated pedals.** *Device › Simulate* offers every supported model, and the browser build opens them with `?mock=gp50`, `?mock=gp200`, `?mock=gp200lt` and `?mock=gp200jr`.
+- **A cab IR inside a SnapTone.** When a NAM capture becomes a SnapTone on a GP-5 or GP-50 (Tones or the capture editor), you can pick a cab IR: a downloaded TONE3000 IR or a WAV file. Tone Studio plays the capture through the IR before measuring it, at the dry capture's level, so amp-only captures sound complete where an engaged SnapTone bypasses CAB. Captures that already include the cab (TONE3000 *Amp + cab*, or the file's gear type *Amp + cab* / *Pedal + amp + cab*) offer no cab IR, and neither does the GP-200 family, where CAB keeps playing after the SnapTone.
+
+### Changed
+- Texts name the connected pedal (GP-5, GP-50 or a GP-200 model) instead of always saying GP-5. Backups go into `<model>-YYYY-MM-DD` folders (`gp50-…`, `gp200-…`) titled after the model; `backup.json` records it. Diagnostic reports are saved as `valeton-diagnostics-*.txt`.
+- SnapTone and User IR links of a tone remember which model they were made on, and the Tones screen only treats a link as "on your pedal" when the model matches.
+- The README is rewritten for every supported model: a section on the GP-200 family, a support table for the GP-5, GP-50, GP-200 family and GP-150 (not supported), install notes and the simulators.
+
+### Known limitations
+- The GP-50 path hasn't been tried on a real GP-50 by this project yet. Reading, writing and Program Change select on a GP-50 come from drewmerc302/valeton-gp50, which tested them on hardware. Live edits, SnapTone and User IR uploads use the protocol the two pedals share; Valeton Suite 2.1.0's own code sends a GP-50 the same bytes.
+- No GP-200, GP-200LT or GP-200JR has been tried by this project yet. The GP-200 family's protocol comes from Valeton's GP-200 editor (static analysis of version 1.8.0); the LT and JR are known only from its code.
+- The GP-200LT and GP-200JR are read-only on a real unit until one has been tested: Tone Studio reads them, backs them up and plays live edits, but doesn't write presets, restore, change settings or upload SnapTones and IRs. Whether they have SnapTone slots isn't known yet.
+- The GP-200 Global EQ isn't read from the pedal: the panel shows what the pedal reports while connected, over the editor's factory values.
+- Tone Match isn't available on the GP-200 family: it proposes presets from the GP-5 and GP-50 effects.
+
 ## [0.4.0] - 2026-10-10
 
 ### Added
@@ -51,6 +79,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.1.0...v0.2.0

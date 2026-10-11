@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { CircleCheck, CircleX, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { CircleCheck, CircleX, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
+import { useDevice } from "@/state/device";
+import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
+
+/** "GP-5" / "GP-50" for the connected (or last connected) pedal, "pedal" before the first connection. */
+const currentPedal = () => pedalName(useDevice.getState().device);
 
 /*
- * Toasts per overlays.md G (Sonner, bottom right above the status bar, max 3, newest on top).
+ * Toasts (Sonner, bottom right above the status bar, max 3, newest on top).
  * Success toasts auto-dismiss after 6 s; errors stay until dismissed and offer Retry when a retry is possible.
  * Every screen reports pedal results through these helpers so the copy stays the same everywhere.
  */
@@ -20,18 +25,21 @@ interface ToastAction {
 }
 
 interface ToastSpec {
-  tone: "ok" | "fault";
+  /** "info": something to do, not a result (no success or failure colour) */
+  tone: "ok" | "fault" | "info";
   title: string;
   body?: string;
   action?: ToastAction;
-  /** Keep an "ok" toast until dismissed (it asks for a decision) */
+  /** Keep an "ok" or "info" toast until dismissed (it asks for a decision) */
   sticky?: boolean;
 }
+
+const TONE_ICON = { ok: { Icon: CircleCheck, color: "text-led-on" }, fault: { Icon: CircleX, color: "text-led-fault" }, info: { Icon: Info, color: "text-silkscreen-2" } } as const;
 
 function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
   const [running, setRunning] = useState(false);
   const { tone, title, body, action } = spec;
-  const Icon = tone === "ok" ? CircleCheck : CircleX;
+  const { Icon, color } = TONE_ICON[tone];
   const onAction = async () => {
     if (!action) return;
     setRunning(true);
@@ -45,11 +53,11 @@ function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
   };
   return (
     <div
-      role={tone === "ok" ? "status" : "alert"}
+      role={tone === "fault" ? "alert" : "status"}
       aria-busy={running || undefined}
       className="glass-float relative flex w-[404px] max-w-[calc(100vw-48px)] items-start gap-2.5 rounded-lg py-3.5 pr-10 pl-3.5 text-[13px] text-silkscreen"
     >
-      <Icon className={cn("mt-px size-[18px] shrink-0", tone === "ok" ? "text-led-on" : "text-led-fault")} aria-hidden />
+      <Icon className={cn("mt-px size-[18px] shrink-0", color)} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <b className="font-semibold">{title}</b>
         {body && <span className="text-xs text-pretty text-silkscreen-2">{body}</span>}
@@ -73,19 +81,19 @@ function ToastCard({ id, spec }: { id: string | number; spec: ToastSpec }) {
 }
 
 export function showToast(spec: ToastSpec): string | number {
-  return toast.custom((id) => <ToastCard id={id} spec={spec} />, { duration: spec.tone === "ok" && !spec.sticky ? 6000 : Infinity });
+  return toast.custom((id) => <ToastCard id={id} spec={spec} />, { duration: spec.tone !== "fault" && !spec.sticky ? 6000 : Infinity });
 }
 
-/** Device/toolkit error → one plain sentence (overlays.md G mapping). */
+/** Device/toolkit error → one plain sentence . */
 export function describeError(error: unknown): string {
   const e = error as { code?: string; message?: string } | null;
   switch (e?.code) {
     case "timeout":
-      return "No reply from the GP-5 after 3 tries. Check the USB cable.";
+      return `No reply from the ${currentPedal()} after 3 tries. Check the USB cable.`;
     case "verify":
       return "The read-back differs from what was sent.";
     case "closed":
-      return "The GP-5 disconnected before it finished.";
+      return `The ${currentPedal()} disconnected before it finished.`;
     case "length":
     case "unsafe":
       return "Tone Studio stopped this write because the data looked wrong. Nothing was sent.";
@@ -104,7 +112,7 @@ export function notifySuccess(title: string, body?: string, action?: ToastAction
 
 /** A3: a verified write. `go` selects the written slot (omit when it is already active). */
 export function notifyWriteDone({ name, slot, backedUp, go }: { name: string; slot: number; backedUp: boolean; go?: () => void | Promise<void> }): void {
-  const nn = String(slot).padStart(2, "0");
+  const nn = slotLabel(useDevice.getState().device, slot);
   showToast({
     tone: "ok",
     title: `${name} is now in slot ${nn}`,
@@ -113,9 +121,9 @@ export function notifyWriteDone({ name, slot, backedUp, go }: { name: string; sl
   });
 }
 
-/** G: a failed write. A write the GP-5 doesn't fully acknowledge is discarded, so the slot is unchanged. */
+/** G: a failed write. A write the pedal doesn't fully acknowledge is discarded, so the slot is unchanged. */
 export function notifyWriteFailed({ slot, error, retry }: { slot: number; error: unknown; retry?: () => void | Promise<void> }): void {
-  const nn = String(slot).padStart(2, "0");
+  const nn = slotLabel(useDevice.getState().device, slot);
   const code = (error as { code?: string } | null)?.code;
   if (code === "verify") {
     showToast({
@@ -128,19 +136,20 @@ export function notifyWriteFailed({ slot, error, retry }: { slot: number; error:
   }
   const body =
     code === "timeout"
-      ? `The GP-5 stopped answering and discarded the write. Slot ${nn} was not changed.`
+      ? `The ${currentPedal()} stopped answering and discarded the write. Slot ${nn} was not changed.`
       : code === "closed"
-        ? `The GP-5 disconnected during the write and discarded it. Slot ${nn} was not changed.`
+        ? `The ${currentPedal()} disconnected during the write and discarded it. Slot ${nn} was not changed.`
         : describeError(error);
   showToast({ tone: "fault", title: `Couldn't write slot ${nn}`, body, action: retry ? { label: "Retry", run: retry, retry: true } : undefined });
 }
 
 /** G: backup finished. `path` is the backup folder on disk (desktop app). */
-export function notifyBackupDone({ folder, path, count = 100 }: { folder: string; path?: string | null; count?: number }): void {
+export function notifyBackupDone({ folder, path, count }: { folder: string; path?: string | null; count: number }): void {
+  const all = count === profileOrDefault(useDevice.getState().device).slotCount;
   showToast({
     tone: "ok",
     title: "Backup finished",
-    body: `${count === 100 ? "All 100 slots are" : `${count} slots are`} in the ${folder} backup folder.`,
+    body: `${all ? `All ${count} slots are` : `${count} slots are`} in the ${folder} backup folder.`,
     action: path && host.kind === "electron" ? { label: "Show folder", run: () => host.app.showItemInFolder(path) } : undefined,
   });
 }

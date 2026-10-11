@@ -1,6 +1,8 @@
 // Library: backups folder, .prst collections, import/export dialogs. Owner: Library.
-// Desktop: files under userData (`backups/gp5-YYYY-MM-DD[-n]/NN-Name.prst`, `library/<dir>/collection.json` + .prst).
+// Desktop: files under userData (`backups/<device key>-YYYY-MM-DD[-n]/<slot label>-Name.prst`, `library/<dir>/collection.json` + .prst).
 // Browser build: the same model in IndexedDB; file pickers and downloads instead of native dialogs.
+
+import type { DeviceKey } from "../devices";
 
 export type CollectionKind = "backup" | "imported" | "replaced" | "collection";
 
@@ -12,8 +14,10 @@ export interface CollectionInfo {
   /** `backups/<dir>` or `library/<dir>` */
   id: string;
   kind: CollectionKind;
-  /** "GP-5 backup", "Imported files", "Replaced presets" or the user's title */
+  /** "GP-5 backup", "GP-50 backup", "Imported files", "Replaced presets" or the user's title */
   title: string;
+  /** Model of the pedal a backup was made from; null for library collections and backups of unknown origin */
+  device: DeviceKey | null;
   /** ISO timestamp */
   createdAt: string;
   count: number;
@@ -36,7 +40,7 @@ export interface LocalPreset {
   addedAt: string;
   /** Absolute file path (desktop only) */
   path: string | null;
-  /** Raw .prst bytes (GP-5 507 B or GP-50 552 B, as stored) */
+  /** Raw .prst bytes as stored (any model, see sniffPrst) */
   prst: Uint8Array;
 }
 
@@ -73,7 +77,10 @@ export interface FilesApi {
   /** Backups (newest first), then Imported files, Replaced presets and user collections. */
   listCollections(): Promise<CollectionInfo[]>;
   listPresets(collectionId: string): Promise<LocalPreset[]>;
-  /** Save a full (or partial) pedal backup as a new `backups/gp5-YYYY-MM-DD[-n]` folder of `NN-Name.prst` files. */
+  /**
+   * Save a full (or partial) pedal backup as a new `backups/<model>-YYYY-MM-DD[-n]` folder of
+   * `<slot label>-Name.prst` files (`gp5-…`, `gp50-…`, `gp200-…`). The model is read from the presets, which must all belong to one model.
+   */
   saveBackup(slots: BackupSlot[]): Promise<CollectionInfo>;
   createCollection(title: string): Promise<CollectionInfo>;
   renameCollection(id: string, title: string): Promise<CollectionInfo>;

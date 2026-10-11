@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { a2WeightCount, A2_DILATIONS, A2_KERNEL_SIZES, assertWav, checkNam, NamCheckError, prepareNam, selectA2 } from "./nam";
-import { firstEmptySlot, gp5Models, modelsVerdict, proposeSlotName, sanitizeSlotName, toneVerdict } from "./tone3000";
+import { firstEmptySlot, gp5Models, linkDevice, linkedSlotOn, modelsVerdict, proposeSlotName, sanitizeSlotName, slotLinkOn, toneVerdict, verdictLabel } from "./tone3000";
 
 const DIL = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
 const weights = [0.1, -0.2, 0.3, 0.02];
@@ -133,7 +133,7 @@ describe("prepareNam", () => {
     expect(() => prepareNam(JSON.stringify({ ...v07, architecture: "LSTM" }))).toThrow(/architecture is LSTM/);
     expect(() => prepareNam(JSON.stringify({ ...a2(), version: "0.8.0" }))).toThrow(/aren't supported/);
     expect(() => prepareNam("not json")).toThrow(NamCheckError);
-    expect(() => prepareNam("not json")).toThrow(/can't make a GP-5 SnapTone/);
+    expect(() => prepareNam("not json")).toThrow(/can't make a SnapTone/);
   });
 });
 
@@ -177,7 +177,7 @@ describe("assertWav", () => {
   });
 });
 
-describe("GP-5 verdicts", () => {
+describe("pedal verdicts", () => {
   const base = { format: "nam" as const, a1_models_count: 0, a2_models_count: 0, custom_models_count: 0, sizes: [] as ("standard" | "lite")[] };
   it("classifies list tones from counts and sizes", () => {
     expect(toneVerdict({ ...base, format: "ir" }).kind).toBe("ir");
@@ -213,9 +213,35 @@ describe("slot helpers", () => {
     expect(name).toMatch(/^5150III/);
     expect(name.endsWith("4")).toBe(true);
   });
-  it("finds the first empty user slot", () => {
+  it("finds the first empty user slot in the model's user range", () => {
     const slots = Array.from({ length: 80 }, (_, i) => ({ slot: i, name: i < 50 ? `Factory ${i}` : i < 58 ? `S${i}` : "Empty" }));
-    expect(firstEmptySlot("snaptone", slots)).toBe(58);
-    expect(firstEmptySlot("ir", [{ slot: 0, name: "A7X" }, { slot: 1, name: "User IR 2" }])).toBe(1);
+    expect(firstEmptySlot("snaptone", slots, "gp5")).toBe(58);
+    expect(firstEmptySlot("snaptone", slots, null)).toBeNull();
+    expect(firstEmptySlot("ir", [{ slot: 0, name: "A7X" }, { slot: 1, name: "User IR 2" }], "gp50")).toBe(1);
+    // GP-200: all 10 SnapTone slots are user slots
+    expect(firstEmptySlot("snaptone", [{ slot: 0, name: "AMP-1" }, { slot: 1, name: "" }], "gp200")).toBe(1);
+    // GP-200 empty slots keep a name; the pedal's flag says they are empty
+    const gp200 = [
+      { slot: 0, name: "MY-AMP", kind: "user" as const },
+      { slot: 1, name: "SnapTone 2", kind: "empty" as const },
+    ];
+    expect(firstEmptySlot("snaptone", gp200, "gp200")).toBe(1);
+  });
+  it("scopes a slot link to the pedal model it was made on; old records are GP-5 links", () => {
+    const old = { gp5: { verdict: "ready" as const, snaptoneSlot: 58, slotName: "5150-RED4" } };
+    expect(linkDevice(old)).toBe("gp5");
+    expect(slotLinkOn(old, "gp5")).toEqual({ kind: "snaptone", slot: 58, slotName: "5150-RED4", other: null });
+    expect(slotLinkOn(old, "gp50")).toMatchObject({ slot: 58, other: "gp5" });
+    expect(linkedSlotOn(old, "snaptone", "gp50")).toBeNull();
+    expect(linkedSlotOn(old, "snaptone", null)).toBe(58);
+    const ir = { gp5: { verdict: "ir" as const, irSlot: 4, slotName: "MESA", device: "gp50" as const } };
+    expect(linkedSlotOn(ir, "ir", "gp50")).toBe(4);
+    expect(linkedSlotOn(ir, "snaptone", "gp50")).toBeNull();
+    expect(slotLinkOn(ir, "gp5")?.other).toBe("gp50");
+    expect(slotLinkOn({ gp5: { verdict: "ready" } }, "gp5")).toBeNull();
+  });
+  it("names the pedal in verdict labels", () => {
+    expect(verdictLabel({ kind: "ready" }, "GP-50")).toBe("Ready for GP-50");
+    expect(verdictLabel({ kind: "not-loadable", reason: "format" }, "GP-5 / GP-50")).toBe("GP-5 / GP-50 can't load this format");
   });
 });

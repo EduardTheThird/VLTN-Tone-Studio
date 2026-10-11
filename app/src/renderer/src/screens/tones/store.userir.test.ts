@@ -57,9 +57,9 @@ vi.mock("@/host", () => ({
   host: {
     tones: {
       prepareIr: async (req: { toneId: number }) => ({ wav: fake.wav, record: record(req.toneId) }),
-      link: async (toneId: number, link: { slot: number; slotName: string }) => {
+      link: async (toneId: number, link: { slot: number; slotName: string; device: "gp5" | "gp50" }) => {
         fake.links.push({ toneId, link });
-        return { ...record(toneId), gp5: { verdict: "ir", irSlot: link.slot, slotName: link.slotName } };
+        return { ...record(toneId), gp5: { verdict: "ir", irSlot: link.slot, slotName: link.slotName, device: link.device } };
       },
       local: async () => [],
     },
@@ -69,6 +69,7 @@ vi.mock("@/host", () => ({
 vi.mock("@/state/device", () => {
   const state = {
     status: "connected",
+    device: "gp50",
     snapTones: null,
     userIRs: Array.from({ length: 20 }, (_, i) => ({ slot: i, name: i < 3 ? `CAB ${i}` : `User IR ${i + 1}`, kind: i < 3 ? "user" : "empty" })),
     async uploadUserIr(slot: number, name: string, data: Uint8Array, opts?: { onProgress?: (f: number) => void }) {
@@ -82,7 +83,7 @@ vi.mock("@/state/device", () => {
 });
 
 vi.mock("@/app/notify", () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }));
-vi.mock("@/snaptone/convert", () => ({ convertToSnapTone: vi.fn() }));
+vi.mock("@/snaptone/convert", () => ({ convertToClone: vi.fn(), snapToneFile: vi.fn() }));
 
 const TONE = 42;
 
@@ -110,12 +111,12 @@ describe("IR send to a User IR slot", () => {
     expect(fake.uploads).toEqual([]);
   });
 
-  it("writes the chosen slot over USB and links it to the tone", async () => {
+  it("writes the chosen slot over USB and links it to the tone on the connected GP-50", async () => {
     await runSend(TONE);
     updateDraft(TONE, { proposedSlot: 5 });
     await writeUserIr(TONE);
     expect(fake.uploads.map((u) => [u.slot, u.name, u.data.length])).toEqual([[5, "MESA", 2048]]);
-    expect(fake.links).toEqual([{ toneId: TONE, link: { kind: "ir", slot: 5, slotName: "MESA" } }]);
+    expect(fake.links).toEqual([{ toneId: TONE, link: { kind: "ir", slot: 5, slotName: "MESA", device: "gp50" } }]);
     expect(useTones.getState().send[TONE]).toMatchObject({ phase: "linked", step: 5, linkedSlot: 5 });
     expect(useTones.getState().records[TONE].gp5.irSlot).toBe(5);
   });
@@ -128,9 +129,9 @@ describe("IR send to a User IR slot", () => {
 
   it("keeps the converted IR for a retry when the write fails", async () => {
     await runSend(TONE);
-    fake.uploadError = new Error("The GP-5 stopped acknowledging");
+    fake.uploadError = new Error("The GP-50 stopped acknowledging");
     await writeUserIr(TONE);
-    expect(useTones.getState().send[TONE]).toMatchObject({ phase: "error", step: 4, error: "The GP-5 stopped acknowledging" });
+    expect(useTones.getState().send[TONE]).toMatchObject({ phase: "error", step: 4, error: "The GP-50 stopped acknowledging" });
     expect(useTones.getState().send[TONE].ir).not.toBeNull();
     expect(fake.links).toEqual([]);
   });
@@ -148,11 +149,11 @@ describe("User IR UI helpers", () => {
   });
 
   it("says what part of the IR the pedal keeps", () => {
-    expect(irSummary({ data: new Uint8Array(2048), sourceRate: 44100, sourceFrames: 2048, truncated: true })).toBe(
-      "Uses the first 11.6 ms (512 samples at 44.1 kHz) of this 46.4 ms IR; the GP-5 keeps no more.",
+    expect(irSummary({ data: new Uint8Array(2048), samples: 512, sourceRate: 44100, sourceFrames: 2048, truncated: true })).toBe(
+      "Uses the first 11.6 ms (512 samples at 44.1 kHz) of this 46.4 ms IR; the pedal keeps no more.",
     );
-    expect(irSummary({ data: new Uint8Array(2048), sourceRate: 48000, sourceFrames: 480, truncated: false })).toBe(
-      "Uses all 10.0 ms of it; the GP-5 keeps up to 11.6 ms (512 samples at 44.1 kHz). Resampled from 48 kHz.",
+    expect(irSummary({ data: new Uint8Array(2048), samples: 512, sourceRate: 48000, sourceFrames: 480, truncated: false })).toBe(
+      "Uses all 10.0 ms of it; the pedal keeps up to 11.6 ms (512 samples at 44.1 kHz). Resampled from 48 kHz.",
     );
   });
 });

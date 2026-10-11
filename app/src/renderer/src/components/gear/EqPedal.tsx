@@ -3,7 +3,10 @@ import { BLOCK_HEX, fit } from "./art";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
 import { Defs, Enclosure, FootswitchArt, KnobArt, LightBar, T } from "./parts";
-import { paramTitle, type GearBaseProps } from "./types";
+import { paramTitle, type GearBaseProps, type GearKnob } from "./types";
+
+/** The faders (up to 6 bands) and the volume knob an EQ drawing has room for. */
+export const eqControls = (all: readonly GearKnob[]) => ({ bands: all.filter((b) => !/^vol/i.test(b.label)).slice(0, 6), vol: all.find((b) => /^vol/i.test(b.label)) });
 
 /** Graphic EQ pedal: noir body, vertical faders −50…50 per band, small volume knob when the model has one. */
 export function EqPedal({ name, on = true, knobs = [], interactive, disabled, showValues, focus, onKnobChange, onToggleOn, className, style }: GearBaseProps) {
@@ -18,8 +21,7 @@ export function EqPedal({ name, on = true, knobs = [], interactive, disabled, sh
       style={style}
       render={(id, active) => {
         const controls: Control[] = [];
-        const bands = knobs.filter((b) => !/^vol/i.test(b.label)).slice(0, 6);
-        const vol = knobs.find((b) => /^vol/i.test(b.label));
+        const { bands, vol } = eqControls(knobs);
         const n = bands.length || 5;
         const x0 = 22;
         const x1 = vol ? 66 : 78;
@@ -119,10 +121,12 @@ export interface CaptureProps extends GearBaseProps {
   image?: string;
   /** Sub-label under the screen, e.g. "SnapTone" or "TONE3000" */
   caption?: string;
+  /** Block that plays the capture: NS on the GP-5 family, AMP or DST on the GP-200 family */
+  block?: string;
 }
 
-/** SnapTone capture unit (NS block): screen with the tone image or a waveform, light pipe, footswitch. */
-export function Capture({ name, on = true, image, caption = "SnapTone", interactive, disabled, onToggleOn, className, style }: CaptureProps) {
+/** SnapTone capture unit: screen with the tone image or a waveform, light pipe, footswitch. */
+export function Capture({ name, on = true, image, caption = "SnapTone", block = "NS", interactive, disabled, onToggleOn, className, style }: CaptureProps) {
   const color = BLOCK_HEX.NS;
   return (
     <GearFrame
@@ -145,7 +149,7 @@ export function Capture({ name, on = true, image, caption = "SnapTone", interact
               {name}
             </T>
             <T x={88} y={16.6} fill="#fff" size={5.2} anchor="end" opacity={0.5}>
-              NS
+              {block}
             </T>
             <rect x="11" y="23" width="78" height="64" rx="9" fill="#050506" stroke="#fff" strokeOpacity={0.1} strokeWidth={0.6} />
             {image ? (
@@ -163,7 +167,7 @@ export function Capture({ name, on = true, image, caption = "SnapTone", interact
             <FootswitchArt id={id} cx={50} cy={132} r={9.5} />
           </>
         );
-        return { art, controls: [{ kind: "fs", id: "fs", label: `${name} NS`, on, onToggle: onToggleOn, x: 37.5, y: 119.5, w: 25, h: 25 }] };
+        return { art, controls: [{ kind: "fs", id: "fs", label: `${name} ${block}`, on, onToggle: onToggleOn, x: 37.5, y: 119.5, w: 25, h: 25 }] };
       }}
     />
   );

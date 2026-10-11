@@ -8,11 +8,13 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MiniChain } from "@/components/write/MiniChain";
+import { conversionFor, droppedSentence, isLossy, listConversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize } from "@/components/write/preset-summary";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
+import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { useLibrary } from "./store";
@@ -22,8 +24,10 @@ const ICONS = { backup: ArchiveIcon, imported: ImportIcon, replaced: HistoryIcon
 
 function subtitle(c: CollectionInfo): string {
   switch (c.kind) {
-    case "backup":
-      return `${formatDay(c.createdAt)} ${new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}, ${c.count === 100 ? "all 100 slots" : `${c.count} ${c.count === 1 ? "slot" : "slots"}`}`;
+    case "backup": {
+      const all = c.count === profileOrDefault(c.device).slotCount;
+      return `${formatDay(c.createdAt)} ${new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}, ${all ? `all ${c.count} slots` : `${c.count} ${c.count === 1 ? "slot" : "slots"}`}`;
+    }
     case "imported":
       return ".prst files you added";
     case "replaced":
@@ -193,7 +197,15 @@ function PresetList() {
   const loading = useLibrary((s) => s.presetsLoading);
   const query = useLibrary((s) => s.localQuery);
   const actions = useLibraryActions();
+  const pedal = usePedalName();
+  const device = useDevice((s) => s.device);
   const current = collections.find((c) => c.id === currentId);
+  // What converting changes is the same for every preset of one model, so it is said once above the list.
+  const conversionNotes = useMemo(() => {
+    if (!device) return [];
+    const models = new Set(presets.flatMap((p) => summarize(p.prst)?.device ?? []));
+    return [...models].flatMap((from) => listConversionNote(from, device) ?? []);
+  }, [presets, device]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -207,7 +219,7 @@ function PresetList() {
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyTitle>Nothing on this computer yet</EmptyTitle>
-            <EmptyDescription>Back up the GP-5, or import .prst files you downloaded.</EmptyDescription>
+            <EmptyDescription>Back up the {pedal}, or import .prst files you downloaded.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button variant="outline" onClick={() => void actions.importFiles()}>
@@ -233,13 +245,19 @@ function PresetList() {
           onChange={(e) => useLibrary.setState({ localQuery: e.target.value })}
         />
       </InputGroup>
+      {conversionNotes.map((note) => (
+        <p key={note} className="flex items-start gap-1.5 px-1 text-xs text-pretty text-silkscreen-3">
+          <RefreshCwIcon className="mt-px size-3 shrink-0" aria-hidden />
+          {note}
+        </p>
+      ))}
       <div role="listbox" aria-label={current.title} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto pb-1">
         {loading && !presets.length && Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-[76px] shrink-0 rounded-lg" />)}
         {!loading && !presets.length && (
           <Empty className="flex-1 p-4">
             <EmptyHeader>
               <EmptyTitle>No presets here yet</EmptyTitle>
-              <EmptyDescription>Drag slots from the GP-5 list, or import .prst files.</EmptyDescription>
+              <EmptyDescription>Drag slots from the {pedal} list, or import .prst files.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" size="sm" onClick={() => void actions.importFiles()}>
@@ -271,8 +289,14 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
   const collections = useLibrary((s) => s.collections);
   const snapTones = useDevice((s) => s.snapTones);
   const connected = useDevice((s) => s.status === "connected");
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
   const actions = useLibraryActions();
   const s = summarize(p.prst);
+  // The list says once what converting changes; cards only name the blocks this preset loses.
+  const conversion = s ? conversionFor(s, device) : null;
+  const lossy = conversion && isLossy(conversion) ? conversion : null;
+  const dropped = lossy ? droppedSentence(lossy) : "";
   const lead = s ? ampOrSnapTone(s, snapTones) : null;
   const targets = writableCollections(collections).filter((c) => c.id !== collection.id);
 
@@ -295,23 +319,23 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
           )}
         >
           <span className="flex items-center gap-2">
-            {p.slot !== null && <span className="text-xs font-semibold text-silkscreen-3 tabular-nums">{String(p.slot).padStart(2, "0")}</span>}
+            {p.slot !== null && <span className="text-xs font-semibold text-silkscreen-3 tabular-nums">{slotLabel(s?.device ?? collection.device, p.slot)}</span>}
             <span className="truncate font-[650] text-silkscreen">{p.name}</span>
             {s && (
-              <Badge variant={s.device === "gp50" ? "warn" : "outline"} className="ml-auto">
-                {s.device === "gp50" ? "GP-50" : "GP-5"}
+              <Badge variant={lossy ? "warn" : "outline"} className="ml-auto">
+                {pedalName(s.device)}
               </Badge>
             )}
           </span>
-          <MiniChain order={s?.order} enabled={s ? s.blocks.map((b) => b.enabled) : null} />
+          <MiniChain chain={s} />
           <span className="flex min-w-0 items-center gap-2 text-xs text-silkscreen-3">
             {lead && <span className="truncate">{lead.title}</span>}
             <span className="truncate">{p.fileName}</span>
           </span>
-          {s?.device === "gp50" && (
+          {dropped && (
             <span className="flex items-start gap-1.5 text-xs text-pretty text-silkscreen-3">
               <RefreshCwIcon className="mt-px size-3 shrink-0" aria-hidden />
-              {s.gp50Only.length ? `Made on a GP-50. ${s.gp50Only.join(", ")} has no GP-5 equivalent.` : "Made on a GP-50. Converted for the GP-5 when you write it."}
+              {dropped}
             </span>
           )}
           {!s && (
@@ -326,7 +350,7 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
         <ContextMenuGroup>
           <ContextMenuItem disabled={!connected || !s} onSelect={() => actions.writeLocal(p)}>
             <ArrowDownToLineIcon />
-            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${p.slot}…` : "Write to slot…") : "Write to slot (needs the GP-5)"}
+            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${slotLabel(collection.device, p.slot)}…` : "Write to slot…") : `Write to slot (needs the ${pedal})`}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void actions.exportLocal([p])}>
             <DownloadIcon />

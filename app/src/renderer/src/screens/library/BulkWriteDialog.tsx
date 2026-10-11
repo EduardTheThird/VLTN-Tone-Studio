@@ -17,10 +17,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
-import { REPLACED_ID } from "@shared/host/files";
-import { slotsToRead, type Step } from "./plans";
-import { isEmptyName, useLibrary } from "./store";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
+import { pedalName, presetDevice } from "@/state/device-model";
+import { profileFor } from "@shared/devices";
+import { readAndBackUp, readSlot, runNative } from "./native";
+import { gp200InitPatch, slotsToRead, type NativeOp, type Step } from "./plans";
+import { emptyName, isEmptyName, useLibrary } from "./store";
 
 export interface BulkPlan {
   title: string;
@@ -28,34 +30,37 @@ export interface BulkPlan {
   /** Button label, e.g. "Swap slots 57 and 59" */
   action: string;
   steps: Step[];
+  /**
+   * The pedal runs this itself (GP-50 delete / copy / move); `steps` then only preview the result. The replaced slots
+   * are always backed up first.
+   */
+  native?: NativeOp;
   /** Toast title on success */
   doneTitle: string;
 }
 
 const MAX_ROWS = 6;
 
-/** Current preset of a slot: the saved body of the active slot, otherwise a read (switches presets on the pedal). */
-async function readSlot(slot: number): Promise<Uint8Array> {
-  const d = useDevice.getState();
-  const prst = d.slot === slot && d.saved ? d.saved.prst : await d.readPreset(slot);
-  useLibrary.getState().setBody(slot, prst, "pedal");
-  return prst;
-}
-
-/** An empty preset (name GP-5) to clear slots with: a known empty slot's body, else read one from the pedal. */
+/**
+ * An empty preset (named like the pedal's empty slots) to clear slots with: a known empty slot's body of the
+ * connected model, else read one from the pedal. The GP-200 family has no empty slots: its slots get an init patch.
+ */
 async function blankPreset(): Promise<Uint8Array> {
-  const { names } = useDevice.getState();
+  const { names, device } = useDevice.getState();
+  if (device && profileFor(device).emptyName === null) return gp200InitPatch(device);
   const { bodies } = useLibrary.getState();
-  const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot]);
+  const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot] && presetDevice(bodies[n.slot].prst) === device);
   if (known) return bodies[known.slot].prst;
   const empty = names.find((n) => isEmptyName(n.name));
-  if (!empty) throw new Error("There's no empty slot on the GP-5 to take an empty preset from.");
+  if (!empty) throw new Error(`There's no empty slot on the ${pedalName(device)} to take an empty preset from.`);
   return readSlot(empty.slot);
 }
 
 /** AlertDialog for writes that touch several slots (copy, move, swap, clear): read, optional backup, write, verify. */
 export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null; onOpenChange(open: boolean): void }) {
   const names = useDevice((s) => s.names);
+  const pedal = usePedalName();
+  const { slotLabel, emptyName: pedalEmptyName } = useProfile();
   const connected = useDevice((s) => s.status === "connected");
   const [backupFirst, setBackupFirst] = useState(true);
   const [running, setRunning] = useState(false);
@@ -80,9 +85,10 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
   }, [plan]);
 
   if (!plan) return null;
-  const nameOf = (slot: number) => names[slot]?.name ?? "GP-5";
+  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const replaced = plan.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
-  const doBackup = backupFirst && replaced.length > 0;
+  // In-pedal commands always back up what they replace first; writes follow the "back up first" setting.
+  const doBackup = (backupFirst || plan.native !== undefined) && replaced.length > 0;
 
   const run = async () => {
     setRunning(true);
@@ -91,31 +97,31 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
     const failedAt = { slot: undefined as number | undefined };
     try {
       if (useDevice.getState().unsavedChanges > 0) throw Object.assign(new Error("unsaved"), { code: "unsaved" });
+      if (plan.native) {
+        const job = { op: plan.native, steps, pedal, read: read.current, backedUp: backedUp.current, onStatus: (text: string, f: number) => (setStatus(text), setProgress(f)) };
+        await runNative(job).finally(() => (backedUp.current = job.backedUp));
+        notifySuccess(plan.doneTitle, replaced.length ? "The replaced presets are in Replaced presets." : undefined);
+        onOpenChange(false);
+        return;
+      }
       const original = useDevice.getState().slot;
-      const sources = slotsToRead(steps);
-      const toRead = doBackup && !backedUp.current ? [...new Set([...sources, ...replaced])].sort((a, b) => a - b) : sources;
+      const job = await readAndBackUp({
+        steps,
+        sources: slotsToRead(steps),
+        backUp: doBackup,
+        backedUp: backedUp.current,
+        pedal,
+        read: read.current,
+        onStatus: (text, done, reads) => (setStatus(text), setProgress(done / (reads + steps.length))),
+      });
+      backedUp.current = job.backedUp;
+      const toRead = job.toRead;
       const total = toRead.length + steps.length;
-      let n = 0;
-      for (const slot of toRead) {
-        n++;
-        if (read.current.has(slot)) continue;
-        setStatus(`Reading slot ${slot}`);
-        setProgress(n / total);
-        read.current.set(slot, await readSlot(slot));
-      }
       if (steps.some((s) => s.from === "blank") && !read.current.has("blank")) read.current.set("blank", await blankPreset());
-      if (doBackup && !backedUp.current) {
-        setStatus("Saving the replaced slots");
-        await host.files.addPresets(
-          REPLACED_ID,
-          replaced.map((slot) => ({ name: nameOf(slot), prst: read.current.get(slot)!, slot, source: `Slot ${slot} on GP-5` })),
-        );
-        backedUp.current = true;
-      }
       for (let i = written.current; i < steps.length; i++) {
         const step = steps[i];
         failedAt.slot = step.slot;
-        setStatus(`Writing slot ${step.slot} (${i + 1} of ${steps.length})`);
+        setStatus(`Writing slot ${slotLabel(step.slot)} (${i + 1} of ${steps.length})`);
         setProgress((toRead.length + i) / total);
         const prst = read.current.get(step.from)!;
         await useDevice.getState().writePreset(step.slot, prst);
@@ -141,7 +147,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
         <AlertDialogHeader>
           <AlertDialogTitle className="text-balance">{plan.title}</AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
-            {running ? "Keep the GP-5 connected until every slot is checked." : plan.description}
+            {running ? `Keep the ${pedal} connected until ${plan.native ? "it finishes" : "every slot is checked"}.` : plan.description}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -155,9 +161,9 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg bg-well px-3.5 py-3 text-sm">
               {rows.map((s) => (
                 <div key={s.slot} className="contents">
-                  <dt className="text-silkscreen-3 tabular-nums">Slot {String(s.slot).padStart(2, "0")}</dt>
+                  <dt className="text-silkscreen-3 tabular-nums">Slot {slotLabel(s.slot)}</dt>
                   <dd className="min-w-0 truncate text-silkscreen">
-                    <span className="font-semibold">{s.from === "blank" ? "Empty preset" : nameOf(s.from)}</span>
+                    <span className="font-semibold">{s.from !== "blank" ? nameOf(s.from) : pedalEmptyName === null ? "Init patch" : "Empty preset"}</span>
                     <span className="text-silkscreen-3">
                       {isEmptyName(nameOf(s.slot)) ? ", was empty" : `, replaces ${nameOf(s.slot)}`}
                     </span>
@@ -171,7 +177,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
                 id={checkboxId}
                 className="mt-0.5"
                 checked={doBackup}
-                disabled={!replaced.length || backedUp.current}
+                disabled={!replaced.length || backedUp.current || plan.native !== undefined}
                 onCheckedChange={(v) => {
                   setBackupFirst(v === true);
                   void host.app.setSettings({ backupBeforeWrite: v === true }).catch(() => {});
@@ -181,7 +187,11 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
                 <span>
                   {replaced.length ? `Back up the ${replaced.length === 1 ? "replaced slot" : `${replaced.length} replaced slots`} first` : "Back up first (not needed, the slots are empty)"}
                 </span>
-                {replaced.length > 0 && <span className="text-xs text-silkscreen-3">Saves them to Replaced presets on this computer</span>}
+                {replaced.length > 0 && (
+                  <span className="text-xs text-silkscreen-3">
+                    {plan.native ? "Always done before the pedal changes slots itself. Saves them to Replaced presets on this computer" : "Saves them to Replaced presets on this computer"}
+                  </span>
+                )}
               </Label>
             </div>
           </>
@@ -197,7 +207,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
           {running ? (
             <Button disabled>
               <Spinner data-icon="inline-start" />
-              Writing
+              {plan.native ? "Working" : "Writing"}
             </Button>
           ) : (
             <>

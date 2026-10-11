@@ -1,11 +1,11 @@
-import { app, dialog, shell, type BrowserWindow } from "electron";
+import { app, shell, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { CaptureDraft, CaptureKey, CaptureRecipe, CaptureState, CaptureVersion } from "@shared/host/capture";
 import type { ToneRecord } from "@shared/host/tones";
 import { HostError } from "@shared/ipc";
-import { handle } from "./handle";
+import { handle, showSaveDialog } from "./handle";
 
 // Layout: see src/shared/host/capture.ts. Tones' files (meta.json, <model_id>.nam) are only read here.
 const userData = () => app.getPath("userData");
@@ -178,7 +178,7 @@ export function registerCaptureIpc(getWindow: () => BrowserWindow | null): void 
       defaultPath: join(app.getPath("downloads"), safeNamName(suggestedName)),
       filters: [{ name: "NAM capture", extensions: ["nam"] }],
     };
-    const res = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    const res = await showSaveDialog(win, options);
     if (res.canceled || !res.filePath) return null;
     await writeFile(res.filePath, text, "utf8");
     return res.filePath;

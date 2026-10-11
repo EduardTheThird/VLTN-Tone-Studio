@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, RotateCcw, TriangleAlert } from "lucide-react";
+import { profileFor } from "@shared/devices";
 import type { T3kModel } from "@shared/host/tones";
 import { firstEmptySlot, sanitizeSlotName } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { userIrFxId } from "@/gp5/lib/userir.mjs";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { notifyError } from "@/app/notify";
 import { irSlotLabel, readSlots, runSend, updateDraft, writeUserIr, type SendState } from "./store";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
@@ -47,7 +47,7 @@ export function Step({ n, status, title, children }: { n: number; status: StepSt
 }
 
 /**
- * Send an IR to the GP-5 (tones.md "The Send to GP-5 flow"): download, check and convert in the app, pick a User IR
+ * Send an IR to the pedal: download, check and convert in the app, pick a User IR
  * slot, write it over USB, link. No Valeton Suite involved. SnapTones: SnapToneSteps.
  */
 export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel | undefined }) {
@@ -55,9 +55,11 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
   const listRef = useRef<HTMLOListElement>(null);
   const connected = useDevice((s) => s.status === "connected");
   const userIRs = useDevice((s) => s.userIRs);
+  const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
   const slot = send.proposedSlot;
   const blocker = useIrWriteBlocker(slot);
+  const pedal = usePedalName();
 
   // Keep the current step (and its one action) in view as the flow advances, also in short windows.
   useEffect(() => {
@@ -69,8 +71,8 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
     if (connected && !userIRs && !busy) void readSlots();
   }, [connected, userIRs, busy]);
   useEffect(() => {
-    if (slot === null && userIRs) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("ir", userIRs) });
-  }, [slot, send.toneId, userIRs]);
+    if (slot === null && userIRs) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("ir", userIRs, device) });
+  }, [slot, send.toneId, userIRs, device]);
 
   const status = (n: number): StepStatus => {
     if (phase === "linked") return "done";
@@ -125,7 +127,7 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
       </Step>
 
       <Step n={2} status={status(2)} title={ir ? "Checked the IR" : "Check the IR"}>
-        {ir ? <span className="text-pretty text-silkscreen-3">{irSummary(ir)}</span> : phase !== "error" && <span className="text-silkscreen-3">Confirm it's a WAV file and convert it for the GP-5</span>}
+        {ir ? <span className="text-pretty text-silkscreen-3">{irSummary(ir)}</span> : phase !== "error" && <span className="text-silkscreen-3">Confirm it's a WAV file and convert it for the {pedal}</span>}
         {phase === "running" && step === 2 && <Spinner className="mt-1" />}
         {phase === "error" && step === 2 && <StepError error={error} />}
       </Step>
@@ -135,7 +137,7 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
         {replacing && phase !== "linked" && phase !== "writing" && <ReplaceIrNote name={replacing} />}
       </Step>
 
-      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote ${slotText}` : `Write ${slotText} on the GP-5`}>
+      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote ${slotText}` : `Write ${slotText} on the ${pedal}`}>
         {phase === "writing" && <Progress value={send.progress * 100} className="mt-1 w-56" aria-label="User IR write progress" />}
         {phase === "error" && step === 4 && <StepError error={error} />}
         {canWrite && (
@@ -149,7 +151,7 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
         )}
       </Step>
 
-      <Step n={5} status={status(5)} title={phase === "linked" && send.linkedSlot !== null ? `Linked to ${irSlotLabel(send.linkedSlot)} on your GP-5` : "Link the new IR"}>
+      <Step n={5} status={status(5)} title={phase === "linked" && send.linkedSlot !== null ? `Linked to ${irSlotLabel(send.linkedSlot)} on your ${pedal}` : "Link the new IR"}>
         {phase !== "linked" && <span className="text-pretty text-silkscreen-3">The slot map then shows this tone's image for that slot.</span>}
         {phase === "linked" && send.linkedSlot !== null && <UseOnGp5 isIr slot={send.linkedSlot} />}
       </Step>
@@ -172,10 +174,13 @@ export function UseOnGp5({ isIr, slot }: { isIr: boolean; slot: number }) {
   const [busy, setBusy] = useState(false);
   const use = async () => {
     const d = useDevice.getState();
+    if (!d.preset) return;
+    const { device } = d.preset;
+    const { snapTone, userIr } = profileFor(device);
     setBusy(true);
     try {
-      const block = isIr ? 4 : 9;
-      await d.setModel(block, isIr ? userIrFxId(slot) : 0x0f000000 | slot);
+      const block = profileFor(device).blocks.indexOf(isIr ? "CAB" : profileFor(device).captureBlock(slot));
+      await d.setModel(block, isIr ? userIr.fxidBase + slot : snapTone.fxidBase + slot);
       d.setBlockEnabled(block, true);
     } catch (e) {
       notifyError("Couldn't use it in the current preset", e);

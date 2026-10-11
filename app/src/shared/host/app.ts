@@ -11,6 +11,11 @@ export interface AppSettings {
   backupBeforeWrite: boolean;
   /** Desktop app: look for a new release on GitHub after launch and every few hours. */
   checkForUpdates: boolean;
+  /**
+   * GP-50 commands known only from reverse engineering (EXP, live tempo, footswitch masks, chain order, delete, copy,
+   * move, export read): off = the app uses full preset writes or hides the feature on a real GP-50. The simulator always has them.
+   */
+  gp50Extras: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   portPattern: null,
   backupBeforeWrite: true,
   checkForUpdates: true,
+  gp50Extras: false,
 };
 
 export interface AppApi {
