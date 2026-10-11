@@ -46,8 +46,9 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
   const readAgain = () => void d.sync().catch((e) => notifyError("Couldn't read the pedal", e));
 
   return (
-    <header className="flex items-end gap-6 px-7 pt-[22px] pb-1.5">
-      <div className="min-w-0">
+    // The actions wrap under the title when both don't fit on one line (five simulators, a long state line).
+    <header className="flex flex-wrap items-end gap-x-6 gap-y-4 px-7 pt-[22px] pb-1.5">
+      <div className="min-w-0 flex-[1_1_440px]">
         <h1 className="text-[44px] leading-none font-bold tracking-[-0.02em] text-balance">Valeton {pedalModelName(d)}</h1>
         <div className="mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm text-silkscreen-3">
           <span className="flex items-center gap-1.5">
@@ -112,7 +113,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
         )}
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-2 pb-0.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pb-0.5">
         {connected ? (
           <>
             <Button variant="ghost" onClick={readAgain} disabled={!!d.busy}>
@@ -126,13 +127,22 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
           </>
         ) : (
           <>
-            {view.kind !== "bootloader" &&
-              view.kind !== "connecting" &&
-              SIMULATED.map((key) => (
-                <Button key={key} variant={view.action === "none" ? "outline" : "ghost"} onClick={() => void d.connect("mock", { mockDevice: key }).catch(() => {})}>
-                  Simulate a {pedalName(key)}
-                </Button>
-              ))}
+            {view.kind !== "bootloader" && view.kind !== "connecting" && (
+              <div role="group" aria-label="Simulate a pedal" className="flex flex-wrap items-center gap-1">
+                <span className="mr-1 text-sm text-silkscreen-3">Simulate</span>
+                {SIMULATED.map((key) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant={view.action === "none" ? "outline" : "ghost"}
+                    aria-label={`Simulate a ${pedalName(key)}`}
+                    onClick={() => void d.connect("mock", { mockDevice: key }).catch(() => {})}
+                  >
+                    {pedalName(key)}
+                  </Button>
+                ))}
+              </div>
+            )}
             {view.action === "cancel" && (
               <Button variant="ghost" onClick={() => void d.cancelConnect()}>
                 Cancel
