@@ -1,7 +1,7 @@
 import { LayersIcon, PowerIcon } from "lucide-react";
 import { profileFor } from "@shared/devices";
 import stageUrl from "@/assets/backdrops/stage.svg";
-import { AmpHead, AmpPanel, Cab, Dial, knobsForBlock, modelTitle } from "@/components/gear";
+import { AmpHead, AmpPanel, Cab, Dial, knobsForBlock, modelTitle, paramTitle, voicingOf } from "@/components/gear";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -31,8 +31,15 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
   const userIRs = useDevice((s) => s.userIRs);
   const isIR = cab.model?.type === "User IR";
   const usedIRs = userIRs?.filter((s) => s.name.trim() !== "").length;
-  const cabVol = knobsForBlock(cab).find((k) => /^vol/i.test(k.label));
+  const cabKnobs = knobsForBlock(cab);
+  const cabVol = cabKnobs.find((k) => /^vol/i.test(k.label));
+  // The cab's other params (GP-200: low and high cut) stand beside it
+  const cabMore = cabKnobs.filter((k) => k !== cabVol);
+  const voicing = voicingOf(amp.model?.type);
   const { nsOn } = nsOf(preset);
+  const cabArt = (
+    <Cab name={modelTitle(cab)} className={cn("w-[330px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:w-[clamp(220px,calc((100vh-560px)*1.2),330px)]", !cab.enabled && "saturate-[.2] brightness-50")} />
+  );
   return (
     <section
       aria-label="Amp and cab"
@@ -64,7 +71,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
             className={cn("mt-[26px] w-[400px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:mt-2.5 [@media(max-height:820px)]:w-[clamp(280px,calc((100vh-560px)*1.6),400px)]", !amp.enabled && "saturate-[.2] brightness-50")}
           />
           <div className="mt-auto flex w-full max-w-[440px] items-center gap-3 rounded-pill bg-[rgb(10_10_12/0.66)] px-2.5 py-1.5 text-xs">
-            {amp.model?.type && <Badge variant="outline">{sentence(amp.model.type)}</Badge>}
+            {voicing && <Badge variant="outline">{sentence(voicing)}</Badge>}
             <span className="min-w-0 truncate text-silkscreen-3">{amp.model?.origin ? `Modeled on ${amp.model.origin}` : modelTitle(amp)}</span>
             <span className="grow" />
             <Switch checked={amp.enabled} disabled={readOnly} onCheckedChange={(on) => editEnabled(a, on)} aria-label="Amp on" />
@@ -75,7 +82,28 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
             <span className="text-sm font-semibold text-silkscreen-2">Cab</span>
             <ModelButton block={cab} selected={selected === c} disabled={readOnly} className="flex-1" />
           </div>
-          <Cab name={modelTitle(cab)} className={cn("w-[330px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:w-[clamp(220px,calc((100vh-560px)*1.2),330px)]", !cab.enabled && "saturate-[.2] brightness-50")} />
+          {cabMore.length ? (
+            <div className="flex items-center gap-5">
+              {cabArt}
+              <div className="flex flex-col gap-3">
+                {cabMore.map((k) => (
+                  <Dial
+                    key={k.id}
+                    label={paramTitle(k.label)}
+                    ariaLabel={`${modelTitle(cab)} ${paramTitle(k.label)}`}
+                    value={k.value}
+                    spec={k}
+                    size={34}
+                    color="var(--block-cab)"
+                    disabled={readOnly}
+                    onChange={(v) => editParam(c, Number(k.id), v)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            cabArt
+          )}
           <div className="mt-auto flex w-full max-w-[440px] items-center gap-3 rounded-pill bg-[rgb(10_10_12/0.66)] px-2.5 py-1.5 text-xs">
             <ToggleGroup
               type="single"

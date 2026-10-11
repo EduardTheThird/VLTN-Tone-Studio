@@ -1,5 +1,6 @@
 // Shading helpers for the gear drawings. The drawings are the one place
-// with hand-tuned colours: block hues mirror the --block-* tokens because the shading math needs hex values.
+// with hand-tuned colours: block hues mirror the --block-* tokens because the shading math needs hex values
+// (art.test.ts keeps the two in step).
 import type { BlockCode } from "@/state/device-types";
 
 export const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Variable', Inter, system-ui, sans-serif";
@@ -29,6 +30,8 @@ export const VOICE: Record<string, string> = {
   Acoustic: "#d8a46b",
 };
 export const voiceFor = (type?: string) => (type && VOICE[type]) || VOICE["Hi Gain"];
+/** The amp type when it names a voicing (GP-5 family catalog); GP-200 amps carry only their block's category. */
+export const voicingOf = (type?: string) => (type && Object.hasOwn(VOICE, type) ? type : undefined);
 
 export const hash = (s: string) => {
   let h = 2166136261;

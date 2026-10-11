@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { fit, voiceFor } from "./art";
+import { fit, voiceFor, voicingOf } from "./art";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
 import { Defs, Grille, KnobArt, T } from "./parts";
 import { paramTitle, type GearBaseProps } from "./types";
 
 export interface AmpProps extends GearBaseProps {
-  /** Catalog amp type: Clean | Drive | Hi Gain | Bass | Acoustic (sets the voicing colour) */
+  /** Catalog amp type: Clean | Drive | Hi Gain | Bass | Acoustic sets the voicing colour and label; others show none */
   type?: string;
 }
 
@@ -175,7 +175,8 @@ export function AmpPanel({ name, type, on = true, knobs = [], interactive, disab
           );
         });
         controls.push({ kind: "fs", id: "power", label: `${name} power`, on, onToggle: onToggleOn, x: W - 92, y: 42, w: 56, h: 36 });
-        const typeLabel = (type || "Hi Gain").toUpperCase() + " AMP";
+        const voicing = voicingOf(type);
+        const typeLabel = voicing ? `${voicing.toUpperCase()} AMP` : "AMP";
         const art = (
           <>
             <Defs id={id} body="#18181b" />

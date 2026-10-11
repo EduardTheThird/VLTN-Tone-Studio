@@ -16,6 +16,8 @@ export interface GearKnob {
   labels?: readonly string[];
   /** Renders as a switch (catalog toggle params: +3dB, Bright, Trail…) */
   toggle?: boolean;
+  /** The end of the range that reads OFF */
+  off?: "min" | "max";
 }
 
 export interface GearBaseProps {
@@ -58,8 +60,8 @@ export const paramTitle = (label: string) => LONG[label] ?? label;
 
 const TOGGLE_RE = /^(\+3dB|Bright|Trail|Sync|Mode|Character|Mute)$/i;
 
-/** Catalog param → GearKnob (the raw catalog entry may carry `toggle: true`). */
-export function knobFromParam(p: ParamInfo, value: number): GearKnob {
+/** Catalog param → GearKnob (the raw catalog entry may carry `toggle: true`); `off`: the end that reads OFF. */
+export function knobFromParam(p: ParamInfo, value: number, off?: GearKnob["off"]): GearKnob {
   const toggle = p.toggle ?? (p.min === 0 && p.max === 1 && (p.step === 1 || TOGGLE_RE.test(p.name)));
-  return { id: String(p.index), label: p.name, value, min: p.min, max: p.max, step: p.step, unit: p.unit, labels: p.labels, toggle };
+  return { id: String(p.index), label: p.name, value, min: p.min, max: p.max, step: p.step, unit: p.unit, labels: p.labels, toggle, ...(off ? { off } : {}) };
 }

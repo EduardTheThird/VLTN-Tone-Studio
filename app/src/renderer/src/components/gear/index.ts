@@ -6,5 +6,5 @@ export { Dial, type DialProps } from "./Dial";
 export { GearFor, knobsForBlock, modelTitle, type GearForProps } from "./GearFor";
 export { KnobHit } from "./controls";
 export { knobFromParam, paramTitle, type GearKnob, type GearBaseProps } from "./types";
-export { BLOCK_HEX, voiceFor, type Finish } from "./art";
+export { BLOCK_HEX, voiceFor, voicingOf, type Finish } from "./art";
 export * from "./knob-math";
