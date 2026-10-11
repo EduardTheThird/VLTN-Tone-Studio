@@ -173,7 +173,7 @@ describe("GP-50 features in the device store", () => {
     expect(backups.every((b) => b.name === b.pedalHad)).toBe(true);
   }, 30_000);
 
-  describe("with GP-50 extras off on a real pedal", () => {
+  describe("with Experimental pedal commands off on a real pedal", () => {
     beforeAll(() => {
       useDevice.setState({ mode: "webmidi" });
       store().setGp50Extras(false);
@@ -201,7 +201,7 @@ describe("GP-50 features in the device store", () => {
       expect(after.order).toEqual(pedal.order);
       expect(after.footswitches).toEqual(pedal.footswitches);
       expect(after.bpm).toBe(pedal.bpm);
-      expect(() => store().setExp({ on: true })).toThrow(/GP-50 extras/);
+      expect(() => store().setExp({ on: true })).toThrow(/Experimental pedal commands/);
 
       await store().saveToSlot(store().slot!);
       const written = await onPedal();

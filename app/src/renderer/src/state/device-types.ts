@@ -172,7 +172,7 @@ export type Globals = Partial<Record<GlobalName, number>>;
 
 /**
  * Optional capabilities of a connected pedal (DeviceDriver.features). The store offers the experimental ones
- * (EXPERIMENTAL_FEATURES, device-model.ts) on a real pedal only with the "GP-50 extras" setting on.
+ * (EXPERIMENTAL_FEATURES, device-model.ts) on a real pedal only with the "Experimental pedal commands" setting on.
  */
 export type DeviceFeature =
   /** Reads whether the active preset has unsaved edits (GP-50 0x45) */
@@ -274,11 +274,11 @@ export interface DeviceState {
   globals: Globals | null;
   /** Firmware the pedal reports in its settings (e.g. "1.1.0"), when known */
   firmware: string | null;
-  /** Optional capabilities usable now (connected model, simulator or the "GP-50 extras" setting) */
+  /** Optional capabilities usable now (connected model, simulator or the "Experimental pedal commands" setting) */
   features: readonly DeviceFeature[];
-  /** Capabilities the connected pedal has but that stay off until "GP-50 extras (experimental)" is turned on */
+  /** Capabilities the connected pedal has but that stay off until "Experimental pedal commands" is turned on */
   lockedFeatures: readonly DeviceFeature[];
-  /** Mirror of the "GP-50 extras (experimental)" app setting */
+  /** Mirror of the "Experimental pedal commands" app setting (stored as gp50Extras) */
   gp50Extras: boolean;
   /** SnapTone slot names (user + factory), when read */
   snapTones: SlotName[] | null;
@@ -313,7 +313,7 @@ export interface DeviceState {
   clearLastError(): void;
   /** True when `feature` is usable now (see `features`) */
   can(feature: DeviceFeature): boolean;
-  /** Apply the "GP-50 extras (experimental)" setting (the Settings screen saves it; this re-gates the features) */
+  /** Apply the "Experimental pedal commands" setting (the Settings screen saves it; this re-gates the features) */
   setGp50Extras(on: boolean): void;
 
   // connection

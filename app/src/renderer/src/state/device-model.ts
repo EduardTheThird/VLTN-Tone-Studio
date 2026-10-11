@@ -12,7 +12,8 @@ import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
 /**
  * Features built on commands known only from static reverse engineering, not yet tested on hardware, per family: on a
- * real pedal they stay off until the user turns on "GP-50 extras (experimental)"; the simulator always has them.
+ * real pedal they stay off until the user turns on "Experimental pedal commands" (app setting `gp50Extras`); the
+ * simulator always has them.
  * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: none (its export read and live tempo are known
  * from hardware work).
  */

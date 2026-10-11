@@ -93,7 +93,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     const d = requireDriver();
     if (get().features.includes(feature)) return d;
     const locked = get().lockedFeatures.includes(feature);
-    throw new DeviceError("unsafe", locked ? "This needs GP-50 extras (experimental), which you can turn on in Settings." : `The ${pedalName(get().device)} can't do this from Tone Studio.`);
+    throw new DeviceError("unsafe", locked ? "This needs Experimental pedal commands, which you can turn on in Settings." : `The ${pedalName(get().device)} can't do this from Tone Studio.`);
   };
 
   /** Replace the live preset (and optionally the saved copy) and recount changes. */
@@ -555,7 +555,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     // Order, footswitches and tempo change the preset here; they play live where the pedal has a command for them
-    // (GP-50 extras), and otherwise reach the pedal with the full write on save.
+    // (GP-50 with Experimental pedal commands, GP-200 tempo), and otherwise reach the pedal with the full write on save.
     setOrder(order) {
       editLocal({ order });
       touch("order");
