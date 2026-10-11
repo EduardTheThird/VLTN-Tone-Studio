@@ -235,7 +235,7 @@ export function RigHeader({ preset, connected }: Props) {
                   saveTarget(n.slot);
                 }}
               >
-                <span className="w-6 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
+                <span className="min-w-6 shrink-0 font-semibold whitespace-nowrap text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
                 <span className="flex-1 truncate">{n.name}</span>
                 {n.slot === preset.slot && <span className="text-xs text-silkscreen-3">This preset</span>}
               </CommandItem>
