@@ -4,6 +4,11 @@ import { CircleCheck, CircleX, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
+import { useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
+
+/** "GP-5" / "GP-50" for the connected (or last connected) pedal, "pedal" before the first connection. */
+const currentPedal = () => pedalName(useDevice.getState().device);
 
 /*
  * Toasts per overlays.md G (Sonner, bottom right above the status bar, max 3, newest on top).
@@ -81,11 +86,11 @@ export function describeError(error: unknown): string {
   const e = error as { code?: string; message?: string } | null;
   switch (e?.code) {
     case "timeout":
-      return "No reply from the GP-5 after 3 tries. Check the USB cable.";
+      return `No reply from the ${currentPedal()} after 3 tries. Check the USB cable.`;
     case "verify":
       return "The read-back differs from what was sent.";
     case "closed":
-      return "The GP-5 disconnected before it finished.";
+      return `The ${currentPedal()} disconnected before it finished.`;
     case "length":
     case "unsafe":
       return "Tone Studio stopped this write because the data looked wrong. Nothing was sent.";
@@ -113,7 +118,7 @@ export function notifyWriteDone({ name, slot, backedUp, go }: { name: string; sl
   });
 }
 
-/** G: a failed write. A write the GP-5 doesn't fully acknowledge is discarded, so the slot is unchanged. */
+/** G: a failed write. A write the pedal doesn't fully acknowledge is discarded, so the slot is unchanged. */
 export function notifyWriteFailed({ slot, error, retry }: { slot: number; error: unknown; retry?: () => void | Promise<void> }): void {
   const nn = String(slot).padStart(2, "0");
   const code = (error as { code?: string } | null)?.code;
@@ -128,9 +133,9 @@ export function notifyWriteFailed({ slot, error, retry }: { slot: number; error:
   }
   const body =
     code === "timeout"
-      ? `The GP-5 stopped answering and discarded the write. Slot ${nn} was not changed.`
+      ? `The ${currentPedal()} stopped answering and discarded the write. Slot ${nn} was not changed.`
       : code === "closed"
-        ? `The GP-5 disconnected during the write and discarded it. Slot ${nn} was not changed.`
+        ? `The ${currentPedal()} disconnected during the write and discarded it. Slot ${nn} was not changed.`
         : describeError(error);
   showToast({ tone: "fault", title: `Couldn't write slot ${nn}`, body, action: retry ? { label: "Retry", run: retry, retry: true } : undefined });
 }

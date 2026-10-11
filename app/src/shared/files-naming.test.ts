@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   backupDirName,
   collectionDirName,
+  commonModel,
   isSafePresetFileName,
   parseBackupDirName,
   parseCollectionId,
   parseSlotFileName,
   presetFileName,
+  prstModel,
   sanitizeFileName,
   slotFileName,
   uniqueFileName,
@@ -32,10 +34,11 @@ describe("sanitizeFileName", () => {
 });
 
 describe("slot files", () => {
-  it("names backup files NN-Name.prst", () => {
-    expect(slotFileName(0, "GreatPedal")).toBe("00-GreatPedal.prst");
-    expect(slotFileName(97, "FF/CC")).toBe("97-FF_CC.prst");
-    expect(slotFileName(64, "")).toBe("64-GP-5.prst");
+  it("names backup files NN-Name.prst, blank names after the model's empty slot", () => {
+    expect(slotFileName(0, "GreatPedal", "gp5")).toBe("00-GreatPedal.prst");
+    expect(slotFileName(97, "FF/CC", "gp5")).toBe("97-FF_CC.prst");
+    expect(slotFileName(64, "", "gp5")).toBe("64-GP-5.prst");
+    expect(slotFileName(64, "", "gp50")).toBe("64-GP-50.prst");
   });
   it("parses them back", () => {
     expect(parseSlotFileName("07-Blues Man.prst")).toEqual({ slot: 7, name: "Blues Man" });
@@ -43,23 +46,50 @@ describe("slot files", () => {
     expect(parseSlotFileName("7-Blues.prst")).toBeNull();
   });
   it("uses the slot prefix only when the preset came from a slot", () => {
-    expect(presetFileName("Puppy", 65)).toBe("65-Puppy.prst");
-    expect(presetFileName("US Lead", null)).toBe("US Lead.prst");
+    expect(presetFileName("Puppy", 65, "gp5")).toBe("65-Puppy.prst");
+    expect(presetFileName("US Lead", null, "gp50")).toBe("US Lead.prst");
   });
 });
 
 describe("backup folders", () => {
   const day = new Date(2026, 9, 7, 14, 32);
   it("uses the local date and numbers repeats of the same day", () => {
-    expect(backupDirName(day, [])).toBe("gp5-2026-10-07");
-    expect(backupDirName(day, ["gp5-2026-10-07"])).toBe("gp5-2026-10-07-2");
-    expect(backupDirName(day, ["gp5-2026-10-07", "GP5-2026-10-07-2"])).toBe("gp5-2026-10-07-3");
-    expect(backupDirName(day, ["gp5-2026-10-06"])).toBe("gp5-2026-10-07");
+    expect(backupDirName(day, [], "gp5")).toBe("gp5-2026-10-07");
+    expect(backupDirName(day, ["gp5-2026-10-07"], "gp5")).toBe("gp5-2026-10-07-2");
+    expect(backupDirName(day, ["gp5-2026-10-07", "GP5-2026-10-07-2"], "gp5")).toBe("gp5-2026-10-07-3");
+    expect(backupDirName(day, ["gp5-2026-10-06"], "gp5")).toBe("gp5-2026-10-07");
   });
-  it("reads the date back and ignores foreign folders", () => {
-    expect(parseBackupDirName("gp5-2026-10-07-2")?.getDate()).toBe(7);
+  it("names GP-50 backups gp50-…, numbered apart from GP-5 backups", () => {
+    expect(backupDirName(day, ["gp5-2026-10-07"], "gp50")).toBe("gp50-2026-10-07");
+    expect(backupDirName(day, ["gp50-2026-10-07"], "gp50")).toBe("gp50-2026-10-07-2");
+  });
+  it("reads the date and model back and ignores foreign folders", () => {
+    expect(parseBackupDirName("gp5-2026-10-07-2")).toMatchObject({ device: "gp5" });
+    expect(parseBackupDirName("gp5-2026-10-07-2")?.date.getDate()).toBe(7);
+    expect(parseBackupDirName("gp50-2026-10-07")).toMatchObject({ device: "gp50" });
+    expect(parseBackupDirName("gp50-2026-10-07")?.date.getMonth()).toBe(9);
     expect(parseBackupDirName("gp5-2026-02-31")).toBeNull();
+    expect(parseBackupDirName("gp500-2026-10-07")).toBeNull();
     expect(parseBackupDirName("photos")).toBeNull();
+  });
+});
+
+describe("preset models", () => {
+  const head = (text: string, length: number) => {
+    const b = new Uint8Array(length);
+    b.set(new TextEncoder().encode(text), 0);
+    return b;
+  };
+  it("reads the model from the .prst header", () => {
+    expect(prstModel(head("GP-5", 507))).toBe("gp5");
+    expect(prstModel(head("GP-50", 552))).toBe("gp50");
+    expect(prstModel(head("GP-500", 552))).toBeNull();
+    expect(prstModel(new Uint8Array(507))).toBeNull();
+  });
+  it("finds the one model of a set of presets", () => {
+    expect(commonModel([head("GP-50", 552), head("GP-50", 552)])).toBe("gp50");
+    expect(commonModel([head("GP-5", 507), head("GP-50", 552)])).toBeNull();
+    expect(commonModel([])).toBeNull();
   });
 });
 

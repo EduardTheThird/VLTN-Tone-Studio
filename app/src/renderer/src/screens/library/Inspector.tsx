@@ -6,15 +6,16 @@ import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { GearFor, paramTitle } from "@/components/gear";
 import { MiniChain } from "@/components/write/MiniChain";
+import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
 import { BLOCK_CODES } from "@/state/device-types";
 import type { LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { formatDay } from "./dnd";
 import { writableCollections } from "./LocalPane";
-import { isEmptyName, useLibrary } from "./store";
+import { emptyName, isEmptyName, useLibrary } from "./store";
 
 const CORE = [2, 9, 3, 4, 5];
 const NAME_RE = /^[\x20-\x7E]*$/;
@@ -73,7 +74,8 @@ function SlotInspector({ slot }: { slot: number }) {
   const renaming = useLibrary((s) => s.renaming === slot);
   const job = useLibrary((s) => s.job);
   const actions = useLibraryActions();
-  const name = names[slot]?.name ?? "GP-5";
+  const pedal = usePedalName();
+  const name = names[slot]?.name ?? emptyName();
   const empty = isEmptyName(name);
   const connected = status === "connected";
   const writable = connected && !busy;
@@ -81,7 +83,7 @@ function SlotInspector({ slot }: { slot: number }) {
   const prst = activeSlot === slot && saved ? saved.prst : body?.prst;
   const parsed = prst ? summarize(prst) : null;
   const summary = parsed && parsed.name === name ? parsed : null;
-  const source = activeSlot === slot && saved ? "Read from the GP-5" : body ? (body.from === "backup" ? `Chain from the backup of ${formatDay(body.at)}` : "Read from the GP-5") : null;
+  const source = activeSlot === slot && saved ? `Read from the ${pedal}` : body ? (body.from === "backup" ? `Chain from the backup of ${formatDay(body.at)}` : `Read from the ${pedal}`) : null;
 
   return (
     <>
@@ -89,7 +91,8 @@ function SlotInspector({ slot }: { slot: number }) {
         title={empty ? "Empty slot" : name}
         meta={
           <>
-            Slot {slot} on GP-5{active && ", playing now"}
+            Slot {slot} on {pedal}
+            {active && ", playing now"}
           </>
         }
       >
@@ -99,7 +102,7 @@ function SlotInspector({ slot }: { slot: number }) {
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-silkscreen">{empty ? "Empty slot" : name}</h2>
             {!empty && (
-              <Button variant="ghost" size="icon-sm" aria-label="Rename" title={connected ? "Rename (F2)" : "Rename needs the GP-5"} disabled={!connected} onClick={() => useLibrary.setState({ renaming: slot })}>
+              <Button variant="ghost" size="icon-sm" aria-label="Rename" title={connected ? "Rename (F2)" : `Rename needs the ${pedal}`} disabled={!connected} onClick={() => useLibrary.setState({ renaming: slot })}>
                 <PencilIcon />
               </Button>
             )}
@@ -121,7 +124,7 @@ function SlotInspector({ slot }: { slot: number }) {
             <p className="text-pretty text-silkscreen-2">The chain of this slot hasn't been read yet. Back up now reads every slot; reading just this one switches the pedal to it for a moment and back.</p>
             <Button variant="outline" size="sm" disabled={!writable || unsaved > 0 || job !== null} onClick={() => void actions.readSlot(slot)}>
               <ScanSearchIcon data-icon="inline-start" />
-              {job ? "Reading…" : "Read from GP-5"}
+              {job ? "Reading…" : `Read from ${pedal}`}
             </Button>
             {unsaved > 0 && <p className="text-xs text-silkscreen-3">Save or discard your unsaved changes on the Rig first.</p>}
           </div>
@@ -171,10 +174,11 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
   const actions = useLibraryActions();
   const inputRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
+  const pedal = usePedalName();
   useEffect(() => inputRef.current?.select(), []);
   const trimmed = value.replace(/\s+$/, "");
   const bad = [...value].find((c) => !NAME_RE.test(c));
-  const error = bad ? `The GP-5 can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed ? null : "A slot needs a name.";
+  const error = bad ? `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed ? null : "A slot needs a name.";
   const cancel = () => useLibrary.setState({ renaming: null });
   const commit = () => {
     if (error || trimmed === name) return cancel();
@@ -215,7 +219,7 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
         <FieldError id={hintId}>{error}</FieldError>
       ) : (
         <div id={hintId} className="flex justify-between gap-3 text-xs text-silkscreen-3">
-          <span className="text-pretty">{value.length >= 10 ? "The GP-5 stores 10 characters. Further typing is ignored." : "The GP-5 shows up to 10 characters."}</span>
+          <span className="text-pretty">{value.length >= 10 ? `The ${pedal} stores 10 characters. Further typing is ignored.` : `The ${pedal} shows up to 10 characters.`}</span>
           <span className={cn("tabular-nums", value.length >= 10 && "text-led-warn")}>{value.length}/10</span>
         </div>
       )}
@@ -231,16 +235,17 @@ function MultiInspector({ slots }: { slots: number[] }) {
   const connected = useDevice((s) => s.status === "connected");
   const bodies = useLibrary((s) => s.bodies);
   const actions = useLibraryActions();
+  const pedal = usePedalName();
   const both = slots.length === 2;
   const usedSlots = slots.filter((s) => !isEmptyName(names[s]?.name));
 
   return (
     <>
-      <Head title={`${slots.length} slots selected`} meta="On GP-5" />
+      <Head title={`${slots.length} slots selected`} meta={`On ${pedal}`} />
       <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto">
         <ul className="flex flex-col gap-0.5 rounded-lg bg-well p-1.5">
           {slots.map((slot) => {
-            const name = names[slot]?.name ?? "GP-5";
+            const name = names[slot]?.name ?? emptyName();
             const s = bodies[slot] ? summarize(bodies[slot].prst) : null;
             const ok = s && s.name === name;
             return (
@@ -295,9 +300,11 @@ function MultiInspector({ slots }: { slots: number[] }) {
 function LocalInspector({ p }: { p: LocalPreset }) {
   const collections = useLibrary((s) => s.collections);
   const writable = useDevice((s) => s.status === "connected" && s.busy === null);
+  const device = useDevice((s) => s.device);
   const actions = useLibraryActions();
   const collection = collections.find((c) => c.id === p.collectionId);
   const s = summarize(p.prst);
+  const conversion = s ? conversionFor(s, device) : null;
   const restore = collection?.kind === "backup" && p.slot !== null;
 
   return (
@@ -306,10 +313,10 @@ function LocalInspector({ p }: { p: LocalPreset }) {
       <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto">
         {s ? (
           <>
-            {s.device === "gp50" && (
+            {conversion && (
               <p className="flex items-start gap-1.5 text-sm text-pretty text-silkscreen-2">
                 <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                Made on a GP-50. Converted for the GP-5 when you write it{s.gp50Only.length ? `; ${s.gp50Only.join(", ")} has no GP-5 equivalent and is left empty.` : "."}
+                {conversionNote(conversion)}
               </p>
             )}
             <ChainPreview s={s} />

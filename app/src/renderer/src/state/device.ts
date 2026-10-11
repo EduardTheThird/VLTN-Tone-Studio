@@ -3,12 +3,13 @@ import { create } from "zustand";
 import { Gp5Session } from "@/gp5/lib/session.mjs";
 import { MockGp5 } from "@/gp5/lib/mock-device.mjs";
 import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
-import { applyEdits, parsePrst, rebuildPrst, bodyOf } from "@/gp5/lib/prst.mjs";
+import { DEVICES, applyEdits, convertPrst, parsePrst, rebuildPrst, bodyOf } from "@/gp5/lib/prst.mjs";
 import { clampParam, modelByFxid } from "@/gp5/lib/catalog.mjs";
 import { GLOBALS } from "@/gp5/lib/protocol.mjs";
 import { host } from "@/host";
-import { GP50_PID, GP5_PID, VALETON_VID, type DeviceHostStatus } from "@shared/host/device";
+import { PEDAL_PIDS, VALETON_VID, pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
 import { MIDI_LOG_CAP, MidiLogDecoder, RingBuffer } from "./midi-log";
+import { DEVICE_KEYS, pedalName, pedalNameOrBoth } from "./device-model";
 import {
   BLOCK_CODES,
   RestoreError,
@@ -16,6 +17,7 @@ import {
   type BlockState,
   type ConnectionError,
   type ConnectionErrorCode,
+  type DeviceKey,
   type DeviceMode,
   type DeviceState,
   type GlobalName,
@@ -37,29 +39,33 @@ export class DeviceError extends Error {
 
 const NAMES_KEY = "gp5.names.v1";
 const LAST_CONNECTED_KEY = "gp5.lastConnected.v1";
+/** Model of the last connected pedal ("gp5" | "gp50"). */
+const DEVICE_KEY = "gp5.device.v1";
 const RESYNC_DEBOUNCE_MS = 400;
 const MAX_RECONNECTS = 3;
-/** While the pedal is missing (desktop only), poll the host's USB list this often and connect when the GP-5 appears. */
+/** While the pedal is missing (desktop only), poll the host's USB list this often and connect when a pedal appears. */
 const WATCH_MS = 4000;
 const LOG_NOTIFY_MS = 120;
 
 // ------------------------------------------------------------------------------------------- pure helpers
 
-export function toModel(fxid: number): ModelInfo | undefined {
-  return modelByFxid(fxid) as ModelInfo | undefined;
+export function toModel(fxid: number, device: DeviceKey): ModelInfo | undefined {
+  return modelByFxid(fxid, device) as ModelInfo | undefined;
 }
 
 export function toPresetState(slot: number, prst: Uint8Array): PresetState {
   const p = parsePrst(prst);
+  const device = p.device as DeviceKey;
   const blocks: BlockState[] = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => ({
     index,
     code: BLOCK_CODES[index],
     enabled: b.enabled,
     fxid: b.fxid >>> 0,
-    model: toModel(b.fxid),
+    model: toModel(b.fxid, device),
     params: b.params.map((v) => Math.round(v * 1000) / 1000),
   }));
   return {
+    device,
     slot,
     name: p.name,
     blocks,
@@ -91,18 +97,41 @@ export function countChanges(a: PresetState | null, b: PresetState | null): numb
   return n;
 }
 
-function loadCachedNames(): SlotName[] {
+/**
+ * Model of the last connected pedal, persisted across launches. Before this key existed only the GP-5 was
+ * supported, so a user who connected before (LAST_CONNECTED_KEY set) had a GP-5.
+ */
+function loadDevice(): DeviceKey | null {
+  try {
+    const v = localStorage.getItem(DEVICE_KEY);
+    if (v && (DEVICE_KEYS as readonly string[]).includes(v)) return v as DeviceKey;
+    return localStorage.getItem(LAST_CONNECTED_KEY) ? "gp5" : null;
+  } catch {
+    return null;
+  }
+}
+function saveDevice(device: DeviceKey) {
+  try {
+    localStorage.setItem(DEVICE_KEY, device);
+  } catch {
+    /* storage unavailable: the model is detected again on connect */
+  }
+}
+
+/** Cached slot names of `device`'s pedal; entries written before the GP-50 existed belong to a GP-5. */
+function loadCachedNames(device: DeviceKey | null): SlotName[] {
   try {
     const env = JSON.parse(localStorage.getItem(NAMES_KEY) ?? "null");
-    if (env?.v === 1 && Array.isArray(env.names)) return env.names;
+    if (env?.v === 1 && Array.isArray(env.names) && (env.device ?? "gp5") === device) return env.names;
   } catch {
     /* corrupt cache: start empty */
   }
   return [];
 }
-function cacheNames(names: SlotName[]) {
+function cacheNames(device: DeviceKey | null, names: SlotName[]) {
+  if (!device) return;
   try {
-    localStorage.setItem(NAMES_KEY, JSON.stringify({ v: 1, names }));
+    localStorage.setItem(NAMES_KEY, JSON.stringify({ v: 1, device, names }));
   } catch {
     /* storage full or unavailable: the cache is only an optimisation */
   }
@@ -117,25 +146,23 @@ const CONNECT_CODES: Record<string, ConnectionErrorCode> = {
   "not-found": "not-found",
 };
 
-function toConnectionError(e: unknown, gotBytes: boolean): ConnectionError {
+/** `device`: the pedal model for the copy; unknown → "GP-5 / GP-50". */
+function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceKey | null): ConnectionError {
+  const pedal = pedalNameOrBoth(device);
   const err = e as { code?: string; message?: string; visiblePorts?: string[] };
   if (err?.code && CONNECT_CODES[err.code]) return { code: CONNECT_CODES[err.code], message: err.message ?? String(e), ports: err.visiblePorts };
   if (err?.code === "timeout")
     return gotBytes
-      ? { code: "timeout", message: "The pedal answered but not like a GP-5. Check the firmware or the device." }
-      : { code: "busy", message: "The GP-5 port is open but silent. Close Valeton Suite, then reconnect." };
-  if (err?.code === "length") return { code: "unknown", message: err.message ?? "Unexpected reply length (is this a GP-5?)" };
+      ? { code: "timeout", message: `The pedal answered but not like a ${pedal}. Check the firmware or the device.` }
+      : { code: "busy", message: `The ${pedal} port is open but silent. Close Valeton Suite, then reconnect.` };
+  if (err?.code === "length") return { code: "unknown", message: err.message ?? `Unexpected reply length (is this a ${pedal}?)` };
   return { code: "unknown", message: err?.message ?? String(e) };
 }
 
-/** The pedal is in firmware update mode: a Valeton (0x84EF) device that is neither a GP-5 nor a GP-50 and no GP-5 present. */
+/** The pedal is in firmware update mode: a Valeton (0x84EF) device that is neither a GP-5 nor a GP-50, and no pedal present. */
 export function inUpdateMode(status: DeviceHostStatus | null): boolean {
-  const valeton = status?.usb?.filter((d) => d.vendorId === VALETON_VID) ?? [];
-  return !valeton.some((d) => d.productId === GP5_PID) && valeton.some((d) => d.productId !== GP5_PID && d.productId !== GP50_PID);
+  return !pedalOnUsb(status) && !!status?.usb?.some((d) => d.vendorId === VALETON_VID && !PEDAL_PIDS.includes(d.productId));
 }
-
-/** True when the host saw the GP-5 (normal mode) on USB. */
-export const gp5OnUsb = (status: DeviceHostStatus | null) => !!status?.usb?.some((d) => d.vendorId === VALETON_VID && d.productId === GP5_PID);
 
 /** Use the host's USB view to sharpen a failed connect: no port + a Valeton device in update mode = "bootloader". */
 export function refineConnectionError(error: ConnectionError, status: DeviceHostStatus | null): ConnectionError {
@@ -157,17 +184,27 @@ function loadLastConnected(): number | null {
 const MOCK_SNAPTONES = [...new Array<string>(50).fill(""), "GP1000", "ALEXI-1", "ALEXI-2", "GP1000-YT", "PNTR-CWBYS", "PNTR-BRKEN", "PNTR-TGSTK", "Walk"];
 const MOCK_USER_IRS = ["A7X-WTF", "A7X-CITY", "V30-4X12-A", "V30-4X12-B"];
 
-/** Mock presets: the bundled 100-slot backup (dev + browser demo). Tests inject their own via `connectWith`. */
-async function loadMockPresets(): Promise<Uint8Array[]> {
+/**
+ * Mock presets: the bundled 100-slot GP-5 backup (dev + browser demo). For a simulated GP-50 the bank is converted
+ * (lossless) and empty slots get the GP-50's empty name. Tests inject their own via `connectWith`.
+ */
+async function loadMockPresets(device: DeviceKey): Promise<Uint8Array[]> {
   const urls = import.meta.glob("../gp5/fixtures/backup/*.prst", { query: "?url", import: "default", eager: true }) as Record<string, string>;
   const files = Object.keys(urls).sort();
-  return Promise.all(files.map(async (f) => new Uint8Array(await (await fetch(urls[f])).arrayBuffer())));
+  const bank = await Promise.all(files.map(async (f) => new Uint8Array(await (await fetch(urls[f])).arrayBuffer())));
+  if (device === "gp5") return bank;
+  return bank.map((p) => {
+    const converted: Uint8Array = convertPrst(p, device);
+    return parsePrst(p).name.trim() === DEVICES.gp5.emptyName ? applyEdits(converted, { name: DEVICES[device].emptyName }) : converted;
+  });
 }
 
 // ------------------------------------------------------------------------------------------- store
 
 let session: Gp5Session | null = null;
 let mock: MockGp5 | null = null;
+/** Model the simulator plays; kept for later `connect("mock")` calls in this session. */
+let mockDevice: DeviceKey = "gp5";
 let reconnects = 0;
 let userDisconnected = false;
 let resyncTimer: number | undefined;
@@ -192,7 +229,7 @@ export const getMidiLog = (): MidiLogEntry[] => midiLog.toArray();
 
 export const useDevice = create<DeviceState>((set, get) => {
   const requireSession = () => {
-    if (!session || get().status !== "connected") throw new DeviceError("not-connected", "The GP-5 is not connected");
+    if (!session || get().status !== "connected") throw new DeviceError("not-connected", `The ${pedalName(get().device)} is not connected`);
     return session;
   };
   const requireIdle = () => {
@@ -221,7 +258,10 @@ export const useDevice = create<DeviceState>((set, get) => {
     set({ lastError: { code: err?.code ?? "unknown", message: err?.message ?? String(e), at: Date.now() } });
   };
 
-  const logDecoder = new MidiLogDecoder((block, index) => get().preset?.blocks[block]?.model?.params.find((p) => p.index === index)?.name);
+  const logDecoder = new MidiLogDecoder(
+    (block, index) => get().preset?.blocks[block]?.model?.params.find((p) => p.index === index)?.name,
+    () => session?.device ?? get().device,
+  );
   /** Gp5Session `log` option: records frames only while the monitor is on; the UI re-reads at most every LOG_NOTIFY_MS. */
   const onLog = (dir: string, bytes: Uint8Array, decoded?: unknown) => {
     if (!get().monitor) return;
@@ -241,18 +281,18 @@ export const useDevice = create<DeviceState>((set, get) => {
     watchTimer = undefined;
   };
   /**
-   * Desktop only: while the pedal is missing or in update mode, watch the host's USB list and connect once a GP-5
-   * (normal mode) appears. Never runs after the user disconnected on purpose, and never talks to an update-mode device.
+   * Desktop only: while the pedal is missing or in update mode, watch the host's USB list and connect once a GP-5 or
+   * GP-50 (normal mode) appears. Never runs after the user disconnected on purpose, and never talks to an update-mode device.
    */
   const startWatch = () => {
     if (watchTimer !== undefined || host.kind !== "electron") return;
-    let seen = gp5OnUsb(get().hostStatus);
+    let seen = pedalOnUsb(get().hostStatus);
     watchTimer = window.setInterval(async () => {
       const st = get();
       if (userDisconnected || st.mode !== "webmidi" || st.status === "connected" || st.status === "connecting") return stopWatch();
       const status = await st.checkHost();
-      const now = gp5OnUsb(status);
-      if (now && !seen) {
+      const now = pedalOnUsb(status);
+      if (now && now !== seen) {
         stopWatch();
         void get().connect("webmidi").catch(() => {});
       }
@@ -263,7 +303,7 @@ export const useDevice = create<DeviceState>((set, get) => {
   const readActive = async (s: Gp5Session, names = get().names) => {
     const slot: number = await s.readCurrentSlot();
     const body: Uint8Array = await s.readCurrentBody();
-    const prst = rebuildPrst(names[slot]?.name ?? "", body, "gp5");
+    const prst = rebuildPrst(names[slot]?.name ?? "", body, await s.identify());
     const state = toPresetState(slot, prst);
     set({ slot });
     setPreset(state, state);
@@ -296,7 +336,8 @@ export const useDevice = create<DeviceState>((set, get) => {
       const snap = await s.syncState();
       gotBytes = true;
       const names: SlotName[] = snap.names.map((n: { slot: number; name: string }) => ({ slot: n.slot, name: n.name }));
-      cacheNames(names);
+      cacheNames(snap.device, names);
+      saveDevice(snap.device);
       const state = toPresetState(snap.slot, snap.prst);
       reconnects = 0;
       const { records, ...globals } = snap.globals ?? { records: [] };
@@ -311,6 +352,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         status: "connected",
         error: null,
         portName,
+        device: snap.device,
         names,
         slot: snap.slot,
         globals: snap.globals ? globals : null,
@@ -326,7 +368,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     } catch (e) {
       session = null;
       await s.close().catch(() => {});
-      throw toConnectionError(e, gotBytes);
+      throw toConnectionError(e, gotBytes, s.device ?? get().device);
     }
   };
 
@@ -370,12 +412,15 @@ export const useDevice = create<DeviceState>((set, get) => {
     }
   };
 
+  const lastDevice = loadDevice();
+
   return {
     mode: "webmidi",
     status: "idle",
     error: null,
     portName: null,
-    names: loadCachedNames(),
+    device: lastDevice,
+    names: loadCachedNames(lastDevice),
     slot: null,
     preset: null,
     saved: null,
@@ -427,7 +472,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ lastError: null });
     },
 
-    async connect(mode = get().mode) {
+    async connect(mode = get().mode, opts) {
       if (get().status === "connecting") return;
       stopWatch();
       userDisconnected = false;
@@ -440,10 +485,11 @@ export const useDevice = create<DeviceState>((set, get) => {
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
       try {
         if (mode === "mock") {
-          const presets = await loadMockPresets();
+          if (opts?.mockDevice) mockDevice = opts.mockDevice;
+          const presets = await loadMockPresets(mockDevice);
           if (cancelled()) return;
           mock = new MockGp5({ presets, latencyMs: 2, snapTones: MOCK_SNAPTONES, userIRs: MOCK_USER_IRS });
-          await attach(newSession(mock.transport()), "mock", "GP-5 (simulated)");
+          await attach(newSession(mock.transport()), "mock", `${pedalName(mockDevice)} (simulated)`);
         } else {
           const settings = await host.app.getSettings().catch(() => null);
           const port = settings?.portPattern ? settings.portPattern : undefined;
@@ -457,7 +503,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       } catch (e) {
         if (cancelled()) return;
         // attach() throws a ConnectionError; connectWebMidi throws a Gp5ConnectError (an Error) that still needs mapping.
-        const base = e instanceof Error ? toConnectionError(e, false) : (e as ConnectionError);
+        const base = e instanceof Error ? toConnectionError(e, false, get().device) : (e as ConnectionError);
         const error = refineConnectionError(base, await hostCheck);
         set({ status: "error", error });
         if (mode === "webmidi" && (error.code === "not-found" || error.code === "bootloader")) startWatch();
@@ -483,7 +529,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ busy: { kind: "sync", progress: 0, label: "Reading the pedal" } });
       try {
         const names: SlotName[] = (await s.readPresetNames()).map((n: { slot: number; name: string }) => ({ slot: n.slot, name: n.name }));
-        cacheNames(names);
+        cacheNames(get().device, names);
         set({ names });
         await readActive(s, names);
         const raw = await s.readGlobals().catch(() => null);
@@ -531,7 +577,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       const p = get().preset!;
       // The pedal loads the model's defaults: re-read the active buffer, keep `saved` as it was.
       const body: Uint8Array = await s.readCurrentBody();
-      setPreset(toPresetState(p.slot, rebuildPrst(p.name, body, "gp5")));
+      setPreset(toPresetState(p.slot, rebuildPrst(p.name, body, await s.identify())));
     },
 
     // Order and footswitch assignments have no live command: they change the preset and reach the pedal on save.
@@ -571,7 +617,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       requireIdle();
       await s.renamePreset(slot, name, { confirm: true });
       const names = get().names.map((n) => (n.slot === slot ? { ...n, name } : n));
-      cacheNames(names);
+      cacheNames(get().device, names);
       set({ names });
       const { preset, saved } = get();
       if (preset?.slot === slot && saved) {
@@ -595,7 +641,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         });
         const written = toPresetState(slot, prst);
         const names = get().names.map((n) => (n.slot === slot ? { ...n, name: written.name } : n));
-        cacheNames(names);
+        cacheNames(get().device, names);
         // writePreset verifies by selecting `slot`, so it is now the active preset.
         set({ names, slot });
         setPreset(written, written);
@@ -745,7 +791,7 @@ export const useDevice = create<DeviceState>((set, get) => {
             .then((list) => list.map((n) => ({ slot: n.slot, name: n.name })))
             .catch(() => null);
           if (names) {
-            cacheNames(names);
+            cacheNames(get().device, names);
             set({ names });
           }
           await readActive(s).catch(noteError);
@@ -758,3 +804,9 @@ export const useDevice = create<DeviceState>((set, get) => {
 
 /** Body bytes of a .prst, for components that compare against device reads. */
 export { bodyOf };
+
+/** "GP-5" / "GP-50" for the connected (or last connected) pedal; "pedal" before the first connection. */
+export const usePedalName = (): string => useDevice((s) => pedalName(s.device));
+
+/** The connected (or last connected) pedal's name; "GP-5 / GP-50" before the first connection. */
+export const usePedalNameOrBoth = (): string => useDevice((s) => pedalNameOrBoth(s.device));

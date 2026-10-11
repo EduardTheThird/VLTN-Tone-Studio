@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { usePedalName } from "@/state/device";
 import { Audition, CLIPS, peaks, renderOffline, SLIM_SIZE, type ChainSettings, type ClipId, type ModelChoice } from "./audio/engine";
 import { loudnessOf, type NamInfo } from "./nam/model";
 import { levelGainDb } from "./nam/recipe";
@@ -93,6 +94,7 @@ export function AuditionStrip({ play, setPlay }: { play: PlayState; setPlay: (p:
   const loaded = useCapture((s) => s.loaded)!;
   const { choice, source, levelMatched, set } = useCapture();
   const settings = useChainSettings();
+  const pedal = usePedalName();
   const options = useMemo(() => compareOptions(loaded.info), [loaded.info]);
   const [engine, setEngine] = useState<"loading" | "ready" | "error">("loading");
   const [engineError, setEngineError] = useState<string | null>(null);
@@ -228,7 +230,7 @@ export function AuditionStrip({ play, setPlay }: { play: PlayState; setPlay: (p:
             ? `The audition engine couldn't load this capture: ${engineError}`
             : play.error
               ? play.error
-              : "Use your audio interface's instrument input. The GP-5's USB audio isn't a dry signal."}
+              : `Use your audio interface's instrument input. The ${pedal}'s USB audio isn't a dry signal.`}
         </p>
       )}
     </section>

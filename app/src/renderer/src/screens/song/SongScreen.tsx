@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notifyError } from "@/app/notify";
 import { useFileHandler, type OpenFile } from "@/state/ui";
+import { usePedalNameOrBoth } from "@/state/device";
 import { AUDIO_ACCEPT } from "@/song/decode";
 import { useSong } from "@/song/store";
 import { StemsPanel } from "./stems/StemsPanel";
@@ -31,6 +32,8 @@ export function SongScreen() {
   const [tab, setTab] = useSongTab();
   const source = useSong((s) => s.source);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Before any pedal was connected the tone can be for either model.
+  const pedal = usePedalNameOrBoth();
   useFileHandler("audio", openSongFiles);
   useFileHandler("wav", openSongFiles);
   const pick = () => fileInput.current?.click();
@@ -52,7 +55,7 @@ export function SongScreen() {
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
           <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-semibold tracking-[-0.01em] text-balance">Song</h1>
           <p className="col-start-1 row-start-2 mt-1.5 truncate text-[12px] text-silkscreen-3">
-            {source ? source.name : "Split a song into stems on this computer, then find a GP-5 tone for its guitar."}
+            {source ? source.name : `Split a song into stems on this computer, then find a ${pedal} tone for its guitar.`}
           </p>
           <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3">
             <TabsList aria-label="Song">

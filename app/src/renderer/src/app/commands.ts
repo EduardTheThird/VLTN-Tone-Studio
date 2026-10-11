@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { MenuCommand } from "@shared/ipc";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { openFiles, runCommand, useUi, type AppCommand } from "@/state/ui";
 import { modKey } from "./keys";
@@ -9,14 +10,15 @@ import { notifyError } from "./notify";
 import { requestPresetSwitch } from "./preset-switch";
 import { checkForUpdates } from "./updates";
 
-/** Reconnect to the pedal in the current mode (simulated stays simulated). */
+/** Reconnect to the pedal in the current mode (simulated stays simulated, same model). */
 export async function reconnect(): Promise<void> {
   const d = useDevice.getState();
   try {
     await d.connect(d.mode);
   } catch {
-    const err = useDevice.getState().error;
-    notifyError("Couldn't connect to the GP-5", err ?? new Error("The GP-5 didn't answer."), reconnect);
+    const { error, device } = useDevice.getState();
+    const pedal = pedalName(device);
+    notifyError(`Couldn't connect to the ${pedal}`, error ?? new Error(`The ${pedal} didn't answer.`), reconnect);
   }
 }
 

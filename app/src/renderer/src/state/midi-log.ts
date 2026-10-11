@@ -2,7 +2,7 @@
 // turns raw frames into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32").
 import { BLOCKS, CC, CMD, GLOBALS, KIND, READ, Reassembler, decodeMessage, parseSysex } from "@/gp5/lib/protocol.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
-import type { MidiLogEntry } from "./device-types";
+import type { DeviceKey, MidiLogEntry } from "./device-types";
 
 export const MIDI_LOG_CAP = 2000;
 
@@ -72,11 +72,13 @@ const GLOBAL_LABELS: Record<string, string> = {
 
 /** Param name lookup (block storage index, algId) → "Gain"; the store passes the active preset's models. */
 export type ParamNamer = (block: number, index: number) => string | undefined;
+/** Model of the connected pedal (picks the effect catalog for model names); null = unknown. */
+export type DeviceGetter = () => DeviceKey | null;
 
 const blockName = (b: number) => BLOCKS[b] ?? `Block ${b}`;
 
-/** Describe one complete logical payload (both directions). */
-export function describePayload(p: Uint8Array, dir: "out" | "in", paramName?: ParamNamer): { text: string; ack: boolean } {
+/** Describe one complete logical payload (both directions). `device` picks the catalog; unknown → GP-50 (a superset). */
+export function describePayload(p: Uint8Array, dir: "out" | "in", paramName?: ParamNamer, device: DeviceKey | null = null): { text: string; ack: boolean } {
   const kind = p[0];
   const fn = p[1];
   if (kind === KIND.ACK) return { text: "Acknowledged", ack: true };
@@ -110,7 +112,7 @@ export function describePayload(p: Uint8Array, dir: "out" | "in", paramName?: Pa
     case "block":
       return { text: `${who}${blockName(msg.block!)} ${msg.enabled ? "on" : "off"}`, ack: false };
     case "model": {
-      const m = modelByFxid(msg.fxid!) as { name?: string } | undefined;
+      const m = modelByFxid(msg.fxid!, device ?? "gp50") as { name?: string } | undefined;
       return { text: `${who}${blockName(msg.block!)} model ${m?.name ?? `0x${msg.fxid!.toString(16)}`}`, ack: false };
     }
     case "slot":
@@ -149,7 +151,10 @@ export const shortRaw = (b: Uint8Array) => (((b[0] & 0xf0) === 0xb0 ? `CC#${b[1]
 export class MidiLogDecoder {
   #tx = new Reassembler();
   #id = 0;
-  constructor(private paramName?: ParamNamer) {}
+  constructor(
+    private paramName?: ParamNamer,
+    private device: DeviceGetter = () => null,
+  ) {}
 
   line(dir: string, bytes: Uint8Array, decoded?: unknown, at = Date.now()): MidiLogEntry | null {
     const id = ++this.#id;
@@ -164,14 +169,14 @@ export class MidiLogDecoder {
       const msg = decoded as { raw?: Uint8Array } | undefined;
       const payload = msg?.raw ?? parseSysex(bytes)?.payload;
       if (!payload) return { id, at, dir: "bad", text: "Unreadable frame", raw: `SysEx ${bytes.length} B`, ack: false };
-      const { text, ack } = describePayload(payload, "in", this.paramName);
+      const { text, ack } = describePayload(payload, "in", this.paramName, this.device());
       return { id, at, dir: d, text, raw: `SysEx ${bytes.length} B`, ack };
     }
     const frame = parseSysex(bytes);
     if (!frame) return { id, at, dir: d, text: "SysEx", raw: `SysEx ${bytes.length} B`, ack: false };
     const payload = this.#tx.push(frame);
     if (!payload) return { id, at, dir: d, text: `Frame ${frame.index + 1} of ${frame.total}`, raw: `SysEx ${bytes.length} B`, ack: false };
-    const { text, ack } = describePayload(payload, "out", this.paramName);
+    const { text, ack } = describePayload(payload, "out", this.paramName, this.device());
     const frames = frame.total > 1 ? ` (${frame.total} frames)` : "";
     return { id, at, dir: d, text: text + frames, raw: `SysEx ${bytes.length} B`, ack };
   }

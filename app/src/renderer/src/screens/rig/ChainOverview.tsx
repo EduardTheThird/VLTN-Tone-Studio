@@ -3,7 +3,7 @@ import { LockIcon } from "lucide-react";
 import { Dial, GearFor, modelTitle } from "@/components/gear";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { PresetState } from "@/state/device-types";
 import { editOrder, editVolume } from "./edits";
 import { GROUPS, GROUP_TITLE, groupsOf, moveToGroup, type GroupId } from "./order";
@@ -18,6 +18,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
   const group = useRig((s) => s.group);
   const inputTrim = useDevice((s) => s.globals?.inputTrim);
   const connected = useDevice((s) => s.status === "connected");
+  const pedal = usePedalName();
   const groups = groupsOf(preset.order);
   const nsOn = preset.blocks[9].enabled;
   const [dropGroup, setDropGroup] = useState<GroupId | null>(null);
@@ -105,7 +106,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
             <LockIcon className="size-[13px]" aria-hidden />
           </span>
         </TooltipTrigger>
-        <TooltipContent>DST, NS, AMP, CAB and EQ keep a fixed order on the GP-5</TooltipContent>
+        <TooltipContent>DST, NS, AMP, CAB and EQ keep a fixed order on the {pedal}</TooltipContent>
       </Tooltip>
       <div className="h-9 w-px bg-seam-strong" />
       <Dial layout="row" size={30} label="Out" ariaLabel="Patch volume" value={preset.volume} spec={OUT_SPEC} disabled={readOnly} onChange={editVolume} />

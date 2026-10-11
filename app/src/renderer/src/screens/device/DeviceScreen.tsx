@@ -34,6 +34,7 @@ function DevicePage() {
       hostStatus: s.hostStatus,
       disconnectReason: s.disconnectReason,
       lastConnectedAt: s.lastConnectedAt,
+      device: s.device,
     })),
   );
   const view = connectionView({ ...input, platform: host.platform });

@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { findParam } from "@/gp5/lib/catalog.mjs";
 import { rebuildPrst } from "@/gp5/lib/prst.mjs";
 import { useHistory } from "@/screens/rig/history";
 import { getMock, getSession, toPresetState, useDevice } from "@/state/device";
@@ -25,7 +26,7 @@ const played = (b: BlockState) => ({
 async function pedalBlocks(): Promise<BlockState[]> {
   const body: Uint8Array = await getSession()!.readCurrentBody();
   const p = useDevice.getState().preset!;
-  return toPresetState(p.slot, rebuildPrst(p.name, body, "gp5")).blocks;
+  return toPresetState(p.slot, rebuildPrst(p.name, body, p.device)).blocks;
 }
 
 describe("auditionProposal on the simulated pedal", () => {
@@ -37,7 +38,7 @@ describe("auditionProposal on the simulated pedal", () => {
   });
 
   it("plays every proposed block live, records it in the Rig history and writes nothing", async () => {
-    const proposal = proposePreset(analysisFixture());
+    const proposal = proposePreset(analysisFixture(), useDevice.getState().preset!.device);
     const before = useDevice.getState().preset!.blocks.map(played);
     const savedBefore = useDevice.getState().saved;
     const slot = useDevice.getState().slot!;
@@ -72,6 +73,33 @@ describe("auditionProposal on the simulated pedal", () => {
 
   it("refuses to audition without a connected pedal", async () => {
     await useDevice.getState().disconnect();
-    await expect(auditionProposal(proposePreset(analysisFixture()))).rejects.toThrow(/Connect the GP-5/);
+    await expect(auditionProposal(proposePreset(analysisFixture(), "gp5"))).rejects.toThrow(/Connect the GP-5/);
+  });
+});
+
+describe("auditionProposal on a simulated GP-50", () => {
+  beforeAll(async () => {
+    await useDevice.getState().connect("mock", { mockDevice: "gp50" });
+  });
+  afterAll(async () => {
+    await useDevice.getState().disconnect();
+  });
+
+  it("plays a GP-50 proposal with the GP-50's params, Sync left off", async () => {
+    expect(useDevice.getState().preset!.device).toBe("gp50");
+    const proposal = proposePreset(analysisFixture(), "gp50");
+    const dly = proposal.blocks[7];
+    const sync = findParam(dly.fxid!, "Sync", "gp50");
+    expect(dly.params![sync.index]).toBe(0);
+
+    const snapshots = await auditionProposal(proposal);
+    const live = await pedalBlocks();
+    expect(live[7].model?.name).toBe("Pure");
+    expect(played(live[7]).params).toMatchObject({ Time: 375, Sync: 0 });
+    await restoreBlocks(snapshots);
+  }, 60_000);
+
+  it("refuses a proposal made from the GP-5 catalog", async () => {
+    await expect(auditionProposal(proposePreset(analysisFixture(), "gp5"))).rejects.toThrow(/for the GP-5, but the GP-50 is connected/);
   });
 });

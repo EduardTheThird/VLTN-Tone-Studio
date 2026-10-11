@@ -91,7 +91,9 @@ export async function editBlock(label: string, to: BlockSnapshot) {
 }
 
 export function resetToDefaults(block: BlockState) {
-  return editBlock("Reset to defaults", { ...snapshot(block), params: defaultParams(block.fxid) });
+  const p = dev().preset;
+  if (!p) return Promise.resolve();
+  return editBlock("Reset to defaults", { ...snapshot(block), params: defaultParams(block.fxid, p.device) });
 }
 
 /** Apply an edit as described (redo) — the caller inverts it for undo. */

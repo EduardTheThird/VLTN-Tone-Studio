@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
 import type { Step } from "./plans";
-import { isEmptyName } from "./store";
+import { emptyName, isEmptyName } from "./store";
 
 export interface SlotPick {
   title: string;
@@ -31,7 +31,7 @@ export function SlotPickerDialog({ pick, onOpenChange }: { pick: SlotPick | null
   }, [pick]);
 
   if (!pick) return null;
-  const nameOf = (slot: number) => names[slot]?.name ?? "GP-5";
+  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const steps = target === null ? null : pick.preview(target);
   const label = (from: Step["from"]) => (typeof from === "number" ? `${String(from).padStart(2, "0")} ${nameOf(from)}` : (pick.sourceName?.(from) ?? "Empty preset"));
 

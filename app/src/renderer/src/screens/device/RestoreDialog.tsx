@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { describeError, notifySuccess } from "@/app/notify";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { RestoreError } from "@/state/device-types";
 import { runBackupNow } from "@/screens/library/backup-now";
 import { isEmptyName } from "@/screens/library/store";
@@ -33,6 +34,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   const busy = useDevice((s) => s.busy);
   const unsaved = useDevice((s) => s.unsavedChanges);
   const connected = useDevice((s) => s.status === "connected");
+  const pedal = usePedalName();
   const backupDefault = useAppSettings((s) => s.settings.backupBeforeWrite);
   const [backupFirst, setBackupFirst] = useState(backupDefault);
   const [phase, setPhase] = useState<"confirm" | "backup" | "restore">("confirm");
@@ -56,6 +58,9 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   const used = slots.filter((s) => !isEmptyName(names[s]?.name)).length;
   const running = phase !== "confirm";
   const count = `${slots.length} ${slots.length === 1 ? "slot" : "slots"}`;
+  const inList = new Set(slots);
+  const converted = source.converted.filter((c) => inList.has(c.slot));
+  const lossy = converted.filter((c) => c.dropped.length > 0);
 
   const run = async (list: RestoreSource["entries"], retry: boolean) => {
     setFailure(null);
@@ -107,7 +112,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             {all ? "Restore all 100 slots" : `Restore ${count}`} from {source.title}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {all ? "Every preset on the GP-5 is replaced with the copy in this backup." : `${describeSlots(slots)} on the GP-5 are replaced with the copies in this folder.`} Presets you changed since then are
+            {all ? `Every preset on the ${pedal} is replaced with the copy in this backup.` : `${describeSlots(slots)} on the ${pedal} are replaced with the copies in this folder.`} Presets you changed since then are
             lost unless you back them up first.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -129,6 +134,22 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
               <dd className="max-h-20 overflow-auto text-silkscreen-2">
                 {source.skipped.map((s) => (
                   <div key={s}>{s}</div>
+                ))}
+              </dd>
+            </>
+          )}
+          {converted.length > 0 && (
+            <>
+              <dt className="text-silkscreen-3">Converted</dt>
+              <dd className="max-h-24 overflow-auto text-silkscreen-2">
+                <div className="text-pretty">
+                  {converted.length === 1 ? "1 preset was" : `${converted.length} presets were`} made on a {pedalName(converted[0].from)} and {converted.length === 1 ? "is" : "are"} converted
+                  for your {pedal}.{lossy.length > 0 ? " These blocks have no equivalent and are left empty:" : ""}
+                </div>
+                {lossy.map((c) => (
+                  <div key={c.slot}>
+                    Slot {String(c.slot).padStart(2, "0")} {c.name}: {c.dropped.join(", ")}
+                  </div>
                 ))}
               </dd>
             </>

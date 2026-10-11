@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownToLineIcon, CheckIcon } from "lucide-react";
 import {
   AlertDialog,
@@ -15,13 +15,12 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
+import { writeFrameCount } from "@/state/device-model";
 import { cn } from "@/lib/utils";
 import { MiniChain } from "./MiniChain";
 import { summarize } from "./preset-summary";
 import { backUpSlot, describeError, resolveBackupSource, type BackupSource } from "./write-helpers";
-
-const FRAMES = 26;
 
 export interface ConfirmWriteDialogProps {
   open: boolean;
@@ -31,8 +30,8 @@ export interface ConfirmWriteDialogProps {
   slot: number;
   /** What is in the slot now; null when the slot is empty (no backup needed) */
   replacing: { name: string; detail?: string } | null;
-  /** What gets written; `prst` adds its MiniChain */
-  incoming: { name: string; detail?: string; prst?: Uint8Array };
+  /** What gets written, already prepared for the connected pedal (MiniChain and frame count come from `prst`) */
+  incoming: { name: string; detail?: string; prst: Uint8Array };
   /** Action button label, e.g. "Write to slot 64" */
   action: string;
   /** Overrides the default description */
@@ -57,6 +56,8 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
   const [source, setSource] = useState<BackupSource | null>(null);
   const busy = useDevice((s) => s.busy);
   const connected = useDevice((s) => s.status === "connected");
+  const pedal = usePedalName();
+  const frameTotal = useMemo(() => writeFrameCount(incoming.prst), [incoming.prst]);
   const checkboxId = useId();
   const running = phase !== "confirm";
 
@@ -111,7 +112,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
 
   const writeFraction = busy?.kind === "write" ? busy.progress : 0;
   const pct = phase === "backup" ? 6 : phase === "write" ? (doBackup ? 15 : 0) + writeFraction * (doBackup ? 70 : 85) : 0;
-  const frames = Math.round(writeFraction * FRAMES);
+  const frames = Math.round(writeFraction * frameTotal);
   const verifying = phase === "write" && writeFraction >= 1;
 
   return (
@@ -121,9 +122,9 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
           <AlertDialogTitle className="text-balance">{running ? `Writing ${incoming.name} to slot ${slot}` : title}</AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
             {running
-              ? "Keep the GP-5 connected until the check finishes."
+              ? `Keep the ${pedal} connected until the check finishes.`
               : (description ??
-                `The GP-5 stores the preset in slot ${slot}. Tone Studio reads the slot back afterwards to check that every byte arrived.${replacing ? " The pedal has no undo." : ""}`)}
+                `The ${pedal} stores the preset in slot ${slot}. Tone Studio reads the slot back afterwards to check that every byte arrived.${replacing ? " The pedal has no undo." : ""}`)}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -137,7 +138,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
                 n={doBackup ? 2 : 1}
                 state={phase === "backup" ? "todo" : verifying ? "done" : "run"}
                 label={verifying ? "Sent the preset" : "Sending the preset"}
-                detail={`${frames} of ${FRAMES} frames acknowledged`}
+                detail={`${frames} of ${frameTotal} frames acknowledged`}
               />
               <Step n={doBackup ? 3 : 2} state={verifying ? "run" : "todo"} label="Verifying" detail={`Reading slot ${slot} back`} />
             </ol>

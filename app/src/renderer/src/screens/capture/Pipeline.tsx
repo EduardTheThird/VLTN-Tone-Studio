@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Check, Send, TriangleAlert } from "lucide-react";
 import { prepareNam } from "@shared/nam";
-import { firstEmptySlot, isEmptySlotName, proposeSlotName, sanitizeSlotName } from "@shared/tone3000";
+import { firstEmptySlot, isEmptySlotName, linkedSlotOn, proposeSlotName, sanitizeSlotName } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +11,8 @@ import { notifySuccess } from "@/app/notify";
 import { cn } from "@/lib/utils";
 import { convertToSnapTone } from "@/snaptone/convert";
 import { useTestSignal } from "@/snaptone/signal";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName, usePedalNameOrBoth } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { UseOnGp5 } from "@/screens/tones/SendSteps";
 import { SnapToneSlotPicker, TestSignalNotice } from "@/screens/tones/SnapToneSteps";
@@ -80,14 +81,16 @@ export function Pipeline() {
   const title = useCaptureTitle();
   const image = useTones((s) => (record?.image_url ? (s.images[record.image_url] ?? undefined) : undefined));
   const { info } = loaded;
-  const verdict = verdictOf(info, record?.gp5.snaptoneSlot ?? null);
+  const device = useDevice((s) => s.device);
+  const model = usePedalNameOrBoth();
+  const verdict = verdictOf(info, linkedSlotOn(record, "snaptone", device), model);
   const blocked = info.unsupported !== null;
   const versionLabel = base === 0 ? "Original" : `Version ${base}`;
   const liteOnly = recipe.size === "lite" || (info.arch.kind === "A2" && !info.arch.submodels.some((s) => s.size === "full"));
 
   return (
     <section
-      aria-label="Make it GP-5 ready"
+      aria-label={`Make it ${model} ready`}
       className={cn(
         PANEL,
         "relative col-start-2 row-span-2 row-start-1 flex flex-col overflow-hidden shadow-[var(--glass-shine),0_0_0_1px_rgb(255_255_255/0.2)] min-[1421px]:col-start-3",
@@ -95,8 +98,8 @@ export function Pipeline() {
       )}
     >
       <div className="px-5 pt-4 pb-2">
-        <p className="m-0 mb-1 text-[12px] text-silkscreen-2">GP-5 version · user SnapTone</p>
-        <h2 className="m-0 mb-1.5 text-[24px] leading-[1.1] font-bold tracking-[-0.01em]">Make it GP-5 ready</h2>
+        <p className="m-0 mb-1 text-[12px] text-silkscreen-2">{model} version · user SnapTone</p>
+        <h2 className="m-0 mb-1.5 text-[24px] leading-[1.1] font-bold tracking-[-0.01em]">Make it {model} ready</h2>
         <p className="m-0 text-[12px] text-pretty text-silkscreen-3">Tone Studio turns this capture into a SnapTone the way Valeton Suite does and writes it to the pedal.</p>
       </div>
 
@@ -139,7 +142,9 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
   const record = useToneRecord();
   const go = useNav((s) => s.go);
   const toneId = loaded.source.kind === "tone" ? Number(loaded.source.ref) : null;
-  const linked = record?.gp5.snaptoneSlot ?? null;
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
+  const linked = linkedSlotOn(record, "snaptone", device);
   const isA2 = info.arch.kind === "A2";
   const a1Size = info.arch.kind === "A1" ? info.arch.size : "";
   const stopTitle = isA2 ? (liteOnly ? "A2-Lite" : "A2-Full") : `A1 ${a1Size}`;
@@ -161,14 +166,14 @@ function Gp5Pipeline({ title, image, versionLabel, info, liteOnly, shaped, expor
       <ol className="m-0 min-h-0 flex-1 list-none overflow-auto px-5 pt-3 pb-3">
         <Step n={1} status="done" title={isA2 ? `A2: the ${liteOnly ? "Lite" : "Full"} size becomes the SnapTone` : `Already NAM A1 ${a1Size}`}>
           {isA2 && <Sub>Valeton Suite renders an A2's largest size into a SnapTone, and so does Tone Studio.</Sub>}
-          <Sub>{shaped ? "Your shaping isn't in the file sent to the GP-5: baking it in needs the capture trainer, which this version doesn't include." : "No conversion needed. Your level and info edits go with it."}</Sub>
+          <Sub>{shaped ? `Your shaping isn't in the file sent to the ${pedal}: baking it in needs the capture trainer, which this version doesn't include.` : "No conversion needed. Your level and info edits go with it."}</Sub>
         </Step>
         {toneId !== null ? (
-          <Step n={2} status={linked !== null ? "done" : "current"} title={linked !== null ? `Linked to slot ${linked} on your GP-5` : "Send to the GP-5"}>
+          <Step n={2} status={linked !== null ? "done" : "current"} title={linked !== null ? `Linked to slot ${linked} on your ${pedal}` : `Send to the ${pedal}`}>
             <Sub>Tone Studio turns your version into a SnapTone, writes it to a user slot over USB and links the slot to this tone.</Sub>
             <Button variant={linked !== null ? "outline" : "default"} size="sm" className="mt-2 self-start" onClick={sendViaTones}>
               <Send className="size-3.5" aria-hidden />
-              {linked !== null ? "Send again" : "Send to GP-5…"}
+              {linked !== null ? "Send again" : `Send to the ${pedal}…`}
             </Button>
           </Step>
         ) : (
@@ -187,6 +192,7 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
   const snapTones = useDevice((s) => s.snapTones);
   const deviceBusy = useDevice((s) => s.busy);
   const hasSignal = useTestSignal((s) => s.has);
+  const pedal = usePedalName();
   const [name, setName] = useState(() => proposeSlotName(title));
   const [slot, setSlot] = useState<number | null>(null);
   const [phase, setPhase] = useState<LocalPhase>("idle");
@@ -219,7 +225,7 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
       setProgress(0);
       const stored = await useDevice.getState().uploadSnapTone(slot, name, file, { onProgress: setProgress });
       setWritten({ slot, name: stored });
-      notifySuccess(`Wrote SnapTone slot ${slot} on your GP-5`, `The pedal calls it ${stored}.`);
+      notifySuccess(`Wrote SnapTone slot ${slot} on your ${pedalName(useDevice.getState().device)}`, `The pedal calls it ${stored}.`);
     } catch (e) {
       if (!abort.current.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -230,12 +236,12 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
   const working = phase !== "idle";
   return (
     <>
-      <Step n={2} status={written ? "done" : error ? "fault" : "current"} title={written ? `Wrote slot ${written.slot} as ${written.name}` : "Write it to the GP-5"}>
-        <Sub>Tone Studio turns it into a SnapTone (about 10 seconds) and writes a user slot over USB. GP-5 names hold 10 characters.</Sub>
+      <Step n={2} status={written ? "done" : error ? "fault" : "current"} title={written ? `Wrote slot ${written.slot} as ${written.name}` : `Write it to the ${pedal}`}>
+        <Sub>Tone Studio turns it into a SnapTone (about 10 seconds) and writes a user slot over USB. Slot names hold 10 characters.</Sub>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <InputGroup className="w-36">
             <InputGroupInput
-              aria-label="Name on the GP-5"
+              aria-label={`Name on the ${pedal}`}
               value={name}
               maxLength={10}
               disabled={working}
@@ -259,9 +265,9 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
           onClick={() => void send()}
         >
           {working ? <Spinner className="size-3.5" /> : <Send className="size-3.5" aria-hidden />}
-          {replacing ? `Replace ${replacing} in slot ${slot}` : slot !== null ? `Write to slot ${slot}` : "Write to the GP-5"}
+          {replacing ? `Replace ${replacing} in slot ${slot}` : slot !== null ? `Write to slot ${slot}` : `Write to the ${pedal}`}
         </Button>
-        {!connected && <Sub>Connect the GP-5 to write it.</Sub>}
+        {!connected && <Sub>Connect the {pedal} to write it.</Sub>}
         <TestSignalNotice />
         {error && (
           <span className="text-led-fault" role="alert">

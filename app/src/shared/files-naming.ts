@@ -1,4 +1,8 @@
 // Pure naming rules for the library on disk (main) and in IndexedDB (browser build). Owner: Library.
+import type { PedalModel } from "./host/device";
+
+/** Display name of each model; also what the pedal names an empty slot (the toolkit's DEVICES[key].name/emptyName). */
+export const PEDAL_NAMES: Readonly<Record<PedalModel, string>> = { gp5: "GP-5", gp50: "GP-50" };
 
 const ILLEGAL = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
 const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
@@ -16,9 +20,9 @@ export function sanitizeFileName(name: string, fallback = "Preset"): string {
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-/** `NN-Name.prst`, the naming of `backupAll` and Valeton's own backup folders. */
-export function slotFileName(slot: number, name: string): string {
-  return `${pad2(slot)}-${sanitizeFileName(name, "GP-5")}.prst`;
+/** `NN-Name.prst`, the naming of `backupAll` and Valeton's own backup folders. A blank name becomes the empty-slot name. */
+export function slotFileName(slot: number, name: string, device: PedalModel): string {
+  return `${pad2(slot)}-${sanitizeFileName(name, PEDAL_NAMES[device])}.prst`;
 }
 
 /** Inverse of slotFileName: `07-Blues Man.prst` → { slot: 7, name: "Blues Man" }. */
@@ -34,20 +38,39 @@ export function isoDay(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-/** `gp5-YYYY-MM-DD`, then `gp5-YYYY-MM-DD-2`, `-3` … when a backup of that day exists. */
-export function backupDirName(date: Date, existing: Iterable<string>): string {
+/** `gp5-YYYY-MM-DD` (GP-50: `gp50-…`), then `…-2`, `…-3` … when a backup of that model and day exists. */
+export function backupDirName(date: Date, existing: Iterable<string>, device: PedalModel): string {
   const taken = new Set(Array.from(existing, (x) => x.toLowerCase()));
-  const base = `gp5-${isoDay(date)}`;
+  const base = `${device}-${isoDay(date)}`;
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
-/** Date of a backup folder (local midnight), or null for folders the app did not name. */
-export function parseBackupDirName(dir: string): Date | null {
-  const m = /^gp5-(\d{4})-(\d{2})-(\d{2})(?:-\d+)?$/.exec(dir);
+/** Date (local midnight) and model of a backup folder, or null for folders the app did not name. */
+export function parseBackupDirName(dir: string): { date: Date; device: PedalModel } | null {
+  const m = /^(gp50?)-(\d{4})-(\d{2})-(\d{2})(?:-\d+)?$/.exec(dir);
   if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isNaN(d.getTime()) || d.getMonth() !== Number(m[2]) - 1 ? null : d;
+  const d = new Date(Number(m[2]), Number(m[3]) - 1, Number(m[4]));
+  return Number.isNaN(d.getTime()) || d.getMonth() !== Number(m[3]) - 1 ? null : { date: d, device: m[1] as PedalModel };
+}
+
+/** Model named in a .prst header (`GP-5\0…` / `GP-50…`), or null when the bytes don't start like a preset. */
+export function prstModel(prst: Uint8Array): PedalModel | null {
+  const isGp5Prefix = prst.length > 4 && prst[0] === 0x47 && prst[1] === 0x50 && prst[2] === 0x2d && prst[3] === 0x35;
+  if (!isGp5Prefix) return null;
+  if (prst[4] === 0) return "gp5";
+  return prst[4] === 0x30 && prst[5] === 0 ? "gp50" : null;
+}
+
+/** The one model all `presets` belong to; null when there are none, one is not a preset, or they mix models. */
+export function commonModel(presets: Iterable<Uint8Array>): PedalModel | null {
+  let model: PedalModel | null = null;
+  for (const p of presets) {
+    const m = prstModel(p);
+    if (!m || (model && m !== model)) return null;
+    model = m;
+  }
+  return model;
 }
 
 /** `name.ext`, then `name (2).ext` … so imports never overwrite each other. Case-insensitive like Windows/macOS. */
@@ -89,9 +112,9 @@ export function isSafePresetFileName(fileName: string): boolean {
   return /\.prst$/i.test(fileName) && fileName === sanitizeFileName(fileName, "") && !fileName.includes("/");
 }
 
-/** Default file name for a preset added to a collection. */
-export function presetFileName(name: string, slot: number | null | undefined): string {
-  return slot === null || slot === undefined ? `${sanitizeFileName(name)}.prst` : slotFileName(slot, name);
+/** Default file name for a preset added to a collection (`device`: the preset's model, for blank names). */
+export function presetFileName(name: string, slot: number | null | undefined, device: PedalModel): string {
+  return slot === null || slot === undefined ? `${sanitizeFileName(name)}.prst` : slotFileName(slot, name, device);
 }
 
 /** `.prst` files are 507 (GP-5) or 552 (GP-50) bytes; anything far larger is not a preset. */

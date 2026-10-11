@@ -86,4 +86,10 @@ describe("MidiLogDecoder", () => {
     const reply = Uint8Array.from([0x12, 0x10, 1, 3, 1, 0, 0]);
     expect(d.line("rx", frames([...reply])[0], { raw: reply })!.text).toBe("Reply: pedal settings (7 bytes)");
   });
+
+  it("names models from the connected pedal's catalog", () => {
+    const [wah] = frames(encode.setModel(1, 0x05000008)); // PRE C-Wah exists on the GP-50 only
+    expect(new MidiLogDecoder(undefined, () => "gp50").line("tx", wah)!.text).toBe("PRE model C-Wah");
+    expect(new MidiLogDecoder(undefined, () => "gp5").line("tx", wah)!.text).toBe("PRE model 0x5000008");
+  });
 });

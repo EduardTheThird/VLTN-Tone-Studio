@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
 import { useToneMatch } from "@/song/tonematch/store";
+import { usePedalNameOrBoth } from "@/state/device";
 import { AnalysisCard } from "./AnalysisCard";
 import { IrMatchCard } from "./IrMatchCard";
 import { PANEL } from "./parts";
@@ -30,6 +31,8 @@ function NeedStems() {
   const source = useSong((s) => s.source);
   const status = useSong((s) => s.status);
   const working = status.kind === "decoding" || status.kind === "model" || status.kind === "splitting";
+  // Before any pedal was connected the proposal can be for either model.
+  const pedal = usePedalNameOrBoth();
   return (
     <div className="grid flex-1 place-items-center p-6">
       <Empty className="max-w-md">
@@ -40,8 +43,8 @@ function NeedStems() {
           <EmptyTitle>Tone match needs the guitar stem</EmptyTitle>
           <EmptyDescription>
             {source
-              ? "Split the song into stems first. Tone Studio then listens to the guitar alone: its gain, echo, reverb and tone, and proposes a GP-5 preset and a matching cabinet IR."
-              : "Open a song in the Stems tab and split it. Tone Studio then listens to the guitar alone and proposes a GP-5 preset and a matching cabinet IR."}
+              ? `Split the song into stems first. Tone Studio then listens to the guitar alone: its gain, echo, reverb and tone, and proposes a ${pedal} preset and a matching cabinet IR.`
+              : `Open a song in the Stems tab and split it. Tone Studio then listens to the guitar alone and proposes a ${pedal} preset and a matching cabinet IR.`}
           </EmptyDescription>
         </EmptyHeader>
         {source && (

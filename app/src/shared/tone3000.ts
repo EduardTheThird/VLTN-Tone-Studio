@@ -1,4 +1,5 @@
-// Pure TONE3000 → GP-5 helpers shared by main and renderer (no I/O).
+// Pure TONE3000 → pedal (GP-5 / GP-50) helpers shared by main and renderer (no I/O).
+import type { PedalModel } from "./host/device";
 import type { T3kGear, T3kModel, T3kTone, ToneRecord } from "./host/tones";
 
 export type Verdict =
@@ -11,7 +12,7 @@ export type Verdict =
 const A1_SIZES = ["standard", "lite", "feather", "nano"];
 
 /**
- * Models Tone Studio turns into GP-5 SnapTones the way Valeton Suite 2.1.0 does: NAM A1 at the trainer sizes and
+ * Models Tone Studio turns into SnapTones (GP-5 and GP-50) the way Valeton Suite 2.1.0 does: NAM A1 at the trainer sizes and
  * NAM A2 (Suite renders the A2 container's full-size submodel). Custom architectures aren't rendered here.
  */
 export const isGp5Model = (m: Pick<T3kModel, "architecture_version" | "size">) =>
@@ -21,7 +22,7 @@ export const isGp5Model = (m: Pick<T3kModel, "architecture_version" | "size">) =
 const gp5Rank = (m: Pick<T3kModel, "architecture_version" | "size">) => (m.architecture_version === "2" ? 0 : 1 + A1_SIZES.indexOf(m.size));
 
 /**
- * The tone's GP-5 models, best first. A tone that has both an A2 and an A1 of a capture defaults to the A2: both
+ * The tone's SnapTone-ready models, best first. A tone that has both an A2 and an A1 of a capture defaults to the A2: both
  * reach the pedal through the same SnapTone conversion (Suite renders either and clones the result), A2 is
  * TONE3000's more accurate architecture, and Tone Studio renders it bit-for-bit like Suite. Ties keep TONE3000's order.
  */
@@ -50,17 +51,44 @@ export function modelsVerdict(format: T3kTone["format"], models: Pick<T3kModel, 
   return { kind: "not-loadable", reason: "custom" };
 }
 
-export function verdictLabel(v: Verdict): string {
+/** `pedal`: "GP-5", "GP-50", or "GP-5 / GP-50" when no pedal has been connected yet (SnapTones and IRs suit both). */
+export function verdictLabel(v: Verdict, pedal: string): string {
   switch (v.kind) {
     case "ready":
-      return "Ready for GP-5";
+      return `Ready for ${pedal}`;
     case "reshape":
-      return "Ready for GP-5 after a format update";
+      return `Ready for ${pedal} after a format update`;
     case "ir":
       return "Goes to a User IR slot";
     case "not-loadable":
-      return v.reason === "format" ? "GP-5 can't load this format" : "Tone Studio can't convert this (custom layout)";
+      return v.reason === "format" ? `${pedal} can't load this format` : "Tone Studio can't convert this (custom layout)";
   }
+}
+
+/** Pedal model a record's slot link is on. Links made before GP-50 support carry no model and are GP-5 links. */
+export const linkDevice = (record: Pick<ToneRecord, "gp5">): PedalModel => record.gp5.device ?? "gp5";
+
+/**
+ * The record's slot link as seen from `device` (the connected or last connected pedal; null before the first
+ * connection, which accepts any link). `other` is the model the link is on when it is not `device`: slot numbers
+ * then refer to that pedal, not this one.
+ */
+export function slotLinkOn(
+  record: Pick<ToneRecord, "gp5"> | null | undefined,
+  device: PedalModel | null,
+): { kind: "snaptone" | "ir"; slot: number; slotName?: string; other: PedalModel | null } | null {
+  if (!record) return null;
+  const { snaptoneSlot, irSlot, slotName } = record.gp5;
+  const link = snaptoneSlot !== undefined ? { kind: "snaptone" as const, slot: snaptoneSlot } : irSlot !== undefined ? { kind: "ir" as const, slot: irSlot } : null;
+  if (!link) return null;
+  const on = linkDevice(record);
+  return { ...link, slotName, other: device === null || on === device ? null : on };
+}
+
+/** The linked slot of `kind` when it is on `device`'s pedal, else null (see slotLinkOn). */
+export function linkedSlotOn(record: Pick<ToneRecord, "gp5"> | null | undefined, kind: "snaptone" | "ir", device: PedalModel | null): number | null {
+  const link = slotLinkOn(record, device);
+  return link && link.kind === kind && link.other === null ? link.slot : null;
 }
 
 const GEAR_LABEL: Record<T3kGear, string> = {

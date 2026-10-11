@@ -10,15 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { host, isElectron } from "@/host";
 import { checkTestSignal, chooseTestSignal, useTestSignal } from "@/snaptone/signal";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { readSlots, runSend, updateDraft, writeSnapTone, type SendState } from "./store";
 import { Step, StepError, UseOnGp5, kb, type StepStatus } from "./SendSteps";
 
 const USER_SLOTS = Array.from({ length: 30 }, (_, i) => 50 + i);
 
 /**
- * Send a NAM capture to the GP-5 as a SnapTone (tones.md "The Send to GP-5 flow"): download, check, convert
- * in the app, write the chosen user slot over USB, link. No Valeton Suite involved.
+ * Send a NAM capture to the pedal as a SnapTone (tones.md "The Send to GP-5 flow"): download, check, convert
+ * in the app, write the chosen user slot over USB, link. No Valeton Suite involved. Same on GP-5 and GP-50.
  */
 export function SnapToneSteps({ send, model }: { send: SendState; model: T3kModel | undefined }) {
   const { phase, step, error } = send;
@@ -27,6 +27,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
   const snapTones = useDevice((s) => s.snapTones);
   const busy = useDevice((s) => s.busy);
   const hasSignal = useTestSignal((s) => s.has);
+  const pedal = usePedalName();
 
   useEffect(() => {
     if (phase === "idle") return;
@@ -89,9 +90,9 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
           <span className="mt-2 flex flex-col items-start gap-1">
             <Button size="sm" disabled={!send.name || !model || hasSignal === false} onClick={() => void runSend(send.toneId)}>
               {phase === "error" && <RotateCcw data-icon="inline-start" />}
-              {phase === "error" ? "Retry" : replacing && connected ? `Send, replacing ${replacing}` : "Send to GP-5"}
+              {phase === "error" ? "Retry" : replacing && connected ? `Send, replacing ${replacing}` : `Send to the ${pedal}`}
             </Button>
-            {!connected && <span className="text-[11px] text-silkscreen-3">Connect the GP-5 to write it; the conversion runs without it.</span>}
+            {!connected && <span className="text-[11px] text-silkscreen-3">Connect the {pedal} to write it; the conversion runs without it.</span>}
             <TestSignalNotice />
           </span>
         )}
@@ -115,7 +116,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
         {phase === "error" && step === 3 && <StepError error={error} />}
       </Step>
 
-      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote slot ${send.linkedSlot}` : `Write ${slotText} on the GP-5`}>
+      <Step n={4} status={status(4)} title={phase === "linked" ? `Wrote slot ${send.linkedSlot}` : `Write ${slotText} on the ${pedal}`}>
         {replacing && phase !== "linked" && <span className="text-silkscreen-2">Replaces {replacing}. A SnapTone can't be read back from the pedal, so keep the original file if you want it again.</span>}
         {phase === "writing" && <Progress value={send.progress * 100} className="mt-1 w-56" aria-label="SnapTone write progress" />}
         {phase === "error" && step === 4 && <StepError error={error} />}
@@ -125,13 +126,13 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
               {phase === "error" && <RotateCcw data-icon="inline-start" />}
               {writeLabel}
             </Button>
-            {!connected && <span className="text-[11px] text-silkscreen-3">Connect the GP-5 to write it.</span>}
+            {!connected && <span className="text-[11px] text-silkscreen-3">Connect the {pedal} to write it.</span>}
             {connected && slot === null && <span className="text-[11px] text-silkscreen-3">Choose a slot above.</span>}
           </span>
         )}
       </Step>
 
-      <Step n={5} status={status(5)} title={phase === "linked" ? `Linked to slot ${send.linkedSlot} on your GP-5` : "Link the new SnapTone"}>
+      <Step n={5} status={status(5)} title={phase === "linked" ? `Linked to slot ${send.linkedSlot} on your ${pedal}` : "Link the new SnapTone"}>
         {phase !== "linked" && <span className="text-pretty text-silkscreen-3">The NS block then shows this tone's image for that slot.</span>}
         {phase === "linked" && send.linkedSlot !== null && <UseOnGp5 isIr={false} slot={send.linkedSlot} />}
       </Step>

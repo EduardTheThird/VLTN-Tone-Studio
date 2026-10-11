@@ -56,11 +56,12 @@ test("GP-5 full preset write reproduces the Valeton Suite 2.1.0 capture byte-for
   assert.deepEqual(wire(encode.renamePreset(cap.slot, "Walk")), cap.rename);
 });
 
-test("framing reproduces the independent GP-50 Suite capture (29 frames, total=0x1D)", () => {
+test("GP-50 full preset write reproduces the valeton-gp50 Suite capture byte-for-byte (29 frames, total=0x1D)", () => {
   const cap = JSON.parse(readFileSync(fx("gp50_suite_write_slot0.json"), "utf8"));
-  const prst = Uint8Array.from(Buffer.from(cap.prst_b64, "base64"));
-  const payload = [0x11, 0x4f, cap.slot, 0, 0, 0, ...prst.subarray(0x19)];
-  assert.deepEqual(wire(payload), cap.write);
+  const prst = readFileSync(fx("gp50-US-Lead.prst"));
+  assert.deepEqual(wire(encode.writePreset(cap.slot, prst)), cap.write);
+  assert.equal(parseSysex(fromHex(cap.write[0])).total, 0x1d);
+  assert.throws(() => encode.writePreset(0, prst.subarray(0, 540)), /507 \(GP-5\) or 552 \(GP-50\)/);
 });
 
 test("device frames from captures decode with valid CRC", () => {

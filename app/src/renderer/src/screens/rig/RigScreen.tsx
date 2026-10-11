@@ -5,7 +5,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSettings } from "@/screens/device/settings-store";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useUi } from "@/state/ui";
 import { AmpCabView, AmpStrip } from "./AmpCabView";
@@ -31,6 +31,7 @@ export function RigScreen() {
   const preset = useDevice((s) => s.preset);
   const saved = useDevice((s) => s.saved);
   const status = useDevice((s) => s.status);
+  const pedal = usePedalName();
   const group = useRig((s) => s.group);
   const showValues = useAppSettings((s) => s.settings.showValues);
   const settingsLoaded = useAppSettings((s) => s.loaded);
@@ -81,11 +82,11 @@ export function RigScreen() {
           <EmptyMedia variant="icon">
             <UsbIcon aria-hidden />
           </EmptyMedia>
-          <EmptyTitle>Connect your GP-5 to see its preset</EmptyTitle>
+          <EmptyTitle>Connect your {pedal} to see its preset</EmptyTitle>
           <EmptyDescription>The Rig shows the preset that is active on the pedal and plays every change on it as you turn the knobs.</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Button onClick={() => useNav.getState().go("device")}>Connect the GP-5</Button>
+          <Button onClick={() => useNav.getState().go("device")}>Connect the {pedal}</Button>
         </EmptyContent>
       </Empty>
     );
@@ -160,8 +161,9 @@ function useRigKeys(readOnly: boolean) {
 }
 
 function RigSkeleton() {
+  const pedal = usePedalName();
   return (
-    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label="Reading the GP-5">
+    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label={`Reading the ${pedal}`}>
       <Skeleton className="h-9 w-72 rounded-sm" />
       <Skeleton className="h-4 w-96 rounded-sm" />
       <Skeleton className="h-20 w-full rounded-xl" />

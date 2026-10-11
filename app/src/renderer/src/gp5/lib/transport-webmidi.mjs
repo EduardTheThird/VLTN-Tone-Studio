@@ -1,4 +1,4 @@
-// WebMIDI transport for the Valeton GP-5 (Chrome/Edge/Opera/Electron; Firefox + Safari lack SysEx WebMIDI).
+// WebMIDI transport for the Valeton GP-5 / GP-50 (Chrome/Edge/Opera/Electron; Firefox + Safari lack SysEx WebMIDI).
 // Requirements: secure context (https or http://localhost), call from a user gesture the first time
 // (permission prompt "control and reprogram MIDI devices"), Valeton Suite closed (Windows ports are exclusive).
 
@@ -10,8 +10,11 @@ export class Gp5ConnectError extends Error {
   }
 }
 
-/** GP-5 port names look like "GP-5", "GP-5 MIDI", "GP-5 MIDI 1" or "GP-5 MIDI (mock)". Never match "GP-50". */
-export const GP5_PORT_RE = /GP-5(?!\d)/i;
+/**
+ * Pedal port names: "GP-5", "GP-5 MIDI 1", "GP-50 MIDI 1", "GP-5 MIDI (mock)", ... Never "GP-500" or similar.
+ * The model is detected from the preset body after connecting (Gp5Session.device), not from the port name.
+ */
+export const PEDAL_PORT_RE = /GP-50?(?!\d)/i;
 
 /** Chrome/Chromium 152 breaks WebMIDI SysEx (F0/F7 duplicated, replies dropped); fixed in 153. */
 export function brokenSysexBrowser(nav = globalThis.navigator) {
@@ -54,10 +57,10 @@ function pick(ports, match) {
 }
 
 /**
- * Open the GP-5 MIDI ports. Returns a transport for Gp5Session plus `ports` and an `ondisconnect` hook.
+ * Open the pedal's MIDI ports. Returns a transport for Gp5Session plus `ports` and an `ondisconnect` hook.
  * @param opts { access?: MIDIAccess, port?: string | RegExp, onDisconnect?: () => void }
  */
-export async function connectWebMidi({ access, port = GP5_PORT_RE, onDisconnect } = {}) {
+export async function connectWebMidi({ access, port = PEDAL_PORT_RE, onDisconnect } = {}) {
   access ??= await requestAccess();
   const input = pick(access.inputs, port);
   const output = pick(access.outputs, port);
@@ -65,7 +68,7 @@ export async function connectWebMidi({ access, port = GP5_PORT_RE, onDisconnect 
     const seen = listPorts(access).outputs.map((p) => p.name);
     throw new Gp5ConnectError(
       "not-found",
-      `No GP-5 MIDI port found (visible: ${seen.join(", ") || "none"}). Connect the pedal by USB, power it on, close Valeton Suite.` +
+      `No GP-5 or GP-50 MIDI port found (visible: ${seen.join(", ") || "none"}). Connect the pedal by USB, power it on, close Valeton Suite.` +
         " Windows 11: if the pedal shows as 'USB MIDI 2.0 Device', see the driver note in skill gp5-usb-connection.",
       { visiblePorts: seen }
     );

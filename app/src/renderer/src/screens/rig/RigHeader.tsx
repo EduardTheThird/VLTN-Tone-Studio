@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { PresetState } from "@/state/device-types";
 import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
@@ -32,6 +32,7 @@ export function RigHeader({ preset, connected }: Props) {
   const unsaved = useDevice((s) => s.unsavedChanges);
   const busy = useDevice((s) => s.busy);
   const names = useDevice((s) => s.names);
+  const pedal = usePedalName();
   const canUndo = useHistory((s) => s.past.length > 0);
   const canRedo = useHistory((s) => s.future.length > 0);
   const compare = useRig((s) => s.compare);
@@ -188,7 +189,7 @@ export function RigHeader({ preset, connected }: Props) {
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{!connected ? "Connect the GP-5 to save" : compare ? "Go back to your edits to save" : keyLabel(["Mod", "S"])}</TooltipContent>
+            <TooltipContent>{!connected ? `Connect the ${pedal} to save` : compare ? "Go back to your edits to save" : keyLabel(["Mod", "S"])}</TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -219,7 +220,7 @@ export function RigHeader({ preset, connected }: Props) {
         <CommandInput placeholder="Find a slot by number or name" />
         <CommandList className="max-h-[360px]">
           <CommandEmpty>No slot matches</CommandEmpty>
-          <CommandGroup heading="GP-5 slots">
+          <CommandGroup heading={`${pedal} slots`}>
             {names.map((n) => (
               <CommandItem
                 key={n.slot}
@@ -295,9 +296,10 @@ function FsChips({ label, blocks, preset }: { label: string; blocks: number[]; p
 function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }) {
   const [value, setValue] = useState(preset.name.trimEnd());
   const [busy, setBusy] = useState(false);
+  const pedal = usePedalName();
   const bad = BAD_CHAR.exec(value)?.[0];
   const trimmed = value.trimEnd();
-  const error = bad ? `The GP-5 can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed === "" ? "A slot needs a name." : null;
+  const error = bad ? `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed === "" ? "A slot needs a name." : null;
   const atLimit = value.length >= NAME_MAX;
   const slot = preset.slot;
   const before = preset.name;
@@ -355,7 +357,7 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
         </Button>
       </div>
       <span role={error ? "alert" : undefined} className={cn("text-xs", error ? "text-led-fault" : "text-led-warn")}>
-        {error ?? (atLimit ? "The GP-5 stores 10 characters. Further typing is ignored." : "")}
+        {error ?? (atLimit ? `The ${pedal} stores 10 characters. Further typing is ignored.` : "")}
       </span>
     </div>
   );

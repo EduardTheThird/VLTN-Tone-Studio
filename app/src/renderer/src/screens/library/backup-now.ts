@@ -1,6 +1,7 @@
 // "Back up now": read all 100 slots (backupAll), save them as a backups folder, report. Shared with the Device screen.
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { notifyBackupDone, notifyError } from "@/app/notify";
 import type { CollectionInfo } from "@shared/host/files";
 import { useLibrary } from "./store";
@@ -9,7 +10,7 @@ import { useLibrary } from "./store";
 export async function runBackupNow(): Promise<CollectionInfo | null> {
   const d = useDevice.getState();
   if (d.status !== "connected") {
-    notifyError("Couldn't start the backup", new Error("The GP-5 isn't connected. Connect it and try again."));
+    notifyError("Couldn't start the backup", new Error(`The ${pedalName(d.device)} isn't connected. Connect it and try again.`));
     return null;
   }
   if (d.unsavedChanges > 0) {

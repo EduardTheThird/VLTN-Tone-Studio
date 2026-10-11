@@ -15,6 +15,7 @@ const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
   ...over,
 });
 const gp5 = { vendorId: 0x84ef, productId: 0x0184, product: "GP-5" };
+const gp50 = { vendorId: 0x84ef, productId: 0x018a, product: "GP-50" };
 const updater = { vendorId: 0x84ef, productId: 0x0185, product: "Valeton Upgrade" };
 
 const err = (code: ConnectionErrorCode, input: Partial<GuidanceInput> = {}) =>
@@ -74,6 +75,18 @@ describe("connectionView", () => {
     expect(v.steps.some((s) => s.includes("USB Audio Device"))).toBe(true);
   });
 
+  it("a GP-50 on USB is a supported pedal: driver guidance names it, never update mode", () => {
+    const v = err("not-found", { platform: "win32", hostStatus: host({ usb: [gp50], driver: "usbmidi2" }) });
+    expect(v.kind).toBe("driver");
+    expect(v.statusText).toBe("GP-50 found, but its driver hides the MIDI port");
+    expect(v.steps[0]).toContain("GP-50");
+  });
+
+  it("names the last connected model, or both models when none is known", () => {
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp50" }).statusText).toBe("Connecting to the GP-50");
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50");
+  });
+
   it("no pedal on USB = plug-in guidance listing the visible ports", () => {
     const v = connectionView({
       status: "error",
@@ -102,7 +115,10 @@ describe("connectionView", () => {
   });
 
   it("timeout after bytes arrived = wrong device / firmware", () => {
-    expect(err("timeout").kind).toBe("wrong-device");
+    const v = err("timeout", { device: "gp5" });
+    expect(v.kind).toBe("wrong-device");
+    expect(v.detail).toBe("A device answered, but not like a GP-5");
+    expect(v.note).not.toMatch(/not a GP-50/);
   });
 
   it("every connection error code maps to a view with text", () => {
@@ -125,8 +141,9 @@ describe("refineConnectionError", () => {
     expect(refineConnectionError({ code: "not-found", message: "" }, host()).code).toBe("not-found");
     expect(refineConnectionError({ code: "not-found", message: "" }, null).code).toBe("not-found");
   });
-  it("never treats a GP-50 as update mode", () => {
-    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [{ vendorId: 0x84ef, productId: 0x018a, product: "GP-50" }] })).code).toBe("not-found");
+  it("never treats a GP-50 as update mode, even next to another Valeton device", () => {
+    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp50] })).code).toBe("not-found");
+    expect(refineConnectionError({ code: "busy", message: "" }, host({ usb: [gp50, updater] })).code).toBe("busy");
   });
 });
 
@@ -152,6 +169,17 @@ describe("diagnosticChecks", () => {
     const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "win32", hostStatus: host({ usb: [gp5], driver: "usbmidi2", suiteRunning: true }) });
     expect(checks.find((c) => c.id === "driver")?.state).toBe("fault");
     expect(checks.find((c) => c.id === "access")?.state).toBe("warn");
+  });
+
+  it("reports a GP-50 on USB with its product id", () => {
+    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "linux", hostStatus: host({ usb: [gp50] }) });
+    expect(checks[0]).toMatchObject({ state: "ok", detail: "Valeton GP-50 found, 84EF:018A" });
+    expect(checks[2].detail).toBe("No GP-50 MIDI port");
+  });
+
+  it("reports other Valeton devices as faults", () => {
+    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "linux", hostStatus: host({ usb: [updater] }) });
+    expect(checks[0]).toMatchObject({ state: "fault", detail: "Other Valeton device: 84EF:0185" });
   });
 
   it("browser without WebMIDI reports the browser row as a fault", () => {

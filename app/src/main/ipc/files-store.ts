@@ -1,19 +1,23 @@
 // The library on disk (no Electron imports, so it is testable against a temp dir).
-//   <root>/backups/gp5-YYYY-MM-DD[-n]/NN-Name.prst (+ backup.json)   read-only snapshots of the pedal
-//   <root>/library/<dir>/collection.json + *.prst                    Imported files, Replaced presets, user collections
+//   <root>/backups/<gp5|gp50>-YYYY-MM-DD[-n]/NN-Name.prst (+ backup.json)   read-only snapshots of the pedal
+//   <root>/library/<dir>/collection.json + *.prst                           Imported files, Replaced presets, user collections
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { HostError } from "@shared/ipc";
 import type { BackupSlot, CollectionInfo, CollectionKind, LocalPreset, NewPreset, PickedFile } from "@shared/host/files";
+import type { PedalModel } from "@shared/host/device";
 import {
   MAX_PRST_BYTES,
+  PEDAL_NAMES,
   backupDirName,
   collectionDirName,
+  commonModel,
   isSafePresetFileName,
   parseBackupDirName,
   parseCollectionId,
   parseSlotFileName,
   presetFileName,
+  prstModel,
   uniqueFileName,
 } from "@shared/files-naming";
 
@@ -39,6 +43,7 @@ const FIXED: Record<string, { title: string; kind: "imported" | "replaced" }> = 
 };
 
 const isPrst = (f: string) => /\.prst$/i.test(f);
+const isPedalModel = (v: unknown): v is PedalModel => v === "gp5" || v === "gp50";
 
 /** Preset name stored in a .prst (16 bytes at 0x19, NUL padded). */
 function prstName(b: Uint8Array): string {
@@ -123,21 +128,26 @@ export class LibraryStore {
     const path = join(this.backupsDir, dir);
     const files = await this.prstFiles(path);
     let createdAt: string | null = null;
+    let device: PedalModel | null = null;
     try {
       const raw: unknown = JSON.parse(await readFile(join(path, "backup.json"), "utf8"));
       if (raw && typeof raw === "object" && "createdAt" in raw && typeof raw.createdAt === "string") createdAt = raw.createdAt;
+      if (raw && typeof raw === "object" && "device" in raw && isPedalModel(raw.device)) device = raw.device;
     } catch {
       // Folders copied in by hand have no backup.json.
     }
-    createdAt ??= parseBackupDirName(dir)?.toISOString() ?? (await stat(path)).mtime.toISOString();
-    return { id: `backups/${dir}`, kind: "backup", title: "GP-5 backup", createdAt, count: files.length, path };
+    const named = parseBackupDirName(dir);
+    createdAt ??= named?.date.toISOString() ?? (await stat(path)).mtime.toISOString();
+    // backup.json before GP-50 support has no device: the folder name says it, else the first preset's header.
+    device ??= named?.device ?? (files.length ? prstModel(new Uint8Array(await readFile(join(path, files[0])))) : null) ?? "gp5";
+    return { id: `backups/${dir}`, kind: "backup", title: `${PEDAL_NAMES[device]} backup`, device, createdAt, count: files.length, path };
   }
 
   private async libraryInfo(dir: string): Promise<CollectionInfo> {
     const path = join(this.libraryDir, dir);
     const meta = await this.readMeta(dir);
     const files = await this.prstFiles(path);
-    return { id: `library/${dir}`, kind: meta.kind, title: meta.title, createdAt: meta.createdAt, count: files.length, path };
+    return { id: `library/${dir}`, kind: meta.kind, title: meta.title, device: null, createdAt: meta.createdAt, count: files.length, path };
   }
 
   async listCollections(): Promise<CollectionInfo[]> {
@@ -179,17 +189,19 @@ export class LibraryStore {
 
   async saveBackup(slots: BackupSlot[], now = new Date()): Promise<CollectionInfo> {
     if (!slots.length) throw new HostError("invalid", "Nothing to back up");
+    const device = commonModel(slots.map((s) => s.prst));
+    if (!device) throw new HostError("invalid", "A backup holds presets of one GP-5 or one GP-50");
     await mkdir(this.backupsDir, { recursive: true });
-    const dir = backupDirName(now, await listDirs(this.backupsDir));
+    const dir = backupDirName(now, await listDirs(this.backupsDir), device);
     const path = join(this.backupsDir, dir);
     await mkdir(path);
     const taken: string[] = [];
     for (const s of slots) {
-      const fileName = uniqueFileName(presetFileName(s.name, s.slot), taken);
+      const fileName = uniqueFileName(presetFileName(s.name, s.slot, device), taken);
       taken.push(fileName);
       await writeFile(join(path, fileName), s.prst);
     }
-    await writeFile(join(path, "backup.json"), JSON.stringify({ createdAt: now.toISOString(), slots: slots.length }, null, 2));
+    await writeFile(join(path, "backup.json"), JSON.stringify({ createdAt: now.toISOString(), device, slots: slots.length }, null, 2));
     return this.backupInfo(dir);
   }
 
@@ -238,7 +250,7 @@ export class LibraryStore {
     const taken = await this.prstFiles(path);
     const added: string[] = [];
     for (const item of items) {
-      const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot);
+      const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot, prstModel(item.prst) ?? "gp5");
       const fileName = uniqueFileName(preferred, taken);
       taken.push(fileName);
       await writeFile(join(path, fileName), item.prst);

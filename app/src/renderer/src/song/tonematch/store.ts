@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { BlockSnapshot } from "@/screens/rig/history";
 import { useSong } from "@/song/store";
 import { useDevice } from "@/state/device";
+import type { DeviceKey, DeviceState } from "@/state/device-types";
 import type { GuitarAnalysis } from "./analyse";
 import { auditionProposal, restoreBlocks } from "./apply";
 import { proposePreset, type Proposal } from "./proposal";
@@ -36,6 +37,9 @@ export interface ToneMatchState {
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 let running: AbortController | null = null;
 
+/** The pedal a proposal is for: the live preset's model, else the connected (or last connected) pedal's. */
+const targetDevice = (d: Pick<DeviceState, "preset" | "device">): DeviceKey => d.preset?.device ?? d.device ?? "gp5";
+
 export const useToneMatch = create<ToneMatchState>((set, get) => ({
   status: { kind: "idle" },
   analysis: null,
@@ -51,7 +55,7 @@ export const useToneMatch = create<ToneMatchState>((set, get) => ({
     set({ status: { kind: "running", fraction: 0 }, analysis: null, proposal: null, audition: { kind: "idle" } });
     try {
       const analysis = await analyseStem(guitar, (fraction) => !ctrl.signal.aborted && set({ status: { kind: "running", fraction } }), ctrl.signal);
-      set({ status: { kind: "done" }, analysis, proposal: proposePreset(analysis) });
+      set({ status: { kind: "done" }, analysis, proposal: proposePreset(analysis, targetDevice(useDevice.getState())) });
     } catch (e) {
       if (ctrl.signal.aborted) return;
       set({ status: { kind: "error", message: message(e) } });
@@ -96,6 +100,14 @@ export const useToneMatch = create<ToneMatchState>((set, get) => ({
     set({ status: { kind: "idle" }, analysis: null, proposal: null, audition: { kind: "idle" } });
   },
 }));
+
+// Another pedal model (a GP-50 after a GP-5): the proposal has to come from that pedal's catalog.
+useDevice.subscribe((s, prev) => {
+  const device = targetDevice(s);
+  if (device === targetDevice(prev)) return;
+  const { analysis, proposal } = useToneMatch.getState();
+  if (analysis && proposal && proposal.device !== device) useToneMatch.setState({ proposal: proposePreset(analysis, device) });
+});
 
 // Another song or a new split: the old analysis no longer applies. Fresh stems are analysed right away (in the
 // worker), so the result is ready by the time anyone opens Tone match.

@@ -106,7 +106,7 @@ export interface NamInfo {
   features: string[];
   /** Output level can be changed losslessly (head_scale is the last weight of every WaveNet) */
   levelEditable: boolean;
-  /** Why this capture can't be made GP-5 ready (null when it could be) */
+  /** Why this capture can't become a SnapTone (null when it could) */
   unsupported: string | null;
 }
 
@@ -229,7 +229,7 @@ export function inspectNam(file: NamFile): NamInfo {
       checkNam(file);
     } catch (e) {
       if (!(e instanceof NamCheckError)) throw e;
-      unsupported = `This capture can't become a GP-5 SnapTone: ${e.detail}.`;
+      unsupported = `This capture can't become a SnapTone: ${e.detail}.`;
     }
   }
 

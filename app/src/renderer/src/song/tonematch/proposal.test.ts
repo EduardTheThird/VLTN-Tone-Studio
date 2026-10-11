@@ -3,13 +3,14 @@ import { findModel } from "@/gp5/lib/catalog.mjs";
 import { ampGain, chooseAmp, proposePreset } from "./proposal";
 import { analysisFixture } from "./test-signals";
 
-const fxid = (name: string, block: string) => findModel(name, block)?.fxid;
+const fxid = (name: string, block: string) => findModel(name, block, "gp5")?.fxid;
 const neutral = { bassDb: 0, lowMidDb: 0, midDb: 0, trebleDb: 0, presenceDb: 0, confidence: 0.6 };
 
 describe("proposePreset", () => {
   it("builds a scooped high-gain preset with the measured delay and reverb", () => {
-    const p = proposePreset(analysisFixture());
+    const p = proposePreset(analysisFixture(), "gp5");
     const by = Object.fromEntries(p.blocks.map((b) => [b.code, b]));
+    expect(p.device).toBe("gp5");
     expect(p.blocks.map((b) => b.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(by.AMP.fxid).toBe(fxid("Mess DualM", "AMP"));
     expect(by.CAB.fxid).toBe(fxid("Mess 4x12", "CAB"));
@@ -30,6 +31,7 @@ describe("proposePreset", () => {
         delay: { detected: true, timeMs: 250, feedback: 0.9, level: 0.9, dark: false, confidence: 0.2 },
         reverb: { detected: false, rt60: 0, levelDb: -60, tails: 0, dryOffsets: 12, confidence: 0.8 },
       }),
+      "gp5",
     );
     expect(p.blocks[7]).toMatchObject({ code: "DLY", enabled: false, fxid: null });
     expect(p.blocks[8]).toMatchObject({ code: "RVB", enabled: false, fxid: null });
@@ -42,15 +44,19 @@ describe("proposePreset", () => {
         gain: { gainClass: "high", score: 0.9, confidence: 0.8, flatness: 0.05, hfRatioDb: -16, crestDb: 0.8 },
         delay: { detected: true, timeMs: 110, feedback: 0.05, level: 0.6, dark: false, confidence: 0.8 },
       }),
+      "gp5",
     );
     expect(p.blocks[7].fxid).toBe(fxid("Slapback", "DLY"));
     expect(p.blocks[2]).toMatchObject({ code: "DST", enabled: true, fxid: fxid("Green OD", "DST") });
   });
 
-  it("keeps every param inside the catalog's range", () => {
-    const p = proposePreset(analysisFixture({ tone: { bassDb: 30, lowMidDb: -30, midDb: 30, trebleDb: -30, presenceDb: 30, confidence: 0.6 } }));
+  it.each(["gp5", "gp50"] as const)("keeps every param inside the %s catalog's range", (device) => {
+    const p = proposePreset(analysisFixture({ tone: { bassDb: 30, lowMidDb: -30, midDb: 30, trebleDb: -30, presenceDb: 30, confidence: 0.6 } }), device);
+    expect(p.device).toBe(device);
     for (const b of p.blocks.filter((x) => x.fxid !== null)) {
-      for (const param of findModel(b.title!, b.code)?.params ?? []) {
+      const params = findModel(b.title!, b.code, device)?.params;
+      expect(params, `${b.code} ${b.title}`).toBeDefined();
+      for (const param of params ?? []) {
         expect(b.params![param.index]).toBeGreaterThanOrEqual(param.min);
         expect(b.params![param.index]).toBeLessThanOrEqual(param.max);
       }

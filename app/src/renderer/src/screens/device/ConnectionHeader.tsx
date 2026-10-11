@@ -3,8 +3,10 @@ import { CircleCheck, LoaderCircle, RefreshCw, TriangleAlert, Unlink, Wrench } f
 import { Button } from "@/components/ui/button";
 import { notifyError } from "@/app/notify";
 import { cn } from "@/lib/utils";
-import { gp5OnUsb, useDevice } from "@/state/device";
-import { clock, requestErrorLine, type ConnectionView, type Led } from "./guidance";
+import { PEDAL_PID, pedalOnUsb } from "@shared/host/device";
+import { useDevice } from "@/state/device";
+import { DEVICE_KEYS, pedalName } from "@/state/device-model";
+import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led } from "./guidance";
 
 export const LED_CLASS: Record<Led, string> = { on: "bg-led-on", warn: "bg-led-warn", fault: "bg-led-fault", off: "bg-led-off" };
 
@@ -14,6 +16,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
     useShallow((s) => ({
       status: s.status,
       mode: s.mode,
+      device: s.device,
       hostStatus: s.hostStatus,
       lastError: s.lastError,
       connectedAt: s.connectedAt,
@@ -29,7 +32,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
     })),
   );
   const connected = d.status === "connected";
-  const usbIds = gp5OnUsb(d.hostStatus) && d.mode !== "mock";
+  const onUsb = d.mode !== "mock" ? pedalOnUsb(d.hostStatus) : null;
   const errorLine = connected ? requestErrorLine(d.lastError) : null;
 
   const lookForPedal = () => void d.connect("webmidi").catch(() => {});
@@ -42,7 +45,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
   return (
     <header className="flex items-end gap-6 px-7 pt-[22px] pb-1.5">
       <div className="min-w-0">
-        <h1 className="text-[44px] leading-none font-bold tracking-[-0.02em] text-balance">Valeton GP-5</h1>
+        <h1 className="text-[44px] leading-none font-bold tracking-[-0.02em] text-balance">Valeton {pedalModelName(d)}</h1>
         <div className="mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm text-silkscreen-3">
           <span className="flex items-center gap-1.5">
             {view.kind === "connecting" ? (
@@ -54,9 +57,9 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
             {view.detail}
             {connected && d.connectedAt && <b className="font-semibold text-silkscreen">{clock(d.connectedAt)}</b>}
           </span>
-          {usbIds && (
+          {onUsb && (
             <span>
-              USB <b className="font-semibold text-silkscreen">84EF:0184</b>
+              USB <b className="font-semibold text-silkscreen">84EF:{PEDAL_PID[onUsb].toString(16).toUpperCase().padStart(4, "0")}</b>
             </span>
           )}
           {(connected || view.kind === "connecting") && d.portName && (
@@ -120,11 +123,13 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
           </>
         ) : (
           <>
-            {view.kind !== "bootloader" && view.kind !== "connecting" && (
-              <Button variant={view.action === "none" ? "outline" : "ghost"} onClick={() => void d.connect("mock").catch(() => {})}>
-                Use the simulated pedal
-              </Button>
-            )}
+            {view.kind !== "bootloader" &&
+              view.kind !== "connecting" &&
+              DEVICE_KEYS.map((key) => (
+                <Button key={key} variant={view.action === "none" ? "outline" : "ghost"} onClick={() => void d.connect("mock", { mockDevice: key }).catch(() => {})}>
+                  Simulate a {pedalName(key)}
+                </Button>
+              ))}
             {view.action === "cancel" && (
               <Button variant="ghost" onClick={() => void d.cancelConnect()}>
                 Cancel

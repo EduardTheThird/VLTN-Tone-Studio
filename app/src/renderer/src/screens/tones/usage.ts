@@ -1,6 +1,6 @@
 import { parsePrst } from "@/gp5/lib/prst.mjs";
 
-/** GP-5 storage block indices and the fxid ranges that point at pedal slots. */
+/** Storage block indices (the same on GP-5 and GP-50) and the fxid ranges that point at pedal slots. */
 const CAB = 4;
 const NS = 9;
 const SNAPTONE_BASE = 0x0f000000;

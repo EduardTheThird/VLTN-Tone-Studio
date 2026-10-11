@@ -1,7 +1,10 @@
 // Contract between the device layer (src/renderer/src/state/device.ts) and every screen.
 // Screens read state with `useDevice(selector)` and call actions on `useDevice.getState()`.
-// Block indices follow the GP-5 storage order: 0 NR, 1 PRE, 2 DST, 3 AMP, 4 CAB, 5 EQ, 6 MOD, 7 DLY, 8 RVB, 9 NS.
+// Block indices follow the GP-5 / GP-50 storage order: 0 NR, 1 PRE, 2 DST, 3 AMP, 4 CAB, 5 EQ, 6 MOD, 7 DLY, 8 RVB, 9 NS.
 import type { DeviceHostStatus } from "@shared/host/device";
+import type { DeviceKey } from "@/gp5/lib/session.mjs";
+
+export type { DeviceKey };
 
 export type BlockCode = "NR" | "PRE" | "DST" | "AMP" | "CAB" | "EQ" | "MOD" | "DLY" | "RVB" | "NS";
 export const BLOCK_CODES: readonly BlockCode[] = ["NR", "PRE", "DST", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "NS"];
@@ -45,6 +48,8 @@ export interface BlockState {
 }
 
 export interface PresetState {
+  /** Model the preset belongs to (from the .prst header); selects the effect catalog */
+  device: DeviceKey;
   slot: number;
   name: string;
   blocks: BlockState[];
@@ -155,6 +160,11 @@ export interface DeviceState {
   status: ConnectionStatus;
   error: ConnectionError | null;
   portName: string | null;
+  /**
+   * Pedal model: the connected one, else the last one connected (persisted across launches), null before the first
+   * connection. Writes always go through the session, which checks the real model; this drives copy and defaults.
+   */
+  device: DeviceKey | null;
   /** 100 slot names (cached; shown before the device answers) */
   names: SlotName[];
   /** Active slot on the pedal */
@@ -199,7 +209,7 @@ export interface DeviceState {
   clearLastError(): void;
 
   // connection
-  connect(mode?: DeviceMode): Promise<void>;
+  connect(mode?: DeviceMode, opts?: { mockDevice?: DeviceKey }): Promise<void>;
   disconnect(): Promise<void>;
   /** Re-read names, slot and the active preset */
   sync(): Promise<void>;

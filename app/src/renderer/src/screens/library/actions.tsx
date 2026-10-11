@@ -1,13 +1,14 @@
 // Library actions (shared by the panes through context) and the dialogs they open.
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { convertPrst } from "@/gp5/lib/prst.mjs";
 import { ConfirmWriteDialog } from "@/components/write/ConfirmWriteDialog";
+import { conversionNote } from "@/components/write/conversion";
 import { describeSummary, summarize } from "@/components/write/preset-summary";
 import { describeError } from "@/components/write/write-helpers";
 import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
 import { requestPresetSwitch } from "@/app/preset-switch";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { pedalName, prepareForDevice, presetDevice } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import type { OpenFile } from "@/state/ui";
 import { IMPORTED_ID, type CollectionInfo, type LocalPreset, type PickedFile } from "@shared/host/files";
@@ -18,9 +19,11 @@ import { CollectionDialogs, type CollectionDialog } from "./CollectionDialogs";
 import { RenameConfirmDialog } from "./RenameConfirmDialog";
 import { importPicked } from "./import";
 import { clearSteps, copySteps, moveSteps, swapSteps } from "./plans";
-import { isEmptyName, useLibrary } from "./store";
+import { emptyName, isEmptyName, useLibrary } from "./store";
 
-const nameOf = (slot: number) => useDevice.getState().names[slot]?.name ?? "GP-5";
+const nameOf = (slot: number) => useDevice.getState().names[slot]?.name ?? emptyName();
+/** "GP-5" / "GP-50" for copy built outside React (dialog plans, errors) */
+const pedal = () => pedalName(useDevice.getState().device);
 const slotList = (slots: number[]) => (slots.length === 2 ? `slots ${slots[0]} and ${slots[1]}` : slots.length === 1 ? `slot ${slots[0]}` : `${slots.length} slots`);
 
 /** Body the app knows for `slot` and still trusts (its name matches the pedal's current name). */
@@ -46,7 +49,7 @@ async function readSlots(slots: number[], verb: string): Promise<{ slot: number;
         prst = d.slot === slot && d.saved ? d.saved.prst : await useDevice.getState().readPreset(slot);
         lib.setBody(slot, prst, "pedal");
       }
-      if (!prst) throw new Error(`Slot ${slot} hasn't been read yet. Connect the GP-5 or wait for the backup to finish.`);
+      if (!prst) throw new Error(`Slot ${slot} hasn't been read yet. Connect the ${pedal()} or wait for the backup to finish.`);
       out.push({ slot, name: nameOf(slot), prst });
     }
   } finally {
@@ -125,7 +128,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       if (!steps?.length) return;
       setBulk({
         title: slots.length === 1 ? `Copy ${nameOf(slots[0])} to slot ${target}?` : `Copy ${slots.length} slots to slots ${target}–${target + slots.length - 1}?`,
-        description: "Tone Studio reads the presets from the GP-5, writes them to the new slots and reads each one back to check it.",
+        description: `Tone Studio reads the presets from the ${pedal()}, writes them to the new slots and reads each one back to check it.`,
         action: steps.length === 1 ? `Write to slot ${target}` : `Write ${steps.length} slots`,
         steps,
         doneTitle: slots.length === 1 ? `${nameOf(slots[0])} is now also in slot ${target}` : `Copied ${slots.length} slots`,
@@ -171,6 +174,12 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       },
       writeLocal(preset, slot) {
         const collection = useLibrary.getState().collections.find((c) => c.id === preset.collectionId);
+        try {
+          prepareForDevice(preset.prst, useDevice.getState().device ?? presetDevice(preset.prst));
+        } catch {
+          notifyError(`Can't write ${preset.name}`, new Error("This file can't be read as a GP-5 or GP-50 preset."));
+          return;
+        }
         if (slot !== undefined) {
           setFileWrite({ slot, preset, collection });
           return;
@@ -178,7 +187,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         const initial = preset.slot ?? useDevice.getState().names.find((n) => isEmptyName(n.name))?.slot ?? null;
         setPick({
           title: `Write ${preset.name} to…`,
-          description: "Choose the slot on the GP-5. You confirm before anything is written.",
+          description: `Choose the slot on the ${pedal()}. You confirm before anything is written.`,
           confirmLabel: (s) => `Continue with slot ${s}`,
           initial,
           preview: (s) => [{ slot: s, from: "blank" }],
@@ -231,7 +240,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         if (!used.length) return;
         setBulk({
           title: `Clear ${slotList(used)}?`,
-          description: "They become empty presets named GP-5, copied from an empty slot on your pedal.",
+          description: `They become empty presets named ${emptyName()}, copied from an empty slot on your pedal.`,
           action: `Clear ${slotList(used)}`,
           steps: clearSteps(used),
           doneTitle: `Cleared ${slotList(used)}`,
@@ -241,7 +250,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         const names = useDevice.getState().names;
         const empty = names.find((n) => n.slot > slot && isEmptyName(n.name)) ?? names.find((n) => isEmptyName(n.name));
         if (!empty) {
-          notifyError("No empty slot", new Error("Every slot on the GP-5 is in use. Clear one first, or use Copy to… to replace a slot."));
+          notifyError("No empty slot", new Error(`Every slot on the ${pedal()} is in use. Clear one first, or use Copy to… to replace a slot.`));
           return;
         }
         planCopy([slot], empty.slot);
@@ -249,7 +258,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       async exportSlots(slots) {
         try {
           const items = await readSlots(slots, "Export");
-          const to = await host.files.exportPresets(items.map((i) => ({ fileName: slotFileName(i.slot, i.name), prst: i.prst })));
+          const to = await host.files.exportPresets(items.map((i) => ({ fileName: slotFileName(i.slot, i.name, presetDevice(i.prst)), prst: i.prst })));
           if (to) notifySuccess(items.length === 1 ? `Exported ${items[0].name}` : `Exported ${items.length} presets`, host.kind === "web" ? "Saved to your downloads." : `Saved to ${to}.`);
         } catch (e) {
           notifyError("Couldn't export", new Error(describeError(e)));
@@ -270,7 +279,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
           const items = await readSlots(slots, "Add to collection");
           await host.files.addPresets(
             collectionId,
-            items.map((i) => ({ name: i.name, prst: i.prst, slot: i.slot, source: `Slot ${i.slot} on GP-5` })),
+            items.map((i) => ({ name: i.name, prst: i.prst, slot: i.slot, source: `Slot ${i.slot} on ${pedal()}` })),
           );
           const lib = useLibrary.getState();
           await lib.refreshCollections();
@@ -349,17 +358,18 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** A local .prst onto a pedal slot (overlays A1/A2), including GP-50 conversion. */
+/** A local .prst onto a pedal slot (overlays A1/A2), converted for the connected pedal's model when it differs. */
 function FileWriteDialog({ write, onClose }: { write: FileWrite; onClose(): void }) {
   const { slot, preset, collection } = write;
   const names = useDevice((s) => s.names);
   const snapTones = useDevice((s) => s.snapTones);
   const activeSlot = useDevice((s) => s.slot);
-  const current = names[slot]?.name ?? "GP-5";
+  const device = useDevice((s) => s.device);
+  const current = names[slot]?.name ?? emptyName();
   const empty = isEmptyName(current);
-  const summary = summarize(preset.prst);
-  const gp50 = summary?.device === "gp50";
-  const dropped = gp50 ? (summary?.gp50Only ?? []) : [];
+  // writeLocal only opens this for readable presets, so preparing can't fail here.
+  const prepared = useMemo(() => prepareForDevice(preset.prst, device ?? presetDevice(preset.prst)), [preset.prst, device]);
+  const { dropped } = prepared;
   const body = knownBody(slot);
   const bodySummary = body ? summarize(body) : null;
   const restoring = collection?.kind === "backup" || collection?.kind === "replaced";
@@ -380,22 +390,18 @@ function FileWriteDialog({ write, onClose }: { write: FileWrite; onClose(): void
       title={title}
       slot={slot}
       replacing={empty ? null : { name: current, detail: activeSlot === slot ? "the saved version" : bodySummary ? describeSummary(bodySummary, snapTones) : undefined }}
-      incoming={{ name: preset.name, detail: `${collection?.title ?? "This computer"}, ${preset.fileName}`, prst: preset.prst }}
+      incoming={{ name: preset.name, detail: `${collection?.title ?? "This computer"}, ${preset.fileName}`, prst: prepared.prst }}
       action={action}
       notes={
-        gp50 ? (
-          <p className="rounded-lg bg-well px-3.5 py-2.5 text-sm text-pretty text-silkscreen-2">
-            Converted from GP-50.
-            {dropped.length > 0 && ` ${dropped.join(", ")} has no GP-5 equivalent, so ${dropped.length === 1 ? "that block is" : "those blocks are"} left empty.`}
-          </p>
+        prepared.converted && device ? (
+          <p className="rounded-lg bg-well px-3.5 py-2.5 text-sm text-pretty text-silkscreen-2">{conversionNote({ from: prepared.from, to: device, dropped })}</p>
         ) : undefined
       }
       onConfirm={async ({ backupFirst }) => {
         const d = useDevice.getState();
         if (d.unsavedChanges > 0 && d.slot !== slot) throw Object.assign(new Error("unsaved"), { code: "unsaved" });
-        const prst = gp50 ? convertPrst(preset.prst, "gp5", { force: dropped.length > 0 }) : preset.prst;
-        await d.writePreset(slot, prst);
-        useLibrary.getState().setBody(slot, prst, "pedal");
+        await d.writePreset(slot, prepared.prst);
+        useLibrary.getState().setBody(slot, prepared.prst, "pedal");
         notifyWriteDone({ name: preset.name, slot, backedUp: backupFirst });
       }}
     />

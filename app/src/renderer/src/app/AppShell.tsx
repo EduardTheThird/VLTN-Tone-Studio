@@ -57,16 +57,17 @@ export function AppShell() {
 }
 
 /**
- * Launch parameters (demo builds, screenshots, E2E): `?mock` connects the simulated GP-5 with the bundled
- * 100-slot backup, `?screen=library` (and `&param=`) opens a screen. The desktop app connects to the
- * real pedal on launch; failures stay in the device store's error state (chip and Device screen show it).
+ * Launch parameters (demo builds, screenshots, E2E): `?mock` connects a simulated GP-5 and `?mock=gp50` a
+ * simulated GP-50, both with the bundled 100-slot backup; `?screen=library` (and `&param=`) opens a screen.
+ * The desktop app connects to the real pedal on launch; failures stay in the device store's error state
+ * (chip and Device screen show it).
  */
 function useLaunchParams() {
   useEffect(() => {
     const q = new URLSearchParams(location.search);
     const screen = q.get("screen");
     if (screen === "rig" || screen === "library" || screen === "tones" || screen === "device" || screen === "capture" || screen === "song") useNav.getState().go(screen, q.get("param"));
-    if (q.has("mock")) void useDevice.getState().connect("mock").catch(() => {});
+    if (q.has("mock")) void useDevice.getState().connect("mock", { mockDevice: q.get("mock") === "gp50" ? "gp50" : "gp5" }).catch(() => {});
     else if (isElectron) void useDevice.getState().connect("webmidi").catch(() => {});
   }, []);
 }

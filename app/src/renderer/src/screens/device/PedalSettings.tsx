@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dial } from "@/components/gear";
 import { GLOBALS } from "@/gp5/lib/protocol.mjs";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { GlobalName, GlobalRecord } from "@/state/device-types";
 
 const DIALS: { name: GlobalName; label: string }[] = [
@@ -18,10 +18,11 @@ const DIALS: { name: GlobalName; label: string }[] = [
 
 const range = (name: GlobalName) => `${GLOBALS[name].min < 0 ? "−" : ""}${Math.abs(GLOBALS[name].min)} to ${GLOBALS[name].max}`;
 
-/** Pedal settings faceplate: globals stored on the GP-5, outside every preset. Same layout as the Rig faceplate. */
+/** Pedal settings faceplate: globals stored on the pedal, outside every preset. Same layout as the Rig faceplate. */
 export function PedalSettings({ offline }: { offline: boolean }) {
   const globals = useDevice((s) => s.globals);
   const setGlobal = useDevice((s) => s.setGlobal);
+  const pedal = usePedalName();
   const live = !offline;
 
   return (
@@ -31,7 +32,7 @@ export function PedalSettings({ offline }: { offline: boolean }) {
     >
       <div className="min-w-0">
         <h2 className="mb-1.5 text-xl leading-[1.1] font-bold tracking-[-0.01em] text-balance">Pedal settings</h2>
-        <p className="max-w-[240px] text-sm text-pretty text-silkscreen-3">Global: stored on the GP-5 and shared by every preset. Saving a preset doesn't change them.</p>
+        <p className="max-w-[240px] text-sm text-pretty text-silkscreen-3">Global: stored on the {pedal} and shared by every preset. Saving a preset doesn't change them.</p>
       </div>
 
       {globals ? (

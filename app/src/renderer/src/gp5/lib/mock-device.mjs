@@ -1,9 +1,9 @@
-// In-memory GP-5 simulator speaking the documented USB protocol. Use it for unit tests, UI development and
+// In-memory GP-5 / GP-50 simulator speaking the documented USB protocol. Use it for unit tests, UI development and
 // (via scripts/virtual-gp5.mjs) as a virtual MIDI device. It models what open-source captures show; behaviour
 // the pedal has not been observed to do (e.g. param defaults after a model change) is NOT invented.
 
 import { BLOCKS, CC, CMD, FRAME_PAYLOAD_MAX, GLOBALS, KIND, PRESET_COUNT, READ, Reassembler, packetize, parseSysex, u32le } from "./protocol.mjs";
-import { BODY_OFF, GP5_BODY_LEN, applyEdits, bodyOf, readName, rebuildPrst } from "./prst.mjs";
+import { BODY_OFF, DEVICES, applyEdits, bodyOf, detectDevice, readName, rebuildPrst } from "./prst.mjs";
 import { checkSnapToneFile, decodeImportSnapTone, isUserSnapToneSlot } from "./snaptone.mjs";
 import { decodeImportUserIr } from "./userir.mjs";
 
@@ -14,15 +14,20 @@ const nameBytes = (s, n) => Array.from({ length: n }, (_, i) => (i < s.length ? 
 export class MockGp5 {
   /**
    * @param opts {
-   *   presets: Array<Uint8Array> (507-byte GP-5 .prst; shorter list is cycled, extra slots are named "GP-5"),
+   *   presets: Array<Uint8Array> (.prst files of ONE model: 507-byte GP-5 or 552-byte GP-50; they decide the simulated
+   *   pedal; a shorter list is cycled, extra slots get the model's empty name "GP-5" / "GP-50"),
    *   latencyMs = 1, minGapMs = 15 (gaps below this are recorded in .violations),
    *   snapTones?: string[80], userIRs?: string[20], acceptProgramChange = false, acceptCcSelect = true }
    */
   constructor({ presets, latencyMs = 1, minGapMs = 15, snapTones = [], userIRs = [], acceptProgramChange = false, acceptCcSelect = true } = {}) {
-    if (!presets?.length) throw new Error("MockGp5 needs at least one GP-5 .prst");
+    if (!presets?.length) throw new Error("MockGp5 needs at least one GP-5 or GP-50 .prst");
+    const model = detectDevice(presets[0]);
+    if (presets.some((p) => detectDevice(p).key !== model.key)) throw new Error("MockGp5 presets must all belong to one model");
+    /** Simulated model ("gp5" | "gp50"). */
+    this.device = model.key;
     this.slots = Array.from({ length: PRESET_COUNT }, (_, i) => {
       const src = presets[i % presets.length];
-      return { name: i < presets.length ? readName(src) : "GP-5", body: bodyOf(src) };
+      return { name: i < presets.length ? readName(src) : model.emptyName, body: bodyOf(src) };
     });
     this.current = 0;
     this.buffer = this.slots[0].body.slice();
@@ -49,7 +54,7 @@ export class MockGp5 {
   /** Transport for Gp5Session (host side). */
   transport() {
     return {
-      name: "GP-5 (mock)",
+      name: `${DEVICES[this.device].name} (mock)`,
       send: (bytes) => this.receive(Uint8Array.from(bytes)),
       onMessage: (cb) => {
         this.#listener = cb;
@@ -108,7 +113,7 @@ export class MockGp5 {
     this.buffer = this.slots[slot].body.slice();
   }
   #prst() {
-    return rebuildPrst(this.slots[this.current].name, this.buffer, "gp5");
+    return rebuildPrst(this.slots[this.current].name, this.buffer, this.device);
   }
   #setBuffer(prst) {
     this.buffer = bodyOf(prst);
@@ -209,4 +214,4 @@ export class MockGp5 {
   }
 }
 
-export { BODY_OFF, GP5_BODY_LEN };
+export { BODY_OFF };

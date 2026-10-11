@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { LibraryStore, readPrstPaths } from "./files-store";
 import { IMPORTED_ID, REPLACED_ID } from "@shared/host/files";
 
-/** Minimal bytes with a name at 0x19 (the store only reads the name). */
-function fakePrst(name: string, length = 507): Uint8Array {
-  const b = new Uint8Array(length);
-  b.set(new TextEncoder().encode("GP-5"), 0);
+/** Minimal bytes with the model's header and a name at 0x19 (the store only reads those). */
+function fakePrst(name: string, device: "gp5" | "gp50" = "gp5"): Uint8Array {
+  const b = new Uint8Array(device === "gp5" ? 507 : 552);
+  b.set(new TextEncoder().encode(device === "gp5" ? "GP-5" : "GP-50"), 0);
   for (let i = 0; i < name.length; i++) b[0x19 + i] = name.charCodeAt(i);
   return b;
 }
@@ -45,6 +45,35 @@ describe("backups", () => {
       [1, "Neo Soul"],
       [97, "FF/CC"],
     ]);
+    const json = JSON.parse(await readFile(join(root, "backups", "gp5-2026-10-07", "backup.json"), "utf8"));
+    expect(json).toMatchObject({ device: "gp5", slots: 3 });
+    expect(first).toMatchObject({ title: "GP-5 backup", device: "gp5" });
+  });
+
+  it("names and labels GP-50 backups by model", async () => {
+    const gp5 = await store.saveBackup([{ slot: 0, name: "A", prst: fakePrst("A") }], day);
+    const gp50 = await store.saveBackup([{ slot: 0, name: "A", prst: fakePrst("A", "gp50") }], day);
+    expect(gp5.id).toBe("backups/gp5-2026-10-07");
+    expect(gp50).toMatchObject({ id: "backups/gp50-2026-10-07", title: "GP-50 backup", device: "gp50", count: 1 });
+    const json = JSON.parse(await readFile(join(root, "backups", "gp50-2026-10-07", "backup.json"), "utf8"));
+    expect(json.device).toBe("gp50");
+  });
+
+  it("refuses a backup that mixes models or holds no presets", async () => {
+    const mixed = [
+      { slot: 0, name: "A", prst: fakePrst("A") },
+      { slot: 1, name: "B", prst: fakePrst("B", "gp50") },
+    ];
+    await expect(store.saveBackup(mixed, day)).rejects.toThrow(/one GP-5 or one GP-50/);
+    await expect(store.saveBackup([{ slot: 0, name: "X", prst: new Uint8Array(507) }], day)).rejects.toThrow(/one GP-5 or one GP-50/);
+  });
+
+  it("treats backup.json without a device as a GP-5 backup", async () => {
+    const dir = join(root, "backups", "gp5-2026-03-04");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "00-A.prst"), fakePrst("A"));
+    await writeFile(join(dir, "backup.json"), JSON.stringify({ createdAt: new Date(2026, 2, 4).toISOString(), slots: 1 }));
+    expect((await store.listCollections())[0]).toMatchObject({ device: "gp5", title: "GP-5 backup" });
   });
 
   it("lists backups newest first and refuses to modify them", async () => {
@@ -63,6 +92,12 @@ describe("backups", () => {
     expect(c.count).toBe(1);
     expect(new Date(c.createdAt).getMonth()).toBe(0);
     expect((await store.listPresets(c.id))[0].slot).toBe(5);
+  });
+
+  it("reads the model of a hand-copied folder from its presets", async () => {
+    await mkdir(join(root, "backups", "Valeton export"), { recursive: true });
+    await writeFile(join(root, "backups", "Valeton export", "05-Pure Clean.prst"), fakePrst("Pure Clean", "gp50"));
+    expect((await store.listCollections())[0]).toMatchObject({ device: "gp50", title: "GP-50 backup" });
   });
 });
 
@@ -106,6 +141,11 @@ describe("collections", () => {
     expect((await store.listPresets(c.id)).map((p) => p.name)).toEqual(["Alpha"]);
     await store.deleteCollection(c.id);
     expect(await store.listCollections()).toEqual([]);
+  });
+
+  it("gives library collections no device", async () => {
+    await store.createCollection("Set");
+    expect((await store.listCollections())[0].device).toBeNull();
   });
 
   it("rejects ids and file names that leave the library", async () => {

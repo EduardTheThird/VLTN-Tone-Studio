@@ -20,7 +20,7 @@ const other: ModelInfo = { ...plus, fxid: 2, name: "Other", title: "Other Drive"
 function preset(edit: (blocks: BlockState[]) => void = () => {}): PresetState {
   const blocks: BlockState[] = BLOCK_CODES.map((code, index) => ({ index, code, enabled: true, fxid: 1, model: plus, params: [10, 20, 0, 0, 0, 0, 0, 0] }));
   edit(blocks);
-  return { slot: 63, name: "Shatte-GT1", blocks, order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], volume: 50, bpm: 120, footswitches: { fs1: [0], fs2: [1] }, prst: new Uint8Array() };
+  return { device: "gp5", slot: 63, name: "Shatte-GT1", blocks, order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], volume: 50, bpm: 120, footswitches: { fs1: [0], fs2: [1] }, prst: new Uint8Array() };
 }
 
 describe("diffPresets", () => {

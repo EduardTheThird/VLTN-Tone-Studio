@@ -8,8 +8,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Kbd } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
-import { BLOCK_CODES, type BlockCode, type BlockState, type ModelInfo, type SlotName } from "@/state/device-types";
+import { useDevice, usePedalName } from "@/state/device";
+import { BLOCK_CODES, type BlockCode, type BlockState, type DeviceKey, type ModelInfo, type SlotName } from "@/state/device-types";
 import { useNav } from "@/state/nav";
 import { applyBlock, recordBlock, snapshot } from "./edits";
 import type { BlockSnapshot } from "./history";
@@ -59,8 +59,8 @@ interface Tile {
   empty?: boolean;
 }
 
-function tilesFor(code: BlockCode, snapTones: SlotName[] | null, userIRs: SlotName[] | null): Tile[] {
-  const models = modelsForBlock(code) as ModelInfo[];
+function tilesFor(code: BlockCode, device: DeviceKey, snapTones: SlotName[] | null, userIRs: SlotName[] | null): Tile[] {
+  const models = modelsForBlock(code, device) as ModelInfo[];
   if (code === "NS")
     return models.map((m) => {
       const n = snapToneIndex(m.fxid);
@@ -103,13 +103,13 @@ function inTab(tab: string, t: Tile, favs: number[]): boolean {
 }
 
 /** Thumbnail state: the live params for the current model, catalog defaults for the others; always drawn on. */
-const thumbBlock = (b: BlockState, m: ModelInfo): BlockState => ({
+const thumbBlock = (b: BlockState, m: ModelInfo, device: DeviceKey): BlockState => ({
   index: b.index,
   code: b.code,
   enabled: true,
   fxid: m.fxid,
   model: m,
-  params: b.fxid === m.fxid ? b.params : defaultParams(m.fxid),
+  params: b.fxid === m.fxid ? b.params : defaultParams(m.fxid, device),
 });
 
 const THUMB_W: Partial<Record<BlockCode, string>> = { AMP: "w-[104px]", CAB: "w-[88px]" };
@@ -125,13 +125,14 @@ export function ModelPicker() {
 function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number; highlight?: number; initialTab?: string }) {
   const preset = useDevice((s) => s.preset)!;
   const connected = useDevice((s) => s.status === "connected");
+  const pedal = usePedalName();
   const snapTones = useDevice((s) => s.snapTones);
   const userIRs = useDevice((s) => s.userIRs);
   const block = preset.blocks[blockIndex];
   const code = block.code;
   const original = useRef<BlockSnapshot>(snapshot(block)).current;
   const originalTitle = useRef(block.model?.title ?? "the original model").current;
-  const tiles = useMemo(() => tilesFor(code, snapTones, userIRs), [code, snapTones, userIRs]);
+  const tiles = useMemo(() => tilesFor(code, preset.device, snapTones, userIRs), [code, preset.device, snapTones, userIRs]);
   const tabs = useMemo(() => tabsFor(code, tiles), [code, tiles]);
   const [tab, setTab] = useState(() => initialTab ?? (code === "NS" ? (snapToneIndex(block.fxid) >= 50 ? "user" : "factory") : "all"));
   const [query, setQuery] = useState("");
@@ -320,7 +321,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
           <p className="mx-1.5 mt-auto mb-1 text-xs text-pretty text-silkscreen-4">
             {code === "NS"
               ? "Captures live in SnapTone slots on the pedal. New ones arrive through Tones and the capture editor."
-              : `Each GP-5 block holds one kind of effect, so ${article(NOUN[code])} ${NOUN[code]} can only go in ${code}.`}
+              : `Each ${pedal} block holds one kind of effect, so ${article(NOUN[code])} ${NOUN[code]} can only go in ${code}.`}
           </p>
         </nav>
         <div ref={gridRef} role="listbox" aria-label={`${CATEGORY[code]} models`} className="grid min-h-0 auto-rows-max grid-cols-[repeat(auto-fill,minmax(118px,1fr))] content-start gap-2.5 overflow-auto px-4 py-3.5">
@@ -351,7 +352,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
                 {code === "NS" ? (
                   <Capture name={t.title.replace(/^\d+ /, "")} className="mb-1 w-[62px] drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]" />
                 ) : (
-                  <GearFor block={thumbBlock(block, t.model)} className={cn(THUMB_W[code] ?? "w-[62px]", "mb-1 drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]")} />
+                  <GearFor block={thumbBlock(block, t.model, preset.device)} className={cn(THUMB_W[code] ?? "w-[62px]", "mb-1 drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]")} />
                 )}
                 <b className="text-sm font-semibold">{t.title}</b>
                 <span className="text-xs leading-tight text-silkscreen-3">{t.sub}</span>
@@ -372,7 +373,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
             {error
               ? `Couldn't switch the model: ${error}`
               : !connected
-                ? "Connect the GP-5 to audition models on the pedal."
+                ? `Connect the ${pedal} to audition models on the pedal.`
                 : auditioning
                   ? `Auditioning ${playingTile?.title ?? "a model"} on the pedal. ${originalTitle} comes back if you press Esc.`
                   : "Click a model or use the arrow keys to hear it on the pedal."}

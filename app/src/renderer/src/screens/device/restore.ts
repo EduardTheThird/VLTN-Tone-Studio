@@ -1,15 +1,28 @@
-// Restore sources: a backup collection or a folder picked by the user → slot-addressed GP-5 presets to write.
-import { detectDevice, readName } from "@/gp5/lib/prst.mjs";
+// Restore sources: a backup collection or a folder picked by the user → slot-addressed presets to write, each
+// prepared for the connected pedal's model (GP-5 ⇄ GP-50).
+import { DEVICES, applyEdits, readName } from "@/gp5/lib/prst.mjs";
 import { parseSlotFileName } from "@shared/files-naming";
-import type { BackupEntry } from "@/state/device-types";
+import { isEmptySlotName, prepareForDevice, presetDevice, type PreparedPreset } from "@/state/device-model";
+import type { BackupEntry, DeviceKey } from "@/state/device-types";
+
+/** An entry made on the other model, converted for the connected pedal. */
+export interface RestoreConversion {
+  slot: number;
+  name: string;
+  from: DeviceKey;
+  /** Blocks left empty because their model doesn't exist on the pedal, e.g. "PRE (PRE C-Wah)" */
+  dropped: string[];
+}
 
 export interface RestoreSource {
   /** "gp5-2026-10-07" or the picked folder's name */
   title: string;
   /** "backups/gp5-2026-10-07" or the folder path */
   location: string;
-  /** One per slot, sorted by slot */
+  /** One per slot, sorted by slot, ready to write to the connected pedal */
   entries: BackupEntry[];
+  /** Entries converted from the other model, sorted by slot (the dialog lists dropped blocks before writing) */
+  converted: RestoreConversion[];
   /** Files that can't be restored, with the reason */
   skipped: string[];
 }
@@ -22,9 +35,13 @@ export interface SourceFile {
   error?: string | null;
 }
 
-/** Keep GP-5 presets with a known slot, one per slot (the first wins); explain everything else. */
-export function restoreEntries(files: SourceFile[]): { entries: BackupEntry[]; skipped: string[] } {
-  const bySlot = new Map<number, BackupEntry>();
+/**
+ * Keep presets of either model with a known slot, one per slot (the first wins); explain everything else.
+ * `target` is the connected pedal's model: other-model presets are converted for it, and an empty slot of the other
+ * model is renamed to the target's empty name so it still reads as empty. Null target: entries stay as they are.
+ */
+export function restoreEntries(files: SourceFile[], target: DeviceKey | null): Omit<RestoreSource, "title" | "location"> {
+  const bySlot = new Map<number, { entry: BackupEntry; conversion: RestoreConversion | null }>();
   const skipped: string[] = [];
   for (const f of files) {
     if (!f.bytes) {
@@ -36,24 +53,33 @@ export function restoreEntries(files: SourceFile[]): { entries: BackupEntry[]; s
       skipped.push(`${f.fileName}: no slot number in the file name`);
       continue;
     }
-    let key: string;
+    let prepared: PreparedPreset;
     try {
-      key = detectDevice(f.bytes).key;
+      prepared = prepareForDevice(f.bytes, target ?? presetDevice(f.bytes));
     } catch {
-      skipped.push(`${f.fileName}: not a GP-5 preset`);
-      continue;
-    }
-    if (key !== "gp5") {
-      skipped.push(`${f.fileName}: GP-50 preset (import it in the Library to convert it)`);
+      skipped.push(`${f.fileName}: not a GP-5 or GP-50 preset`);
       continue;
     }
     if (bySlot.has(slot)) {
       skipped.push(`${f.fileName}: slot ${slot} appears twice`);
       continue;
     }
-    bySlot.set(slot, { slot, name: readName(f.bytes).trim() || "GP-5", prst: f.bytes });
+    const stored = readName(f.bytes).trim();
+    if (prepared.converted && target && isEmptySlotName(stored, prepared.from)) {
+      const empty = DEVICES[target].emptyName;
+      bySlot.set(slot, { entry: { slot, name: empty, prst: applyEdits(prepared.prst, { name: empty }) }, conversion: null });
+      continue;
+    }
+    const name = stored || DEVICES[prepared.from].emptyName;
+    const conversion = prepared.converted ? { slot, name, from: prepared.from, dropped: prepared.dropped } : null;
+    bySlot.set(slot, { entry: { slot, name, prst: prepared.prst }, conversion });
   }
-  return { entries: [...bySlot.values()].sort((a, b) => a.slot - b.slot), skipped };
+  const sorted = [...bySlot.values()].sort((a, b) => a.entry.slot - b.entry.slot);
+  return {
+    entries: sorted.map((s) => s.entry),
+    converted: sorted.flatMap((s) => (s.conversion ? [s.conversion] : [])),
+    skipped,
+  };
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");

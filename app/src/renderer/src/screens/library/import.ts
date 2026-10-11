@@ -1,6 +1,8 @@
 // Import: validate picked/dropped .prst files with the toolkit, then copy them into "Imported files".
-import { convertPrst, detectDevice, isCrcValid, parsePrst, validateOrder } from "@/gp5/lib/prst.mjs";
+import { isCrcValid, parsePrst, validateOrder } from "@/gp5/lib/prst.mjs";
 import { host } from "@/host";
+import { presetDevice } from "@/state/device-model";
+import type { DeviceKey } from "@/state/device-types";
 import { IMPORTED_ID, type LocalPreset, type NewPreset, type PickedFile } from "@shared/host/files";
 
 export interface Rejected {
@@ -8,22 +10,23 @@ export interface Rejected {
   reason: string;
 }
 
-/** Check one file. GP-50 files are accepted when they convert (their GP-50-only blocks are named at write time). */
-export function checkPrst(bytes: Uint8Array): { ok: true; name: string; device: "gp5" | "gp50" } | { ok: false; reason: string } {
-  let device: { key: "gp5" | "gp50" };
+const NOT_A_PRESET = "Not a GP-5 or GP-50 preset.";
+
+/** Check one file of either model as stored; converting for the connected pedal happens when it is written. */
+export function checkPrst(bytes: Uint8Array): { ok: true; name: string; device: DeviceKey } | { ok: false; reason: string } {
+  let device: DeviceKey;
   try {
-    device = detectDevice(bytes);
+    device = presetDevice(bytes);
   } catch {
-    return { ok: false, reason: "Not a GP-5 or GP-50 preset." };
+    return { ok: false, reason: NOT_A_PRESET };
   }
   try {
     const p = parsePrst(bytes);
     if (!isCrcValid(bytes)) return { ok: false, reason: "The file is damaged (its checksum doesn't match)." };
     if (validateOrder(p.order)) return { ok: false, reason: "The file is damaged (its chain order is invalid)." };
-    if (device.key === "gp50") convertPrst(bytes, "gp5", { force: true });
-    return { ok: true, name: p.name || "Untitled", device: device.key };
+    return { ok: true, name: p.name || "Untitled", device };
   } catch {
-    return { ok: false, reason: "Not a GP-5 or GP-50 preset." };
+    return { ok: false, reason: NOT_A_PRESET };
   }
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import type { ToneRecord } from "@shared/host/tones";
-import { isEmptySlotName } from "@shared/tone3000";
+import { isEmptySlotName, slotLinkOn } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
 import { requestPresetSwitch } from "@/app/preset-switch";
@@ -45,7 +45,7 @@ function ago(at: number, now: number): string {
   return `Read at ${new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-/** "On your GP-5": SnapTone and User IR slot maps. */
+/** "On your GP-5" (or GP-50): SnapTone and User IR slot maps. */
 export function SlotPanel() {
   const status = useDevice((s) => s.status);
   const error = useDevice((s) => s.error);
@@ -59,6 +59,8 @@ export function SlotPanel() {
   const records = useTones((s) => s.records);
   const send = useTones((s) => s.send);
   const now = useNow(30_000);
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
   const connected = status === "connected";
   const [reading, setReading] = useState(false);
 
@@ -69,15 +71,17 @@ export function SlotPanel() {
     return buildUsage(list);
   }, [usage, preset]);
 
+  // Slot numbers mean something only on the pedal model the link was made on.
   const links = useMemo(() => {
     const snap = new Map<number, ToneRecord>();
     const ir = new Map<number, ToneRecord>();
     for (const r of Object.values(records)) {
-      if (r.gp5.snaptoneSlot !== undefined) snap.set(r.gp5.snaptoneSlot, r);
-      if (r.gp5.irSlot !== undefined) ir.set(r.gp5.irSlot, r);
+      const link = slotLinkOn(r, device);
+      if (!link || link.other) continue;
+      (link.kind === "snaptone" ? snap : ir).set(link.slot, r);
     }
     return { snaptone: snap, ir };
-  }, [records]);
+  }, [records, device]);
 
   const targets = useMemo(() => {
     const t = { snaptone: new Set<number>(), ir: new Set<number>() };
@@ -98,15 +102,15 @@ export function SlotPanel() {
 
   let notice: string | null = null;
   if (error?.code === "busy") notice = "Close Valeton Suite to reconnect.";
-  else if (!connected && snapTones) notice = `GP-5 not connected. Slots from ${readAt ? new Date(readAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "the last read"}.`;
-  else if (!connected) notice = "Connect the GP-5 to see its capture and IR slots.";
+  else if (!connected && snapTones) notice = `The ${pedal} isn't connected. Slots from ${readAt ? new Date(readAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "the last read"}.`;
+  else if (!connected) notice = `Connect the ${pedal} to see its capture and IR slots.`;
   else if (slotsError) notice = `Couldn't read the slots: ${slotsError}`;
   const driverProblem = !connected && error?.code === "not-found" && host.platform === "win32";
 
   return (
-    <aside aria-label="On your GP-5" className="glass mt-5 flex min-h-0 flex-col gap-3.5 overflow-auto rounded-xl px-4 pt-3.5 pb-4">
+    <aside aria-label={`On your ${pedal}`} className="glass mt-5 flex min-h-0 flex-col gap-3.5 overflow-auto rounded-xl px-4 pt-3.5 pb-4">
       <div className="-mb-1 flex items-center gap-2">
-        <h2 className="text-[12px] font-semibold text-silkscreen-2">On your GP-5</h2>
+        <h2 className="text-[12px] font-semibold text-silkscreen-2">On your {pedal}</h2>
         <span className="grow" />
         {readAt && <span className="text-[11px] text-silkscreen-3">{ago(readAt, now)}</span>}
         <Tooltip>

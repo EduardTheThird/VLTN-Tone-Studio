@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import type { Proposal, ProposedBlock } from "@/song/tonematch/proposal";
 import { isSessionLive, useIrMatch } from "@/song/tonematch/ir-store";
 import { useToneMatch } from "@/song/tonematch/store";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { Confidence, Section } from "./parts";
 
@@ -37,6 +38,7 @@ function AuditionControls() {
   const audition = useToneMatch((s) => s.audition);
   const connected = useDevice((s) => s.status === "connected" && s.preset !== null);
   const connecting = useDevice((s) => s.status === "connecting");
+  const pedal = usePedalName();
   // A running IR recording has the CAB block off; changing the preset now would spoil it.
   const recording = useIrMatch((s) => isSessionLive(s.step));
   const busy = audition.kind === "applying" || audition.kind === "restoring" || recording;
@@ -46,7 +48,7 @@ function AuditionControls() {
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={!connected || busy} onClick={() => void useToneMatch.getState().auditionProposal()}>
           {audition.kind === "applying" ? <Spinner data-icon="inline-start" /> : <Play data-icon="inline-start" />}
-          {audition.kind === "applied" ? "Play it again" : "Play it on the GP-5"}
+          {audition.kind === "applied" ? "Play it again" : `Play it on the ${pedal}`}
         </Button>
         {audition.kind === "applied" || audition.kind === "restoring" ? (
           <>
@@ -70,10 +72,10 @@ function AuditionControls() {
         {audition.kind === "error"
           ? audition.message
           : audition.kind === "applied"
-            ? "Playing on the GP-5 as unsaved changes to the active preset. To keep it, save it on the Rig; Undo on the Rig steps back block by block."
+            ? `Playing on the ${pedal} as unsaved changes to the active preset. To keep it, save it on the Rig; Undo on the Rig steps back block by block.`
             : connected
               ? "Changes the active preset live, like edits on the Rig. Nothing is saved to a slot unless you save it."
-              : "Connect the GP-5 to hear the proposal, or try it on the simulated pedal."}
+              : `Connect the ${pedal} to hear the proposal, or try it on the simulated pedal.`}
       </p>
     </div>
   );
@@ -81,7 +83,7 @@ function AuditionControls() {
 
 export function ProposalCard({ proposal }: { proposal: Proposal }) {
   return (
-    <Section title="Proposed GP-5 preset" aside={<Confidence value={proposal.confidence} />}>
+    <Section title={`Proposed ${pedalName(proposal.device)} preset`} aside={<Confidence value={proposal.confidence} />}>
       <p className="text-[13px] text-silkscreen-2">{proposal.summary}</p>
       <ul className="flex flex-col">
         {proposal.blocks.map((b) => (

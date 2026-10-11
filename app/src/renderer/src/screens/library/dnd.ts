@@ -1,5 +1,7 @@
 // Drag and drop inside the Library (native HTML5 DnD; the drag image is a ghost card built from the source).
 import type { DragEvent } from "react";
+import { useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import { useLibrary, type LibraryDrag } from "./store";
 
 export const LOCAL_MIME = "application/x-gp5-local-preset";
@@ -36,7 +38,8 @@ export function startDrag(e: DragEvent<HTMLElement>, drag: LibraryDrag, mime: st
   e.dataTransfer.setData(mime, JSON.stringify(drag.kind === "local" ? { id: drag.preset.id, collectionId: drag.preset.collectionId } : drag.slots));
   const title = drag.kind === "local" ? drag.preset.name : drag.slots.length === 1 ? (e.currentTarget.dataset.name ?? `Slot ${drag.slots[0]}`) : `${drag.slots.length} slots`;
   const collection = drag.kind === "local" ? useLibrary.getState().collections.find((c) => c.id === drag.preset.collectionId)?.title : null;
-  const el = ghost(e.currentTarget, title, drag.kind === "local" ? `From ${collection ?? "this computer"}` : "From the GP-5. Alt copies");
+  const origin = drag.kind === "local" ? `From ${collection ?? "this computer"}` : `From the ${pedalName(useDevice.getState().device)}. Alt copies`;
+  const el = ghost(e.currentTarget, title, origin);
   e.dataTransfer.setDragImage(el, 16, 16);
   setTimeout(() => el.remove(), 0);
   useLibrary.setState({ drag });

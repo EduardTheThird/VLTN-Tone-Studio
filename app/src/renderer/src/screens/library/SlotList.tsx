@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
+import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,9 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MiniChain } from "@/components/write/MiniChain";
+import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize, type PresetSummary } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
 import { knownBody, useLibraryActions } from "./actions";
@@ -50,6 +51,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const focus = useLibrary((s) => s.focus);
   const drag = useLibrary((s) => s.drag);
   const actions = useLibraryActions();
+  const pedal = usePedalName();
   const writable = useWritable();
   const connected = status === "connected";
   const gridRef = useRef<HTMLDivElement>(null);
@@ -206,7 +208,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const loading = !names.length && (status === "connecting" || status === "idle");
   const head = (
     <div className="flex min-h-8 items-center gap-3 px-2">
-      <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On GP-5</h2>
+      <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On {pedal}</h2>
       {names.length > 0 && (
         <span className="text-sm whitespace-nowrap text-silkscreen-3">
           {used} used, {rows.length - used} empty
@@ -230,7 +232,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   );
 
   return (
-    <section aria-label="On GP-5" className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
+    <section aria-label={`On ${pedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
       {head}
       {status !== "connected" && names.length > 0 && <OfflineBanner />}
       <BulkBar visible={visible.map((r) => r.slot)} visibleSelected={visibleSelected} sheetMode={sheetMode} />
@@ -257,7 +259,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
         <div className={cn("min-h-0 flex-1 overflow-auto", status !== "connected" && "opacity-60")} onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(null)}>
           {loading && Array.from({ length: 14 }, (_, i) => <Skeleton key={i} className="mx-2 my-1 h-6" />)}
           {!loading && !names.length && (
-            <p className="px-3 py-6 text-sm text-silkscreen-3">Connect the GP-5 to see its 100 slots. Presets on this computer work without it.</p>
+            <p className="px-3 py-6 text-sm text-silkscreen-3">Connect the {pedal} to see its 100 slots. Presets on this computer work without it.</p>
           )}
           {names.length > 0 && !visible.length && (
             <p className="px-3 py-6 text-sm text-silkscreen-3">
@@ -295,10 +297,11 @@ function OfflineBanner() {
   const status = useDevice((s) => s.status);
   const error = useDevice((s) => s.error);
   const busyPort = error?.code === "busy";
+  const pedal = usePedalName();
   return (
     <Alert className="mx-2 mt-2.5 w-auto">
       <UnplugIcon />
-      <AlertTitle>{busyPort ? "Another app is using the GP-5" : "GP-5 not connected"}</AlertTitle>
+      <AlertTitle>{busyPort ? `Another app is using the ${pedal}` : `${pedal === "pedal" ? "Pedal" : pedal} not connected`}</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center gap-x-2">
         {busyPort
           ? "Close Valeton Suite, then reconnect. Showing the slots from the last connection."
@@ -403,6 +406,8 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
   const drag = useLibrary((s) => (drop ? s.drag : null));
   const snapTones = useDevice((s) => s.snapTones);
   const connected = useDevice((s) => s.status === "connected");
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
   const writable = useWritable();
   const collections = useLibrary((s) => s.collections);
   const actions = useLibraryActions();
@@ -411,6 +416,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
   // While a local preset hovers, the row previews it.
   const incoming = drop && drag?.kind === "local" ? drag.preset : null;
   const incomingSummary = incoming ? summarize(incoming.prst) : null;
+  const conversion = incomingSummary ? conversionFor(incomingSummary, device) : null;
   const shown = incomingSummary ?? row.summary;
   const name = incoming ? incoming.name : empty ? "Empty" : row.name;
   const lead = shown && (!empty || incoming) ? ampOrSnapTone(shown, snapTones) : null;
@@ -462,10 +468,14 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
             )}
             {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">Not read yet</span>}
           </span>
-          <span role="gridcell" className={cn("flex items-center justify-end gap-1.5 text-xs whitespace-nowrap text-silkscreen-3", drop && "text-lamp")}>
+          <span
+            role="gridcell"
+            title={conversion ? conversionNote(conversion) : undefined}
+            className={cn("flex items-center justify-end gap-1.5 text-xs whitespace-nowrap text-silkscreen-3", drop && "text-lamp")}
+          >
             {drop ? (
               <>
-                <ArrowDownToLineIcon className="size-3.5" aria-hidden />
+                {conversion ? <RefreshCwIcon className="size-3.5" aria-hidden /> : <ArrowDownToLineIcon className="size-3.5" aria-hidden />}
                 {empty ? "Drop to write" : "Drop to replace"}
               </>
             ) : active ? (
@@ -497,7 +507,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
             }}
           >
             <PencilIcon />
-            {connected ? "Rename" : "Rename (needs the GP-5)"}
+            {connected ? "Rename" : `Rename (needs the ${pedal})`}
             <ContextMenuShortcut>F2</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>

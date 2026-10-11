@@ -8,11 +8,13 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MiniChain } from "@/components/write/MiniChain";
+import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize } from "@/components/write/preset-summary";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
+import { pedalName } from "@/state/device-model";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { useLibrary } from "./store";
@@ -193,6 +195,7 @@ function PresetList() {
   const loading = useLibrary((s) => s.presetsLoading);
   const query = useLibrary((s) => s.localQuery);
   const actions = useLibraryActions();
+  const pedal = usePedalName();
   const current = collections.find((c) => c.id === currentId);
 
   const visible = useMemo(() => {
@@ -207,7 +210,7 @@ function PresetList() {
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyTitle>Nothing on this computer yet</EmptyTitle>
-            <EmptyDescription>Back up the GP-5, or import .prst files you downloaded.</EmptyDescription>
+            <EmptyDescription>Back up the {pedal}, or import .prst files you downloaded.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button variant="outline" onClick={() => void actions.importFiles()}>
@@ -239,7 +242,7 @@ function PresetList() {
           <Empty className="flex-1 p-4">
             <EmptyHeader>
               <EmptyTitle>No presets here yet</EmptyTitle>
-              <EmptyDescription>Drag slots from the GP-5 list, or import .prst files.</EmptyDescription>
+              <EmptyDescription>Drag slots from the {pedal} list, or import .prst files.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" size="sm" onClick={() => void actions.importFiles()}>
@@ -271,8 +274,13 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
   const collections = useLibrary((s) => s.collections);
   const snapTones = useDevice((s) => s.snapTones);
   const connected = useDevice((s) => s.status === "connected");
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
   const actions = useLibraryActions();
   const s = summarize(p.prst);
+  // Cards flag only GP-50 → GP-5 (it can drop blocks); the lossless GP-5 → GP-50 note lives in the inspector.
+  const conversion = s ? conversionFor(s, device) : null;
+  const lossy = conversion?.to === "gp5" ? conversion : null;
   const lead = s ? ampOrSnapTone(s, snapTones) : null;
   const targets = writableCollections(collections).filter((c) => c.id !== collection.id);
 
@@ -298,8 +306,8 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
             {p.slot !== null && <span className="text-xs font-semibold text-silkscreen-3 tabular-nums">{String(p.slot).padStart(2, "0")}</span>}
             <span className="truncate font-[650] text-silkscreen">{p.name}</span>
             {s && (
-              <Badge variant={s.device === "gp50" ? "warn" : "outline"} className="ml-auto">
-                {s.device === "gp50" ? "GP-50" : "GP-5"}
+              <Badge variant={lossy ? "warn" : "outline"} className="ml-auto">
+                {pedalName(s.device)}
               </Badge>
             )}
           </span>
@@ -308,10 +316,10 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
             {lead && <span className="truncate">{lead.title}</span>}
             <span className="truncate">{p.fileName}</span>
           </span>
-          {s?.device === "gp50" && (
+          {lossy && (
             <span className="flex items-start gap-1.5 text-xs text-pretty text-silkscreen-3">
               <RefreshCwIcon className="mt-px size-3 shrink-0" aria-hidden />
-              {s.gp50Only.length ? `Made on a GP-50. ${s.gp50Only.join(", ")} has no GP-5 equivalent.` : "Made on a GP-50. Converted for the GP-5 when you write it."}
+              {conversionNote(lossy)}
             </span>
           )}
           {!s && (
@@ -326,7 +334,7 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
         <ContextMenuGroup>
           <ContextMenuItem disabled={!connected || !s} onSelect={() => actions.writeLocal(p)}>
             <ArrowDownToLineIcon />
-            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${p.slot}…` : "Write to slot…") : "Write to slot (needs the GP-5)"}
+            {connected ? (p.slot !== null && collection.kind === "backup" ? `Restore to slot ${p.slot}…` : "Write to slot…") : `Write to slot (needs the ${pedal})`}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void actions.exportLocal([p])}>
             <DownloadIcon />

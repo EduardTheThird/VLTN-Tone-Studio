@@ -2,6 +2,8 @@
 // Main process: src/main/ipc/tones.ts (+ src/main/tone3000/*). Tokens never leave main.
 // API reference: https://www.tone3000.com/api (v1). Free tier: Select/Load Tone flows + created/favorited/downloaded/trending/latest only.
 
+import type { PedalModel } from "./device";
+
 export type T3kGear = "amp" | "amp-cab" | "pedal" | "outboard" | "cab" | "space" | "experimental";
 export type T3kFormat = "nam" | "ir" | "aida-x" | "aa-snapshot" | "proteus";
 export type T3kSize = "standard" | "lite" | "feather" | "nano" | "custom";
@@ -145,6 +147,15 @@ export type SendStep = "download" | "check";
 
 export type TonesEvent = { type: "progress"; toneId: number; modelId: number; step: SendStep; received: number; total: number | null };
 
+/** A tone linked to a pedal slot (`TonesApi.link`). */
+export interface SlotLink {
+  kind: "snaptone" | "ir";
+  slot: number;
+  slotName: string;
+  /** Pedal the slot is on (the connected one when the link is made) */
+  device: PedalModel;
+}
+
 /** Local tone record, `tones/<tone_id>/meta.json`. */
 export interface ToneRecord {
   tone_id: number;
@@ -156,6 +167,7 @@ export interface ToneRecord {
   license: string;
   url: string;
   models: { id: number; name: string; size: T3kSize; architecture: T3kArchitecture | null; file: string; bytes: number }[];
+  /** Pedal compatibility and slot link. The field keeps its pre-GP-50 name so older meta.json files load. */
   gp5: {
     verdict: "ready" | "reshape" | "not-loadable" | "ir";
     snaptoneSlot?: number;
@@ -163,6 +175,8 @@ export interface ToneRecord {
     /** Slot name at link time, re-confirmed on each slot read */
     slotName?: string;
     linkedAt?: string;
+    /** Pedal model the slot link is on; absent in records linked before GP-50 support, which are GP-5 links */
+    device?: PedalModel;
   };
   savedAt: string;
 }
@@ -195,7 +209,7 @@ export interface TonesApi {
   /** Bytes of a .wav opened from the OS by path (no TONE3000 link). Desktop only. */
   readLocalIr(path: string): Promise<Uint8Array>;
   /** Link a tone to a pedal slot (null unlinks). Local metadata only; nothing is written to the pedal. */
-  link(toneId: number, link: { kind: "snaptone" | "ir"; slot: number; slotName: string } | null): Promise<ToneRecord>;
+  link(toneId: number, link: SlotLink | null): Promise<ToneRecord>;
   /** Every local tone record */
   local(): Promise<ToneRecord[]>;
   /** Progress of the download and check steps */

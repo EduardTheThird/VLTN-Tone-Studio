@@ -1,4 +1,4 @@
-// "Shape before GP-5": the pre/post filters as Web Audio BiquadFilterNode settings, and their exact magnitude
+// "Shape before <pedal>": the pre/post filters as Web Audio BiquadFilterNode settings, and their exact magnitude
 // response (Web Audio spec / RBJ cookbook formulas), so the drawn curve is what the audition plays.
 import type { Shaping } from "@shared/host/capture";
 

@@ -1,6 +1,6 @@
-// Valeton GP-5 (and GP-50) .prst preset codec. Pure isomorphic ESM.
+// Valeton GP-5 / GP-50 .prst preset codec. Pure isomorphic ESM.
 // Port of drewmerc302/valeton-gp50 app/static/prst.js (MIT, (c) 2026 Andrew Mercurio) restructured around a
-// parsed preset object. Layout (GP-5, 507 bytes):
+// parsed preset object. Both devices share the container; GP-5 = 507 bytes, GP-50 = 552 bytes. Layout (GP-5):
 //   0x00 20-byte header "GP-5\0..\0\x01\0"   0x14 CRC-8/0x07 over [0x15:]   0x15 FF FF FF FF
 //   0x19 16-byte name (latin1, NUL padded)   0x29 body = TLV chain [u16 tag][u16 len][payload]:
 //     0x00FF (16)  constant prefix + devtag 0a 45 4d 51
@@ -8,7 +8,8 @@
 //     0x0001 (16)  settings: [01 20 04 00 u32 VOL][02 20 04 00 u32 BPM]
 //     0x0002 (390) tone: [01 30 04 00 u32 enable mask][02 30 0a 00 order[10]][03 30 28 00 10 x u32 fxid][04 30 40 01 80 x f32]
 //     0x0003 (8)   footswitch masks fs1 u32, fs2 u32
-// The device body returned by read 0x41 is exactly prst[0x29:].
+// GP-50 differences: header "GP-50", devtag "GP50", settings 0x0001 = 59 bytes (u8 VOL, u32 BPM + 8 more records
+// ids 3..10), footswitch 0x0003 = 10 bytes (masks + 2 mode bytes). The 390-byte tone block is identical.
 
 import { BLOCKS, crc8 } from "./protocol.mjs";
 
@@ -20,11 +21,26 @@ export const N_BLOCKS = 10;
 export const PARAMS_PER_BLOCK = 8;
 
 const hx = (s) => Uint8Array.from(s.match(/../g), (h) => parseInt(h, 16));
+const profile = (key, name, header, length, devtag) =>
+  // emptyName: what the pedal names a slot that holds no user preset (the factory default name)
+  Object.freeze({ key, name, header: hx(header), length, bodyLength: length - BODY_OFF, devtag: hx(devtag), emptyName: name });
 export const DEVICES = Object.freeze({
-  gp5: Object.freeze({ key: "gp5", name: "GP-5", header: hx("47502d3500000000000000000000000000000100"), length: 507, devtag: hx("0a454d51") }),
-  gp50: Object.freeze({ key: "gp50", name: "GP-50", header: hx("47502d3530000000000000000000000000000100"), length: 552, devtag: hx("47503530") }),
+  gp5: profile("gp5", "GP-5", "47502d3500000000000000000000000000000100", 507, "0a454d51"),
+  gp50: profile("gp50", "GP-50", "47502d3530000000000000000000000000000100", 552, "47503530"),
 });
-export const GP5_BODY_LEN = DEVICES.gp5.length - BODY_OFF; // 466
+export const DEVICE_KEYS = Object.freeze(Object.keys(DEVICES));
+
+/** Profile for a device key ("gp5" | "gp50"); throws on anything else. */
+export function deviceProfile(key) {
+  const d = DEVICES[key];
+  if (!d) throw new RangeError(`unknown device ${JSON.stringify(key)}; known: ${DEVICE_KEYS.join(", ")}`);
+  return d;
+}
+
+/** Device whose 0x41 body (== .prst[0x29:]) has `length` bytes (466 GP-5, 511 GP-50), or null. */
+export function deviceByBodyLength(length) {
+  return Object.values(DEVICES).find((d) => d.bodyLength === length) ?? null;
+}
 
 const REC = Object.freeze({ MASK: [0x01, 0x30, 0x04, 0x00], ORDER: [0x02, 0x30, 0x0a, 0x00], MODELS: [0x03, 0x30, 0x28, 0x00], PARAMS: [0x04, 0x30, 0x40, 0x01] });
 /** fxids that exist only on the GP-50. */
@@ -219,11 +235,11 @@ export function applyEdits(prst, edits = {}) {
   return refixCrc(b);
 }
 
-/** Rebuild a full .prst from a device read: name (from 0x40) + body (from 0x41). */
-export function rebuildPrst(name, body, deviceKey = "gp5") {
-  const dev = DEVICES[deviceKey];
+/** Rebuild a full .prst from a device read: name (from 0x40) + body (from 0x41) for device `deviceKey`. */
+export function rebuildPrst(name, body, deviceKey) {
+  const dev = deviceProfile(deviceKey);
   const bb = u8(body);
-  if (bb.length !== dev.length - BODY_OFF) throw new Error(`expected a ${dev.length - BODY_OFF}-byte ${dev.name} body, got ${bb.length}`);
+  if (bb.length !== dev.bodyLength) throw new Error(`expected a ${dev.bodyLength}-byte ${dev.name} body, got ${bb.length}`);
   const out = concat(dev.header, [0], [0xff, 0xff, 0xff, 0xff], new Uint8Array(NAME_LEN), bb);
   writeName(out, name);
   return refixCrc(out);
@@ -239,8 +255,7 @@ export const bodyOf = (prst) => u8(prst).slice(BODY_OFF);
 export function convertPrst(prst, targetKey, { force = false } = {}) {
   const b = u8(prst);
   const source = detectDevice(b);
-  const target = DEVICES[targetKey];
-  if (!target) throw new RangeError(`unknown device ${targetKey}`);
+  const target = deviceProfile(targetKey);
   if (source.key === target.key) return b.slice();
   const d = view(b);
   const recs = listRecords(b);

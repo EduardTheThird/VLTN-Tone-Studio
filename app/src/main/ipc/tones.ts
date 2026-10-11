@@ -4,13 +4,13 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { HostError } from "@shared/ipc";
-import type { AccountState, FlowRequest, FlowResult, SendRequest, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
+import type { AccountState, FlowRequest, FlowResult, SendRequest, SlotLink, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
 import { assertWav, NamCheckError, prepareNam } from "@shared/nam";
 import { handle } from "./handle";
 import { postToken, T3kClient } from "../tone3000/api";
 import { TokenManager, type TokenSet, type TokenStore } from "../tone3000/tokens";
 import { cancelFlow, runFlow, setFlowBounds } from "../tone3000/oauth";
-import { buildRecord, listRecords, readRecord, writeRecord } from "../tone3000/records";
+import { buildRecord, linkRecord, listRecords, readRecord, writeRecord } from "../tone3000/records";
 import { streamToFile } from "../tone3000/files";
 
 declare global {
@@ -293,15 +293,6 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
     if (size > MAX_LOCAL_IR) throw new HostError("invalid", `${basename(path)} is too large for an impulse response`);
     return new Uint8Array(await readFile(path));
   });
-  handle("tones:link", (_e, toneId: number, link: { kind: "snaptone" | "ir"; slot: number; slotName: string } | null) =>
-    updateRecord(toneId, (r) => {
-      const { snaptoneSlot: _s, irSlot: _i, slotName: _n, linkedAt: _l, ...rest } = r.gp5;
-      if (!link) return { ...r, gp5: rest };
-      return {
-        ...r,
-        gp5: { ...rest, ...(link.kind === "snaptone" ? { snaptoneSlot: link.slot } : { irSlot: link.slot }), slotName: link.slotName, linkedAt: new Date().toISOString() },
-      };
-    }),
-  );
+  handle("tones:link", (_e, toneId: number, link: SlotLink | null) => updateRecord(toneId, (r) => linkRecord(r, link, new Date())));
   handle("tones:local", () => listRecords(tonesDir()));
 }

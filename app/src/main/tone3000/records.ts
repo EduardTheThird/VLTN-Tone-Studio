@@ -1,7 +1,7 @@
 // Local tone records: `<tonesDir>/<tone_id>/meta.json` plus the downloaded model files beside it.
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { T3kModel, T3kTone, ToneRecord } from "@shared/host/tones";
+import type { SlotLink, T3kModel, T3kTone, ToneRecord } from "@shared/host/tones";
 import { modelsVerdict } from "@shared/tone3000";
 
 export const metaPath = (tonesDir: string, toneId: number) => join(tonesDir, String(toneId), "meta.json");
@@ -57,6 +57,15 @@ export function buildRecord(
     gp5: { ...prevGp5, verdict },
     savedAt: now.toISOString(),
   };
+}
+
+/** Set (or with null, clear) the record's slot link. A link replaces the previous one, whichever pedal it was on. */
+export function linkRecord(record: ToneRecord, link: SlotLink | null, now: Date): ToneRecord {
+  const { snaptoneSlot: _s, irSlot: _i, slotName: _n, linkedAt: _l, device: _d, ...rest } = record.gp5;
+  if (!link) return { ...record, gp5: rest };
+  const slot = link.kind === "snaptone" ? { snaptoneSlot: link.slot } : { irSlot: link.slot };
+  const device = link.device === "gp50" ? "gp50" : "gp5";
+  return { ...record, gp5: { ...rest, ...slot, slotName: link.slotName, linkedAt: now.toISOString(), device } };
 }
 
 /** Every readable record under tonesDir (folders without a valid meta.json are skipped). */

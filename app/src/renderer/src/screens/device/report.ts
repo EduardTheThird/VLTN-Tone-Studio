@@ -1,6 +1,7 @@
 // Plain-text diagnostic report (Copy diagnostic report / Save report). No preset contents, no account data.
 import type { DeviceHostStatus } from "@shared/host/device";
-import type { ConnectionError, MidiLogEntry, RequestError } from "@/state/device-types";
+import type { ConnectionError, DeviceKey, MidiLogEntry, RequestError } from "@/state/device-types";
+import { pedalName } from "@/state/device-model";
 import { formatLogLine } from "@/state/midi-log";
 import type { Check } from "./guidance";
 
@@ -12,6 +13,8 @@ export interface ReportInput {
   status: string;
   mode: string;
   portName: string | null;
+  /** Connected pedal model, else the last connected one */
+  device: DeviceKey | null;
   connectionError: ConnectionError | null;
   lastError: RequestError | null;
   /** Monitor lines, only when the monitor is on */
@@ -36,6 +39,7 @@ export function buildReport(r: ReportInput): string {
     ...r.checks.map((c) => `  [${MARK[c.state]}] ${c.name}: ${c.detail}${c.hint ? ` (${c.hint})` : ""}`),
     "",
     `Connection: ${r.status} (${r.mode})`,
+    `Pedal model: ${r.device ? pedalName(r.device) : "unknown"}`,
     `MIDI port: ${r.portName ?? "none"}`,
     `Visible MIDI ports: ${r.connectionError?.ports ? r.connectionError.ports.join(", ") || "none" : "not listed"}`,
     `USB (vendor 84EF): ${h?.usb ? h.usb.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}${d.product ? ` ${d.product}` : ""}`).join(", ") || "none" : "not available"}`,

@@ -4,6 +4,8 @@ import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
+import { pedalName, presetDevice } from "@/state/device-model";
+import type { DeviceKey } from "@/state/device-types";
 import { notifySuccess } from "@/app/notify";
 import type { PresetRef } from "./usage";
 import { convertToSnapTone } from "@/snaptone/convert";
@@ -253,24 +255,40 @@ export async function readSlots(): Promise<void> {
   }
 }
 
-/** Index "used in" from the newest backup in the Library (plus the live preset, which is always known). */
+/**
+ * Index "used in" from the newest Library backup of the connected (or last) pedal model, plus the live preset,
+ * which is always known. A backup of the other model says nothing about this pedal's slots.
+ */
 export async function loadUsage(): Promise<void> {
   try {
-    const cols = await host.files.listCollections();
-    const backup = cols.find((c) => c.kind === "backup");
-    if (!backup) {
-      set({ usage: null });
+    const device = useDevice.getState().device;
+    const backups = (await host.files.listCollections()).filter((c) => c.kind === "backup");
+    for (const backup of backups) {
+      const presets = await host.files.listPresets(backup.id);
+      if (device && !presets.some((p) => isDevicePreset(p.prst, device))) continue;
+      const date = new Date(backup.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+      set({ usage: { presets: presets.map((p) => ({ slot: p.slot ?? -1, name: p.name, prst: p.prst })), source: `the backup from ${date}` } });
       return;
     }
-    const presets = await host.files.listPresets(backup.id);
-    const date = new Date(backup.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-    set({ usage: { presets: presets.map((p) => ({ slot: p.slot ?? -1, name: p.name, prst: p.prst })), source: `the backup from ${date}` } });
+    set({ usage: null });
   } catch {
     set({ usage: null });
   }
 }
 
-// ---------------------------------------------------------------------------------- send to GP-5
+function isDevicePreset(prst: Uint8Array, device: DeviceKey): boolean {
+  try {
+    return presetDevice(prst) === device;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------------- send to the pedal
+
+const pedal = () => pedalName(useDevice.getState().device);
+/** Slot links belong to the pedal the slots were read from; before any connection there is none, which reads as GP-5. */
+const linkDevice = (): DeviceKey => useDevice.getState().device ?? "gp5";
 
 /**
  * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
@@ -372,10 +390,10 @@ export async function writeSnapTone(toneId: number): Promise<void> {
   patchSend(toneId, { phase: "writing", step: 4, error: null, progress: 0 });
   try {
     const stored = await useDevice.getState().uploadSnapTone(slot, s.name, s.file, { onProgress: (progress) => patchSend(toneId, { progress }) });
-    const rec = await host.tones.link(toneId, { kind: "snaptone", slot, slotName: stored });
+    const rec = await host.tones.link(toneId, { kind: "snaptone", slot, slotName: stored, device: linkDevice() });
     storeRecord(rec);
     patchSend(toneId, { phase: "linked", step: 5, linkedSlot: slot });
-    notifySuccess(`Wrote ${slotLabel("snaptone", slot)} on your GP-5`, rec.title);
+    notifySuccess(`Wrote ${slotLabel("snaptone", slot)} on your ${pedal()}`, rec.title);
   } catch (e) {
     patchSend(toneId, { phase: "error", error: message(e) });
   }
@@ -389,10 +407,10 @@ export async function writeUserIr(toneId: number): Promise<void> {
   patchSend(toneId, { phase: "writing", step: 4, error: null, progress: 0 });
   try {
     const stored = await useDevice.getState().uploadUserIr(slot, s.name, s.ir.data, { onProgress: (progress) => patchSend(toneId, { progress }) });
-    const rec = await host.tones.link(toneId, { kind: "ir", slot, slotName: stored });
+    const rec = await host.tones.link(toneId, { kind: "ir", slot, slotName: stored, device: linkDevice() });
     storeRecord(rec);
     patchSend(toneId, { phase: "linked", step: 5, linkedSlot: slot });
-    notifySuccess(`Wrote ${irSlotLabel(slot)} on your GP-5`, rec.title);
+    notifySuccess(`Wrote ${irSlotLabel(slot)} on your ${pedal()}`, rec.title);
   } catch (e) {
     patchSend(toneId, { phase: "error", error: message(e) });
   }
@@ -409,11 +427,11 @@ export async function linkSlot(toneId: number, kind: "snaptone" | "ir", slot: nu
   const d = useDevice.getState();
   const table = kind === "snaptone" ? d.snapTones : d.userIRs;
   const slotName = table?.find((s) => s.slot === slot)?.name ?? "";
-  const rec = await host.tones.link(toneId, { kind, slot, slotName });
+  const rec = await host.tones.link(toneId, { kind, slot, slotName, device: linkDevice() });
   storeRecord(rec);
   patchSend(toneId, { phase: "linked", linkedSlot: slot });
   set({ linkChoice: null });
-  notifySuccess(`Linked to ${slotLabel(kind, slot)} on your GP-5`, rec.title);
+  notifySuccess(`Linked to ${slotLabel(kind, slot)} on your ${pedal()}`, rec.title);
   return rec;
 }
 

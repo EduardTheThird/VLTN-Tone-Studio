@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
 import { useCommand, useFileHandler, useStatusHints, useStatusMessage } from "@/state/ui";
 import { LibraryActionsProvider, useLibraryActions } from "./actions";
 import { runBackupNow } from "./backup-now";
@@ -28,7 +28,7 @@ function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Preset librarian: presets on this computer, the 100 slots on the GP-5, and the selection's details. */
+/** Preset librarian: presets on this computer, the 100 slots on the pedal, and the selection's details. */
 export function LibraryScreen() {
   return (
     <LibraryActionsProvider>
@@ -144,8 +144,11 @@ function LibraryHead() {
   const busy = useDevice((s) => s.busy);
   const status = useDevice((s) => s.status);
   const unsaved = useDevice((s) => s.unsavedChanges);
+  const device = useDevice((s) => s.device);
+  const pedal = usePedalName();
   const [, tick] = useState(0);
-  const newest = collections.find((c) => c.kind === "backup");
+  // The last backup of this pedal's model (a GP-5 backup says little about a connected GP-50).
+  const newest = collections.find((c) => c.kind === "backup" && (!device || c.device === device));
   const backup = busy?.kind === "backup" ? busy : null;
 
   useEffect(() => {
@@ -203,7 +206,7 @@ function LibraryHead() {
         <Button
           variant="outline"
           disabled={status !== "connected" || busy !== null || unsaved > 0}
-          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? "Connect the GP-5 to back it up" : "Reads all 100 slots, about 75 s"}
+          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? `Connect the ${pedal} to back it up` : "Reads all 100 slots, about 75 s"}
           onClick={() => void runBackupNow()}
         >
           <HardDriveDownloadIcon data-icon="inline-start" />

@@ -17,10 +17,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
 import { host } from "@/host";
-import { useDevice } from "@/state/device";
+import { usePedalName, useDevice } from "@/state/device";
+import { pedalName, presetDevice } from "@/state/device-model";
 import { REPLACED_ID } from "@shared/host/files";
 import { slotsToRead, type Step } from "./plans";
-import { isEmptyName, useLibrary } from "./store";
+import { emptyName, isEmptyName, useLibrary } from "./store";
 
 export interface BulkPlan {
   title: string;
@@ -42,20 +43,24 @@ async function readSlot(slot: number): Promise<Uint8Array> {
   return prst;
 }
 
-/** An empty preset (name GP-5) to clear slots with: a known empty slot's body, else read one from the pedal. */
+/**
+ * An empty preset (named like the pedal's empty slots) to clear slots with: a known empty slot's body of the
+ * connected model, else read one from the pedal.
+ */
 async function blankPreset(): Promise<Uint8Array> {
-  const { names } = useDevice.getState();
+  const { names, device } = useDevice.getState();
   const { bodies } = useLibrary.getState();
-  const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot]);
+  const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot] && presetDevice(bodies[n.slot].prst) === device);
   if (known) return bodies[known.slot].prst;
   const empty = names.find((n) => isEmptyName(n.name));
-  if (!empty) throw new Error("There's no empty slot on the GP-5 to take an empty preset from.");
+  if (!empty) throw new Error(`There's no empty slot on the ${pedalName(device)} to take an empty preset from.`);
   return readSlot(empty.slot);
 }
 
 /** AlertDialog for writes that touch several slots (copy, move, swap, clear): read, optional backup, write, verify. */
 export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null; onOpenChange(open: boolean): void }) {
   const names = useDevice((s) => s.names);
+  const pedal = usePedalName();
   const connected = useDevice((s) => s.status === "connected");
   const [backupFirst, setBackupFirst] = useState(true);
   const [running, setRunning] = useState(false);
@@ -80,7 +85,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
   }, [plan]);
 
   if (!plan) return null;
-  const nameOf = (slot: number) => names[slot]?.name ?? "GP-5";
+  const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const replaced = plan.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
   const doBackup = backupFirst && replaced.length > 0;
 
@@ -108,7 +113,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
         setStatus("Saving the replaced slots");
         await host.files.addPresets(
           REPLACED_ID,
-          replaced.map((slot) => ({ name: nameOf(slot), prst: read.current.get(slot)!, slot, source: `Slot ${slot} on GP-5` })),
+          replaced.map((slot) => ({ name: nameOf(slot), prst: read.current.get(slot)!, slot, source: `Slot ${slot} on ${pedal}` })),
         );
         backedUp.current = true;
       }
@@ -141,7 +146,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
         <AlertDialogHeader>
           <AlertDialogTitle className="text-balance">{plan.title}</AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
-            {running ? "Keep the GP-5 connected until every slot is checked." : plan.description}
+            {running ? `Keep the ${pedal} connected until every slot is checked.` : plan.description}
           </AlertDialogDescription>
         </AlertDialogHeader>
 

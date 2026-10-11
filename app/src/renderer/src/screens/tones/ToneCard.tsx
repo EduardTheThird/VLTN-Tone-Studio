@@ -1,13 +1,16 @@
 import { forwardRef, useEffect } from "react";
 import { CircleCheck, CircleX, ExternalLink, Heart, Link2, Speaker } from "lucide-react";
 import type { T3kTone, ToneRecord } from "@shared/host/tones";
-import { gearLabel, toneVerdict, verdictLabel, type Verdict } from "@shared/tone3000";
+import { gearLabel, slotLinkOn, toneVerdict, verdictLabel, type Verdict } from "@shared/tone3000";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useDevice, usePedalNameOrBoth } from "@/state/device";
+import { pedalName } from "@/state/device-model";
+import type { DeviceKey } from "@/state/device-types";
 import { irSlotLabel, requestImage, useTones } from "./store";
 import { ToneImage } from "./ToneImage";
 
@@ -24,25 +27,38 @@ export function CreatorAvatar({ username, url, className }: { username: string; 
   );
 }
 
-/** Linked beats every other verdict: the tone is already on the pedal. */
-export function linkLabel(record: ToneRecord | undefined): string | null {
-  if (record?.gp5.snaptoneSlot !== undefined) return `Linked to SnapTone ${record.gp5.snaptoneSlot}`;
-  if (record?.gp5.irSlot !== undefined) return `Linked to ${irSlotLabel(record.gp5.irSlot)}`;
-  return null;
+/**
+ * Linked beats every other verdict: the tone is already on the pedal. A link made on the other model (`device` is
+ * the connected or last pedal) names that model, since its slot numbers mean nothing on this one.
+ */
+export function linkLabel(record: ToneRecord | undefined, device: DeviceKey | null): string | null {
+  const link = slotLinkOn(record, device);
+  if (!link) return null;
+  const slot = link.kind === "snaptone" ? `SnapTone ${link.slot}` : irSlotLabel(link.slot);
+  return link.other ? `Linked to ${slot} on your ${pedalName(link.other)}` : `Linked to ${slot}`;
 }
 
-const REASON: Record<string, string> = {
-  ready: "This tone has NAM A1 or A2 models. Tone Studio turns them into GP-5 SnapTones the way Valeton Suite does.",
-  reshape: "The A1 file is in NAM 0.7 format. Tone Studio converts it to the 0.5 layout Valeton Suite imports, without changing the sound.",
-  ir: "Tone Studio writes IRs over USB to one of the GP-5's 20 User IR slots. The pedal keeps the first 11.6 ms.",
-  custom: "This tone uses a custom NAM layout. Tone Studio can't turn it into a SnapTone.",
-  format: "The GP-5 takes SnapTones made from NAM captures, and WAV IRs.",
-};
+/** `model`: the pedal name, or "GP-5 / GP-50" before the first connection (both take the same SnapTones and IRs). */
+function verdictReason(kind: string, model: string): string {
+  switch (kind) {
+    case "ready":
+      return `This tone has NAM A1 or A2 models. Tone Studio turns them into ${model} SnapTones the way Valeton Suite does.`;
+    case "reshape":
+      return "The A1 file is in NAM 0.7 format. Tone Studio converts it to the 0.5 layout Valeton Suite imports, without changing the sound.";
+    case "ir":
+      return `Tone Studio writes IRs over USB to one of the ${model}'s 20 User IR slots. The pedal keeps the first 11.6 ms.`;
+    case "custom":
+      return "This tone uses a custom NAM layout. Tone Studio can't turn it into a SnapTone.";
+    default:
+      return `The ${model} takes SnapTones made from NAM captures, and WAV IRs.`;
+  }
+}
 
 export function CompatVerdict({ verdict, linked, className }: { verdict: Verdict; linked: string | null; className?: string }) {
+  const model = usePedalNameOrBoth();
   const ok = verdict.kind === "ready" || verdict.kind === "reshape";
   const Icon = linked ? Link2 : verdict.kind === "ir" ? Speaker : ok ? CircleCheck : CircleX;
-  const reason = REASON[verdict.kind === "not-loadable" ? verdict.reason : verdict.kind];
+  const reason = verdictReason(verdict.kind === "not-loadable" ? verdict.reason : verdict.kind, model);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -60,7 +76,7 @@ export function CompatVerdict({ verdict, linked, className }: { verdict: Verdict
             )}
             aria-hidden
           />
-          {linked ?? verdictLabel(verdict)}
+          {linked ?? verdictLabel(verdict, model)}
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">{reason}</TooltipContent>
@@ -73,6 +89,7 @@ export const ToneCard = forwardRef<
   { tone: T3kTone; record?: ToneRecord; tabIndex: number; onOpen: () => void; onFocus: () => void }
 >(function ToneCard({ tone, record, tabIndex, onOpen, onFocus }, ref) {
   const verdict = toneVerdict(tone, record);
+  const device = useDevice((s) => s.device);
   return (
     <button
       ref={ref}
@@ -95,7 +112,7 @@ export const ToneCard = forwardRef<
         </span>
         <span className="mt-auto pt-2">
           <span className="block border-t border-seam pt-2">
-            <CompatVerdict verdict={verdict} linked={linkLabel(record)} />
+            <CompatVerdict verdict={verdict} linked={linkLabel(record, device)} />
           </span>
         </span>
       </span>

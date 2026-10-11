@@ -5,6 +5,11 @@
 export const VALETON_VID = 0x84ef;
 export const GP5_PID = 0x0184;
 export const GP50_PID = 0x018a;
+/** USB product id of each pedal model (keys match the renderer's DeviceKey). */
+export const PEDAL_PID = { gp5: GP5_PID, gp50: GP50_PID } as const;
+export type PedalModel = keyof typeof PEDAL_PID;
+/** Product ids of the pedals in normal mode; any other Valeton product id is treated as firmware update mode. */
+export const PEDAL_PIDS: readonly number[] = [GP5_PID, GP50_PID];
 
 export interface UsbDeviceInfo {
   vendorId: number;
@@ -38,12 +43,19 @@ export interface DeviceHostStatus {
   versions: HostVersions;
   /** USB devices with Valeton's vendor id; null when this host can't enumerate USB */
   usb: UsbDeviceInfo[] | null;
-  /** Driver bound to the GP-5 MIDI interface (Linux kernel module, Windows service); null = unknown */
+  /** Driver bound to the pedal's (GP-5 / GP-50) MIDI interface (Linux kernel module, Windows service); null = unknown */
   driver: string | null;
   /** Linux only: access to the ALSA sequencer device */
   linuxSeq: LinuxSeqAccess | null;
   /** A Valeton Suite process is running; null = can't tell */
   suiteRunning: boolean | null;
+}
+
+/** Which pedal (normal mode) the host saw on USB; null when none or when USB can't be listed. */
+export function pedalOnUsb(status: DeviceHostStatus | null): PedalModel | null {
+  const pid = status?.usb?.find((d) => d.vendorId === VALETON_VID && PEDAL_PIDS.includes(d.productId))?.productId;
+  if (pid === undefined) return null;
+  return pid === GP50_PID ? "gp50" : "gp5";
 }
 
 export interface DeviceHostApi {

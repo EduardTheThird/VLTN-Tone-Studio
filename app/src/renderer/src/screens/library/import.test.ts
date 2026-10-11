@@ -12,8 +12,8 @@ describe("checkPrst", () => {
     expect(checkPrst(gp5)).toEqual({ ok: true, name: readName(gp5), device: "gp5" });
   });
 
-  it("accepts a GP-50 preset (converted when it is written)", () => {
-    expect(checkPrst(gp50)).toMatchObject({ ok: true, device: "gp50" });
+  it("accepts a GP-50 preset as stored (converted only when written to a GP-5)", () => {
+    expect(checkPrst(gp50)).toEqual({ ok: true, name: readName(gp50), device: "gp50" });
   });
 
   it("rejects files of unknown length and damaged presets with a reason", () => {

@@ -1,4 +1,5 @@
-// Gp5Session: transport-agnostic, paced, serialized request/response layer for the Valeton GP-5.
+// Gp5Session: transport-agnostic, paced, serialized request/response layer for the Valeton GP-5 and GP-50.
+// The pedal model is detected from the length of the first 0x41 body (466 B GP-5, 511 B GP-50); see `device`.
 // Works with any transport implementing:
 //   { name: string, send(bytes: Uint8Array): void, onMessage(cb: (bytes: Uint8Array) => void): void, close(): void|Promise<void> }
 // Transports: ./transport-webmidi.mjs (browser/Electron), ./transport-node.mjs (Node), ./mock-device.mjs (tests).
@@ -24,7 +25,7 @@ import {
   parseSysex,
   toHex,
 } from "./protocol.mjs";
-import { GP5_BODY_LEN, bodyOf, detectDevice, rebuildPrst } from "./prst.mjs";
+import { DEVICES, bodyOf, detectDevice, deviceByBodyLength, rebuildPrst } from "./prst.mjs";
 import { encodeImportSnapTone, isUserSnapToneSlot, sanitizeSnapToneName } from "./snaptone.mjs";
 import { USER_IR, encodeImportUserIr, isUserIrSlot } from "./userir.mjs";
 
@@ -55,6 +56,7 @@ export class Gp5Session extends EventTarget {
   #chain = Promise.resolve();
   #lastSend = 0;
   #reasm = new Reassembler();
+  #device = null; // "gp5" | "gp50" once the first 0x41 body has been read
   #waiters = new Set();
   #closed = false;
   #log;
@@ -73,6 +75,17 @@ export class Gp5Session extends EventTarget {
 
   get transportName() {
     return this.#t.name;
+  }
+
+  /** Connected pedal model ("gp5" | "gp50"), or null before the first body read (see identify()). */
+  get device() {
+    return this.#device;
+  }
+
+  /** Detect the pedal model (reads the active body once if not known yet). */
+  async identify() {
+    if (!this.#device) await this.readCurrentBody();
+    return this.#device;
   }
 
   // ------------------------------------------------------------------------------------------- low level
@@ -196,15 +209,27 @@ export class Gp5Session extends EventTarget {
   async readCurrentSlot() {
     return decodeCurrentSlot(await this.read(READ.CURRENT_SLOT));
   }
-  /** Body of the ACTIVE preset buffer (incl. unsaved live edits). 466 bytes on GP-5. */
+  /**
+   * Body of the ACTIVE preset buffer (incl. unsaved live edits): 466 bytes on GP-5, 511 on GP-50.
+   * The first body fixes the session's device; later bodies must have the same length.
+   */
   async readCurrentBody() {
+    let got = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
       const body = decodeCurrentPatch(await this.read(READ.CURRENT_PATCH));
-      if (body.length === GP5_BODY_LEN) return body;
-      this.#log?.("warn", new Uint8Array(), { type: "length", got: body.length });
+      const dev = deviceByBodyLength(body.length);
+      if (dev && (!this.#device || this.#device === dev.key)) {
+        this.#device ??= dev.key;
+        return body;
+      }
+      got = body.length;
+      this.#log?.("warn", new Uint8Array(), { type: "length", got });
       await sleep(400);
     }
-    throw new Gp5Error("length", `0x41 body is not ${GP5_BODY_LEN} bytes (is this a GP-5?)`);
+    const want = this.#device
+      ? `${DEVICES[this.#device].bodyLength} for the ${DEVICES[this.#device].name}`
+      : `${DEVICES.gp5.bodyLength} (GP-5) or ${DEVICES.gp50.bodyLength} (GP-50)`;
+    throw new Gp5Error("length", `0x41 body is ${got} bytes, expected ${want}`);
   }
   async readSnapTones() {
     return decodeSlotTable(await this.read(READ.SNAPTONES));
@@ -236,12 +261,12 @@ export class Gp5Session extends EventTarget {
     return now;
   }
 
-  /** Read slot `slot` as a complete 507-byte .prst (selects it!). Pass names to avoid re-reading 0x40. */
+  /** Read slot `slot` as a complete .prst of the connected device (selects it!). Pass names to avoid re-reading 0x40. */
   async readPreset(slot, { names } = {}) {
     await this.selectPreset(slot);
     const body = await this.readCurrentBody();
     const list = names ?? (await this.readPresetNames());
-    return rebuildPrst(list[slot].name, body, "gp5");
+    return rebuildPrst(list[slot].name, body, this.#device);
   }
 
   /** Back up every slot. Restores the originally active slot afterwards. onProgress(done, total, entry). */
@@ -304,14 +329,17 @@ export class Gp5Session extends EventTarget {
   }
 
   /**
-   * Write a 507-byte GP-5 .prst into `slot` (26 frames, one ACK per frame), then verify by reading it back.
+   * Write a .prst of the connected device into `slot` (GP-5 507 B = 26 frames, GP-50 552 B = 29 frames, one ACK per
+   * frame), then verify by reading it back.
    * If a frame is not acknowledged the pedal discards the whole transfer (observed on hardware right after a
    * save/select burst), so the stream is aborted and restarted from frame 0 after a pause (up to `attempts`).
    * Verification selects another slot and then `slot` (re-selecting the active slot does not reload flash).
    */
   async writePreset(slot, prst, { confirm, verify = true, onProgress, attempts = 3 } = {}) {
     this.#guard(confirm, "writePreset");
-    if (detectDevice(prst).key !== "gp5") throw new Gp5Error("unsafe", "not a GP-5 .prst (convert GP-50 presets first)");
+    const device = await this.identify();
+    const file = detectDevice(prst);
+    if (file.key !== device) throw new Gp5Error("unsafe", `this is a ${file.name} preset but the pedal is a ${DEVICES[device].name}; convert it first`);
     const frames = packetize(encode.writePreset(slot, prst));
     const want = bodyOf(prst);
     for (let attempt = 1; ; attempt++) {
@@ -408,13 +436,13 @@ export class Gp5Session extends EventTarget {
 
   // ------------------------------------------------------------------------------------------- state sync
 
-  /** Full snapshot used at connect time: names, active slot, active body, globals. */
+  /** Full snapshot used at connect time: names, active slot, active body (detects the device), globals. */
   async syncState() {
     const names = await this.readPresetNames();
     const slot = await this.readCurrentSlot();
     const body = await this.readCurrentBody();
     const globals = await this.readGlobals().catch(() => null);
-    return { names, slot, prst: rebuildPrst(names[slot]?.name ?? "", body, "gp5"), globals };
+    return { device: this.#device, names, slot, prst: rebuildPrst(names[slot]?.name ?? "", body, this.#device), globals };
   }
 }
 

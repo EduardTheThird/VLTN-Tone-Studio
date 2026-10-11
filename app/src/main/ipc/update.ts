@@ -126,7 +126,7 @@ async function download(): Promise<void> {
 async function install(): Promise<void> {
   if (mode !== "install" || state.status !== "ready") throw new HostError("invalid", "No update is ready to install");
   // Same rule as closing the window: an interrupted write is discarded by the pedal.
-  if (isJobRunning()) throw new HostError("invalid", "Tone Studio is still writing to or backing up the GP-5. Restart when it finishes.");
+  if (isJobRunning()) throw new HostError("invalid", "Tone Studio is still writing to or backing up the pedal. Restart when it finishes.");
   const u = await updater();
   // Silent on Windows (the install folder is already chosen), then start the new version.
   setImmediate(() => u.quitAndInstall(true, true));

@@ -4,7 +4,7 @@
 
 # VLTN Tone Studio
 
-A desktop editor and librarian for the Valeton GP-5.<br>
+A desktop editor and librarian for the Valeton GP-5 and GP-50.<br>
 Shape tones live, sort and back up all 100 slots, and bring in NAM captures from TONE3000.
 
 <br>
@@ -148,7 +148,7 @@ Diagnostics check each step of the connection to the pedal, and a live MIDI moni
 
 ## Tones from TONE3000.
 
-Browse and download NAM captures and IRs from TONE3000, and see which slots on your GP-5 already hold them.
+Browse and download NAM captures and IRs from TONE3000, and see which slots on your pedal already hold them.
 
 <br>
 
@@ -168,7 +168,7 @@ IRs go straight to one of the 20 User IR slots. No Valeton Suite needed.
 <br>
 
 The capture editor plays your guitar through a capture, using the input of your audio interface.<br>
-Compare its sizes, match levels, and shape it before it goes to the GP-5.
+Compare its sizes, match levels, and shape it before it goes to the pedal.
 
 <br>
 
@@ -197,7 +197,7 @@ Mute or solo any of them and export them as WAV.
 <br>
 <br>
 
-Tone Match listens to the guitar alone and proposes a GP-5 preset you can play on the pedal right away.
+Tone Match listens to the guitar alone and proposes a preset for your GP-5 or GP-50 that you can play on the pedal right away.
 
 <br>
 
@@ -207,7 +207,7 @@ Tone Match listens to the guitar alone and proposes a GP-5 preset you can play o
 <br>
 
 It shows what it heard: gain, echo, reverb, level, and the guitar's spectrum against a typical guitar.<br>
-Record yourself through the GP-5 and it designs a cabinet IR that brings your tone closer to the song's.
+Record yourself through the pedal and it designs a cabinet IR that brings your tone closer to the song's.
 
 <br>
 
@@ -230,11 +230,26 @@ Record yourself through the GP-5 and it designs a cabinet IR that brings your to
 
 <br>
 
-| Device | Support |
-|---|---|
-| **Valeton GP-5** | Live editing, library, backups and restore, SnapTones and User IRs over USB |
-| **Valeton GP-50** | `.prst` files: import, inspect and convert to the GP-5 |
-| **Other Valeton pedals** | Planned |
+| | GP-5 | GP-50 | GP-200 · 200R · 200X | GP-200LT | GP-200JR |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Recognised over USB | ✅ | ✅ | 🗓️ | 🗓️ | 🗓️ |
+| Live editing | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
+| Preset library | ✅ 100 slots | 🧪 100 slots | 🗓️ 256 slots | 🗓️ 256 slots | 🗓️ 255 slots |
+| Backups and restore | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
+| `.prst` import and export | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
+| Pedal settings | ✅ | 🛠️ | 🗓️ | 🗓️ | 🗓️ |
+| Expression pedal settings per preset | — | 🗓️ | 🗓️ | 🗓️ | 🗓️ |
+| SnapTones (NAM) over USB | ✅ 30 slots | 🧪 30 slots | 🗓️ 10 slots | ❔ | ❔ |
+| User IRs over USB | ✅ 20 slots | 🧪 20 slots | 🗓️ 20 slots | 🗓️ 20 slots | 🗓️ 20 slots |
+| Tone Match | ✅ | 🧪 | 🗓️ | 🗓️ | 🗓️ |
+| Simulated pedal (no hardware needed) | ✅ `?mock` | ✅ `?mock=gp50` | 🗓️ | 🗓️ | 🗓️ |
+| Tested on a real unit by this project | ✅ | not yet | not yet | not yet | not yet |
+
+✅ works &nbsp;·&nbsp; 🧪 works in the app and the simulator, not yet tried on a real unit &nbsp;·&nbsp; 🛠️ being fixed: the GP-50 shows the GP-5's settings list, and some of its settings sit at other addresses &nbsp;·&nbsp; 🗓️ planned &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it
+
+The app recognises the connected model by itself. `.prst` files of either pedal can be written to either: a GP-5 preset goes onto a GP-50 unchanged; a GP-50 preset loses its GP-50-only models on a GP-5, and the app lists them before writing.
+
+The GP-200 family speaks a different protocol from the GP-5 and GP-50. How the GP-50 and GP-200 support will be completed, including their simulators, is in [`docs/device-expansion-plan.md`](docs/device-expansion-plan.md).
 
 <br>
 
@@ -276,7 +291,7 @@ npm run web        # in the browser at http://localhost:5790
 
 Installers for macOS, Windows and Linux are on the [Releases](https://github.com/grzmol/VLTN-Tone-Studio/releases) page. When a new version is out, the app asks at launch whether to download and install it. The Windows installer and the AppImage update in place. On macOS and with the `.deb`, the app opens the release page for you to download it.
 
-No pedal? Open `http://localhost:5790/?mock` to use a simulated GP-5 loaded with a full 100-slot backup.
+No pedal? Open `http://localhost:5790/?mock` for a simulated GP-5, or `?mock=gp50` for a simulated GP-50, each loaded with a full 100-slot backup.
 
 All commands and the code layout are in [`app/README.md`](app/README.md).
 

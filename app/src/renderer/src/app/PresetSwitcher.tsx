@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import { keyLabel } from "./keys";
 import { requestPresetSwitch } from "./preset-switch";
 
@@ -17,6 +17,7 @@ export function PresetSwitcher() {
   const status = useDevice((s) => s.status);
   const busy = useDevice((s) => s.busy);
   const unsaved = useDevice((s) => s.unsavedChanges);
+  const pedal = usePedalName();
   const [open, setOpen] = useState(false);
   const connected = status === "connected" && slot !== null;
   const canSwitch = connected && !busy;
@@ -68,7 +69,7 @@ export function PresetSwitcher() {
                 {connected && unsaved > 0 && <span className="size-1.5 shrink-0 rounded-full bg-led-warn" aria-hidden />}
               </>
             ) : (
-              <span className="flex-1 text-silkscreen-3">{status === "connecting" ? "Reading the GP-5…" : "No preset loaded"}</span>
+              <span className="flex-1 text-silkscreen-3">{status === "connecting" ? `Reading the ${pedal}…` : "No preset loaded"}</span>
             )}
             <ChevronDown className="size-3.5 shrink-0 text-silkscreen-3" aria-hidden />
           </button>

@@ -40,7 +40,7 @@ async function openNamFiles(files: OpenFile[]) {
   }
 }
 
-/** Capture editor (design/screens/capture-editor.md): inspect and edit a NAM capture, versions, GP-5 readiness. */
+/** Capture editor (design/screens/capture-editor.md): inspect and edit a NAM capture, versions, SnapTone readiness. */
 export function CaptureEditorScreen() {
   const param = useNav((s) => s.param);
   const status = useCapture((s) => s.status);

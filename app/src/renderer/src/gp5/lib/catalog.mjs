@@ -1,37 +1,59 @@
-// Effect/model catalog lookups for the GP-5. Data: ./catalog-data.mjs (generated).
+// Effect/model catalog lookups for the GP-5 and GP-50. Data: ./catalog-data.mjs (generated, one merged list).
+// Every lookup takes the device key ("gp5" | "gp50"): the GP-50 has 3 more models and tempo-sync params that the
+// GP-5 lacks, so a model's param list depends on the pedal.
 import { BLOCKS } from "./protocol.mjs";
-import { MODELS, SNAPTONE_PARAMS } from "./catalog-data.mjs";
+import { MODELS as ALL_MODELS, SNAPTONE_PARAMS } from "./catalog-data.mjs";
 
-const byFxid = new Map(MODELS.map((m) => [m.fxid, m]));
+const SNAPTONE_SLOTS = 80;
 
-/** Model entry for an fxid (SnapTone slots synthesized). */
-export function modelByFxid(fxid) {
+function build(device) {
+  const keep = (x) => !x.only || x.only === device;
+  const strip = ({ only, ...rest }) => (void only, rest);
+  const models = ALL_MODELS.filter(keep).map((m) => Object.freeze({ ...strip(m), params: m.params.filter(keep).map(strip) }));
+  return { models: Object.freeze(models), byFxid: new Map(models.map((m) => [m.fxid, m])) };
+}
+const CATALOGS = Object.freeze({ gp5: build("gp5"), gp50: build("gp50") });
+
+function catalogOf(device) {
+  const c = CATALOGS[device];
+  if (!c) throw new RangeError(`unknown device ${JSON.stringify(device)}; expected "gp5" or "gp50"`);
+  return c;
+}
+
+/** Every model of `device` outside the NS block. */
+export function modelsFor(device) {
+  return catalogOf(device).models;
+}
+
+/** Model entry for an fxid on `device` (SnapTone slots synthesized); undefined when the pedal has no such model. */
+export function modelByFxid(fxid, device) {
   const id = fxid >>> 0;
-  if (byFxid.has(id)) return byFxid.get(id);
-  if (id >>> 24 === 0x0f && (id & 0xffffff) < 80) {
+  const c = catalogOf(device);
+  if (c.byFxid.has(id)) return c.byFxid.get(id);
+  if (id >>> 24 === 0x0f && (id & 0xffffff) < SNAPTONE_SLOTS) {
     const n = id & 0xff;
     return { fxid: id, block: "NS", name: `SnapTone ${n}`, title: `Tone Catch ${n + 1}`, type: "SnapTone", params: SNAPTONE_PARAMS };
   }
   return undefined;
 }
 
-/** All models available in a block ("AMP", 3, ...). NS returns the 80 SnapTone slots. */
-export function modelsForBlock(block) {
+/** All models of `device` in a block ("AMP", 3, ...). NS returns the 80 SnapTone slots. */
+export function modelsForBlock(block, device) {
   const name = typeof block === "number" ? BLOCKS[block] : String(block).toUpperCase();
-  if (name === "NS") return Array.from({ length: 80 }, (_, n) => modelByFxid(0x0f000000 | n));
-  return MODELS.filter((m) => m.block === name);
+  if (name === "NS") return Array.from({ length: SNAPTONE_SLOTS }, (_, n) => modelByFxid(0x0f000000 | n, device));
+  return catalogOf(device).models.filter((m) => m.block === name);
 }
 
-/** Case-insensitive search by name or title within a block (or everywhere). */
-export function findModel(query, block) {
+/** Case-insensitive search by name or title within a block (undefined = everywhere) on `device`. */
+export function findModel(query, block, device) {
   const q = String(query).toLowerCase();
-  const pool = block === undefined ? MODELS : modelsForBlock(block);
+  const pool = block === undefined ? modelsFor(device) : modelsForBlock(block, device);
   return pool.find((m) => m.name.toLowerCase() === q || m.title.toLowerCase() === q) ?? pool.find((m) => m.name.toLowerCase().includes(q) || m.title.toLowerCase().includes(q));
 }
 
 /** Resolve a parameter of a model by name (e.g. "Gain", "Time") -> { name, index, min, max, ... }. */
-export function findParam(fxid, paramName) {
-  const m = modelByFxid(fxid);
+export function findParam(fxid, paramName, device) {
+  const m = modelByFxid(fxid, device);
   if (!m) throw new RangeError(`unknown fxid 0x${(fxid >>> 0).toString(16)}`);
   const q = String(paramName).toLowerCase();
   const p = m.params.find((x) => x.name.toLowerCase() === q);
@@ -48,16 +70,16 @@ export function clampParam(p, value) {
 }
 
 /** Default param array (8 slots) for a model, as the pedal loads them on a model change (per Suite data). */
-export function defaultParams(fxid) {
+export function defaultParams(fxid, device) {
   const out = new Array(8).fill(0);
-  for (const p of modelByFxid(fxid)?.params ?? []) out[p.index] = p.default;
+  for (const p of modelByFxid(fxid, device)?.params ?? []) out[p.index] = p.default;
   return out;
 }
 
-/** Human-readable view of a parsed preset (from prst.parsePrst). */
+/** Human-readable view of a parsed preset (from prst.parsePrst; its `device` selects the catalog). */
 export function describePreset(parsed) {
   return parsed.blocks.map((b) => {
-    const m = modelByFxid(b.fxid);
+    const m = modelByFxid(b.fxid, parsed.device);
     return {
       block: b.name,
       enabled: b.enabled,
@@ -67,5 +89,3 @@ export function describePreset(parsed) {
     };
   });
 }
-
-export { MODELS };

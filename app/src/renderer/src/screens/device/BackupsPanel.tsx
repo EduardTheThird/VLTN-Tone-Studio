@@ -41,8 +41,10 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     void refreshCollections().catch(() => {});
   }, [refreshCollections]);
 
+  const device = useDevice((s) => s.device);
   const backups = collections.filter((c) => c.kind === "backup");
-  const last = backups[0];
+  // "Last full backup" means the last one of this pedal's model; the table lists both models.
+  const last = backups.find((c) => !device || c.device === device);
   const backingUp = busy?.kind === "backup";
   const blocked = offline || !!busy;
 
@@ -50,8 +52,11 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     setLoading(c.id);
     try {
       const presets = await host.files.listPresets(c.id);
-      const { entries, skipped } = restoreEntries(presets.map((p) => ({ fileName: p.fileName, slot: p.slot, bytes: p.prst })));
-      setRestore({ title: dirOf(c), location: c.path ?? c.id, entries, skipped });
+      const { entries, converted, skipped } = restoreEntries(
+        presets.map((p) => ({ fileName: p.fileName, slot: p.slot, bytes: p.prst })),
+        useDevice.getState().device,
+      );
+      setRestore({ title: dirOf(c), location: c.path ?? c.id, entries, converted, skipped });
     } catch (e) {
       notifyError("Couldn't read the backup", e);
     } finally {
@@ -63,12 +68,12 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
     try {
       const picked = await host.files.pickPrstFolder();
       if (!picked) return;
-      const { entries, skipped } = restoreEntries(picked.files);
+      const { entries, converted, skipped } = restoreEntries(picked.files, useDevice.getState().device);
       if (!entries.length) {
-        notifyError("Nothing to restore", new Error(`${picked.name} has no GP-5 presets with a slot number (NN-Name.prst).`));
+        notifyError("Nothing to restore", new Error(`${picked.name} has no GP-5 or GP-50 presets with a slot number (NN-Name.prst).`));
         return;
       }
-      setRestore({ title: picked.name, location: picked.path ?? picked.name, entries, skipped });
+      setRestore({ title: picked.name, location: picked.path ?? picked.name, entries, converted, skipped });
     } catch (e) {
       notifyError("Couldn't read the folder", e);
     }

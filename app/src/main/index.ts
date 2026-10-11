@@ -14,7 +14,7 @@ import { registerSongIpc } from "./ipc/song";
 import { registerUpdateIpc } from "./ipc/update";
 import type { AppEvent } from "@shared/ipc";
 
-// One app instance = one MIDI session (the GP-5 port is exclusive on Windows).
+// One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // The packaged renderer is served from app://bundle/ instead of file://, so fetch() and
@@ -123,7 +123,7 @@ async function createWindow() {
         buttons: ["Keep open", "Close anyway"],
         defaultId: 0,
         cancelId: 0,
-        message: "Tone Studio is still writing to or backing up the GP-5",
+        message: "Tone Studio is still writing to or backing up the pedal",
         detail: "Close after it finishes? If you close now, an unfinished write is discarded by the pedal and that slot keeps its old preset.",
       });
       if (choice === 0) return e.preventDefault();

@@ -163,7 +163,7 @@ function PortPatternRow({ value, disabled, onSave }: { value: string | null; dis
   return (
     <Row
       label="MIDI port name"
-      description={`Leave empty to find the pedal automatically (any port named like "GP-5", never "GP-50"). Enter part of a port name to use that port instead, for example a virtual GP-5.`}
+      description={`Leave empty to find the pedal automatically (any port named like "GP-5" or "GP-50"). Enter part of a port name to use that port instead, for example a virtual pedal.`}
     >
       <form
         className="flex min-w-0 flex-1 items-center gap-2"

@@ -25,7 +25,7 @@ import {
   Upload,
   Usb,
 } from "lucide-react";
-import { MODELS } from "@/gp5/lib/catalog.mjs";
+import { modelsFor } from "@/gp5/lib/catalog.mjs";
 import { parsePrst } from "@/gp5/lib/prst.mjs";
 import { useLibrary } from "@/screens/library/store";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,8 @@ import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { isElectron } from "@/host";
 import { useDevice } from "@/state/device";
-import { BLOCK_CODES, type ModelInfo } from "@/state/device-types";
+import { pedalName } from "@/state/device-model";
+import { BLOCK_CODES, type DeviceKey, type ModelInfo } from "@/state/device-types";
 import { runCommand, useUi, type AppCommand } from "@/state/ui";
 import { useNav, type Screen } from "@/state/nav";
 import { keyLabel } from "../keys";
@@ -49,7 +50,7 @@ interface Entry {
   search: Searchable;
   /** Enter verb shown in the footer: "load preset", "set AMP model", "run" */
   verb: string;
-  /** Why it can't run right now ("Needs the GP-5"); disabled when set */
+  /** Why it can't run right now ("Needs the GP-50"); disabled when set */
   blocked?: string;
   run(): void;
   render(ranges: readonly Range[]): ReactNode;
@@ -65,8 +66,6 @@ interface Group {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const BLOCK_VAR: Record<string, string> = Object.fromEntries(BLOCK_CODES.map((c) => [c, `var(--block-${c.toLowerCase()})`]));
-const CATALOG = MODELS as ModelInfo[];
-const NEEDS_PEDAL = "Needs the GP-5";
 
 /** fxid per block of a .prst body, cached per byte array (bodies come from the last backup or read). */
 const fxidCache = new WeakMap<Uint8Array, number[]>();
@@ -138,11 +137,15 @@ function useGroups(close: () => void): Group[] {
   const snapTones = useDevice((s) => s.snapTones);
   const userIRs = useDevice((s) => s.userIRs);
   const busy = useDevice((s) => s.busy);
+  const lastDevice = useDevice((s) => s.device);
   const recent = useUi((s) => s.recentSlots);
   const connected = status === "connected";
 
   return useMemo(() => {
-    const pedal = connected ? (busy ? `Wait for the ${busy.kind}` : undefined) : NEEDS_PEDAL;
+    // The live preset's model, else the connected (or last connected) pedal's.
+    const device: DeviceKey = preset?.device ?? lastDevice ?? "gp5";
+    const needsPedal = `Needs the ${pedalName(lastDevice)}`;
+    const pedal = connected ? (busy ? `Wait for the ${busy.kind}` : undefined) : needsPedal;
     const cmd = (c: AppCommand) => () => {
       close();
       runCommand(c);
@@ -186,7 +189,7 @@ function useGroups(close: () => void): Group[] {
         label: "Compare with saved",
         icon: GitCompareArrows,
         hint: unsaved ? `${unsaved} change${unsaved === 1 ? "" : "s"}` : "No changes",
-        blocked: preset ? undefined : NEEDS_PEDAL,
+        blocked: preset ? undefined : needsPedal,
         run: cmd("compare-with-saved"),
       }),
       actionEntry({ id: "save", label: nn ? `Save to slot ${nn}` : "Save to slot", icon: Save, keys: ["Mod", "S"], blocked: pedal, run: cmd("save-to-slot") }),
@@ -199,7 +202,7 @@ function useGroups(close: () => void): Group[] {
         id: "tone-match",
         label: "Tone match",
         icon: Guitar,
-        hint: "Match a song's guitar tone on the GP-5",
+        hint: `Match a song's guitar tone on the ${pedalName(lastDevice)}`,
         words: ["tone match", "match", "guitar", "song", "stems", "preset", "ir"],
         run: go("song", "tone"),
       }),
@@ -207,7 +210,7 @@ function useGroups(close: () => void): Group[] {
       actionEntry({ id: "backups-folder", label: "Open backups folder", icon: FolderOpen, run: cmd("open-backups-folder") }),
       actionEntry({
         id: "reconnect",
-        label: connected ? "Reconnect" : "Connect the GP-5",
+        label: connected ? "Reconnect" : `Connect the ${pedalName(lastDevice)}`,
         icon: Unplug,
         words: ["connect", "usb", "midi"],
         blocked: busy ? `Wait for the ${busy.kind}` : undefined,
@@ -254,14 +257,14 @@ function useGroups(close: () => void): Group[] {
       ] as const
     ).map(([screen, label, icon, n]) => actionEntry({ id: `go-${screen}`, label: `Go to ${label}`, icon, keys: ["Mod", "Shift", n], words: ["screen", "open"], run: go(screen) }));
 
-    const models: Entry[] = CATALOG.map((m) => {
+    const models: Entry[] = (modelsFor(device) as ModelInfo[]).map((m) => {
       const block = BLOCK_CODES.indexOf(m.block);
       const inUse = preset?.blocks[block]?.fxid === m.fxid;
       return {
         id: `model:${m.fxid}`,
         search: { primary: m.title, secondary: [m.block, m.name, m.type, m.origin ?? ""] },
         verb: `set ${m.block} model`,
-        blocked: inUse ? undefined : preset && connected ? pedal : NEEDS_PEDAL,
+        blocked: inUse ? undefined : preset && connected ? pedal : needsPedal,
         run: () => {
           close();
           if (inUse) return useUi.getState().focusRig({ block, picker: false });
@@ -278,7 +281,7 @@ function useGroups(close: () => void): Group[] {
               <Name text={m.title} ranges={ranges} className="font-semibold" />
               <span className="truncate text-xs text-silkscreen-3">{m.origin ?? m.type}</span>
             </span>
-            {inUse ? <Badge>In use</Badge> : <Hint>{connected && preset ? `Set on ${m.block}` : NEEDS_PEDAL}</Hint>}
+            {inUse ? <Badge>In use</Badge> : <Hint>{connected && preset ? `Set on ${m.block}` : needsPedal}</Hint>}
           </>
         ),
       };
@@ -293,7 +296,7 @@ function useGroups(close: () => void): Group[] {
           id: `snaptone:${t.slot}`,
           search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot + 1 },
           verb: "set NS model",
-          blocked: preset && connected ? pedal : NEEDS_PEDAL,
+          blocked: preset && connected ? pedal : needsPedal,
           run: () => {
             close();
             useDevice
@@ -340,7 +343,7 @@ function useGroups(close: () => void): Group[] {
       { heading: "Tones", entries: tones, idle: 3, limit: 5 },
       { heading: "Go to", entries: screens, limit: 5 },
     ];
-  }, [names, slot, connected, unsaved, preset, snapTones, userIRs, busy, recent, close]);
+  }, [names, slot, connected, unsaved, preset, lastDevice, snapTones, userIRs, busy, recent, close]);
 }
 
 /** Ranked, grouped results for `query` (groups ordered by their best hit while typing). */
@@ -380,7 +383,7 @@ function useResults(groups: Group[], query: string) {
         const fxid = fx.find((f) => byFxid.has(f));
         if (fxid === undefined) continue;
         const hit = byFxid.get(fxid)!;
-        const title = CATALOG.find((m) => m.fxid === fxid)?.title ?? "";
+        const title = hit.entry.search.primary;
         uses.push({
           entry: {
             ...e,

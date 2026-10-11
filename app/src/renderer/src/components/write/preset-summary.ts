@@ -1,7 +1,7 @@
 // Read-only summary of a .prst (GP-5 or GP-50) for lists, chain previews and write confirmations.
 import { parsePrst, GP50_ONLY_FXIDS } from "@/gp5/lib/prst.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
-import { BLOCK_CODES, type BlockCode, type ModelInfo, type SlotName } from "@/state/device-types";
+import { BLOCK_CODES, type BlockCode, type DeviceKey, type ModelInfo, type SlotName } from "@/state/device-types";
 
 export interface SummaryBlock {
   index: number;
@@ -13,7 +13,8 @@ export interface SummaryBlock {
 }
 
 export interface PresetSummary {
-  device: "gp5" | "gp50";
+  /** Model the file was made for (from its header); its catalog names the blocks */
+  device: DeviceKey;
   name: string;
   /** Storage order NR..NS */
   blocks: SummaryBlock[];
@@ -22,7 +23,7 @@ export interface PresetSummary {
   volume: number;
   bpm: number;
   footswitches: { fs1: number[]; fs2: number[] };
-  /** Blocks whose model only exists on the GP-50, e.g. "PRE (PRE C-Wah)"; dropped when converting */
+  /** Blocks whose model only exists on the GP-50, e.g. "PRE (PRE C-Wah)"; dropped when converting to the GP-5 */
   gp50Only: string[];
 }
 
@@ -37,15 +38,16 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   let out: PresetSummary | null = null;
   try {
     const p = parsePrst(prst);
+    const device: DeviceKey = p.device;
     const gp50Only: string[] = [];
     const blocks = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
       const fxid = b.fxid >>> 0;
       const only = (GP50_ONLY_FXIDS as Record<number, string>)[fxid];
       if (only) gp50Only.push(`${BLOCK_CODES[index]} (${only})`);
-      return { index, code: BLOCK_CODES[index], enabled: b.enabled, fxid, model: modelByFxid(fxid) as ModelInfo | undefined, params: b.params };
+      return { index, code: BLOCK_CODES[index], enabled: b.enabled, fxid, model: modelByFxid(fxid, device) as ModelInfo | undefined, params: b.params };
     });
     out = {
-      device: p.device,
+      device,
       name: p.name,
       blocks,
       order: p.order,

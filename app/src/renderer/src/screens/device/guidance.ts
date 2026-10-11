@@ -1,8 +1,9 @@
 // Connection state → what the Device screen, the title-bar chip and the status bar say, and how to fix it.
 // Pure: every input comes from the device store and the host checks, so the mapping is unit-tested.
-import { GP5_PID, VALETON_VID, type DeviceHostStatus } from "@shared/host/device";
+import { PEDAL_PID, VALETON_VID, pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
 import type { HostApi } from "@shared/host";
-import type { ConnectionError, ConnectionStatus, DeviceMode, RequestError } from "@/state/device-types";
+import { pedalName, pedalNameOrBoth } from "@/state/device-model";
+import type { ConnectionError, ConnectionStatus, DeviceKey, DeviceMode, RequestError } from "@/state/device-types";
 
 export type ViewKind =
   | "connected"
@@ -29,7 +30,7 @@ export type PrimaryAction = "connect" | "show-fix" | "check" | "cancel" | "none"
 export interface ConnectionView {
   kind: ViewKind;
   led: Led;
-  /** Title-bar chip text after "GP-5" */
+  /** Title-bar chip text after the pedal name */
   chip: string;
   /** Bold state label in the header meta row */
   state: string;
@@ -58,10 +59,18 @@ export interface GuidanceInput {
   disconnectReason?: "user" | "lost" | null;
   lastConnectedAt?: number | null;
   now?: number;
+  /** Connected pedal model, else the last connected one (store `device`); null before the first connection */
+  device?: DeviceKey | null;
 }
 
 const MIDI2_RE = /midi\s*2|usbmidi2/i;
-const gp5Present = (h: DeviceHostStatus | null) => !!h?.usb?.some((d) => d.vendorId === VALETON_VID && d.productId === GP5_PID);
+
+/** Pedal model for the copy: the connected one, else the one on USB, else the last connected; unknown = both models. */
+export function pedalModelName(input: Pick<GuidanceInput, "status" | "hostStatus" | "device">): string {
+  const usb = pedalOnUsb(input.hostStatus);
+  const device = input.status === "connected" ? (input.device ?? usb) : (usb ?? input.device);
+  return pedalNameOrBoth(device ?? null);
+}
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** "13:42" */
@@ -79,7 +88,7 @@ export function formatWhen(at: number, now = Date.now()): string {
   return `${day} at ${clock(at)}`;
 }
 
-const PLUG_IN = "Plug the GP-5 into this computer with a USB data cable and switch it on.";
+const plugIn = (pedal: string) => `Plug the ${pedal} into this computer with a USB data cable and switch it on.`;
 const AUDIO_GROUP_STEPS = (h: DeviceHostStatus | null) => {
   const group = h?.linuxSeq?.group ?? "audio";
   return [
@@ -88,9 +97,9 @@ const AUDIO_GROUP_STEPS = (h: DeviceHostStatus | null) => {
     "Open Tone Studio again and press Look for the pedal.",
   ];
 };
-const WIN11_STEPS = [
-  "Plug the GP-5 in, switch it on and close Valeton Suite.",
-  "Right-click Start and open Device Manager. Find the GP-5.",
+const win11Steps = (pedal: string) => [
+  `Plug the ${pedal} in, switch it on and close Valeton Suite.`,
+  `Right-click Start and open Device Manager. Find the ${pedal}.`,
   "Right-click it, choose Update driver, then Browse my computer, then Let me pick from a list.",
   "Untick Show compatible hardware, pick USB Audio Device and finish.",
   "Unplug the pedal, plug it back in, then press Check again.",
@@ -107,7 +116,7 @@ function base(kind: ViewKind, led: Led, chip: string, state: string, detail: str
     steps: [],
     action: "connect",
     actionLabel: "Look for the pedal",
-    statusText: "GP-5 not connected",
+    statusText: "Not connected",
     offline: true,
     openGuide: false,
     ...rest,
@@ -118,13 +127,14 @@ function base(kind: ViewKind, led: Led, chip: string, state: string, detail: str
 export function connectionView(input: GuidanceInput): ConnectionView {
   const { status, error, mode, hostStatus: h, platform } = input;
   const desktop = platform !== "web";
+  const pedal = pedalModelName(input);
   const lastSeen = input.lastConnectedAt ? `Last connected ${formatWhen(input.lastConnectedAt, input.now)}` : "Not connected yet";
 
   if (status === "connected")
     return base("connected", "on", mode === "mock" ? "Simulated" : "USB", mode === "mock" ? "Simulated pedal" : "Connected over USB", "since", {
       action: "none",
       actionLabel: null,
-      statusText: "Pedal settings apply on the GP-5 as you change them",
+      statusText: `Pedal settings apply on the ${pedal} as you change them`,
       offline: false,
     });
 
@@ -132,13 +142,14 @@ export function connectionView(input: GuidanceInput): ConnectionView {
     return base("connecting", "warn", "Connecting", "Connecting", "Reading preset names, active preset and pedal settings", {
       action: "cancel",
       actionLabel: "Cancel",
-      statusText: "Connecting to the GP-5",
+      statusText: `Connecting to the ${pedal}`,
     });
 
   if (status !== "error" || !error) {
     const lost = input.disconnectReason === "lost";
     return base("disconnected", "off", "Not connected", "Not connected", lost ? "The pedal went away (unplugged or switched off)" : lastSeen, {
-      note: `${PLUG_IN} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
+      note: `${plugIn(pedal)} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
+      statusText: `${pedal} not connected`,
     });
   }
 
@@ -148,7 +159,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
         note: "Tone Studio doesn't send anything to a pedal in update mode, so a firmware update can't be interrupted. Finish the update in Valeton Suite. When the pedal restarts normally, the app connects by itself.",
         action: "none",
         actionLabel: null,
-        statusText: "GP-5 in firmware update mode, the app is not sending anything",
+        statusText: `${pedal} in firmware update mode, the app is not sending anything`,
       });
 
     case "unsupported":
@@ -176,7 +187,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
           : "Chrome, Edge and other Chromium browsers version 152 can't exchange SysEx with the pedal. Update the browser to version 153 or newer, or use the desktop app.",
         action: "none",
         actionLabel: null,
-        statusText: "Chromium 152 can't talk to the GP-5: update",
+        statusText: `Chromium 152 can't talk to the ${pedal}: update`,
       });
 
     case "permission":
@@ -197,30 +208,31 @@ export function connectionView(input: GuidanceInput): ConnectionView {
 
     case "not-found": {
       if (platform === "linux" && h?.linuxSeq && !h.linuxSeq.accessible) return linuxAccess(h);
-      if (gp5Present(h)) {
+      if (pedalOnUsb(h)) {
         if (platform === "win32")
           return base("driver", "fault", "Driver problem", "Driver problem", "Found on USB, but Windows shows no MIDI port for it", {
             note:
               h?.driver && MIDI2_RE.test(h.driver)
                 ? 'Windows 11 attached its new MIDI 2.0 driver to the pedal, and neither this app nor Valeton Suite can talk through it. Switching the pedal to the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.'
                 : 'Windows has no working MIDI driver on the pedal. Giving it the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.',
-            steps: WIN11_STEPS,
+            steps: win11Steps(pedal),
             action: "show-fix",
             actionLabel: "Show the fix",
-            statusText: "GP-5 found, but its driver hides the MIDI port",
+            statusText: `${pedal} found, but its driver hides the MIDI port`,
             openGuide: true,
           });
-        return base("no-port", "warn", "No MIDI port", "No MIDI port", "Found on USB, but there is no GP-5 MIDI port", {
+        return base("no-port", "warn", "No MIDI port", "No MIDI port", `Found on USB, but there is no ${pedal} MIDI port`, {
           note:
             platform === "linux"
               ? "The kernel sees the pedal but ALSA has no MIDI port for it. Unplug it, wait a few seconds and plug it back in. If that doesn't help, check that the snd-usb-audio module is loaded."
               : "The system sees the pedal but has no MIDI port for it. Unplug it, wait a few seconds and plug it back in.",
-          statusText: "GP-5 on USB without a MIDI port",
+          statusText: `${pedal} on USB without a MIDI port`,
         });
       }
       const ports = error.ports?.length ? `Visible MIDI ports: ${error.ports.join(", ")}.` : "No MIDI ports are visible.";
       return base("disconnected", "off", "Not connected", "Not connected", lastSeen, {
-        note: `${PLUG_IN} ${ports}${desktop ? " The app connects by itself when the pedal appears." : ""}`,
+        note: `${plugIn(pedal)} ${ports}${desktop ? " The app connects by itself when the pedal appears." : ""}`,
+        statusText: `${pedal} not connected`,
       });
     }
 
@@ -230,7 +242,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
           note: "On Windows only one app can use the pedal at a time. Quit Valeton Suite (also from the system tray), then press Check again.",
           action: "check",
           actionLabel: "Check again",
-          statusText: "Valeton Suite has the GP-5 port",
+          statusText: `Valeton Suite has the ${pedal} port`,
         });
       return base("silent", "warn", "No answer", "The pedal doesn't answer", "Its MIDI port opened, but nothing came back", {
         note:
@@ -238,19 +250,19 @@ export function connectionView(input: GuidanceInput): ConnectionView {
             ? "Another app may hold the port (Valeton Suite, a DAW), or Windows 11 attached its MIDI 2.0 driver. Close other MIDI apps and replug the pedal; if it still fails, follow the Windows 11 steps under Diagnostics."
             : "Another app may hold the port, or the pedal is busy. Close other MIDI apps, switch the pedal off and on, then try again.",
         steps: [],
-        statusText: "GP-5 port is silent",
+        statusText: `${pedal} port is silent`,
         openGuide: platform === "win32",
       });
 
     case "timeout":
-      return base("wrong-device", "warn", "No answer", "Unexpected reply", "A device answered, but not like a GP-5", {
-        note: "Check that this is a GP-5 (not a GP-50 or another Valeton pedal) and that its firmware is up to date. The diagnostic report helps if it keeps happening.",
-        statusText: "The device on the GP-5 port answers unexpectedly",
+      return base("wrong-device", "warn", "No answer", "Unexpected reply", `A device answered, but not like a ${pedal}`, {
+        note: "Check that this is a GP-5 or GP-50 (not another Valeton pedal) and that its firmware is up to date. The diagnostic report helps if it keeps happening.",
+        statusText: `The device on the ${pedal} port answers unexpectedly`,
       });
 
     default:
       return base("error", "fault", "Not connected", "Couldn't connect", error.message, {
-        statusText: "GP-5 not connected",
+        statusText: `${pedal} not connected`,
       });
   }
 }
@@ -291,23 +303,24 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
   const view = connectionView(input);
   const mock = mode === "mock" && (status === "connected" || status === "connecting");
   const valeton = h?.usb?.filter((d) => d.vendorId === VALETON_VID) ?? [];
-  const gp5 = gp5Present(h);
+  const onUsb = pedalOnUsb(h);
+  const pedal = pedalModelName(input);
 
   const usb: Check = mock
     ? { id: "usb", name: "USB device", state: "ok", detail: "Simulated pedal, no USB involved" }
     : view.kind === "bootloader"
       ? { id: "usb", name: "USB device", state: "warn", detail: "Valeton device in firmware update mode", hint: "The app stays silent until the pedal restarts normally." }
-      : gp5
-        ? { id: "usb", name: "USB device", state: "ok", detail: `Valeton GP-5 found, ${hex4(VALETON_VID)}:${hex4(GP5_PID)}` }
+      : onUsb
+        ? { id: "usb", name: "USB device", state: "ok", detail: `Valeton ${pedalName(onUsb)} found, ${hex4(VALETON_VID)}:${hex4(PEDAL_PID[onUsb])}` }
         : !h?.usb
           ? status === "connected"
-            ? { id: "usb", name: "USB device", state: "ok", detail: "The GP-5 answers over MIDI" }
+            ? { id: "usb", name: "USB device", state: "ok", detail: `The ${pedal} answers over MIDI` }
             : { id: "usb", name: "USB device", state: "idle", detail: platform === "web" ? "The browser can't list USB devices" : "Couldn't list USB devices" }
           : {
               id: "usb",
               name: "USB device",
               state: "fault",
-              detail: valeton.length ? `Other Valeton device: ${valeton.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}`).join(", ")}` : "No GP-5 on USB",
+              detail: valeton.length ? `Other Valeton device: ${valeton.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}`).join(", ")}` : "No GP-5 or GP-50 on USB",
               hint: "Use a data cable, not a charge-only one, and plug it straight into the computer rather than a hub.",
             };
 
@@ -330,7 +343,7 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
       detail: h.linuxSeq.exists ? `No access to ${h.linuxSeq.path}` : `${h.linuxSeq.path} is missing (ALSA sequencer not loaded)`,
       hint: h.linuxSeq.exists ? `Add your user to the "${h.linuxSeq.group ?? "audio"}" group, then log in again.` : "Load the snd-seq module: sudo modprobe snd-seq",
     };
-  else if (platform === "win32" && gp5 && h?.driver && MIDI2_RE.test(h.driver))
+  else if (platform === "win32" && onUsb && h?.driver && MIDI2_RE.test(h.driver))
     driver = { id: "driver", name: "Driver", state: "fault", detail: 'Windows uses "USB MIDI 2.0" for the pedal', hint: 'Switch it to "USB Audio Device". See the steps below.' };
   else if (h?.driver)
     driver = {
@@ -339,24 +352,24 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
       state: "ok",
       detail: platform === "linux" ? `Linux ALSA (${h.driver}). Nothing to install.` : platform === "darwin" ? "macOS CoreMIDI. Nothing to install." : `Windows (${h.driver})`,
     };
-  else if (gp5) driver = { id: "driver", name: "Driver", state: "warn", detail: "No driver is bound to the pedal's MIDI interface" };
-  else driver = { id: "driver", name: "Driver", state: "idle", detail: "Checked once the GP-5 is on USB" };
+  else if (onUsb) driver = { id: "driver", name: "Driver", state: "warn", detail: "No driver is bound to the pedal's MIDI interface" };
+  else driver = { id: "driver", name: "Driver", state: "idle", detail: `Checked once the ${pedal} is on USB` };
 
-  const portLabel = input.portName ?? "the GP-5 port";
+  const portLabel = input.portName ?? `the ${pedal} port`;
   const port: Check =
     status === "connected"
       ? { id: "port", name: "MIDI port", state: "ok", detail: `${portLabel} answers requests` }
       : status === "connecting"
         ? { id: "port", name: "MIDI port", state: "pending", detail: `Waiting for ${portLabel} to answer` }
         : error?.code === "busy"
-          ? { id: "port", name: "MIDI port", state: "warn", detail: "GP-5 port found, but it doesn't answer" }
+          ? { id: "port", name: "MIDI port", state: "warn", detail: `${pedal} port found, but it doesn't answer` }
           : error?.code === "timeout"
-            ? { id: "port", name: "MIDI port", state: "warn", detail: "A port answered, but not like a GP-5" }
+            ? { id: "port", name: "MIDI port", state: "warn", detail: `A port answered, but not like a ${pedal}` }
             : {
                 id: "port",
                 name: "MIDI port",
                 state: "idle",
-                detail: "No GP-5 MIDI port",
+                detail: `No ${pedal} MIDI port`,
                 hint: error?.ports ? (error.ports.length ? `Visible ports: ${error.ports.join(", ")}` : "No MIDI ports are visible") : undefined,
               };
 

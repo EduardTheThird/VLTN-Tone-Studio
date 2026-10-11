@@ -32,7 +32,8 @@ export function Pedal(props: PedalProps) {
       render={(id, active) => {
         const controls: Control[] = [];
         const knobs = all.filter((k) => !k.toggle).slice(0, 9);
-        const toggles = all.filter((k) => k.toggle).slice(0, 2);
+        // up to three switches (GP-50 Sweep Eko: S-Sync, D-Sync, Trail)
+        const toggles = all.filter((k) => k.toggle).slice(0, 3);
         const h = hash(name);
         const f = finishFor(name, BLOCK_HEX[block], h, finish, color);
         const light = lum(f.body) > 0.6;
@@ -123,7 +124,7 @@ export function Pedal(props: PedalProps) {
         const fsY = tall ? 136 : 132;
         const fsR = lbY > 116 ? 8.5 : 9.5;
         toggles.forEach((t, i) => {
-          const cx = toggles.length === 1 ? 50 : 36 + i * 28;
+          const cx = toggles.length === 1 ? 50 : toggles.length === 2 ? 36 + i * 28 : 24 + i * 26;
           const tOn = t.value >= 0.5;
           controls.push({
             kind: "switch",

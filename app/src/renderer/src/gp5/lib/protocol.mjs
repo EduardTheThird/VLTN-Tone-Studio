@@ -1,4 +1,6 @@
-// Valeton GP-5 USB-MIDI SysEx protocol codec. Pure, isomorphic ESM (browser + Node >= 18), zero dependencies.
+// Valeton GP-5 / GP-50 USB-MIDI SysEx protocol codec. Pure, isomorphic ESM (browser + Node >= 18), zero dependencies.
+// Both pedals speak the same protocol (valeton-gp50 read/wrote a GP-50 with it); they differ in the preset size
+// (0x41 body 466 vs 511 bytes, write 26 vs 29 frames), USB PID and the effect catalog (see prst.mjs, catalog.mjs).
 //
 // Wire format (identical host->device and device->host):
 //   BUF  = [crc, total, index, len, ...payload]        payload <= 19 bytes per frame on USB
@@ -59,7 +61,12 @@ export const GLOBALS = Object.freeze({
   btLevel: { addr: [5, 4], min: -20, max: 20 },
 });
 
-/** Standard MIDI CC map of the GP-5 (channel 1). Block switches: 0-63 off, 64-127 on. */
+/**
+ * Standard MIDI CC map (channel 1). Block switches: 0-63 off, 64-127 on. The GP-50 manual ("MIDI Control
+ * Information List") lists the same numbers for patch select, patch volume, patch -/+, block switches, tuner and CTRL
+ * (CTRL 1; it adds CTRL 2 = 70). Bank -/+ (22/23) and song patch -/+ (29/30) are GP-5 only; the GP-50 has many more
+ * CCs (EXP, tempo, looper, drum: skill valeton-gp50 reference.md §4).
+ */
 export const CC = Object.freeze({
   PRESET_SELECT: 0,
   PATCH_VOLUME: 7,
@@ -252,11 +259,14 @@ export const encode = Object.freeze({
   savePreset: (slot, name) => (assertSlot(slot), [KIND.SET, CMD.SAVE_PRESET, ...u32le(slot), ...asciiField(name, 10)]),
   /** Rename a slot (10-char field). Seen in a Valeton Suite capture only. */
   renamePreset: (slot, name) => (assertSlot(slot), [KIND.SET, CMD.RENAME_PRESET, ...u32le(slot), ...asciiField(name, 10)]),
-  /** Full preset write: payload for a 507-byte GP-5 .prst (bytes 0x19.. = name + body). 488 bytes -> 26 frames. */
+  /**
+   * Full preset write: payload for a GP-5 (507 B) or GP-50 (552 B) .prst; bytes 0x19.. = name + body.
+   * GP-5: 488 bytes -> 26 frames; GP-50: 533 bytes -> 29 frames (valeton-gp50 Suite capture).
+   */
   writePreset: (slot, prst) => {
     assertSlot(slot);
     const p = toBytes(prst);
-    if (p.length !== 507) throw new RangeError(`GP-5 .prst must be 507 bytes, got ${p.length}`);
+    if (p.length !== 507 && p.length !== 552) throw new RangeError(`.prst must be 507 (GP-5) or 552 (GP-50) bytes, got ${p.length}`);
     return [KIND.SET, CMD.WRITE_PRESET, slot, 0x00, 0x00, 0x00, ...p.subarray(0x19)];
   },
 });
@@ -298,7 +308,7 @@ export function decodeCurrentSlot(data) {
   return data[2] | ((data[3] ?? 0) << 8);
 }
 
-/** 0x41 -> body bytes (== .prst[0x29:], 466 bytes on GP-5). */
+/** 0x41 -> body bytes (== .prst[0x29:]; 466 bytes on GP-5, 511 on GP-50). */
 export function decodeCurrentPatch(data) {
   expectReply(data, READ.CURRENT_PATCH);
   return data.slice(2);

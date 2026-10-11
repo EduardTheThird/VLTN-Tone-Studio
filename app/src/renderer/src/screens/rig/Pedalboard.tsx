@@ -5,7 +5,7 @@ import { Capture, Dial, GearFor, knobsForBlock, modelTitle, paramTitle } from "@
 import { Kbd } from "@/components/ui/kbd";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { BlockState, PresetState } from "@/state/device-types";
 import { BlockMenu } from "./BlockMenu";
 import { editEnabled, editOrder, editParam } from "./edits";
@@ -47,10 +47,11 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const [drag, setDrag] = useState<number | null>(null);
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
   const snapTones = useDevice((s) => s.snapTones);
+  const pedal = usePedalName();
   const nsSlot = snapToneName(preset.blocks[9], snapTones);
 
   const hint = readOnly
-    ? "Showing the last read. Pedals can't be turned, switched or moved until the GP-5 is back."
+    ? `Showing the last read. Pedals can't be turned, switched or moved until the ${pedal} is back.`
     : view === "before" && nsOn
       ? `NS is on, so ${nsSlot} plays in place of the amp and cab.`
       : HINT[view];

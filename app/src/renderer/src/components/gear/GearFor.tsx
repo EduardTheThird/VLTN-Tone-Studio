@@ -20,7 +20,7 @@ export interface GearForProps extends Omit<GearBaseProps, "name" | "knobs" | "on
   onParam?: (paramIndex: number, value: number) => void;
 }
 
-/** The drawing for any GP-5 block: pedal, EQ, capture (NS), amp head or cab. */
+/** The drawing for any pedal block: pedal, EQ, capture (NS), amp head or cab. */
 export function GearFor({ block, onParam, ...rest }: GearForProps) {
   const name = modelTitle(block);
   const knobs = knobsForBlock(block);

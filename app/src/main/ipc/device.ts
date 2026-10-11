@@ -4,7 +4,7 @@ import { access, constants, readFile, readdir, readlink, stat, writeFile } from 
 import { basename, join } from "node:path";
 import { release, arch } from "node:os";
 import { promisify } from "node:util";
-import { GP5_PID, VALETON_VID, type DeviceHostStatus, type LinuxSeqAccess, type UsbDeviceInfo } from "@shared/host/device";
+import { PEDAL_PIDS, VALETON_VID, type DeviceHostStatus, type LinuxSeqAccess, type UsbDeviceInfo } from "@shared/host/device";
 import { HostError } from "@shared/ipc";
 import { handle } from "./handle";
 
@@ -12,12 +12,18 @@ const run = promisify(execFile);
 const EXEC = { timeout: 8000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 };
 const SUITE_RE = /valeton\s*suite/i;
 const MAX_REPORT = 1024 * 1024;
+/**
+ * USB interface number of the pedal's MIDI interface. Measured on the GP-5; the GP-50 is assumed to use the same
+ * layout (interface 3), since it shares the GP-5's firmware protocol.
+ */
+const MIDI_INTERFACE = 3;
+const isPedal = (productId: number) => PEDAL_PIDS.includes(productId);
 
 const readText = (path: string) => readFile(path, "utf8").then((s) => s.trim(), () => null);
 
 // ------------------------------------------------------------------------------------------------ Linux
 
-/** /sys/bus/usb/devices: Valeton devices plus the driver bound to the GP-5 MIDI interface (config 1, interface 3). */
+/** /sys/bus/usb/devices: Valeton devices plus the driver bound to the pedal's MIDI interface (config 1, MIDI_INTERFACE). */
 async function linuxUsb(): Promise<{ usb: UsbDeviceInfo[]; driver: string | null }> {
   const root = "/sys/bus/usb/devices";
   const usb: UsbDeviceInfo[] = [];
@@ -28,7 +34,7 @@ async function linuxUsb(): Promise<{ usb: UsbDeviceInfo[]; driver: string | null
     if (!vendor || parseInt(vendor, 16) !== VALETON_VID) continue;
     const productId = parseInt((await readText(join(root, entry, "idProduct"))) ?? "0", 16);
     usb.push({ vendorId: VALETON_VID, productId, product: await readText(join(root, entry, "product")) });
-    if (productId === GP5_PID) driver = await readlink(join(root, `${entry}:1.3`, "driver")).then((p) => basename(p), () => driver);
+    if (isPedal(productId)) driver = await readlink(join(root, `${entry}:1.${MIDI_INTERFACE}`, "driver")).then((p) => basename(p), () => driver);
   }
   return { usb, driver };
 }
@@ -56,7 +62,7 @@ async function linuxSeq(): Promise<LinuxSeqAccess> {
 
 // ------------------------------------------------------------------------------------------------ Windows
 
-/** PnP entities with VID_84EF; `Service` of the MIDI interface (MI_03) is the bound driver ("usbaudio" or a MIDI 2.0 driver). */
+/** PnP entities with VID_84EF; `Service` of the pedal's MIDI interface (MI_03) is the bound driver ("usbaudio" or a MIDI 2.0 driver). */
 async function windowsUsb(): Promise<{ usb: UsbDeviceInfo[]; driver: string | null }> {
   const ps =
     "Get-CimInstance Win32_PnPEntity -Filter \"PNPDeviceID LIKE 'USB\\\\VID_84EF%'\" | Select-Object PNPDeviceID,Name,Service | ConvertTo-Json -Compress";
@@ -72,7 +78,7 @@ async function windowsUsb(): Promise<{ usb: UsbDeviceInfo[]; driver: string | nu
     // Prefer the composite parent row for the name; children (MI_xx) still prove the device is present.
     if (!m[3]) usb.set(productId, { vendorId: VALETON_VID, productId, product: row.Name ?? null });
     else if (!usb.has(productId)) usb.set(productId, { vendorId: VALETON_VID, productId, product: null });
-    if (productId === GP5_PID && m[4] === "03") driver = [row.Service, row.Name].filter(Boolean).join(", ") || null;
+    if (isPedal(productId) && Number(m[4]) === MIDI_INTERFACE) driver = [row.Service, row.Name].filter(Boolean).join(", ") || null;
   }
   return { usb: [...usb.values()], driver };
 }
@@ -91,7 +97,7 @@ async function macUsb(): Promise<{ usb: UsbDeviceInfo[]; driver: string | null }
     usb.push({ vendorId: VALETON_VID, productId: Number(product?.[1] ?? 0), product: name?.[1] ?? null });
   }
   // CoreMIDI drives class-compliant MIDI without a vendor driver.
-  return { usb, driver: usb.some((d) => d.productId === GP5_PID) ? "CoreMIDI (class compliant)" : null };
+  return { usb, driver: usb.some((d) => isPedal(d.productId)) ? "CoreMIDI (class compliant)" : null };
 }
 
 // ------------------------------------------------------------------------------------------------ shared
@@ -145,7 +151,7 @@ export function registerDeviceIpc(getWindow: () => BrowserWindow | null): void {
 
   handle("device:saveReport", async (_e, text: unknown, fileName: unknown) => {
     if (typeof text !== "string" || text.length > MAX_REPORT) throw new HostError("invalid", "The report must be text under 1 MB");
-    const name = typeof fileName === "string" && /^[\w.-]+\.txt$/.test(fileName) ? fileName : "gp5-diagnostics.txt";
+    const name = typeof fileName === "string" && /^[\w.-]+\.txt$/.test(fileName) ? fileName : "valeton-diagnostics.txt";
     const opts = { defaultPath: join(app.getPath("documents"), name), filters: [{ name: "Text", extensions: ["txt"] }] };
     const win = getWindow();
     const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);

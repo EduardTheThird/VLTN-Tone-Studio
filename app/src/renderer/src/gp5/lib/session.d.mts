@@ -1,4 +1,7 @@
 // Type declarations for session.mjs (the JS stays the tested source of truth; keep these in sync).
+/** Pedal model: Valeton GP-5 or GP-50 (same protocol, different preset size and catalog). */
+export type DeviceKey = "gp5" | "gp50";
+
 export interface Gp5Transport {
   name: string;
   send(bytes: Uint8Array | number[]): void;
@@ -72,6 +75,7 @@ export interface UserIrUploadResult {
   slot: number;
 }
 export interface SyncSnapshot {
+  device: DeviceKey;
   names: PresetNameRecord[];
   slot: number;
   prst: Uint8Array;
@@ -82,6 +86,10 @@ export interface SyncSnapshot {
 export class Gp5Session extends EventTarget {
   constructor(transport: Gp5Transport, opts?: { timing?: Partial<Gp5Timing>; log?: (dir: string, bytes: Uint8Array, decoded?: unknown) => void });
   get transportName(): string;
+  /** Connected model, null until the first 0x41 body has been read. */
+  get device(): DeviceKey | null;
+  /** Detect the model (reads the active body if it is not known yet). */
+  identify(): Promise<DeviceKey>;
   exclusive<T>(fn: () => Promise<T>, settleMs?: number): Promise<T>;
   read(sel: number, opts?: { timeoutMs?: number; retries?: number }): Promise<Uint8Array>;
   command(payload: number[], opts?: { timeoutMs?: number }): Promise<unknown>;

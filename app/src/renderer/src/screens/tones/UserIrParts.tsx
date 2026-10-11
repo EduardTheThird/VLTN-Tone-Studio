@@ -1,7 +1,7 @@
 import { isEmptySlotName } from "@shared/tone3000";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_IR } from "@/gp5/lib/userir.mjs";
-import { useDevice } from "@/state/device";
+import { useDevice, usePedalName } from "@/state/device";
 import type { SlotName } from "@/state/device-types";
 import type { UserIrFile } from "@/userir/convert";
 import { irSlotLabel } from "./store";
@@ -16,13 +16,13 @@ export function irOccupant(userIRs: SlotName[] | null, slot: number | null): str
   return s && s.kind !== "empty" && !isEmptySlotName(s.name) ? s.name : null;
 }
 
-/** What the converter kept of the file: the GP-5 convolves 512 samples at 44.1 kHz (11.6 ms). */
+/** What the converter kept of the file: both pedals convolve 512 samples at 44.1 kHz (11.6 ms). */
 export function irSummary(ir: UserIrFile): string {
   const lengthMs = (ir.sourceFrames / ir.sourceRate) * 1000;
   const kept = `${KEPT_MS.toFixed(1)} ms (${USER_IR.SAMPLES} samples at 44.1 kHz)`;
   const used = ir.truncated
-    ? `Uses the first ${kept} of this ${lengthMs.toFixed(1)} ms IR; the GP-5 keeps no more.`
-    : `Uses all ${lengthMs.toFixed(1)} ms of it; the GP-5 keeps up to ${kept}.`;
+    ? `Uses the first ${kept} of this ${lengthMs.toFixed(1)} ms IR; the pedal keeps no more.`
+    : `Uses all ${lengthMs.toFixed(1)} ms of it; the pedal keeps up to ${kept}.`;
   return ir.sourceRate === USER_IR.RATE ? used : `${used} Resampled from ${ir.sourceRate / 1000} kHz.`;
 }
 
@@ -31,7 +31,8 @@ export function useIrWriteBlocker(slot: number | null): string | null {
   const connected = useDevice((s) => s.status === "connected");
   const busy = useDevice((s) => s.busy);
   const userIRs = useDevice((s) => s.userIRs);
-  if (!connected) return "Connect the GP-5 to write it.";
+  const pedal = usePedalName();
+  if (!connected) return `Connect the ${pedal} to write it.`;
   if (busy) return `Wait until the pedal is free (${busy.label.toLowerCase()}).`;
   if (!userIRs) return "Reading the pedal's User IR slots…";
   if (slot === null) return "Choose a slot.";

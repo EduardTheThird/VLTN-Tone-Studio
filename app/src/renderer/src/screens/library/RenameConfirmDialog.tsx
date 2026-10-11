@@ -13,8 +13,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
 import { applyEdits } from "@/gp5/lib/prst.mjs";
-import { useDevice } from "@/state/device";
-import { useLibrary } from "./store";
+import { usePedalName, useDevice } from "@/state/device";
+import { emptyName, useLibrary } from "./store";
 
 /** Rename on the pedal: name only, the sound is unchanged. Keeps the known body's chain in step. */
 async function renameOnPedal(slot: number, name: string) {
@@ -25,11 +25,12 @@ async function renameOnPedal(slot: number, name: string) {
 
 export function RenameConfirmDialog({ request, onClose }: { request: { slot: number; name: string } | null; onClose(): void }) {
   const names = useDevice((s) => s.names);
+  const pedal = usePedalName();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!request) return null;
   const { slot, name } = request;
-  const old = names[slot]?.name ?? "GP-5";
+  const old = names[slot]?.name ?? emptyName();
 
   const confirm = async () => {
     setRunning(true);
@@ -61,7 +62,7 @@ export function RenameConfirmDialog({ request, onClose }: { request: { slot: num
             Rename slot {slot} to {name}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            The GP-5 stores the new name for {old}. Only the name changes; the sound stays the same.
+            The {pedal} stores the new name for {old}. Only the name changes; the sound stays the same.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (

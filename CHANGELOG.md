@@ -2,6 +2,23 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [Unreleased]
+
+### Added
+- **Valeton GP-50 support.** Tone Studio recognises the connected model by itself (from the size of the preset it reads) and works the same on a GP-50 as on a GP-5: live editing, the library, backups and restore, SnapTones and User IRs over USB. A GP-50 has 552-byte presets, sent in 29 frames.
+- **The GP-50's own effects.** On a GP-50 the model picker offers PRE AC Sim, PRE Cry Wah and the CAB AC (Dreadnought) cabinet, and delay and modulation pedals show their *Sync* switch. A GP-5 doesn't show them.
+- **Presets across models.** A GP-5 preset written to a GP-50 is converted without loss. A GP-50 preset written or restored to a GP-5 loses its GP-50-only models, and the confirmation lists them first. Restore accepts backups of either model.
+- **Simulated GP-50.** *Device* offers *Simulate a GP-50* next to the GP-5, and the browser build opens one with `?mock=gp50`.
+
+### Changed
+- Texts name the connected pedal (GP-5 or GP-50) instead of always saying GP-5. Backups of a GP-50 go into `gp50-YYYY-MM-DD` folders titled "GP-50 backup"; `backup.json` records the model. Diagnostic reports are saved as `valeton-diagnostics-*.txt`.
+- SnapTone and User IR links of a tone remember which model they were made on, and the Tones screen only treats a link as "on your pedal" when the model matches.
+- The README has a support table for the GP-5, GP-50 and the GP-200 family, and `docs/device-expansion-plan.md` lays out how GP-50 support will be completed and GP-200 support added, including simulators for both.
+
+### Known limitations
+- The GP-50 path hasn't been tried on a real GP-50 by this project yet. Reading, writing and Program Change select on a GP-50 come from drewmerc302/valeton-gp50, which tested them on hardware. Live edits, SnapTone and User IR uploads use the protocol the two pedals share; Valeton Suite 2.1.0's own code sends a GP-50 the same bytes.
+- *Pedal settings* on a GP-50 show the GP-5's list. The GP-50 keeps its settings at partly different addresses: on a GP-50 the *Monitor* slider changes the BT recording level and the *BT* slider changes the right channel's recording mode. A per-model list is planned.
+
 ## [0.4.0] - 2026-10-10
 
 ### Added

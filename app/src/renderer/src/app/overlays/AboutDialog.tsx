@@ -33,9 +33,9 @@ export function AboutDialog() {
           </div>
         </div>
         <DialogDescription className="text-[13px] text-pretty text-silkscreen-2">
-          Editor and librarian for the Valeton GP-5: shape presets live on the pedal, sort its 100 slots, back them up, and bring NAM captures and IRs from TONE3000.
+          Editor and librarian for the Valeton GP-5 and GP-50: shape presets live on the pedal, sort its 100 slots, back them up, and bring NAM captures and IRs from TONE3000.
         </DialogDescription>
-        <p className="text-xs text-pretty text-silkscreen-3">Valeton and GP-5 are trademarks of their owners. This app is not made or endorsed by Valeton.</p>
+        <p className="text-xs text-pretty text-silkscreen-3">Valeton, GP-5 and GP-50 are trademarks of their owners. This app is not made or endorsed by Valeton.</p>
         <DialogFooter>
           {host.kind === "electron" && (
             <Button variant="outline" onClick={() => void checkForUpdates()}>
