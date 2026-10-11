@@ -1,12 +1,13 @@
 import { cn } from "@/lib/utils";
-import { blockCodes } from "@/state/device-model";
+import { profileFor } from "@shared/devices";
+import { isGp5Family } from "@/state/device-model";
 import type { PresetSummary } from "./preset-summary";
 
 const CORE = [2, 9, 3, 4, 5];
 const DEFAULT_ORDER = [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
 
 /**
- * One 11px chip per block in the preset's chain order with the fixed core (DST NS AMP CAB EQ) bracketed.
+ * One 11px chip per block in the preset's chain order, with the GP-5 family's fixed core (DST NS AMP CAB EQ) bracketed.
  * Engaged = filled in the block color; bypassed = hollow on the cable. `chain` null = no data (dashed cable).
  */
 export function MiniChain({ chain, className }: { chain: Pick<PresetSummary, "device" | "order" | "blocks"> | null; className?: string }) {
@@ -17,10 +18,12 @@ export function MiniChain({ chain, className }: { chain: Pick<PresetSummary, "de
       </span>
     );
   }
-  const codes = blockCodes(chain.device);
+  const codes = profileFor(chain.device).blocks;
+  const gp5 = isGp5Family(chain.device);
   const enabled = chain.blocks.map((b) => b.enabled);
-  const seq = chain.order.length === codes.length ? chain.order : DEFAULT_ORDER;
-  const coreStart = seq.findIndex((i) => CORE.includes(i));
+  const seq = chain.order.length === codes.length ? chain.order : gp5 ? DEFAULT_ORDER : codes.map((_, i) => i);
+  // The GP-200 family has no fixed core: one flat row
+  const coreStart = gp5 ? seq.findIndex((i) => CORE.includes(i)) : seq.length;
   const before = seq.slice(0, coreStart);
   const core = seq.slice(coreStart, coreStart + CORE.length);
   const after = seq.slice(coreStart + CORE.length);
@@ -42,7 +45,7 @@ export function MiniChain({ chain, className }: { chain: Pick<PresetSummary, "de
       )}
     >
       {before.map(chip)}
-      <span className="relative inline-flex gap-[3px] rounded-[10px] bg-well px-[3px] py-0.5 shadow-[inset_0_0_0_1px_var(--seam-strong)]">{core.map(chip)}</span>
+      {core.length > 0 && <span className="relative inline-flex gap-[3px] rounded-[10px] bg-well px-[3px] py-0.5 shadow-[inset_0_0_0_1px_var(--seam-strong)]">{core.map(chip)}</span>}
       {after.map(chip)}
     </span>
   );

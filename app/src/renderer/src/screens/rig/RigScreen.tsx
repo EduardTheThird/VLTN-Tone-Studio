@@ -57,7 +57,7 @@ export function RigScreen() {
     if (!rigFocus || !p) return;
     const rig = useRig.getState();
     rig.select(rigFocus.block);
-    rig.setGroup(groupOf(p.order, rigFocus.block));
+    rig.setGroup(groupOf(p.device, p.order, rigFocus.block));
     rig.openPicker(rigFocus.picker ? { block: rigFocus.block, highlight: rigFocus.fxid } : null);
     useUi.getState().clearRigFocus();
   }, [rigFocus, preset]);
@@ -130,11 +130,11 @@ function useRigKeys(readOnly: boolean) {
         const dir = e.key === "ArrowLeft" ? -1 : 1;
         if (e.altKey) {
           if (readOnly || sel === null) return;
-          const next = nudge(p.order, sel, dir);
+          const next = nudge(p.device, p.order, sel, dir);
           e.preventDefault();
           if (next) {
             editOrder(next);
-            rig.setGroup(groupOf(next, sel));
+            rig.setGroup(groupOf(p.device, next, sel));
           }
           return;
         }
@@ -143,7 +143,7 @@ function useRigKeys(readOnly: boolean) {
         const nextIdx = sel === null ? (dir > 0 ? 0 : p.order.length - 1) : Math.max(0, Math.min(p.order.length - 1, i + dir));
         const b = p.order[nextIdx];
         rig.select(b);
-        rig.setGroup(groupOf(p.order, b));
+        rig.setGroup(groupOf(p.device, p.order, b));
         return;
       }
       if (e.altKey || sel === null || readOnly) return;

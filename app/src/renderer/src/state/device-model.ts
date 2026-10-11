@@ -3,6 +3,8 @@
 // (gp5/lib/prst.mjs); presets never convert across families.
 import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
 import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
+import { encode as gp200Encode, encodeFrames } from "@/gp200/lib/protocol.mjs";
+import { imageOf, withEightCtrl } from "@/gp200/lib/prst.mjs";
 import { PRST_MODELS, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
 import type { DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
 import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
@@ -118,14 +120,18 @@ export function presetDevice(prst: Uint8Array): DeviceKey {
   return device;
 }
 
-/** SysEx frames a full preset write of GP-5 family `prst` takes (26 on GP-5, 29 on GP-50). */
+/** SysEx frames a full write of `prst` takes (26 on the GP-5, 29 on the GP-50, 7 larger ones on the GP-200 family). */
 export function writeFrameCount(prst: Uint8Array): number {
+  if (!isGp5Family(presetDevice(prst))) return encodeFrames(gp200Encode.fullWrite(0, withEightCtrl(imageOf(prst)))).length;
   return packetize(encode.writePreset(0, prst)).length;
 }
 
-/** Converting `from` → `to` keeps every block: the GP-50 catalog holds every GP-5 model. */
+/** The pedal acknowledges every frame of a write (the GP-5 family does; the GP-200 family sends no ACKs). */
+export const acksFrames = (device: DeviceKey): boolean => isGp5Family(device);
+
+/** Converting `from` → `to` keeps every block: the GP-50 catalog holds every GP-5 model; GP-200 family files share one format. */
 export function convertsLosslessly(from: DeviceKey, to: DeviceKey): boolean {
-  return from === to || (from === "gp5" && to === "gp50");
+  return from === to || (from === "gp5" && to === "gp50") || profileFor(from).prst === profileFor(to).prst;
 }
 
 /** Plain refusal for a preset of another family ("This preset is for a GP-200; Tone Studio can't convert it for a GP-5."). */

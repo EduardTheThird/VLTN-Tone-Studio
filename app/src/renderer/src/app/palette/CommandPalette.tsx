@@ -297,22 +297,24 @@ function useGroups(close: () => void): Group[] {
       };
     });
 
-    const NS = codes.indexOf("NS");
-    const CAB = codes.indexOf("CAB");
+    // Roles by the model's block layout: a SnapTone loads into its slot's capture block (NS, or AMP/DST on the GP-200)
+    const roleOf = (code: string) => profile.blocks.indexOf(code);
+    const CAB = roleOf("CAB");
     const tones: Entry[] = [
       ...(snapTones ?? []).map((t) => {
         const fxid = (profile.snapTone.fxidBase + t.slot) >>> 0;
+        const capture = roleOf(profile.captureBlock(t.slot));
         return {
           id: `snaptone:${t.slot}`,
           search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot },
-          verb: "set NS model",
+          verb: `set ${profile.captureBlock(t.slot)} model`,
           blocked: preset && connected ? pedal : needsPedal,
           run: () => {
             close();
             useDevice
               .getState()
-              .setModel(NS, fxid)
-              .then(() => useUi.getState().focusRig({ block: NS, picker: false }))
+              .setModel(capture, fxid)
+              .then(() => useUi.getState().focusRig({ block: capture, picker: false }))
               .catch((e) => notifyError(`Couldn't load ${t.name}`, e));
           },
           render: (ranges: readonly Range[]) => (

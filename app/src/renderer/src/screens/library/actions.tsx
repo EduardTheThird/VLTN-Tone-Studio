@@ -276,6 +276,11 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         });
       },
       clearSlots(slots) {
+        // The GP-200 family has no empty slot to copy: every slot always holds a patch.
+        if (profileOrDefault(useDevice.getState().device).emptyName === null) {
+          notifyError("Nothing to clear to", new Error(`The ${pedal()} has no empty slots: every slot always holds a patch. Write another preset over it instead.`));
+          return;
+        }
         const used = slots.filter((s) => !isEmptyName(nameOf(s)));
         if (!used.length) return;
         const native = can("deletePreset");

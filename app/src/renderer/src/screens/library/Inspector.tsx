@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ArrowDownToLineIcon, ArrowUpDownIcon, CableIcon, CopyIcon, DownloadIcon, FolderPlusIcon, HardDriveDownloadIcon, InfoIcon, PencilIcon, ScanSearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -10,10 +10,9 @@ import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
-import { blockCodes, profileOrDefault, slotNameError } from "@/state/device-model";
+import { isGp5Family, profileOrDefault, slotNameError, switchLabel } from "@/state/device-model";
 import { EXP_TARGETS } from "@/gp5/lib/protocol.mjs";
-import type { BlockCode } from "@/state/device-types";
-import { PRST_MODELS } from "@shared/devices";
+import { PRST_MODELS, profileFor } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { formatDay } from "./dnd";
@@ -419,10 +418,12 @@ function ChainRow({ b, replaced }: { b: SummaryBlock; replaced: boolean }) {
 }
 
 function ChainPreview({ s }: { s: PresetSummary }) {
-  const codes = blockCodes(s.device);
-  const seq = s.order.length === codes.length ? s.order : [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
-  const start = seq.findIndex((i) => CORE.includes(i));
-  const nsOn = s.blocks[codes.indexOf("NS")].enabled;
+  const codes = profileFor(s.device).blocks;
+  const gp5 = isGp5Family(s.device);
+  const seq = s.order.length === codes.length ? s.order : gp5 ? [0, 1, 2, 9, 3, 4, 5, 6, 7, 8] : codes.map((_, i) => i);
+  // The GP-5 family's fixed core (DST NS AMP CAB EQ) is framed; the GP-200 family has none
+  const start = gp5 ? seq.findIndex((i) => CORE.includes(i)) : seq.length;
+  const nsOn = !!s.blocks[codes.indexOf("NS")]?.enabled;
   const replacedByNs = [codes.indexOf("AMP"), codes.indexOf("CAB")];
   const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && replacedByNs.includes(i)} />;
   return (
@@ -430,7 +431,7 @@ function ChainPreview({ s }: { s: PresetSummary }) {
       <h3 className="text-[13px] font-semibold text-silkscreen">Chain</h3>
       <div className="flex shrink-0 flex-col rounded-lg bg-well px-1.5 py-1">
         {seq.slice(0, start).map(row)}
-        <div className="my-[3px] flex flex-col border-y border-seam-strong py-[3px]">{seq.slice(start, start + 5).map(row)}</div>
+        {start < seq.length && <div className="my-[3px] flex flex-col border-y border-seam-strong py-[3px]">{seq.slice(start, start + 5).map(row)}</div>}
         {seq.slice(start + 5).map(row)}
         {nsOn && (
           <p className="flex items-center gap-1.5 px-1.5 pt-0.5 text-xs text-silkscreen-3">
@@ -443,7 +444,7 @@ function ChainPreview({ s }: { s: PresetSummary }) {
   );
 }
 
-function FsChips({ blocks, codes }: { blocks: number[]; codes: readonly BlockCode[] }) {
+function FsChips({ blocks, codes }: { blocks: number[]; codes: readonly string[] }) {
   if (!blocks.length) return <span className="text-sm text-silkscreen-3">None</span>;
   return (
     <span className="col-span-3 flex flex-wrap gap-1">
@@ -469,7 +470,7 @@ function expText(s: PresetSummary): string {
 
 function Patch({ s }: { s: PresetSummary }) {
   const key = "text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase";
-  const codes = blockCodes(s.device);
+  const codes = profileFor(s.device).blocks;
   return (
     <dl className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
       <dt className={key}>Volume</dt>
@@ -478,14 +479,14 @@ function Patch({ s }: { s: PresetSummary }) {
       <dd className="font-semibold text-silkscreen">
         {s.bpm} <small className="text-xs font-medium text-silkscreen-3">BPM</small>
       </dd>
-      <dt className={key}>FS1</dt>
-      <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs1} codes={codes} />
-      </dd>
-      <dt className={key}>FS2</dt>
-      <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs2} codes={codes} />
-      </dd>
+      {s.footswitches.map((blocks, i) => (
+        <Fragment key={i}>
+          <dt className={key}>{switchLabel(s.device, i)}</dt>
+          <dd className="col-span-3">
+            <FsChips blocks={blocks} codes={codes} />
+          </dd>
+        </Fragment>
+      ))}
       {s.exp && (
         <>
           <dt className={key}>EXP</dt>

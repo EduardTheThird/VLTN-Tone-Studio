@@ -6,6 +6,7 @@ import { host } from "@/host";
 import { encodeWav } from "@/song/wav";
 import { useDevice } from "@/state/device";
 import { pedalName } from "@/state/device-model";
+import { profileFor, type DeviceKey } from "@shared/devices";
 import { IR_RATE, matchIr, type MatchedIr } from "./irdesign";
 import { ltas, LTAS_FRAME } from "./ltas";
 import { InputRecorder, isGp5Input, listInputs, type AudioInput, type Level } from "./recorder";
@@ -14,7 +15,8 @@ import { useToneMatch } from "./store";
 export const RECORD_S = 20;
 /** Gated playing needed for a usable spectrum */
 export const MIN_PLAYING_S = 6;
-const CAB = 4;
+/** The CAB block of a `device` preset (4 on the GP-5 family, 5 on the GP-200 family). */
+const cabOf = (device: DeviceKey) => profileFor(device).blocks.indexOf("CAB");
 const TICK_MS = 200;
 
 export type IrStep =
@@ -65,6 +67,7 @@ const message = (e: unknown) => {
 function cabOff() {
   const d = useDevice.getState();
   if (d.status !== "connected" || !d.preset) throw new Error(`Connect the ${pedalName(d.device)} first: the recording goes through it, with its CAB block turned off.`);
+  const CAB = cabOf(d.preset.device);
   if (!cab) cab = { slot: d.preset.slot, enabled: d.preset.blocks[CAB].enabled };
   if (d.preset.blocks[CAB].enabled) d.setBlockEnabled(CAB, false);
 }
@@ -74,6 +77,7 @@ function restoreCab() {
   cab = null;
   const d = useDevice.getState();
   if (!saved || d.status !== "connected" || d.preset?.slot !== saved.slot) return;
+  const CAB = cabOf(d.preset.device);
   if (d.preset.blocks[CAB].enabled !== saved.enabled) d.setBlockEnabled(CAB, saved.enabled);
 }
 

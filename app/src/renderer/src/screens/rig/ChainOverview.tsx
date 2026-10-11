@@ -3,7 +3,9 @@ import { LockIcon } from "lucide-react";
 import { Dial, GearFor, modelTitle } from "@/components/gear";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { profileFor } from "@shared/devices";
 import { useDevice, usePedalName } from "@/state/device";
+import { isGp5Family } from "@/state/device-model";
 import type { PresetState } from "@/state/device-types";
 import { editOrder, editVolume } from "./edits";
 import { GROUPS, GROUP_TITLE, groupsOf, moveToGroup, type GroupId } from "./order";
@@ -19,8 +21,9 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
   const inputTrim = useDevice((s) => s.globals?.inputTrim);
   const connected = useDevice((s) => s.status === "connected");
   const pedal = usePedalName();
-  const groups = groupsOf(preset.order);
-  const nsOn = preset.blocks[9].enabled;
+  const groups = groupsOf(preset.device, preset.order);
+  const ns = profileFor(preset.device).blocks.indexOf("NS");
+  const nsOn = ns >= 0 && preset.blocks[ns].enabled;
   const [dropGroup, setDropGroup] = useState<GroupId | null>(null);
 
   const onDragOver = (g: GroupId) => (e: DragEvent) => {
@@ -33,7 +36,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
   const onDrop = (g: GroupId) => (e: DragEvent) => {
     setDropGroup(null);
     const block = Number(e.dataTransfer.getData(DRAG_MIME));
-    const next = Number.isInteger(block) ? moveToGroup(preset.order, block, g) : null;
+    const next = Number.isInteger(block) ? moveToGroup(preset.device, preset.order, block, g) : null;
     if (!next) return;
     e.preventDefault();
     editOrder(next);
@@ -100,14 +103,16 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
           );
         })}
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span tabIndex={0} aria-label="Fixed order" className="grid size-8 place-items-center rounded-pill text-silkscreen-4">
-            <LockIcon className="size-[13px]" aria-hidden />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>DST, NS, AMP, CAB and EQ keep a fixed order on the {pedal}</TooltipContent>
-      </Tooltip>
+      {isGp5Family(preset.device) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} aria-label="Fixed order" className="grid size-8 place-items-center rounded-pill text-silkscreen-4">
+              <LockIcon className="size-[13px]" aria-hidden />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>DST, NS, AMP, CAB and EQ keep a fixed order on the {pedal}</TooltipContent>
+        </Tooltip>
+      )}
       <div className="h-9 w-px bg-seam-strong" />
       <Dial layout="row" size={30} label="Out" ariaLabel="Patch volume" value={preset.volume} spec={OUT_SPEC} disabled={readOnly} onChange={editVolume} />
     </section>

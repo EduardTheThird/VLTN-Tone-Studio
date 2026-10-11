@@ -28,8 +28,8 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
   const fsMode = useLiveMode("liveFootswitches");
   const orderMode = useLiveMode("liveOrder");
   const canPaste = !!clip && clip.code === block.code && !readOnly;
-  const left = order && nudge(order, block.index, -1);
-  const right = order && nudge(order, block.index, 1);
+  const left = preset && order && nudge(preset.device, order, block.index, -1);
+  const right = preset && order && nudge(preset.device, order, block.index, 1);
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -69,7 +69,7 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
           );
         })}
         {!readOnly && fsMode !== "live" && <SaveNote pedal={pedal} />}
-        {isMovable(block.index) && (
+        {preset && isMovable(preset.device, block.index) && (
           <>
             <ContextMenuSeparator />
             <ContextMenuItem disabled={readOnly || !left} onSelect={() => left && editOrder(left)}>

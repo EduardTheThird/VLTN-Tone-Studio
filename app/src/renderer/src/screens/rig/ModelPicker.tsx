@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CheckIcon, ExternalLinkIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
 import { profileFor, snapToneLabel, type SlotTables } from "@shared/devices";
-import { defaultParams, modelsForBlock } from "@/gp5/lib/catalog.mjs";
 import { notifyError } from "@/app/notify";
 import { Capture, GearFor } from "@/components/gear";
 import { Button } from "@/components/ui/button";
@@ -12,9 +11,10 @@ import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
 import type { BlockCode, BlockState, DeviceKey, ModelInfo, SlotName } from "@/state/device-types";
 import { useNav } from "@/state/nav";
+import { defaultParamsFor, modelsFor } from "@/state/preset-codec";
 import { applyBlock, recordBlock, snapshot } from "./edits";
 import type { BlockSnapshot } from "./history";
-import { groupsOf, groupOf } from "./order";
+import { ampCab, groupsOf, groupOf } from "./order";
 import { useRig } from "./rig-store";
 import { isUserSnapTone, snapToneIndex } from "./snaptone";
 
@@ -64,8 +64,8 @@ interface Tile {
   empty?: boolean;
 }
 
-function tilesFor(code: BlockCode, device: DeviceKey, snapTones: SlotName[] | null, userIRs: SlotName[] | null): Tile[] {
-  const models = modelsForBlock(code, device) as ModelInfo[];
+function tilesFor(code: BlockCode, block: number, device: DeviceKey, snapTones: SlotName[] | null, userIRs: SlotName[] | null): Tile[] {
+  const models = modelsFor(device, block);
   const { snapTone } = profileFor(device);
   if (code === "NS")
     return models.map((m) => {
@@ -122,7 +122,7 @@ const thumbBlock = (b: BlockState, m: ModelInfo, device: DeviceKey): BlockState 
   enabled: true,
   fxid: m.fxid,
   model: m,
-  params: b.fxid === m.fxid ? b.params : defaultParams(m.fxid, device),
+  params: b.fxid === m.fxid ? b.params : defaultParamsFor(device, b.index, m.fxid),
 });
 
 const THUMB_W: Partial<Record<BlockCode, string>> = { AMP: "w-[104px]", CAB: "w-[88px]" };
@@ -146,7 +146,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
   const { snapTone } = profileFor(preset.device);
   const original = useRef<BlockSnapshot>(snapshot(block)).current;
   const originalTitle = useRef(block.model?.title ?? "the original model").current;
-  const tiles = useMemo(() => tilesFor(code, preset.device, snapTones, userIRs), [code, preset.device, snapTones, userIRs]);
+  const tiles = useMemo(() => tilesFor(code, blockIndex, preset.device, snapTones, userIRs), [code, blockIndex, preset.device, snapTones, userIRs]);
   const tabs = useMemo(() => tabsFor(code, tiles, snapTone), [code, tiles, snapTone]);
   const [tab, setTab] = useState(() => initialTab ?? (code === "NS" ? (isUserSnapTone(snapToneIndex(block.fxid), snapTone) ? "user" : "factory") : "all"));
   const [query, setQuery] = useState("");
@@ -257,9 +257,10 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
     audition(next.model.fxid);
   };
 
-  const group = groupOf(preset.order, blockIndex);
-  const inGroup = groupsOf(preset.order)[group];
-  const cats = [...inGroup, ...(group === "amp" ? [] : [3, 4])];
+  const group = groupOf(preset.device, preset.order, blockIndex);
+  const inGroup = groupsOf(preset.device, preset.order)[group];
+  const { amp, cab } = ampCab(preset.device);
+  const cats = [...inGroup, ...(group === "amp" ? [] : [amp, cab])];
   const focusTile = tiles.find((t) => t.model.fxid === focusFx);
   const favOn = favs.includes(focusFx);
   const title = `Choose ${article(NOUN[code])} ${NOUN[code]}`;

@@ -179,7 +179,7 @@ export function UseOnGp5({ isIr, slot }: { isIr: boolean; slot: number }) {
     const { snapTone, userIr } = profileFor(device);
     setBusy(true);
     try {
-      const block = profileFor(device).blocks.indexOf(isIr ? "CAB" : "NS");
+      const block = profileFor(device).blocks.indexOf(isIr ? "CAB" : profileFor(device).captureBlock(slot));
       await d.setModel(block, isIr ? userIr.fxidBase + slot : snapTone.fxidBase + slot);
       d.setBlockEnabled(block, true);
     } catch (e) {

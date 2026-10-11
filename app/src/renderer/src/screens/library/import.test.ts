@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { convertPrst, readName } from "@/gp5/lib/prst.mjs";
+import { buildPrst, encodePatchImage } from "@/gp200/lib/prst.mjs";
 import capture from "@/gp5/fixtures/gp50_suite_write_slot0.json";
 import { checkPrst } from "./import";
 
@@ -23,10 +24,15 @@ describe("checkPrst", () => {
     expect(checkPrst(damaged)).toEqual({ ok: false, reason: "The file is damaged (its checksum doesn't match)." });
   });
 
-  it("turns away a GP-200 preset with its own reason", () => {
-    const gp200 = new Uint8Array(1224);
-    gp200.set([..."TSRP"].map((c) => c.charCodeAt(0)), 0);
-    gp200.set([..."2-PG"].map((c) => c.charCodeAt(0)), 0x10);
-    expect(checkPrst(gp200)).toEqual({ ok: false, reason: "GP-200 presets can't be opened in this version yet." });
+  it("accepts a GP-200 family preset and checks its byte sum", () => {
+    const gp200 = buildPrst(encodePatchImage({ name: "Imported" }));
+    expect(checkPrst(gp200)).toEqual({ ok: true, name: "Imported", device: "gp200" });
+    const damaged = gp200.slice();
+    damaged[damaged.length - 1] ^= 0xff;
+    expect(checkPrst(damaged)).toEqual({ ok: false, reason: "The file is damaged (its checksum doesn't match)." });
+    const headerOnly = new Uint8Array(1224);
+    headerOnly.set([..."TSRP"].map((c) => c.charCodeAt(0)), 0);
+    headerOnly.set([..."2-PG"].map((c) => c.charCodeAt(0)), 0x10);
+    expect(checkPrst(headerOnly)).toEqual({ ok: false, reason: "Not a GP-5, GP-50 or GP-200 preset." });
   });
 });

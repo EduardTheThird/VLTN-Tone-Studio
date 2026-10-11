@@ -56,6 +56,8 @@ export interface DeviceProfile {
   blocks: readonly string[];
   /** Footswitches on the unit */
   footswitches: number;
+  /** Block a SnapTone in `slot` plays in: NS on the GP-5 family; AMP (slots 0-4) or DST (5-9) on the GP-200 family */
+  captureBlock(slot: number): string;
   /** Per-preset switch assignments (GP-5 FS1/FS2, GP-200 CTRL 1–8) */
   ctrls: number;
   snapTone: SlotTables;
@@ -116,6 +118,7 @@ const gp5Family = {
   usbMidiInterface: 3,
   ...decimalSlots(100),
   blocks: GP5_BLOCKS,
+  captureBlock: () => "NS",
   ctrls: 2,
   snapTone: { slots: 80, userRange: [50, 79], fxidBase: SNAPTONE_FXID },
   userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 512 },
@@ -150,6 +153,7 @@ const gp200Family = {
   family: "gp200",
   usbMidiInterface: null,
   blocks: GP200_BLOCKS,
+  captureBlock: (slot: number) => (slot < 5 ? "AMP" : "DST"),
   ctrls: 8,
   snapTone: { slots: 10, userRange: [0, 9], fxidBase: SNAPTONE_FXID },
   userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 1024 },

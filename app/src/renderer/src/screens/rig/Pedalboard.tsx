@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent, type PointerEvent } from "react";
-import { snapToneLabel, type DeviceKey } from "@shared/devices";
+import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
 import { Capture, Dial, GearFor, knobsForBlock, modelTitle, paramTitle } from "@/components/gear";
@@ -41,26 +41,29 @@ interface BoardProps {
 
 /** The open group drawn large on the pedalboard backdrop: model buttons, editable pedals, on/off pills. */
 export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
-  const blocks = groupsOf(preset.order)[view];
-  const nsOn = preset.blocks[9].enabled;
+  const { device } = preset;
+  const blocks = groupsOf(device, preset.order)[view];
+  // GP-5 family: an engaged NS (SnapTone) plays in place of the amp and cab; the GP-200 family has no NS block
+  const ns = profileFor(device).blocks.indexOf("NS");
+  const nsOn = ns >= 0 && preset.blocks[ns].enabled;
   const [drag, setDrag] = useState<number | null>(null);
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
-  const nsSlot = snapToneName(preset.blocks[9], snapTones, preset.device);
+  const nsSlot = ns >= 0 ? snapToneName(preset.blocks[ns], snapTones, device) : "";
   const orderNote = saveOnlyNote(useLiveMode("liveOrder"), "The new order", pedal);
 
   const hint = readOnly
     ? `Showing the last read. Pedals can't be turned, switched or moved until the ${pedal} is back.`
     : view === "before" && nsOn
       ? `NS is on, so ${nsSlot} plays in place of the amp and cab.`
-      : `${orderHint(preset.order, view, preset.blocks.map((b) => b.code))}${orderNote && ` ${orderNote}`}`;
+      : `${orderHint(device, preset.order, view, preset.blocks.map((b) => b.code))}${orderNote && ` ${orderNote}`}`;
 
   const onDragOver = (target: number) => (e: DragEvent<HTMLDivElement>) => {
     if (drag === null) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const side = e.clientX < rect.left + rect.width / 2 ? "before" : "after";
-    if (!moveBlock(preset.order, drag, target, side)) {
+    if (!moveBlock(device, preset.order, drag, target, side)) {
       setDrop(null);
       return;
     }
@@ -71,7 +74,7 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     if (drag !== null && drop) {
-      const next = moveBlock(preset.order, drag, drop.target, drop.side);
+      const next = moveBlock(device, preset.order, drag, drop.target, drop.side);
       if (next) editOrder(next);
     }
     setDrag(null);
@@ -87,12 +90,13 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
       <BoardHead title={view === "before" ? "Before the amp" : "After the amp"} hint={hint} keys />
       <div role="list" aria-label="Pedals in signal order" className={cn("relative flex min-h-0 flex-1 items-start justify-center gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:none]", readOnly && "opacity-70")}>
         {blocks.map((b) =>
-          b === 9 && nsOn ? (
-            <NsColumn key={b} block={preset.blocks[9]} readOnly={readOnly} name={nsSlot} device={preset.device} />
+          b === ns && nsOn ? (
+            <NsColumn key={b} block={preset.blocks[ns]} readOnly={readOnly} name={nsSlot} device={device} />
           ) : (
             <SlotColumn
               key={b}
               block={preset.blocks[b]}
+              device={device}
               order={preset.order}
               readOnly={readOnly}
               showValues={showValues}
@@ -170,6 +174,7 @@ function SlotFoot({ block, readOnly, text }: { block: BlockState; readOnly: bool
 
 interface SlotProps {
   block: BlockState;
+  device: DeviceKey;
   order: number[];
   readOnly: boolean;
   showValues: boolean;
@@ -182,10 +187,10 @@ interface SlotProps {
   nsName: string;
 }
 
-function SlotColumn({ block, readOnly, showValues, dropSide, dragging, onDragStart, onDragEnd, onDragOver, onDrop, nsName }: SlotProps) {
+function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, onDragStart, onDragEnd, onDragOver, onDrop, nsName }: SlotProps) {
   const selected = useRig((s) => s.selected === block.index);
   const fromControl = useRef(false);
-  const movable = isMovable(block.index) && !readOnly;
+  const movable = isMovable(device, block.index) && !readOnly;
   const label = block.code === "NS" ? nsName : modelTitle(block);
   const onPointerDownCapture = (e: PointerEvent) => {
     fromControl.current = !!(e.target as HTMLElement).closest("button,[role=slider],[role=switch],input");
@@ -195,7 +200,7 @@ function SlotColumn({ block, readOnly, showValues, dropSide, dragging, onDragSta
     <BlockMenu block={block} readOnly={readOnly}>
       <div
         role="listitem"
-        aria-label={`${block.code} ${label}, ${block.enabled ? "on" : "off"}${isMovable(block.index) ? ", movable" : ""}`}
+        aria-label={`${block.code} ${label}, ${block.enabled ? "on" : "off"}${isMovable(device, block.index) ? ", movable" : ""}`}
         aria-current={selected || undefined}
         draggable={movable}
         onPointerDownCapture={onPointerDownCapture}
@@ -221,7 +226,7 @@ function SlotColumn({ block, readOnly, showValues, dropSide, dragging, onDragSta
             on={block.enabled}
             interactive
             disabled={readOnly}
-            onToggleOn={(on) => editEnabled(9, on)}
+            onToggleOn={(on) => editEnabled(block.index, on)}
             className={cn(GEAR_W, "drop-shadow-[0_18px_24px_rgb(0_0_0/0.6)]", !block.enabled && "saturate-[.2] brightness-50")}
           />
         ) : (
@@ -243,7 +248,7 @@ function SlotColumn({ block, readOnly, showValues, dropSide, dragging, onDragSta
 
 /** NS engaged: the capture plus its dials, wider than a pedal column. */
 function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOnly: boolean; name: string; device: DeviceKey }) {
-  const selected = useRig((s) => s.selected === 9);
+  const selected = useRig((s) => s.selected === block.index);
   const knobs = knobsForBlock(block);
   const short = useMediaQuery("(max-height: 820px)");
   const slot = snapToneLabel(device, snapToneIndex(block.fxid));
@@ -253,7 +258,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
         role="listitem"
         aria-label={`NS ${name}, on`}
         aria-current={selected || undefined}
-        onPointerDownCapture={() => useRig.getState().select(9)}
+        onPointerDownCapture={() => useRig.getState().select(block.index)}
         className="relative flex w-[clamp(420px,36vw,520px)] flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2"
       >
         <ModelButton block={block} label={name} selected={selected} disabled={readOnly} />
@@ -263,7 +268,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
             on
             interactive
             disabled={readOnly}
-            onToggleOn={(on) => editEnabled(9, on)}
+            onToggleOn={(on) => editEnabled(block.index, on)}
             className="w-[clamp(104px,calc((100vh-490px-var(--rig-banner,0px))*0.38),140px)] flex-none drop-shadow-[0_18px_24px_rgb(0_0_0/0.6)]"
           />
           <div className="flex min-w-0 flex-1 flex-col gap-3.5 rounded-lg bg-[rgb(10_10_12/0.66)] px-4 py-3.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:px-3.5 [@media(max-height:820px)]:py-2.5">
@@ -284,7 +289,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
                   size={short ? 34 : 46}
                   color="var(--block-ns)"
                   disabled={readOnly}
-                  onChange={(v) => editParam(9, Number(k.id), v)}
+                  onChange={(v) => editParam(block.index, Number(k.id), v)}
                   className="w-[58px]"
                 />
               ))}

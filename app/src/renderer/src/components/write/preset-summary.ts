@@ -1,22 +1,14 @@
-// Read-only summary of a GP-5 family .prst (GP-5 or GP-50) for lists, chain previews and write confirmations.
-import { parsePrst } from "@/gp5/lib/prst.mjs";
-import { modelByFxid } from "@/gp5/lib/catalog.mjs";
+// Read-only summary of a .prst of any family for lists, chain previews and write confirmations.
 import { profileFor } from "@shared/devices";
-import { blockCodes, modelsMissingOn } from "@/state/device-model";
-import type { BlockCode, ExpSettings, Gp5FamilyKey, ModelInfo, SlotName } from "@/state/device-types";
+import { isGp5Family, modelsMissingOn } from "@/state/device-model";
+import type { BlockState, DeviceKey, ExpSettings, SlotName } from "@/state/device-types";
+import { toPresetState } from "@/state/preset-codec";
 
-export interface SummaryBlock {
-  index: number;
-  code: BlockCode;
-  enabled: boolean;
-  fxid: number;
-  model: ModelInfo | undefined;
-  params: number[];
-}
+export type SummaryBlock = BlockState;
 
 export interface PresetSummary {
-  /** Model the file was made for (from its header); its catalog names the blocks */
-  device: Gp5FamilyKey;
+  /** Model the file was made for (a GP-200 family file reads as "gp200"); its catalog names the blocks */
+  device: DeviceKey;
   name: string;
   /** Storage order (profileFor(device).blocks) */
   blocks: SummaryBlock[];
@@ -24,7 +16,8 @@ export interface PresetSummary {
   order: number[];
   volume: number;
   bpm: number;
-  footswitches: { fs1: number[]; fs2: number[] };
+  /** Switch assignments, one block list per switch (FS1 and FS2, or CTRL 1-8) */
+  footswitches: number[][];
   /** Blocks whose model only exists on the GP-50, e.g. "PRE (PRE C-Wah)"; dropped when converting to the GP-5 */
   gp50Only: string[];
   /** EXP pedal settings stored with the preset (GP-50); null on models without them */
@@ -50,25 +43,18 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   if (cache.has(prst)) return cache.get(prst)!;
   let out: PresetSummary | null = null;
   try {
-    const p = parsePrst(prst);
-    const device: Gp5FamilyKey = p.device;
-    const codes = blockCodes(device);
-    const blocks = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
-      const fxid = b.fxid >>> 0;
-      return { index, code: codes[index], enabled: b.enabled, fxid, model: modelByFxid(fxid, device) as ModelInfo | undefined, params: b.params };
-    });
+    const p = toPresetState(0, prst);
     out = {
-      device,
+      device: p.device,
       name: p.name,
-      blocks,
+      blocks: p.blocks,
       order: p.order,
-      volume: p.settings.volume,
-      bpm: p.settings.bpm,
-      footswitches: { fs1: p.footswitches.fs1, fs2: p.footswitches.fs2 },
-      gp50Only: modelsMissingOn(prst, "gp5"),
-      // parsePrst (JS) adds `exp`, typed as ExpSettings in session.d.mts, to the settings of GP-50 presets only.
-      exp: "exp" in p.settings ? (p.settings.exp as ExpSettings) : null,
-      synced: syncedParams(blocks),
+      volume: p.volume,
+      bpm: p.bpm,
+      footswitches: p.footswitches,
+      gp50Only: isGp5Family(p.device) ? modelsMissingOn(prst, "gp5") : [],
+      exp: p.exp,
+      synced: syncedParams(p.blocks),
     };
   } catch {
     out = null;
@@ -77,25 +63,21 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   return out;
 }
 
-/** SnapTone slot (0-based) of `device` for an NS fxid ("Tone Catch N" = slot N−1); null for any other fxid. */
-function snapToneIndex(fxid: number, device: Gp5FamilyKey): number | null {
-  const base = profileFor(device).snapTone.fxidBase;
-  return fxid >>> 24 === base >>> 24 ? fxid & 0xff : null;
-}
-
 /**
  * The "Amp or SnapTone" column: with NS on, the SnapTone slot name (user names when read), otherwise the amp.
  */
 export function ampOrSnapTone(s: PresetSummary, snapTones: SlotName[] | null): { kind: "snaptone" | "amp"; title: string } | null {
-  const codes = blockCodes(s.device);
-  const ns = s.blocks[codes.indexOf("NS")];
-  if (ns.enabled) {
-    const idx = snapToneIndex(ns.fxid, s.device);
-    const named = idx === null ? undefined : snapTones?.find((t) => t.slot === idx)?.name;
-    return { kind: "snaptone", title: named || ns.model?.title || "SnapTone" };
+  const { blocks, snapTone } = profileFor(s.device);
+  const isCapture = (b: SummaryBlock) => b.fxid >>> 24 === snapTone.fxidBase >>> 24;
+  const ns = s.blocks[blocks.indexOf("NS")];
+  const amp = s.blocks[blocks.indexOf("AMP")];
+  // GP-5 family: NS on replaces the amp; GP-200 family: a SnapTone plays in the AMP block itself
+  const capture = ns?.enabled ? ns : amp && isCapture(amp) ? amp : undefined;
+  if (capture) {
+    const named = isCapture(capture) ? snapTones?.find((t) => t.slot === (capture.fxid & 0xff))?.name : undefined;
+    return { kind: "snaptone", title: named || capture.model?.title || "SnapTone" };
   }
-  const amp = s.blocks[codes.indexOf("AMP")];
-  return amp.model ? { kind: "amp", title: amp.model.title } : null;
+  return amp?.model ? { kind: "amp", title: amp.model.title } : null;
 }
 
 /** Plain description for confirmations: "Rector Dual V, 7 of 10 blocks on". */

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { profileFor } from "@shared/devices";
 import { getDriver, useDevice } from "./device";
+import { acksFrames, writeFrameCount } from "./device-model";
 import type { Gp200Driver } from "./driver/gp200-driver";
 import { editPrst, toPresetState } from "./preset-codec";
 
@@ -60,6 +61,8 @@ describe("GP-200 in the device store", () => {
     expect(p.gp200?.exp).toHaveLength(9);
     expect(p.gp200?.quickAccess).toHaveLength(3);
     expect(s.unsavedChanges).toBe(0);
+    // The write dialog counts the frames of a GP-200 full write, which the pedal doesn't acknowledge
+    expect([writeFrameCount(p.prst), acksFrames("gp200")]).toEqual([7, false]);
   });
 
   it("keeps the export read and live tempo open on a real GP-200 (no experimental gate)", () => {

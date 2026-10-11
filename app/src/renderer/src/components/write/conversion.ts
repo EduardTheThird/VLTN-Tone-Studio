@@ -18,9 +18,12 @@ export interface Conversion {
   refused: string | null;
 }
 
-/** The conversion writing `s` to a `target` pedal needs; null when the models match or the pedal model is unknown. */
+/**
+ * The conversion writing `s` to a `target` pedal needs; null when both use one file format (the same model, or the
+ * GP-200 family, whose files don't name the model) or the pedal model is unknown.
+ */
 export function conversionFor(s: Pick<PresetSummary, "device" | "gp50Only" | "exp" | "synced">, target: DeviceKey | null): Conversion | null {
-  if (!target || s.device === target) return null;
+  if (!target || profileFor(s.device).prst === profileFor(target).prst) return null;
   const none = { from: s.device, to: target, dropped: [], expDropped: false, unsynced: [] };
   if (profileFor(s.device).family !== profileFor(target).family) return { ...none, refused: crossFamilyNote(s.device, target) };
   if (convertsLosslessly(s.device, target)) return { ...none, refused: null };

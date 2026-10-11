@@ -16,7 +16,7 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { host } from "@/host";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
-import { writeFrameCount } from "@/state/device-model";
+import { acksFrames, writeFrameCount } from "@/state/device-model";
 import { cn } from "@/lib/utils";
 import { MiniChain } from "./MiniChain";
 import { summarize } from "./preset-summary";
@@ -59,6 +59,8 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
   const pedal = usePedalName();
   const label = useProfile().slotLabel(slot);
   const frameTotal = useMemo(() => writeFrameCount(incoming.prst), [incoming.prst]);
+  // The GP-200 family sends no ACKs: only the frames sent are known until the read-back
+  const acked = useDevice((s) => s.device === null || acksFrames(s.device));
   const checkboxId = useId();
   const running = phase !== "confirm";
 
@@ -139,7 +141,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
                 n={doBackup ? 2 : 1}
                 state={phase === "backup" ? "todo" : verifying ? "done" : "run"}
                 label={verifying ? "Sent the preset" : "Sending the preset"}
-                detail={`${frames} of ${frameTotal} frames acknowledged`}
+                detail={`${frames} of ${frameTotal} frames ${acked ? "acknowledged" : "sent"}`}
               />
               <Step n={doBackup ? 3 : 2} state={verifying ? "run" : "todo"} label="Verifying" detail={`Reading slot ${label} back`} />
             </ol>
