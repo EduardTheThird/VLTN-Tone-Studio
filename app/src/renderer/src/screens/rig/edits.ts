@@ -5,7 +5,7 @@ import { EXP_FIELDS } from "@/gp5/lib/protocol.mjs";
 import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
 import { switchLabel } from "@/state/device-model";
-import type { BlockState, ExpEdit, ExpSettings, Gp200Edit, PresetState } from "@/state/device-types";
+import type { BlockState, ExpEdit, ExpSettings, Gp200Edit, Gp200Fields, PresetState } from "@/state/device-types";
 import { defaultParamsFor } from "@/state/preset-codec";
 import { invert, useHistory, type BlockSnapshot, type Edit } from "./history";
 
@@ -67,19 +67,28 @@ export function editExp(edit: ExpEdit) {
 /** `cur`'s values of the fields `keys` names. */
 const pick = (cur: object, keys: object): Record<string, unknown> => Object.fromEntries(Object.keys(keys).map((k) => [k, (cur as Record<string, unknown>)[k]]));
 
-/** GP-200 family patch fields (FX loop, pan, style, author, note, EXP, Quick Access); reach the pedal on save. */
-export function editPatchFields(edit: Gp200Edit) {
-  const g = dev().preset?.gp200;
-  if (!g) return;
+/** The fields `edit` names, at their values in `g`. */
+function patchValues(g: Gp200Fields, edit: Gp200Edit): Gp200Edit {
   const { exp, quickAccess, ...fields } = edit;
-  // The same fields at their current values (what undo puts back)
-  const from: Gp200Edit = {
+  return {
     ...pick(g, fields),
     ...(exp ? { exp: Object.fromEntries(Object.entries(exp).map(([i, e]) => [i, pick(g.exp[Number(i)], e)])) } : {}),
     ...(quickAccess ? { quickAccess: Object.fromEntries(Object.entries(quickAccess).map(([i, q]) => [i, pick(g.quickAccess[Number(i)], q)])) } : {}),
   };
+}
+
+/**
+ * GP-200 family patch fields (FX loop, pan, style, author, note, EXP, Quick Access); reach the pedal on save. Recorded
+ * as the preset stores them (names sanitized, EXP ranges as 32-bit floats); an edit that changes nothing isn't recorded.
+ */
+export function editPatchFields(edit: Gp200Edit) {
+  const g = dev().preset?.gp200;
+  if (!g) return;
+  const from = patchValues(g, edit);
   dev().editPatch(edit);
-  useHistory.getState().record({ kind: "patch", from, to: edit, at: performance.now() });
+  const now = dev().preset?.gp200;
+  const to = now ? patchValues(now, edit) : edit;
+  if (JSON.stringify(to) !== JSON.stringify(from)) useHistory.getState().record({ kind: "patch", from, to, at: performance.now() });
 }
 
 export function editFootswitches(lists: number[][]) {

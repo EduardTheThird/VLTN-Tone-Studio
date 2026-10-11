@@ -17,6 +17,7 @@ import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
 import { ExpControl } from "./ExpControl";
 import { FootswitchControl } from "./FootswitchControl";
+import { PatchPanel } from "./PatchPanel";
 import { TempoControl } from "./TempoControl";
 import { useHistory } from "./history";
 import { useRig } from "./rig-store";
@@ -26,7 +27,10 @@ interface Props {
   connected: boolean;
 }
 
-/** Preset name, unsaved count, tempo, footswitches, EXP; undo/redo, Compare with saved, Discard, Save split button. */
+/**
+ * Preset name, unsaved count, tempo, footswitches (CTRL), EXP (GP-50) or patch settings (GP-200 family); undo/redo,
+ * Compare with saved, Discard, Save split button.
+ */
 export function RigHeader({ preset, connected }: Props) {
   const saved = useDevice((s) => s.saved);
   const unsaved = useDevice((s) => s.unsavedChanges);
@@ -134,6 +138,7 @@ export function RigHeader({ preset, connected }: Props) {
           <TempoControl bpm={preset.bpm} range={profile.tempo} disabled={!editable} />
           <FootswitchControl preset={preset} disabled={!editable} />
           {preset.exp && <ExpControl preset={preset} exp={preset.exp} disabled={!editable} />}
+          {preset.gp200 && <PatchPanel preset={preset} fields={preset.gp200} disabled={!editable} />}
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
