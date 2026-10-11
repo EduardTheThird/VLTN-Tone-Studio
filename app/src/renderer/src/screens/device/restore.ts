@@ -1,10 +1,10 @@
 // Restore sources: a backup collection or a folder picked by the user → slot-addressed presets to write, each
 // prepared for the connected pedal's model (GP-5 ⇄ GP-50; presets of another family are skipped).
-import { applyEdits } from "@/gp5/lib/prst.mjs";
 import { parseSlotFileName } from "@shared/files-naming";
 import { PRST_MODELS, prstName, profileFor, sniffPrst } from "@shared/devices";
 import { isEmptySlotName, prepareForDevice, profileOrDefault, type PreparedPreset } from "@/state/device-model";
 import type { BackupEntry, DeviceKey } from "@/state/device-types";
+import { editPrst } from "@/state/preset-codec";
 
 /** An entry made on the other model, converted for the connected pedal. */
 export interface RestoreConversion {
@@ -77,7 +77,7 @@ export function restoreEntries(files: SourceFile[], target: DeviceKey | null): O
     const stored = prstName(f.bytes, model);
     const targetEmpty = target ? profileFor(target).emptyName : null;
     if (prepared.converted && targetEmpty !== null && isEmptySlotName(stored, prepared.from)) {
-      bySlot.set(slot, { entry: { slot, name: targetEmpty, prst: applyEdits(prepared.prst, { name: targetEmpty }) }, conversion: null });
+      bySlot.set(slot, { entry: { slot, name: targetEmpty, prst: editPrst(prepared.prst, { name: targetEmpty }) }, conversion: null });
       continue;
     }
     const name = stored || (profileFor(prepared.from).emptyName ?? "");

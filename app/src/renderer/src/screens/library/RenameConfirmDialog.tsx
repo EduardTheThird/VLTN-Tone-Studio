@@ -12,15 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
-import { applyEdits } from "@/gp5/lib/prst.mjs";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
+import { editPrst } from "@/state/preset-codec";
 import { emptyName, useLibrary } from "./store";
 
 /** Rename on the pedal: name only, the sound is unchanged. Keeps the known body's chain in step. */
 async function renameOnPedal(slot: number, name: string) {
   await useDevice.getState().rename(slot, name);
   const body = useLibrary.getState().bodies[slot];
-  if (body) useLibrary.setState({ bodies: { ...useLibrary.getState().bodies, [slot]: { ...body, prst: applyEdits(body.prst, { name }) } } });
+  if (body) useLibrary.setState({ bodies: { ...useLibrary.getState().bodies, [slot]: { ...body, prst: editPrst(body.prst, { name }) } } });
 }
 
 export function RenameConfirmDialog({ request, onClose }: { request: { slot: number; name: string } | null; onClose(): void }) {

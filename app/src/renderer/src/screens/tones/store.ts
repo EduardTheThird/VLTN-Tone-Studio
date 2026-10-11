@@ -5,7 +5,7 @@ import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
 import { DEFAULT_DEVICE, pedalName, presetDevice } from "@/state/device-model";
-import { snapToneLabel } from "@shared/devices";
+import { profileFor, snapToneLabel } from "@shared/devices";
 import type { DeviceKey } from "@/state/device-types";
 import { notifySuccess } from "@/app/notify";
 import type { PresetRef } from "./usage";
@@ -277,9 +277,10 @@ export async function loadUsage(): Promise<void> {
   }
 }
 
+/** A preset of `device`'s file format (a GP-200 family file names no model, so it counts for the GP-200, LT and JR). */
 function isDevicePreset(prst: Uint8Array, device: DeviceKey): boolean {
   try {
-    return presetDevice(prst) === device;
+    return profileFor(presetDevice(prst)).prst === profileFor(device).prst;
   } catch {
     return false;
   }
