@@ -82,6 +82,14 @@ describe("Gp200Driver sync", () => {
     expect(await d.exportPreset(40)).toEqual(prst);
     expect(dev.current).toBe(0);
   });
+
+  it("reports an edit buffer that differs from its slot at connect as modified", async () => {
+    expect((await (await simulate()).sync()).modified).toBe(false);
+    const d = await simulate();
+    d.mock!.editBuffer = applyPatchEdits(d.mock!.editBuffer, { volume: 12 });
+    expect((await d.sync()).modified).toBe(true);
+    expect(await d.readModified()).toBe(false); // the pedal itself reported nothing yet
+  });
 });
 
 describe("Gp200Driver presets", () => {

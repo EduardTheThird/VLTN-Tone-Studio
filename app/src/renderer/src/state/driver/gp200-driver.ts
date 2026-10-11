@@ -5,7 +5,7 @@
 import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry } from "@/gp200/lib/session.mjs";
 import { MockGp200, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
 import { GLOBAL_EQ_BANDS, PATCH_SETTING, type DecodedMessage } from "@/gp200/lib/protocol.mjs";
-import { buildPrst, parsePatch } from "@/gp200/lib/prst.mjs";
+import { buildPrst, imagesMatch, parsePatch } from "@/gp200/lib/prst.mjs";
 import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
 import { profileFor, type DeviceKey } from "@shared/devices";
 import type { BackupEntry, ConnectionError, DeviceFeature, GlobalEq, GlobalName, Globals, SlotName } from "../device-types";
@@ -58,8 +58,11 @@ function irSamples(data: Uint8Array): Int32Array {
 }
 
 export class Gp200Driver implements DeviceDriver {
-  /** "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006; "globalEq": 0x1005. */
-  readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm", "globalEq"];
+  /**
+   * "exportPreset": stored reads never select; "liveBpm": the patch tempo goes out as 0x0006; "globalEq": 0x1005;
+   * "modified": the edit buffer differs from its slot (the pedal's 0x1011 report, or at connect the sync's own reads).
+   */
+  readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm", "globalEq", "modified"];
   readonly #session: Gp200Session;
   readonly #listeners = new Set<(e: DriverEvent) => void>();
   /** Global EQ as the pedal reported it and as set here, over the editor's factory values (no request reads it). */
@@ -205,13 +208,21 @@ export class Gp200Driver implements DeviceDriver {
     const snap = await this.#session.sync({ onProgress: opts.onProgress });
     const image = snap.editBuffer.image;
     this.#fxids = parsePatch(image).blocks.map((b) => b.fxid);
+    // The sync read the active slot too: an edit buffer that differs from it holds edits made before we connected.
+    const stored = snap.presets.find((p) => p.slot === snap.editBuffer.slot)?.image;
     return {
       device,
       names: snap.presets.map((p) => ({ slot: p.slot, name: p.name })),
       slot: snap.editBuffer.slot,
       prst: buildPrst(image),
       globals: snap.globals ? { ...toGlobals(snap.globals, snap.firmware), eq: this.#eq } : null,
+      modified: this.#session.dirty || (stored ? !imagesMatch(image, stored) : null),
     };
+  }
+
+  /** The pedal reports edits to its edit buffer (0x1011) and drops the flag when a patch is selected or saved. */
+  async readModified(): Promise<boolean> {
+    return this.#session.dirty;
   }
 
   /** Every slot is read for its name (about 3 s on the pedal). */

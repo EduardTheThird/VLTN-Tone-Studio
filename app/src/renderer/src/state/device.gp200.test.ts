@@ -56,7 +56,7 @@ describe("GP-200 in the device store", () => {
   it("connects without a catalog: every block is there, its model unknown, the GP-200 fields read", () => {
     const s = store();
     expect(s.device).toBe("gp200");
-    expect([...s.features].sort()).toEqual(["exportPreset", "globalEq", "liveBpm"]);
+    expect([...s.features].sort()).toEqual(["exportPreset", "globalEq", "liveBpm", "modified"]);
     const p = s.preset!;
     expect(p.blocks).toHaveLength(11);
     expect(p.blocks.every((b) => b.params.length === 15 && b.model === undefined)).toBe(true);
@@ -72,7 +72,7 @@ describe("GP-200 in the device store", () => {
   it("keeps the export read and live tempo open on a real GP-200; the Global EQ write is experimental", () => {
     useDevice.setState({ mode: "webmidi" });
     store().setGp50Extras(false);
-    expect([...store().features].sort()).toEqual(["exportPreset", "liveBpm"]);
+    expect([...store().features].sort()).toEqual(["exportPreset", "liveBpm", "modified"]);
     expect(store().lockedFeatures).toEqual(["globalEq"]);
     expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/Experimental pedal commands/);
     useDevice.setState({ mode: "mock" });
@@ -119,6 +119,18 @@ describe("GP-200 in the device store", () => {
     expect(saved.gp200?.quickAccess[1]).toMatchObject({ block: 3, param: 1 });
     expect(saved.footswitches[0]).toEqual([2, 3]);
     expect([saved.blocks[2].params[0], saved.volume, saved.bpm]).toEqual([42, 77, 250]);
+  }, 30_000);
+
+  it("keeps unsaved edits counted after Read pedal again: the pedal reports its edited buffer", async () => {
+    const volume = store().preset!.volume === 41 ? 42 : 41;
+    store().setVolume(volume);
+    await until(async () => expect(driver().mock!.dirty).toBe(true));
+    await store().sync();
+    expect(store().preset!.volume).toBe(volume);
+    expect(store().saved!.volume).not.toBe(volume);
+    expect(store().unsavedChanges).toBe(1);
+    await store().discard();
+    expect(store().unsavedChanges).toBe(0);
   }, 30_000);
 
   it("refuses to rename the active slot while it has unsaved edits, then renames it", async () => {
