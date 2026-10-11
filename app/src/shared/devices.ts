@@ -61,6 +61,8 @@ export interface DeviceProfile {
   snapTone: SlotTables;
   /** User IR slots; `samples` per IR as the pedal stores it */
   userIr: SlotTables & { samples: number };
+  /** Patch tempo range in BPM */
+  tempo: { min: number; max: number };
   /** Longest preset name the pedal shows */
   nameLength: number;
   /** What the pedal names a slot without a user preset; null when every slot always holds a patch */
@@ -112,6 +114,7 @@ const gp5Family = {
   ctrls: 2,
   snapTone: { slots: 80, userRange: [50, 79], fxidBase: SNAPTONE_FXID },
   userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 512 },
+  tempo: { min: 40, max: 260 },
   nameLength: 10,
   globals: true,
   simulator: true,
@@ -144,6 +147,7 @@ const gp200Family = {
   ctrls: 8,
   snapTone: { slots: 10, userRange: [0, 9], fxidBase: SNAPTONE_FXID },
   userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 1024 },
+  tempo: { min: 40, max: 250 },
   nameLength: 16,
   emptyName: null,
   prst: GP200_PRST,

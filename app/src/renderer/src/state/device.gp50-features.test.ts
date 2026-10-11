@@ -10,7 +10,8 @@ import { REPLACED_ID } from "@shared/host/files";
 import { runNative } from "@/screens/library/native";
 import { clearSteps, copySteps, moveSteps } from "@/screens/library/plans";
 import { isEmptyName } from "@/screens/library/store";
-import { getDriver, toPresetState, useDevice } from "./device";
+import { getDriver, useDevice } from "./device";
+import { toPresetState } from "./preset-codec";
 import type { Gp5Driver } from "./driver/gp5-driver";
 
 vi.stubGlobal("fetch", async (url: string) => new Response(readFileSync(resolve(`.${decodeURIComponent(url)}`))));
@@ -85,11 +86,11 @@ describe("GP-50 features in the device store", () => {
 
   it("checks footswitch assignments before sending them live", async () => {
     const before = store().preset;
-    expect(() => store().setFootswitches({ fs1: [1, 2, 3, 6], fs2: [] })).toThrow(RangeError);
-    expect(() => store().setFootswitches({ fs1: [2], fs2: [2] })).toThrow(RangeError);
+    expect(() => store().setFootswitches([[1, 2, 3, 6], []])).toThrow(RangeError);
+    expect(() => store().setFootswitches([[2], [2]])).toThrow(RangeError);
     expect(store().preset).toBe(before);
-    store().setFootswitches({ fs1: [2, 6], fs2: [7] });
-    await until(async () => expect((await onPedal()).footswitches).toEqual({ fs1: [2, 6], fs2: [7] }));
+    store().setFootswitches([[2, 6], [7]]);
+    await until(async () => expect((await onPedal()).footswitches).toEqual([[2, 6], [7]]));
   });
 
   it("sends a legal chain order live and refuses one that splits the amp group", async () => {
@@ -192,7 +193,7 @@ describe("GP-50 features in the device store", () => {
       const pedal = await onPedal();
       const order = pedal.order.join() === "0,1,2,9,3,4,5,6,8,7" ? [0, 1, 2, 9, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 9, 3, 4, 5, 6, 8, 7];
       store().setOrder(order);
-      store().setFootswitches({ fs1: [1], fs2: [8] });
+      store().setFootswitches([[1], [8]]);
       store().setBpm(pedal.bpm === 100 ? 101 : 100);
       expect(store().unsavedChanges).toBe(3);
       await settle();
@@ -205,7 +206,7 @@ describe("GP-50 features in the device store", () => {
       await store().saveToSlot(store().slot!);
       const written = await onPedal();
       expect(written.order).toEqual(order);
-      expect(written.footswitches).toEqual({ fs1: [1], fs2: [8] });
+      expect(written.footswitches).toEqual([[1], [8]]);
       expect(store().unsavedChanges).toBe(0);
     }, 60_000);
   });

@@ -15,6 +15,9 @@ export const BLOCK_HEX: Record<BlockCode, string> = {
   MOD: "#4f7cff",
   DLY: "#2dd4bf",
   RVB: "#a855f7",
+  // GP-200 family blocks
+  WAH: "#22c55e",
+  VOL: "#e2e8f0",
 };
 
 /** Amp voicing colours by catalog amp type. */

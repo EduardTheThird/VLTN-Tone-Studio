@@ -7,7 +7,7 @@ import { Dial } from "@/components/gear";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
 import { globalSpecsFor } from "@/state/device-model";
-import type { GlobalRecord, GlobalSpec, Globals } from "@/state/device-types";
+import type { GlobalRecord, Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
 /**
@@ -73,7 +73,7 @@ export function PedalSettings({ offline }: { offline: boolean }) {
 }
 
 /** One setting: a dial for numbers, an on/off dial for Off/On, a list for other choices. */
-function SettingControl({ spec, globals, disabled }: { spec: GlobalSpec; globals: Globals; disabled: boolean }) {
+function SettingControl({ spec, globals, disabled }: { spec: SettingSpec; globals: Globals; disabled: boolean }) {
   const value = globals[spec.name];
   const set = (v: number) => useDevice.getState().setGlobal(spec.name, v);
   switch (controlKind(spec)) {

@@ -1,10 +1,11 @@
 // Rig edit actions: every user edit goes through here so it lands in the undo history, then plays on the pedal
 // through the device store (live edits) or changes the preset locally (reaching the pedal on save).
-import { defaultParams } from "@/gp5/lib/catalog.mjs";
 import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
 import { EXP_FIELDS } from "@/gp5/lib/protocol.mjs";
 import { useDevice } from "@/state/device";
+import { switchLabel } from "@/state/device-model";
 import type { BlockState, ExpEdit, ExpSettings, PresetState } from "@/state/device-types";
+import { defaultParamsFor } from "@/state/preset-codec";
 import { invert, useHistory, type BlockSnapshot, type Edit } from "./history";
 
 const dev = () => useDevice.getState();
@@ -62,32 +63,33 @@ export function editExp(edit: ExpEdit) {
   useHistory.getState().record({ kind: "exp", from, to: edit, at: performance.now() });
 }
 
-export function editFootswitches(fs: { fs1: number[]; fs2: number[] }) {
+export function editFootswitches(lists: number[][]) {
   const p = dev().preset;
   if (!p) return;
-  const from = { fs1: [...p.footswitches.fs1], fs2: [...p.footswitches.fs2] };
-  dev().setFootswitches(fs);
-  useHistory.getState().record({ kind: "footswitches", from, to: fs });
+  const from = p.footswitches.map((l) => [...l]);
+  dev().setFootswitches(lists);
+  useHistory.getState().record({ kind: "footswitches", from, to: lists });
 }
 
-export type FootswitchToggle = { next: { fs1: number[]; fs2: number[] } } | { reason: string };
+export type FootswitchToggle = { next: number[][] } | { reason: string };
 
 /**
- * Assignment after toggling `block` on `which`. GP-50 rules: at most 3 blocks per switch, and a block on one switch
- * only (assigning it moves it from the other switch). The GP-5 keeps its free assignment.
+ * Assignment after toggling `block` on switch `which` (index into PresetState.footswitches). GP-50 rules: at most 3
+ * blocks per switch, and a block on one switch only (assigning it moves it off the other switch). The other models
+ * keep a free assignment.
  */
-export function footswitchToggle(p: PresetState, which: "fs1" | "fs2", block: number): FootswitchToggle {
-  const list = p.footswitches[which];
-  if (list.includes(block)) return { next: { ...p.footswitches, [which]: list.filter((b) => b !== block) } };
+export function footswitchToggle(p: PresetState, which: number, block: number): FootswitchToggle {
+  const list = p.footswitches[which] ?? [];
+  const withList = (next: number[]) => p.footswitches.map((l, i) => (i === which ? next : l));
+  if (list.includes(block)) return { next: withList(list.filter((b) => b !== block)) };
   const added = [...list, block].sort((a, b) => a - b);
-  if (p.device !== "gp50") return { next: { ...p.footswitches, [which]: added } };
-  if (list.length >= MAX_FOOTSWITCH_BLOCKS) return { reason: `${which.toUpperCase()} already switches ${MAX_FOOTSWITCH_BLOCKS} blocks, the most it can` };
-  const rest = p.footswitches[which === "fs1" ? "fs2" : "fs1"].filter((b) => b !== block);
-  return { next: which === "fs1" ? { fs1: added, fs2: rest } : { fs1: rest, fs2: added } };
+  if (p.device !== "gp50") return { next: withList(added) };
+  if (list.length >= MAX_FOOTSWITCH_BLOCKS) return { reason: `${switchLabel(p.device, which)} already switches ${MAX_FOOTSWITCH_BLOCKS} blocks, the most it can` };
+  return { next: p.footswitches.map((l, i) => (i === which ? added : l.filter((b) => b !== block))) };
 }
 
-/** Toggle `block` in FS1 or FS2 (callers disable the menu item when footswitchToggle gives a reason). */
-export function toggleFootswitch(which: "fs1" | "fs2", block: number) {
+/** Toggle `block` on switch `which` (callers disable the menu item when footswitchToggle gives a reason). */
+export function toggleFootswitch(which: number, block: number) {
   const p = dev().preset;
   if (!p) return;
   const t = footswitchToggle(p, which, block);
@@ -132,7 +134,7 @@ export async function editBlock(label: string, to: BlockSnapshot) {
 export function resetToDefaults(block: BlockState) {
   const p = dev().preset;
   if (!p) return Promise.resolve();
-  return editBlock("Reset to defaults", { ...snapshot(block), params: defaultParams(block.fxid, p.device) });
+  return editBlock("Reset to defaults", { ...snapshot(block), params: defaultParamsFor(p.device, block.index, block.fxid) });
 }
 
 /** Apply an edit as described (redo) — the caller inverts it for undo. */
@@ -179,8 +181,7 @@ export async function playPreset(target: PresetState) {
   if (now.volume !== target.volume) d.setVolume(target.volume);
   if (d.can("liveOrder") && now.order.join() !== target.order.join()) d.setOrder(target.order);
   if (d.can("liveBpm") && now.bpm !== target.bpm) d.setBpm(target.bpm);
-  if (d.can("liveFootswitches") && (now.footswitches.fs1.join() !== target.footswitches.fs1.join() || now.footswitches.fs2.join() !== target.footswitches.fs2.join()))
-    d.setFootswitches(target.footswitches);
+  if (d.can("liveFootswitches") && now.footswitches.some((l, i) => l.join() !== target.footswitches[i]?.join())) d.setFootswitches(target.footswitches);
   if (d.can("exp") && target.exp && now.exp) {
     const exp = target.exp;
     const changed = (EXP_FIELDS as (keyof ExpSettings)[]).filter((k) => now.exp?.[k] !== exp[k]);

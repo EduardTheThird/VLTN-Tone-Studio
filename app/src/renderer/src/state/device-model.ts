@@ -4,7 +4,8 @@
 import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
 import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
 import { PRST_MODELS, profileFor, sniffPrst, type DeviceKey, type DeviceProfile } from "@shared/devices";
-import type { BlockCode, DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5FamilyKey, ParamInfo, PresetState } from "./device-types";
+import type { DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
+import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
 /**
@@ -29,10 +30,10 @@ export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, ex
   return { features: all.filter(open), locked: all.filter((f) => !open(f)) };
 }
 
-/** Settings table of `device` (protocol.mjs globalsFor) in menu order; empty for models without one in this build. */
-export function globalSpecsFor(device: DeviceKey | null): readonly GlobalSpec[] {
-  if (!device || !isGp5Family(device)) return [];
-  return Object.values(globalsFor(device) as Record<string, GlobalSpec>);
+/** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts). */
+export function globalSpecsFor(device: DeviceKey | null): readonly SettingSpec[] {
+  if (!device) return [];
+  return isGp5Family(device) ? Object.values(globalsFor(device) as Record<string, GlobalSpec>) : GP200_GLOBAL_SPECS;
 }
 
 /** "1.1.0" >= "1.0.5": numeric comparison of dotted versions. */
@@ -50,7 +51,7 @@ export function versionAtLeast(version: string, min: string): boolean {
  * The settings a pedal shows: everything without `since`, and the later ones when the pedal reports them or its
  * firmware is at least `since`.
  */
-export function visibleGlobals(specs: readonly GlobalSpec[], globals: Globals | null, firmware: string | null): GlobalSpec[] {
+export function visibleGlobals(specs: readonly SettingSpec[], globals: Globals | null, firmware: string | null): SettingSpec[] {
   return specs.filter((g) => !g.since || globals?.[g.name] !== undefined || (firmware !== null && versionAtLeast(firmware, g.since)));
 }
 
@@ -100,9 +101,14 @@ export function isGp5Family(device: DeviceKey): device is Gp5FamilyKey {
 }
 
 /** Block codes of a GP-5 family model in storage order (block index k = codes[k]). */
-export function blockCodes(device: Gp5FamilyKey): readonly BlockCode[] {
-  // The GP-5 family profiles list exactly the BlockCode union.
-  return profileFor(device).blocks as readonly BlockCode[];
+export function blockCodes(device: Gp5FamilyKey): readonly Gp5BlockCode[] {
+  // The GP-5 family profiles list exactly the Gp5BlockCode union.
+  return profileFor(device).blocks as readonly Gp5BlockCode[];
+}
+
+/** Name of switch `index` of PresetState.footswitches on `device`: "FS1" (GP-5 family) or "CTRL 1" (GP-200 family). */
+export function switchLabel(device: DeviceKey, index: number): string {
+  return isGp5Family(device) ? `FS${index + 1}` : `CTRL ${index + 1}`;
 }
 
 /** Model a .prst belongs to (see sniffPrst); throws when the bytes are no known preset. */

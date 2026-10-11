@@ -1,33 +1,29 @@
 // Device layer: one DeviceDriver per app; every request goes through it one at a time, live edits are coalesced, and
 // memory writes run only after the user confirmed them. Screens use `useDevice`.
 import { create } from "zustand";
-import { applyEdits, bodyOf, parsePrst, validateFootswitches, validateOrder } from "@/gp5/lib/prst.mjs";
-import { PATCH_SETTINGS } from "@/gp5/lib/protocol.mjs";
-import { SYNC_ON_DIVISION, clampParam, displayedParam, modelByFxid } from "@/gp5/lib/catalog.mjs";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { host } from "@/host";
-import { type DeviceProfile } from "@shared/devices";
+import { profileFor, type DeviceProfile } from "@shared/devices";
 import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
 import { MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
-import { DEFAULT_DEVICE, blockCodes, gateFeatures, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
+import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
+import { clampParamValue, editPrst, orderError, syncParams, toPresetState } from "./preset-codec";
 import { SendQueue } from "./send-queue";
 import { diffPresets } from "./unsaved-diff";
 import {
   RestoreError,
-  type BlockState,
   type ConnectionError,
   type DeviceFeature,
   type DeviceKey,
   type DeviceMode,
   type DeviceState,
-  type ExpSettings,
-  type Gp5FamilyKey,
   type MidiLogEntry,
-  type ModelInfo,
   type ParamInfo,
+  type PresetEdits,
   type PresetState,
   type SlotName,
 } from "./device-types";
@@ -49,42 +45,6 @@ const WATCH_MS = 4000;
 const LOG_NOTIFY_MS = 120;
 /** Pedal echoes of a setting edited here within this window are not applied (they would undo newer values). */
 const ECHO_GRACE_MS = 1500;
-
-// ------------------------------------------------------------------------------------------- pure helpers
-
-/**
- * Catalog model of `fxid` on `device`. With the block's `params`, a synced Time/Rate param is described as the pedal
- * shows it (note divisions, catalog displayedParam), so knobs, clamping and diffs follow the Sync toggle.
- */
-export function toModel(fxid: number, device: Gp5FamilyKey, params?: readonly number[]): ModelInfo | undefined {
-  const m = modelByFxid(fxid, device) as ModelInfo | undefined;
-  if (!m || !params || !m.params.some((p) => p.syncs !== undefined)) return m;
-  return { ...m, params: m.params.map((p) => (displayedParam(fxid, p.index, params, device) as ParamInfo | undefined) ?? p) };
-}
-
-export function toPresetState(slot: number, prst: Uint8Array): PresetState {
-  const p = parsePrst(prst);
-  const device: Gp5FamilyKey = p.device;
-  const codes = blockCodes(device);
-  const blocks: BlockState[] = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
-    const params = b.params.map((v) => Math.round(v * 1000) / 1000);
-    return { index, code: codes[index], enabled: b.enabled, fxid: b.fxid >>> 0, model: toModel(b.fxid, device, params), params };
-  });
-  // parsePrst is untyped JS: settings = { volume, bpm, exp? } with `exp` on GP-50 presets (prst.mjs readSettings)
-  const settings: { volume: number; bpm: number; exp?: ExpSettings } = p.settings;
-  return {
-    device,
-    slot,
-    name: p.name,
-    blocks,
-    order: p.order,
-    volume: settings.volume,
-    bpm: settings.bpm,
-    footswitches: { fs1: p.footswitches.fs1, fs2: p.footswitches.fs2 },
-    exp: settings.exp ?? null,
-    prst,
-  };
-}
 
 // ------------------------------------------------------------------------------------------- store
 
@@ -136,11 +96,14 @@ export const useDevice = create<DeviceState>((set, get) => {
     set({ preset, ...(saved ? { saved } : {}), unsavedChanges: s ? diffPresets(s, preset).length : 0 });
   };
 
-  /** Apply .prst edits to the live preset (applyEdits validates: RangeError on an illegal order or footswitch set). */
-  const editLocal = (edits: Record<string, unknown>) => {
+  /** The preset in `prst` as read from (or written to) the connected pedal, which names the model of a GP-200 family file. */
+  const stateOf = (slot: number, prst: Uint8Array) => toPresetState(slot, prst, driver?.device ?? get().device);
+
+  /** Apply edits to the live preset (the codec validates: RangeError on an illegal order or switch set, nothing changes). */
+  const editLocal = (edits: PresetEdits) => {
     const p = get().preset;
     if (!p) return;
-    setPreset(toPresetState(p.slot, applyEdits(p.prst, edits)));
+    setPreset(toPresetState(p.slot, editPrst(p.prst, edits), p.device));
   };
 
   /** Remember a failed request on a live session (inline error line + diagnostic report). */
@@ -217,7 +180,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     if (!edited) return state;
     if (has("exportPreset") && d.exportPreset) {
       const stored = await d.exportPreset(state.slot).catch(() => null);
-      if (stored) return toPresetState(state.slot, stored);
+      if (stored) return stateOf(state.slot, stored);
     }
     const prev = get().saved;
     return keepPrevious && prev && prev.slot === state.slot && prev.device === state.device ? prev : state;
@@ -226,7 +189,7 @@ export const useDevice = create<DeviceState>((set, get) => {
   /** Read the active slot and preset; `checkModified`: ask the pedal whether it holds unsaved edits (see storedCopy). */
   const readActive = async (d: DeviceDriver, names = get().names, checkModified = false) => {
     const { slot, prst } = await d.readActive(names);
-    const state = toPresetState(slot, prst);
+    const state = stateOf(slot, prst);
     const saved = checkModified ? await storedCopy(d, state, null, true) : state;
     set({ slot });
     setPreset(state, saved);
@@ -266,8 +229,8 @@ export const useDevice = create<DeviceState>((set, get) => {
     else if (e.type === "patchSetting" && !isEcho(`setting:${e.field}`)) {
       if (e.field === "volume" || e.field === "bpm") editLocal({ [e.field]: e.value });
       else if (p.exp) editLocal({ exp: { [e.field]: e.value } });
-    } else if (e.type === "footswitches" && !isEcho("footswitches")) editLocal({ footswitches: { fs1: e.fs1, fs2: e.fs2 } });
-    else if (e.type === "order" && !isEcho("order") && validateOrder(e.order) === null) editLocal({ order: e.order });
+    } else if (e.type === "footswitches" && !isEcho("footswitches")) editLocal({ footswitches: [e.fs1, e.fs2] });
+    else if (e.type === "order" && !isEcho("order") && orderError(p.device, e.order) === null) editLocal({ order: e.order });
   };
 
   const onDriverEvent = (e: DriverEvent) => {
@@ -295,7 +258,9 @@ export const useDevice = create<DeviceState>((set, get) => {
       setFeatures(d, mode);
       cacheNames(snap.device, snap.names);
       saveDevice(snap.device);
-      const state = toPresetState(snap.slot, snap.prst);
+      // GP-200 family models come from the user's catalog (the subscription below re-describes the preset once it loads).
+      if (profileFor(snap.device).family === "gp200" && !useGp200Catalog.getState().loaded) void useGp200Catalog.getState().load();
+      const state = stateOf(snap.slot, snap.prst);
       const saved = await storedCopy(d, state, snap.modified ?? null, false);
       reconnects = 0;
       const now = Date.now();
@@ -385,23 +350,28 @@ export const useDevice = create<DeviceState>((set, get) => {
 
   /** Sync toggle on a GP-50 block: the pedal resets the bound Time/Rate, so show what it reports after the toggle. */
   const toggleSync = (p: PresetState, block: number, toggle: ParamInfo, on: boolean) => {
-    const b = p.blocks[block];
-    // The raw catalog param (b.model shows the synced spec), whose default the pedal restores when Sync turns off
-    const target = toModel(b.fxid, p.device)?.params.find((x) => x.index === toggle.syncs);
     // Locally the same reset the pedal does (division 1/4 on, the param's default off), so offline edits read right.
-    editLocal({ blocks: { [block]: { params: { [toggle.index]: on ? 1 : 0, ...(target ? { [target.index]: on ? SYNC_ON_DIVISION : target.default } : {}) } } } });
+    editLocal({ blocks: { [block]: { params: syncParams(p, block, toggle, on) } } });
     if (!isLive()) return;
     const d = driver!;
     const key = `param:${block}:${toggle.index}`;
     const synced = liveWith("sync");
     if (!synced?.setSync) return sends.push(key, () => d.setParam(block, toggle.index, on ? 1 : 0));
     sends.push(key, async () => {
-      const fresh: number[] = parsePrst(await synced.setSync!(block, toggle.index, on, get().preset?.name ?? p.name)).blocks[block].params;
+      const fresh = toPresetState(p.slot, await synced.setSync!(block, toggle.index, on, get().preset?.name ?? p.name), p.device).blocks[block].params;
       // Refresh the block from the re-read body, except params with an edit still on its way.
       const params = Object.fromEntries(fresh.flatMap((v, i) => (sends.busy(`param:${block}:${i}`) ? [] : [[i, v]])));
       editLocal({ blocks: { [block]: { params } } });
     });
   };
+
+  // GP-200 family models come from the user's catalog: describe the open preset again when it is imported or removed.
+  useGp200Catalog.subscribe((c, prev) => {
+    const { preset, saved } = get();
+    if (c.catalog === prev.catalog || !preset?.gp200) return;
+    const again = (x: PresetState) => toPresetState(x.slot, x.prst, x.device, c.catalog);
+    setPreset(again(preset), saved ? again(saved) : undefined);
+  });
 
   const lastDevice = loadDevice();
 
@@ -554,8 +524,8 @@ export const useDevice = create<DeviceState>((set, get) => {
       const p = get().preset;
       if (!p) return;
       const info = p.blocks[block]?.model?.params.find((x) => x.index === paramIndex);
-      const v = info ? (clampParam(info, value) as number) : value;
-      if (info?.syncs !== undefined) return toggleSync(p, block, info, v >= 0.5);
+      const v = info ? clampParamValue(info, value) : value;
+      if (info?.syncs !== undefined && isGp5Family(p.device)) return toggleSync(p, block, info, v >= 0.5);
       editLocal({ blocks: { [block]: { params: { [paramIndex]: v } } } });
       if (!isLive()) return;
       const d = driver!;
@@ -572,7 +542,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       await d.setModel(block, fxid);
       const p = get().preset!;
       // The pedal loads the model's defaults: re-read the active buffer, keep `saved` as it was.
-      setPreset(toPresetState(p.slot, await d.readEditBuffer(p.name)));
+      setPreset(stateOf(p.slot, await d.readEditBuffer(p.name)));
     },
 
     // Order, footswitches and tempo change the preset here; they play live where the pedal has a command for them
@@ -584,17 +554,16 @@ export const useDevice = create<DeviceState>((set, get) => {
       if (d?.setOrder) sends.push("order", () => d.setOrder!(order));
     },
 
-    setFootswitches(fs) {
-      const p = get().preset;
-      if (!p) return;
-      if (p.device === "gp50") {
-        const err = validateFootswitches(fs.fs1, fs.fs2);
-        if (err) throw new RangeError(err);
-      }
-      editLocal({ footswitches: fs });
+    setFootswitches(lists) {
+      if (!get().preset) return;
+      editLocal({ footswitches: lists });
       touch("footswitches");
       const d = liveWith("liveFootswitches");
-      if (d?.setFootswitches) sends.push("footswitches", () => d.setFootswitches!(fs.fs1, fs.fs2));
+      if (d?.setFootswitches) sends.push("footswitches", () => d.setFootswitches!(lists[0], lists[1]));
+    },
+
+    editPatch(edit) {
+      editLocal({ gp200: edit });
     },
 
     setVolume(volume) {
@@ -608,7 +577,8 @@ export const useDevice = create<DeviceState>((set, get) => {
     setBpm(bpm) {
       const p = get().preset;
       if (!p) return;
-      const v = Math.max(PATCH_SETTINGS.bpm.min, Math.min(PATCH_SETTINGS.bpm.max, Math.round(bpm)));
+      const { min, max } = profileFor(p.device).tempo;
+      const v = Math.max(min, Math.min(max, Math.round(bpm)));
       if (v === p.bpm) return;
       editLocal({ bpm: v });
       touch("setting:bpm");
@@ -638,7 +608,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     async saveToSlot(slot, name) {
       const p = get().preset;
       if (!p) throw new DeviceError("not-connected", "No preset loaded");
-      const prst = name !== undefined && name !== p.name ? applyEdits(p.prst, { name }) : p.prst;
+      const prst = name !== undefined && name !== p.name ? editPrst(p.prst, { name }) : p.prst;
       // A full write keeps everything (order, footswitches, tempo and EXP may have been edited without a live command).
       await get().writePreset(slot, prst);
     },
@@ -646,11 +616,15 @@ export const useDevice = create<DeviceState>((set, get) => {
     async rename(slot, name) {
       const d = requireDriver();
       requireIdle();
+      // A GP-200 renames its active slot by saving the edit buffer under the new name: unsaved edits would go with it.
+      const p = get().preset;
+      if (p?.gp200 && p.slot === slot && get().unsavedChanges > 0)
+        throw new DeviceError("unsaved", "Renaming the active preset saves it on the pedal; save or discard the unsaved changes first");
       await d.rename(slot, name);
       setNames(get().names.map((n) => (n.slot === slot ? { ...n, name } : n)));
       const { preset, saved } = get();
       if (preset?.slot === slot && saved) {
-        const rename = (x: PresetState) => toPresetState(slot, applyEdits(x.prst, { name }));
+        const rename = (x: PresetState) => toPresetState(slot, editPrst(x.prst, { name }), x.device);
         setPreset(rename(preset), rename(saved));
       }
     },
@@ -668,7 +642,7 @@ export const useDevice = create<DeviceState>((set, get) => {
             opts?.onProgress?.(f);
           },
         });
-        const written = toPresetState(slot, prst);
+        const written = stateOf(slot, prst);
         setNames(get().names.map((n) => (n.slot === slot ? { ...n, name: written.name } : n)));
         // writePreset verifies by selecting `slot`, so it is now the active preset.
         set({ slot });
@@ -808,9 +782,6 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
   };
 });
-
-/** Body bytes of a .prst, for components that compare against device reads. */
-export { bodyOf };
 
 /** "GP-5" / "GP-50" for the connected (or last connected) pedal; "pedal" before the first connection. */
 export const usePedalName = (): string => useDevice((s) => pedalName(s.device));

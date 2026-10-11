@@ -6,7 +6,7 @@ import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
 import { rebuildPrst } from "@/gp5/lib/prst.mjs";
 import { PATCH_SETTINGS, globalsFor, patchSettingByRecord } from "@/gp5/lib/protocol.mjs";
 import { profileFor, type DeviceKey } from "@shared/devices";
-import type { BackupEntry, DeviceFeature, GlobalName, GlobalSpec, SlotName } from "../device-types";
+import type { BackupEntry, DeviceFeature, GlobalName, GlobalSpec, Gp5GlobalName, SlotName } from "../device-types";
 import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
 
 type PatchSettingField = Extract<DriverEvent, { type: "patchSetting" }>["field"];
@@ -215,7 +215,8 @@ export class Gp5Driver implements DeviceDriver {
   }
 
   async setGlobal(name: GlobalName, value: number): Promise<void> {
-    await this.#session.setGlobal(name, value);
+    if (!Object.hasOwn(specsOf(this.#session.device), name)) throw new RangeError(`The ${this.portName} has no setting ${name}`);
+    await this.#session.setGlobal(name as Gp5GlobalName, value);
   }
 
   async readSnapTones(): Promise<SlotName[]> {

@@ -1,6 +1,6 @@
 import { EXP_TARGETS } from "@/gp5/lib/protocol.mjs";
 import { expTargetParams } from "@/state/device-model";
-import type { BlockCode, ExpSettings, ParamInfo, PresetState } from "@/state/device-types";
+import type { BlockCode, ExpSettings, Gp200Fields, ParamInfo, PresetState } from "@/state/device-types";
 
 /** One row of the unsaved-changes table (overlays.md B): Block, Parameter, Saved, Now. */
 export interface ChangeRow {
@@ -30,6 +30,29 @@ const EXP_ROWS: { field: keyof ExpSettings; label: string; show: (e: ExpSettings
   { field: "volMax", label: "EXP volume maximum", show: (e) => `${e.volMax}%` },
 ];
 
+/** GP-200 family patch fields shown with their values. */
+const GP200_ROWS: { field: "pan" | "style" | "loopMode" | "sendLevel" | "returnLevel" | "author" | "note"; label: string }[] = [
+  { field: "pan", label: "Pan" },
+  { field: "style", label: "Drum style" },
+  { field: "loopMode", label: "FX loop mode" },
+  { field: "sendLevel", label: "FX loop send level" },
+  { field: "returnLevel", label: "FX loop return level" },
+  { field: "author", label: "Author" },
+  { field: "note", label: "Note" },
+];
+
+/** Rows for the GP-200 family's own fields; the structured ones (FX loop position, EXP, Quick Access) as "Changed". */
+function gp200Rows(s: Gp200Fields, n: Gp200Fields): ChangeRow[] {
+  const changed = (parameter: string) => ({ block: null, parameter, saved: "", now: "Changed" });
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  return [
+    ...GP200_ROWS.filter((r) => s[r.field] !== n[r.field]).map((r) => ({ block: null, parameter: r.label, saved: String(s[r.field]), now: String(n[r.field]) })),
+    ...(s.sendPos !== n.sendPos || s.returnPos !== n.returnPos ? [changed("FX loop position")] : []),
+    ...s.exp.flatMap((e, i) => (same(e, n.exp[i]) ? [] : [changed(`EXP ${["1A", "1B", "2"][Math.floor(i / 3)]}, entry ${(i % 3) + 1}`)])),
+    ...s.quickAccess.flatMap((q, i) => (same(q, n.quickAccess[i]) ? [] : [changed(`Quick Access ${i + 1}`)])),
+  ];
+}
+
 /** Param differences at or below this are float noise, not edits. */
 const PARAM_EPSILON = 1e-3;
 
@@ -56,10 +79,11 @@ export function diffPresets(saved: PresetState, now: PresetState): ChangeRow[] {
   if (saved.order.join() !== now.order.join()) rows.push({ block: null, parameter: "Chain order", saved: "", now: "Changed" });
   if (saved.volume !== now.volume) rows.push({ block: null, parameter: "Volume", saved: String(saved.volume), now: String(now.volume) });
   if (saved.bpm !== now.bpm) rows.push({ block: null, parameter: "Tempo", saved: `${saved.bpm} BPM`, now: `${now.bpm} BPM` });
-  if (saved.footswitches.fs1.join() !== now.footswitches.fs1.join() || saved.footswitches.fs2.join() !== now.footswitches.fs2.join())
-    rows.push({ block: null, parameter: "Footswitches", saved: "", now: "Changed" });
+  if (saved.footswitches.some((list, i) => list.join() !== now.footswitches[i]?.join()))
+    rows.push({ block: null, parameter: saved.gp200 ? "CTRL assignments" : "Footswitches", saved: "", now: "Changed" });
   const se = saved.exp;
   const ne = now.exp;
   if (se && ne) for (const r of EXP_ROWS) if (se[r.field] !== ne[r.field]) rows.push({ block: null, parameter: r.label, saved: r.show(se, saved), now: r.show(ne, now) });
+  if (saved.gp200 && now.gp200) rows.push(...gp200Rows(saved.gp200, now.gp200));
   return rows;
 }

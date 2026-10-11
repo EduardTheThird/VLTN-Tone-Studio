@@ -4,14 +4,10 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePedalName } from "@/state/device";
+import { switchLabel } from "@/state/device-model";
 import type { PresetState } from "@/state/device-types";
 import { footswitchToggle, toggleFootswitch } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
-
-const SWITCHES = [
-  { key: "fs1", label: "FS1" },
-  { key: "fs2", label: "FS2" },
-] as const;
 
 /**
  * Rig header "Footswitches": one button for the preset's switch assignments, a popover with one row per switch (its
@@ -20,7 +16,8 @@ const SWITCHES = [
 export function FootswitchControl({ preset, disabled }: { preset: PresetState; disabled: boolean }) {
   const pedal = usePedalName();
   const note = saveOnlyNote(useLiveMode("liveFootswitches"), "A footswitch change", pedal);
-  const total = SWITCHES.reduce((n, s) => n + preset.footswitches[s.key].length, 0);
+  const switches = preset.footswitches.map((assigned, key) => ({ key, label: switchLabel(preset.device, key), assigned }));
+  const total = switches.reduce((n, s) => n + s.assigned.length, 0);
   const code = (b: number) => preset.blocks[b]?.code ?? "?";
   return (
     <Popover>
@@ -39,8 +36,7 @@ export function FootswitchControl({ preset, disabled }: { preset: PresetState; d
           </span>
         </div>
         <ul className="flex flex-col gap-2">
-          {SWITCHES.map(({ key, label }) => {
-            const assigned = preset.footswitches[key];
+          {switches.map(({ key, label, assigned }) => {
             const free = preset.order.filter((b) => !assigned.includes(b));
             return (
               <li key={key} className="flex min-h-7 items-center gap-2">
@@ -72,7 +68,7 @@ export function FootswitchControl({ preset, disabled }: { preset: PresetState; d
                   <DropdownMenuContent align="end" className="w-56 bg-surface-solid-raised!">
                     {free.map((b) => {
                       const t = footswitchToggle(preset, key, b);
-                      const from = SWITCHES.find((s) => s.key !== key && preset.footswitches[s.key].includes(b));
+                      const from = switches.find((s) => s.key !== key && s.assigned.includes(b));
                       return (
                         <DropdownMenuItem key={b} disabled={"reason" in t} onSelect={() => toggleFootswitch(key, b)}>
                           {code(b)}

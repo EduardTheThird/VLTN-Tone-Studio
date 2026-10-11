@@ -7,7 +7,7 @@
 //  - reverb Decay: RT60 0.3 s → 0, 5 s → 100, linear.
 import { clampParam, defaultParams, findModel } from "@/gp5/lib/catalog.mjs";
 import { blockCodes, pedalName } from "@/state/device-model";
-import type { BlockCode, Gp5FamilyKey, ModelInfo, ParamInfo } from "@/state/device-types";
+import type { Gp5BlockCode as BlockCode, Gp5FamilyKey, ModelInfo, ParamInfo } from "@/state/device-types";
 import type { GuitarAnalysis, ToneEstimate } from "./analyse";
 import type { GainClass } from "./gain";
 

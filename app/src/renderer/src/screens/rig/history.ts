@@ -17,7 +17,7 @@ export type Edit =
   | { kind: "volume"; from: number; to: number; at: number }
   | { kind: "bpm"; from: number; to: number; at: number }
   | { kind: "exp"; from: ExpEdit; to: ExpEdit; at: number }
-  | { kind: "footswitches"; from: { fs1: number[]; fs2: number[] }; to: { fs1: number[]; fs2: number[] } }
+  | { kind: "footswitches"; from: number[][]; to: number[][] }
   | { kind: "block"; label: string; from: BlockSnapshot; to: BlockSnapshot };
 
 /** Edits of the same control closer than this merge into one undo step (a drag, a wheel spin, key repeat). */

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { GlobalSpec, Globals } from "@/state/device-types";
+import type { Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
 const names = (device: "gp5" | "gp50", globals: Globals | null = {}, firmware: string | null = null) =>
   settingsGroups(device, globals, firmware).flatMap((g) => g.items.map((s) => s.name));
-const spec = (device: "gp5" | "gp50", name: string, firmware: string | null = "1.1.0"): GlobalSpec => {
+const spec = (device: "gp5" | "gp50", name: string, firmware: string | null = "1.1.0"): SettingSpec => {
   const found = settingsGroups(device, {}, firmware)
     .flatMap((g) => g.items)
     .find((s) => s.name === name);

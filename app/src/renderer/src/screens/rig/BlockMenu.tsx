@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/context-menu";
 import { modelTitle } from "@/components/gear";
 import { useDevice, usePedalName } from "@/state/device";
+import { switchLabel } from "@/state/device-model";
 import type { BlockState } from "@/state/device-types";
 import { copyBlock, pasteBlock } from "./clipboard";
 import { editEnabled, editOrder, footswitchToggle, resetToDefaults, toggleFootswitch } from "./edits";
@@ -21,7 +22,6 @@ import { useRig } from "./rig-store";
 /** Right-click menu of a pedal: on/off, change model, copy/paste settings, FS1/FS2, move, reset. */
 export function BlockMenu({ block, readOnly, children }: { block: BlockState; readOnly: boolean; children: ReactNode }) {
   const preset = useDevice((s) => s.preset);
-  const fs = preset?.footswitches;
   const order = useDevice((s) => s.preset?.order);
   const clip = useRig((s) => s.clipboard);
   const pedal = usePedalName();
@@ -54,18 +54,17 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
           {clip && clip.code === block.code ? `Paste ${clip.title} settings` : "Paste settings"}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        {(["fs1", "fs2"] as const).map((which) => {
-          const label = which.toUpperCase();
-          const other = which === "fs1" ? "FS2" : "FS1";
-          const t = preset ? footswitchToggle(preset, which, block.index) : null;
-          const assigned = !!fs?.[which].includes(block.index);
-          const moves = !assigned && preset?.device === "gp50" && !!fs?.[which === "fs1" ? "fs2" : "fs1"].includes(block.index);
-          const full = !!t && "reason" in t;
+        {preset?.footswitches.map((list, which) => {
+          const t = footswitchToggle(preset, which, block.index);
+          const assigned = list.includes(block.index);
+          const from = preset.footswitches.findIndex((l, i) => i !== which && l.includes(block.index));
+          const moves = !assigned && preset.device === "gp50" && from >= 0;
+          const full = "reason" in t;
           return (
             <ContextMenuCheckboxItem key={which} disabled={readOnly || full} checked={assigned} onCheckedChange={() => toggleFootswitch(which, block.index)}>
-              Assign to {label}
+              Assign to {switchLabel(preset.device, which)}
               {full && <ContextMenuShortcut>3 blocks max</ContextMenuShortcut>}
-              {moves && <ContextMenuShortcut>moves from {other}</ContextMenuShortcut>}
+              {moves && <ContextMenuShortcut>moves from {switchLabel(preset.device, from)}</ContextMenuShortcut>}
             </ContextMenuCheckboxItem>
           );
         })}

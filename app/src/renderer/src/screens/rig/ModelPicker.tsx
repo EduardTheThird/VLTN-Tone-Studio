@@ -10,7 +10,6 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
-import { blockCodes } from "@/state/device-model";
 import type { BlockCode, BlockState, DeviceKey, ModelInfo, SlotName } from "@/state/device-types";
 import { useNav } from "@/state/nav";
 import { applyBlock, recordBlock, snapshot } from "./edits";
@@ -30,6 +29,8 @@ const CATEGORY: Record<BlockCode, string> = {
   MOD: "Modulation",
   DLY: "Delay",
   RVB: "Reverb",
+  WAH: "Wah",
+  VOL: "Volume",
 };
 const NOUN: Record<BlockCode, string> = {
   NR: "noise gate",
@@ -42,6 +43,8 @@ const NOUN: Record<BlockCode, string> = {
   MOD: "modulation",
   DLY: "delay",
   RVB: "reverb",
+  WAH: "wah",
+  VOL: "volume pedal",
 };
 const article = (w: string) => (/^[aeiou]|^EQ/i.test(w) ? "an" : "a");
 
@@ -312,7 +315,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
         <div className="flex min-h-0 flex-col border-r border-seam">
           <nav aria-label="Blocks" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pt-3 pb-2">
             {cats.map((b) => {
-              const c = blockCodes(preset.device)[b];
+              const c = preset.blocks[b].code;
               const enabled = inGroup.includes(b);
               return (
                 <button

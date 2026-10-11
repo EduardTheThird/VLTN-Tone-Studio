@@ -1,15 +1,19 @@
 // Contract between the device layer (src/renderer/src/state/device.ts) and every screen.
 // Screens read state with `useDevice(selector)` and call actions on `useDevice.getState()`.
-// Pedal models come from the registry (@shared/devices). The preset model below is the GP-5 family's (the one family
-// with a driver so far): block indices follow its storage order, profileFor(device).blocks.
+// Pedal models come from the registry (@shared/devices). Presets of every family share the model below: block indices
+// follow the model's storage order, profileFor(device).blocks; state/preset-codec.ts reads and edits each family's bytes.
 import type { DeviceHostStatus } from "@shared/host/device";
 import type { DeviceFamily, DeviceKey } from "@shared/devices";
-import type { ExpEdit, ExpSettings, GlobalName, GlobalSpec, Gp5FamilyKey } from "@/gp5/lib/session.mjs";
+import type { ExpEdit, ExpSettings, GlobalName as Gp5GlobalName, GlobalSpec, Gp5FamilyKey } from "@/gp5/lib/session.mjs";
+import type { GlobalName as Gp200GlobalName } from "@/gp200/lib/protocol.mjs";
+import type { PatchExp, PatchQuickAccess } from "@/gp200/lib/prst.mjs";
 
-export type { DeviceFamily, DeviceKey, ExpEdit, ExpSettings, GlobalName, GlobalSpec, Gp5FamilyKey };
+export type { DeviceFamily, DeviceKey, ExpEdit, ExpSettings, GlobalSpec, Gp5FamilyKey, Gp5GlobalName, Gp200GlobalName, PatchExp, PatchQuickAccess };
 
 /** Block codes of the GP-5 family's presets (profileFor("gp5").blocks). */
-export type BlockCode = "NR" | "PRE" | "DST" | "AMP" | "CAB" | "EQ" | "MOD" | "DLY" | "RVB" | "NS";
+export type Gp5BlockCode = "NR" | "PRE" | "DST" | "AMP" | "CAB" | "EQ" | "MOD" | "DLY" | "RVB" | "NS";
+/** Block codes of every family: the GP-200 family adds WAH and VOL (profileFor(device).blocks). */
+export type BlockCode = Gp5BlockCode | "WAH" | "VOL";
 
 export interface ParamInfo {
   name: string;
@@ -27,6 +31,10 @@ export interface ParamInfo {
   toggle?: boolean;
   /** On a Sync toggle: algId of the Time/Rate param it switches to note divisions (GP-50) */
   syncs?: number;
+  /** The values the param takes when they are not every step of min..max (GP-200 menus with gaps) */
+  values?: readonly number[];
+  /** The minimum shows as OFF (GP-200, e.g. a Low Cut at 19 Hz) */
+  offAtMin?: boolean;
 }
 
 export interface ModelInfo {
@@ -50,26 +58,72 @@ export interface BlockState {
   fxid: number;
   /** undefined when the fxid is not in the catalog */
   model?: ModelInfo;
-  /** 8 raw param values (algId order) */
+  /** Raw param values by index: 8 on the GP-5 family (algId), 15 on the GP-200 family (XML ID) */
   params: number[];
 }
 
 export interface PresetState {
-  /** Model the preset belongs to (from the .prst header); selects the effect catalog */
-  device: Gp5FamilyKey;
+  /** Model the preset belongs to (from the .prst); selects the codec and the effect catalog */
+  device: DeviceKey;
   slot: number;
   name: string;
   blocks: BlockState[];
-  /** Signal order: permutation of block indices; DST, NS, AMP, CAB, EQ stay contiguous */
+  /** Signal order: permutation of block indices (on the GP-5 family DST, NS, AMP, CAB, EQ stay contiguous) */
   order: number[];
   volume: number;
-  /** Tempo, 40..260 BPM */
+  /** Tempo in BPM, within profileFor(device).tempo */
   bpm: number;
-  footswitches: { fs1: number[]; fs2: number[] };
-  /** EXP pedal settings stored with the preset (GP-50); null on models without them */
+  /**
+   * Switch assignments, one block list per switch: FS1 and FS2 on the GP-5 family, CTRL 1-8 on the GP-200 family
+   * (every CTRL record of the patch; how many a model shows is up to the screen). Names: switchLabel (device-model).
+   */
+  footswitches: number[][];
+  /** EXP pedal settings stored with the preset (GP-50); null on models without them (the GP-200 family's are in `gp200`) */
   exp: ExpSettings | null;
+  /** Patch fields only the GP-200 family has; null on the GP-5 family */
+  gp200: Gp200Fields | null;
   /** Full .prst bytes of the current (possibly edited) state */
   prst: Uint8Array;
+}
+
+/** Patch fields of the GP-200 family without a GP-5 equivalent (gp200/lib/prst.mjs parsePatch). */
+export interface Gp200Fields {
+  author: string;
+  note: string;
+  pan: number;
+  /** Drum style */
+  style: number;
+  /** FX loop */
+  loopMode: number;
+  sendLevel: number;
+  returnLevel: number;
+  /** Where the FX loop send and return sit in the chain */
+  sendPos: number;
+  returnPos: number;
+  /** The 9 EXP entries in order EXP 1A, 1B, 2 (three each): exp[i] is entry i */
+  exp: PatchExp[];
+  /** The 3 Quick Access knobs: quickAccess[i] is knob i */
+  quickAccess: PatchQuickAccess[];
+}
+
+/** An edit of the GP-200 family's own patch fields (DeviceState.editPatch); exp and quickAccess by entry index. */
+export type Gp200Edit = Partial<Omit<Gp200Fields, "exp" | "quickAccess">> & {
+  exp?: Record<number, Partial<Pick<PatchExp, "block" | "param" | "max" | "min">>>;
+  quickAccess?: Record<number, Partial<Pick<PatchQuickAccess, "block" | "param">>>;
+};
+
+/** Changes to a preset in the app's terms; state/preset-codec.ts applies them to each family's bytes. */
+export interface PresetEdits {
+  name?: string;
+  volume?: number;
+  bpm?: number;
+  order?: number[];
+  footswitches?: number[][];
+  blocks?: Record<number, { enabled?: boolean; fxid?: number; params?: Record<number, number> }>;
+  /** GP-50 EXP settings */
+  exp?: ExpEdit;
+  /** GP-200 family fields */
+  gp200?: Gp200Edit;
 }
 
 export interface SlotName {
@@ -107,7 +161,13 @@ export interface MidiLogEntry {
   ack: boolean;
 }
 
-/** Global settings of the GP-5 family (gp5/lib protocol.mjs globalsFor); absent keys were not in the reply. */
+/** Pedal setting names of both families (GP-5 family: gp5/lib protocol.mjs globalsFor; GP-200 family: gp200-globals.ts). */
+export type GlobalName = Gp5GlobalName | Gp200GlobalName;
+
+/** One pedal setting as a settings screen shows it: GP-5 family specs carry their 0x10 record address, GP-200 ones their 0x1008 id. */
+export type SettingSpec = Omit<GlobalSpec, "name" | "addr"> & { name: GlobalName; addr?: GlobalSpec["addr"]; id?: number };
+
+/** Pedal settings of the connected model; absent keys were not in the reply. */
 export type Globals = Partial<Record<GlobalName, number>>;
 
 /**
@@ -271,15 +331,18 @@ export interface DeviceState {
   /** Chain order; live where the pedal takes it (liveOrder), else it reaches the pedal on save */
   setOrder(order: number[]): void;
   setVolume(volume: number): void;
-  /** Tempo 40..260 BPM (clamped); live where the pedal takes it (liveBpm), else it reaches the pedal on save */
+  /** Tempo, clamped to profileFor(device).tempo; live where the pedal takes it (liveBpm), else it reaches the pedal on save */
   setBpm(bpm: number): void;
   /** EXP settings of the active preset (needs the "exp" feature); every value is checked first (RangeError) */
   setExp(edit: ExpEdit): void;
   /**
-   * Footswitch assignments; live where the pedal takes it (liveFootswitches), else on save. GP-50 presets allow at
-   * most 3 blocks per switch and a block on one switch only: anything else throws RangeError and changes nothing.
+   * Switch assignments, one block list per switch (PresetState.footswitches); live where the pedal takes it
+   * (liveFootswitches), else on save. GP-50 presets allow at most 3 blocks per switch and a block on one switch only:
+   * anything else throws RangeError and changes nothing.
    */
-  setFootswitches(fs: { fs1: number[]; fs2: number[] }): void;
+  setFootswitches(lists: number[][]): void;
+  /** GP-200 family patch fields (FX loop, pan, style, author, note, EXP, Quick Access); they reach the pedal on save */
+  editPatch(edit: Gp200Edit): void;
   /** Revert live state to `saved` (sends the saved preset back to the pedal) */
   discard(): Promise<void>;
 

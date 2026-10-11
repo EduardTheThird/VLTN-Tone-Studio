@@ -5,8 +5,9 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { findParam } from "@/gp5/lib/catalog.mjs";
 import { useHistory } from "@/screens/rig/history";
-import { getDriver, toPresetState, useDevice } from "@/state/device";
-import type { BlockState } from "@/state/device-types";
+import { getDriver, useDevice } from "@/state/device";
+import type { BlockState, Gp5FamilyKey } from "@/state/device-types";
+import { toPresetState } from "@/state/preset-codec";
 import type { Gp5Driver } from "@/state/driver/gp5-driver";
 import { auditionProposal, restoreBlocks } from "./apply";
 import { proposePreset } from "./proposal";
@@ -40,7 +41,7 @@ describe("auditionProposal on the simulated pedal", () => {
   });
 
   it("plays every proposed block live, records it in the Rig history and writes nothing", async () => {
-    const proposal = proposePreset(analysisFixture(), useDevice.getState().preset!.device);
+    const proposal = proposePreset(analysisFixture(), useDevice.getState().preset!.device as Gp5FamilyKey);
     const before = useDevice.getState().preset!.blocks.map(played);
     const savedBefore = useDevice.getState().saved;
     const slot = useDevice.getState().slot!;

@@ -9,7 +9,6 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
-import { blockCodes } from "@/state/device-model";
 import { notifyError } from "@/app/notify";
 import { irSlotLabel, readSlots, runSend, updateDraft, writeUserIr, type SendState } from "./store";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
@@ -180,7 +179,7 @@ export function UseOnGp5({ isIr, slot }: { isIr: boolean; slot: number }) {
     const { snapTone, userIr } = profileFor(device);
     setBusy(true);
     try {
-      const block = blockCodes(device).indexOf(isIr ? "CAB" : "NS");
+      const block = profileFor(device).blocks.indexOf(isIr ? "CAB" : "NS");
       await d.setModel(block, isIr ? userIr.fxidBase + slot : snapTone.fxidBase + slot);
       d.setBlockEnabled(block, true);
     } catch (e) {
