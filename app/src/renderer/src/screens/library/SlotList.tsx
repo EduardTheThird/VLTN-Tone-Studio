@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FileSearchIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,16 +12,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { MiniChain } from "@/components/write/MiniChain";
 import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize, type PresetSummary } from "@/components/write/preset-summary";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
+import type { DeviceProfile } from "@shared/devices";
 import { knownBody, useLibraryActions } from "./actions";
 import { endDrag, hasFiles, LOCAL_MIME, SLOTS_MIME, startDrag } from "./dnd";
 import { writableCollections } from "./LocalPane";
 import { isEmptyName, useLibrary, type SlotFilter } from "./store";
 
-const COLS = "grid grid-cols-[16px_22px_minmax(96px,128px)_160px_minmax(0,1fr)_96px] items-center gap-3";
+const COLS = "grid grid-cols-[16px_var(--slot-w)_minmax(96px,var(--name-w))_160px_minmax(0,1fr)_96px] items-center gap-3";
+
+/** Room for the model's slot labels ("07" or "12-C") and names (10 or 16 characters). */
+const colWidths = (p: DeviceProfile) => ({ "--slot-w": p.slotLabel(0).length > 2 ? "34px" : "22px", "--name-w": p.nameLength > 10 ? "144px" : "128px" }) as CSSProperties;
 
 /** Slots copied with Ctrl C (pasted onto the focused slot with Ctrl V). */
 let clipboard: number[] = [];
@@ -44,8 +49,10 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const activeSlot = useDevice((s) => s.slot);
   const saved = useDevice((s) => s.saved);
   const snapTones = useDevice((s) => s.snapTones);
+  // Summaries name the GP-200 family's models from the catalog: describe the rows again when it is imported.
+  const catalog = useGp200Catalog((s) => s.catalog);
   const bodies = useLibrary((s) => s.bodies);
-  const filter = useLibrary((s) => s.slotFilter);
+  const slotFilter = useLibrary((s) => s.slotFilter);
   const query = useLibrary((s) => s.slotQuery);
   const selected = useLibrary((s) => s.selected);
   const focus = useLibrary((s) => s.focus);
@@ -55,6 +62,9 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const profile = useProfile();
   const writable = useWritable();
   const connected = status === "connected";
+  // The GP-200 family has no empty slots: no Used/Empty filter, no empty count.
+  const hasEmpty = profile.emptyName !== null;
+  const filter: SlotFilter = hasEmpty ? slotFilter : "all";
   const gridRef = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState<number | null>(null);
   const [announce, setAnnounce] = useState("");
@@ -68,7 +78,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
         // A body read under another name is stale (the slot was rewritten elsewhere).
         return { slot: n.slot, name: n.name, empty, summary: summary && summary.name === n.name ? summary : null };
       }),
-    [names, bodies, activeSlot, saved],
+    [names, bodies, activeSlot, saved, catalog],
   );
 
   const visible = useMemo(() => {
@@ -210,19 +220,17 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const head = (
     <div className="flex min-h-8 items-center gap-3 px-2">
       <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On {pedal}</h2>
-      {names.length > 0 && (
-        <span className="text-sm whitespace-nowrap text-silkscreen-3">
-          {used} used, {rows.length - used} empty
-        </span>
-      )}
+      {names.length > 0 && <span className="text-sm whitespace-nowrap text-silkscreen-3">{hasEmpty ? `${used} used, ${rows.length - used} empty` : `${rows.length} slots`}</span>}
       <span className="flex-1" />
-      <Tabs value={filter} onValueChange={(v) => useLibrary.setState({ slotFilter: v as SlotFilter })}>
-        <TabsList aria-label="Show">
-          <TabsTrigger value="all">All {rows.length || profile.slotCount}</TabsTrigger>
-          <TabsTrigger value="used">Used</TabsTrigger>
-          <TabsTrigger value="empty">Empty</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {hasEmpty && (
+        <Tabs value={filter} onValueChange={(v) => useLibrary.setState({ slotFilter: v as SlotFilter })}>
+          <TabsList aria-label="Show">
+            <TabsTrigger value="all">All {rows.length || profile.slotCount}</TabsTrigger>
+            <TabsTrigger value="used">Used</TabsTrigger>
+            <TabsTrigger value="empty">Empty</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
       <InputGroup className="h-8 max-w-[188px] min-w-[132px] flex-[0_1_188px]">
         <InputGroupAddon>
           <SearchIcon />
@@ -236,6 +244,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
     <section aria-label={`On ${pedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
       {head}
       {status !== "connected" && names.length > 0 && <OfflineBanner />}
+      {connected && profile.family === "gp200" && <CatalogBanner />}
       <BulkBar visible={visible.map((r) => r.slot)} visibleSelected={visibleSelected} sheetMode={sheetMode} />
       <div
         ref={gridRef}
@@ -248,6 +257,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
         onKeyDown={onKeyDown}
         onFocus={() => focus === null && visible[0] && lib().select(selected, { focus: visible[0].slot })}
         className="flex min-h-0 flex-1 flex-col rounded-sm focus-visible:outline-none"
+        style={colWidths(profile)}
       >
         <div role="row" className={cn(COLS, "h-[30px] shrink-0 pr-2.5 pl-2 text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase")}>
           <span role="columnheader" aria-label="Selected" />
@@ -315,6 +325,25 @@ function OfflineBanner() {
   );
 }
 
+/** GP-200 family without the imported effect list: blocks read as "Unknown model" until it is imported on Device. */
+function CatalogBanner() {
+  const missing = useGp200Catalog((s) => s.loaded && (s.status === "none" || s.status === "error"));
+  const pedal = usePedalName();
+  if (!missing) return null;
+  return (
+    <Alert className="mx-2 mt-2.5 w-auto">
+      <FileSearchIcon />
+      <AlertTitle>Effect names not imported</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center gap-x-2">
+        The {pedal}'s effect names come from Valeton's GP-200 editor on this computer. Until you import them, blocks show as Unknown model.
+        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => useNav.getState().go("device")}>
+          Open Device
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; visibleSelected: number; sheetMode: boolean }) {
   const selected = useLibrary((s) => s.selected);
   const sheetOpen = useLibrary((s) => s.sheetOpen);
@@ -322,7 +351,7 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
   const connected = useDevice((s) => s.status === "connected");
   const writable = useWritable();
   const actions = useLibraryActions();
-  const { slotLabel } = useProfile();
+  const { slotLabel, emptyName } = useProfile();
   const n = selected.length;
   const allUsedEmpty = selected.every((s) => isEmptyName(names[s]?.name));
   const readable = connected || selected.every((s) => knownBody(s) !== null);
@@ -370,7 +399,7 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
       <span className="flex-1" />
       <Button variant="ghost" size="sm" className="text-led-fault hover:text-led-fault" disabled={!n || !writable || allUsedEmpty} onClick={() => actions.clearSlots(selected)}>
         <Trash2Icon data-icon="inline-start" />
-        Clear
+        {emptyName === null ? "Reset to init patch" : "Clear"}
       </Button>
       {sheetMode && (
         <>
@@ -410,7 +439,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
   const connected = useDevice((s) => s.status === "connected");
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
-  const { slotLabel } = useProfile();
+  const { slotLabel, emptyName } = useProfile();
   const writable = useWritable();
   const collections = useLibrary((s) => s.collections);
   const actions = useLibraryActions();
@@ -469,7 +498,8 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
                 {lead.kind === "snaptone" && <span className="text-xs text-silkscreen-3">SnapTone</span>}
               </>
             )}
-            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">Not read yet</span>}
+            {/* A read GP-200 body without the effect catalog has no amp name */}
+            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">{row.summary ? "Unknown model" : "Not read yet"}</span>}
           </span>
           <span
             role="gridcell"
@@ -554,7 +584,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
         <ContextMenuGroup>
           <ContextMenuItem variant="destructive" disabled={!writable || empty} onSelect={() => actions.clearSlots(dragSlots)}>
             <Trash2Icon />
-            Clear
+            {emptyName === null ? "Reset to init patch" : "Clear"}
             <ContextMenuShortcut>Del</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>

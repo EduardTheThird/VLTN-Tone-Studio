@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clearSteps, copySteps, moveSteps, slotsToRead, swapSteps } from "./plans";
+import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { isChecksumValid } from "@/gp200/lib/prst.mjs";
+import { orderError, toPresetState } from "@/state/preset-codec";
+import { profileFor } from "@shared/devices";
+import { INIT_NAME, clearSteps, copySteps, gp200InitPatch, moveSteps, slotsToRead, swapSteps } from "./plans";
 
 // A GP-5's 100 slots.
 const SLOTS = 100;
@@ -57,5 +61,38 @@ describe("copy, swap, clear", () => {
   it("clears with blank presets and reads only real sources", () => {
     const steps = [...clearSteps([3]), ...copySteps([9, 2], 20, SLOTS)!];
     expect(slotsToRead(steps)).toEqual([2, 9]);
+  });
+});
+
+describe("gp200InitPatch", () => {
+  // Synthetic catalog in the editor's format (written for this test; not Valeton data): two models per block, the
+  // second one first in the editor's list.
+  const blocks = profileFor("gp200").blocks;
+  const xml = [
+    '<?xml version="1.0" encoding="utf-8" ?>',
+    "<GP-200>",
+    ...blocks.flatMap((b, k) => [
+      `  <Catalog Name = "${b}">`,
+      `    <Alg Name="Later ${b}" Module="${b}" Code="${0x2000 + k}" Index="1" />`,
+      `    <Alg Name="First ${b}" Module="${b}" Code="${0x1000 + k}" Index="0">`,
+      '      <Knob  Name = "Level"  idx = "0" ID = "2" default = "40" Dmin = "0" Dmax = "100" Type = "1" step = "1" />',
+      "    </Alg>",
+      "  </Catalog>",
+    ]),
+    "</GP-200>",
+  ].join("\r\n");
+  const catalog = buildCatalogFromXml(xml);
+
+  it("puts the first model of every block in, at its defaults, every block off, named INIT", () => {
+    const prst = gp200InitPatch("gp200", catalog);
+    expect(isChecksumValid(prst)).toBe(true);
+    const p = toPresetState(0, prst, "gp200", catalog);
+    expect(p.name).toBe(INIT_NAME);
+    expect(orderError("gp200", p.order)).toBeNull();
+    expect(p.blocks.map((b) => [b.model?.title, b.enabled, b.params[2]])).toEqual(blocks.map((b) => [`First ${b}`, false, 40]));
+  });
+
+  it("needs the effect catalog: a GP-200 patch has a model in every block", () => {
+    expect(() => gp200InitPatch("gp200", null)).toThrow(/effect list/);
   });
 });

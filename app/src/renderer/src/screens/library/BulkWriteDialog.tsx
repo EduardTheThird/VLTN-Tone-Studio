@@ -19,8 +19,9 @@ import { notifySuccess } from "@/app/notify";
 import { host } from "@/host";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { pedalName, presetDevice } from "@/state/device-model";
+import { profileFor } from "@shared/devices";
 import { readAndBackUp, readSlot, runNative } from "./native";
-import { slotsToRead, type NativeOp, type Step } from "./plans";
+import { gp200InitPatch, slotsToRead, type NativeOp, type Step } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
 export interface BulkPlan {
@@ -42,10 +43,11 @@ const MAX_ROWS = 6;
 
 /**
  * An empty preset (named like the pedal's empty slots) to clear slots with: a known empty slot's body of the
- * connected model, else read one from the pedal.
+ * connected model, else read one from the pedal. The GP-200 family has no empty slots: its slots get an init patch.
  */
 async function blankPreset(): Promise<Uint8Array> {
   const { names, device } = useDevice.getState();
+  if (device && profileFor(device).emptyName === null) return gp200InitPatch(device);
   const { bodies } = useLibrary.getState();
   const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot] && presetDevice(bodies[n.slot].prst) === device);
   if (known) return bodies[known.slot].prst;
@@ -58,7 +60,7 @@ async function blankPreset(): Promise<Uint8Array> {
 export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null; onOpenChange(open: boolean): void }) {
   const names = useDevice((s) => s.names);
   const pedal = usePedalName();
-  const { slotLabel } = useProfile();
+  const { slotLabel, emptyName: pedalEmptyName } = useProfile();
   const connected = useDevice((s) => s.status === "connected");
   const [backupFirst, setBackupFirst] = useState(true);
   const [running, setRunning] = useState(false);
@@ -161,7 +163,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
                 <div key={s.slot} className="contents">
                   <dt className="text-silkscreen-3 tabular-nums">Slot {slotLabel(s.slot)}</dt>
                   <dd className="min-w-0 truncate text-silkscreen">
-                    <span className="font-semibold">{s.from === "blank" ? "Empty preset" : nameOf(s.from)}</span>
+                    <span className="font-semibold">{s.from !== "blank" ? nameOf(s.from) : pedalEmptyName === null ? "Init patch" : "Empty preset"}</span>
                     <span className="text-silkscreen-3">
                       {isEmptyName(nameOf(s.slot)) ? ", was empty" : `, replaces ${nameOf(s.slot)}`}
                     </span>
