@@ -1,8 +1,23 @@
-// MIDI monitor: a capped list of tx/rx lines fed by the Gp5Session `log` option, and the decoder that
-// turns raw frames into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32").
+// MIDI monitor: a capped list of tx/rx lines fed by the sessions' `log` option, and the decoder that turns raw frames
+// into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32"). GP-5 family frames are nibble frames;
+// GP-200 family frames start with their own header and decode with gp200/lib/protocol.mjs.
 import { BLOCKS, CC, CMD, EXP_TARGETS, KIND, READ, Reassembler, decodeMessage, globalsFor, parseSysex, patchSettingByRecord } from "@/gp5/lib/protocol.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
+import {
+  BLOCKS as GP200_BLOCKS,
+  CHUNK,
+  DEVICE_TYPES,
+  PATCH_SETTING,
+  Reassembler as Gp200Reassembler,
+  decodeFrame as decodeGp200Frame,
+  decodeMessage as decodeGp200Message,
+  slotLabel as gp200SlotLabel,
+  type DecodedMessage as Gp200Message,
+  type DecodedRecord as Gp200Record,
+} from "@/gp200/lib/protocol.mjs";
+import { profileFor } from "@shared/devices";
 import type { DeviceKey, GlobalSpec, MidiLogEntry } from "./device-types";
+import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
 
 export const MIDI_LOG_CAP = 2000;
 
@@ -166,11 +181,122 @@ export function describePayload(p: Uint8Array, dir: "out" | "in", paramName?: Pa
   }
 }
 
-/** Describe a standard MIDI short message (CC, program change). */
-export function describeShort(b: Uint8Array, dir: "out" | "in"): string {
+// ------------------------------------------------------------------------------------------- GP-200 family
+
+/** What the GP-200 session logs besides whole messages: address frames and the device's flush request. */
+type Gp200Frame = Gp200Record | { kind: "flush" } | { kind: "softwareState"; state: number | null; deviceType: number | null } | { kind: "softwareJump" };
+
+const gp200Block = (b: number) => GP200_BLOCKS[b] ?? `Block ${b}`;
+const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+const PATCH_SETTING_NAMES: Record<number, string> = {
+  [PATCH_SETTING.VOL]: "Patch volume",
+  [PATCH_SETTING.TEMPO]: "Tempo",
+  [PATCH_SETTING.STYLE]: "Drum style",
+  [PATCH_SETTING.SEND]: "FX loop send",
+  [PATCH_SETTING.RETURN]: "FX loop return",
+  [PATCH_SETTING.LOOP_MODE]: "FX loop mode",
+  [PATCH_SETTING.PAN]: "Pan",
+};
+
+/** "Global Input level 3 dB" / "Global Display Patch" from the GP-200 settings table. */
+function describeGp200Global(name: string | null, id: number, value: number): string {
+  const g = GP200_GLOBAL_SPECS.find((s) => s.name === name);
+  if (!g) return `Global 0x${id.toString(16)} ${value}`;
+  return `Global ${g.label} ${g.labels?.[value - g.min] ?? `${value}${g.unit ? ` ${g.unit}` : ""}`}`;
+}
+
+/** One GP-200 record in words; null for records that only frame a message. */
+function describeGp200Record(r: Gp200Frame, out: boolean, paramName?: ParamNamer): string | null {
+  switch (r.kind) {
+    case "header":
+    case "patchInfo":
+      return null;
+    case "read":
+      return out ? (r.slot === 0xffff ? "Read active preset" : `Read slot ${gp200SlotLabel(r.slot)}`) : null;
+    case "patchChanged":
+      return out ? `Select preset ${gp200SlotLabel(r.slot)}` : `Preset ${gp200SlotLabel(r.slot)} selected`;
+    case "param":
+      return `${gp200Block(r.block)} ${paramName?.(r.block, r.paramId) ?? `param ${r.paramId}`} ${num(r.value)}`;
+    case "blockEnabled":
+      return `${gp200Block(r.block)} ${r.enabled ? "on" : "off"}`;
+    case "model":
+      return `${gp200Block(r.block)} model 0x${r.fxid.toString(16)}`;
+    case "patchSetting":
+      return `${PATCH_SETTING_NAMES[r.target] ?? `Patch setting ${r.target}`} ${r.value}${r.target === PATCH_SETTING.TEMPO ? " BPM" : ""}`;
+    case "chain":
+      return `Chain order ${r.order.map(gp200Block).join(" ")}`;
+    case "patchName":
+      return `Preset name ${r.name}`;
+    case "global":
+      return describeGp200Global(r.name, r.id, r.value);
+    case "globalEq":
+      return `Global EQ value ${r.index} ${num(r.value)}`;
+    case "globals":
+      return `Settings, firmware ${r.firmware}`;
+    case "stateDump":
+      return "Read pedal settings";
+    case "drumState":
+      return out ? "Read drum state" : `Drum ${r.playing ? "playing" : "stopped"}`;
+    case "dirty":
+      return r.dirty ? "Active preset edited" : "Active preset matches its slot";
+    case "identityQuery":
+      return "Identify";
+    case "identity":
+      return `Identity ${(DEVICE_TYPES as Record<number, { name: string } | undefined>)[r.deviceType]?.name ?? `type ${r.deviceType}`}`;
+    case "softwareState":
+      return r.state === 0 ? "Firmware update mode" : "Ready";
+    case "irName":
+      return out ? `Read User IR name ${r.slot + 1}` : `User IR ${r.slot + 1} ${r.name}`;
+    case "snapToneName":
+      return out ? `Read SnapTone name ${r.slot}` : `SnapTone ${r.slot} ${r.name}`;
+    case "styleName":
+      return out ? `Read drum style name ${r.index + 1}` : `Drum style ${r.index + 1} ${r.name}`;
+    case "irUpload":
+      return `Upload User IR ${r.slot + 1} ${r.name}`;
+    case "snapToneUpload":
+      return `Upload SnapTone ${r.slot} ${r.name}`;
+    case "irResult":
+    case "snapToneResult":
+      return `${r.kind === "irResult" ? `User IR ${r.slot + 1}` : `SnapTone ${r.slot}`} ${r.ok ? "stored" : "not stored"}`;
+    case "saved":
+      return out ? `Save to slot ${gp200SlotLabel(r.slot)}` : `Saved slot ${gp200SlotLabel(r.slot)}`;
+    case "flush":
+      return "Stop sending (flush)";
+    case "unknown":
+      return `Record 0x${r.type.toString(16)}`;
+    default: {
+      // Records the app neither sends nor waits for: the record's name in words ("fsFunction" → "Fs function")
+      const words = r.kind.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`);
+      return words[0].toUpperCase() + words.slice(1);
+    }
+  }
+}
+
+/** A whole GP-200 message (or one address or flush frame): a write or patch reply, else its records. */
+function describeGp200(m: Gp200Message | Gp200Frame | undefined, out: boolean, paramName?: ParamNamer): string {
+  const who = out ? "" : "Pedal: ";
+  if (!m) return "SysEx";
+  if (!("records" in m)) return who + (describeGp200Record(m, out, paramName) ?? "SysEx");
+  if (m.patch) {
+    const what = m.patch.stored ? `slot ${gp200SlotLabel(m.patch.slot)}` : "active preset";
+    return out ? `Write ${what}` : `Reply: ${what}`;
+  }
+  const parts = m.records.map((r) => describeGp200Record(r, out, paramName)).filter((t): t is string => t !== null);
+  return who + (parts.join(", ") || "Empty message");
+}
+
+/** A GP-200 session warning: a resent request or a write that didn't read back the same. */
+function describeGp200Warning(w: { kind: "resend"; what: string; attempt: number } | { kind: "verify"; slot: number; attempt: number }): string {
+  if (w.kind === "resend") return `No reply to ${w.what}: sending it again (try ${w.attempt + 1})`;
+  return `Slot ${gp200SlotLabel(w.slot)} didn't read back the same after write ${w.attempt}`;
+}
+
+/** Describe a standard MIDI short message (CC, program change). `gp5`: name the GP-5 family's CC map. */
+export function describeShort(b: Uint8Array, dir: "out" | "in", gp5 = true): string {
   const status = b[0] & 0xf0;
   if (status === 0xb0) {
     const [num, v] = [b[1], b[2]];
+    if (!gp5) return `${dir === "in" ? "Pedal: " : ""}Control change ${num} = ${v}`;
     if (num === CC.PRESET_SELECT) return `${dir === "in" ? "Pedal: " : ""}Select preset ${v}`;
     if (num === CC.PATCH_VOLUME) return `Patch volume ${v}`;
     const block = Object.entries(CC.BLOCK_SWITCH).find(([, n]) => n === num)?.[0];
@@ -185,11 +311,13 @@ export function describeShort(b: Uint8Array, dir: "out" | "in"): string {
 export const shortRaw = (b: Uint8Array) => (((b[0] & 0xf0) === 0xb0 ? `CC#${b[1]} ${b[2]}, ` : "") + hex(b));
 
 /**
- * Turns Gp5Session `log(dir, bytes, decoded)` calls into monitor lines. Outgoing multi-frame payloads are
- * reassembled here (the session logs each frame); incoming payloads arrive already reassembled.
+ * Turns the sessions' `log(dir, bytes, decoded)` calls into monitor lines. Outgoing multi-frame payloads are
+ * reassembled here (the sessions log each frame); incoming payloads arrive already reassembled and decoded.
  */
 export class MidiLogDecoder {
   #tx = new Reassembler();
+  // Host queries may declare more bytes than they carry: a short chunk ends the message (as the simulator reads them).
+  #tx200 = new Gp200Reassembler({ shortChunkEnds: CHUNK.HOST });
   #id = 0;
   constructor(
     private paramName?: ParamNamer,
@@ -199,12 +327,18 @@ export class MidiLogDecoder {
   line(dir: string, bytes: Uint8Array, decoded?: unknown, at = Date.now()): MidiLogEntry | null {
     const id = ++this.#id;
     if (dir === "warn") {
-      const d = decoded as { type?: string; got?: number } | undefined;
-      return { id, at, dir: "warn", text: `Unexpected reply${d?.got !== undefined ? ` length ${d.got}` : ""}`, raw: "", ack: false };
+      const d = decoded as { type?: string; got?: number; kind?: string } | undefined;
+      const text = d?.kind ? describeGp200Warning(d as Parameters<typeof describeGp200Warning>[0]) : `Unexpected reply${d?.got !== undefined ? ` length ${d.got}` : ""}`;
+      return { id, at, dir: "warn", text, raw: "", ack: false };
     }
     if (dir === "rx-bad") return { id, at, dir: "bad", text: "Unreadable frame (CRC or length)", raw: `SysEx ${bytes.length} B`, ack: false };
     const d: "out" | "in" = dir === "tx" ? "out" : "in";
-    if (bytes[0] !== 0xf0) return { id, at, dir: d, text: describeShort(bytes, d), raw: shortRaw(bytes), ack: false };
+    if (bytes[0] !== 0xf0) {
+      const device = this.device();
+      return { id, at, dir: d, text: describeShort(bytes, d, !device || profileFor(device).family === "gp5"), raw: shortRaw(bytes), ack: false };
+    }
+    const gp200 = decodeGp200Frame(bytes);
+    if (gp200) return { id, at, dir: d, text: this.#gp200(gp200, d, decoded), raw: `SysEx ${bytes.length} B`, ack: false };
     if (d === "in") {
       const msg = decoded as { raw?: Uint8Array } | undefined;
       const payload = msg?.raw ?? parseSysex(bytes)?.payload;
@@ -219,6 +353,16 @@ export class MidiLogDecoder {
     const { text, ack } = describePayload(payload, "out", this.paramName, this.device());
     const frames = frame.total > 1 ? ` (${frame.total} frames)` : "";
     return { id, at, dir: d, text: text + frames, raw: `SysEx ${bytes.length} B`, ack };
+  }
+
+  /** A GP-200 frame: incoming ones come with the session's decoding, outgoing ones are reassembled here. */
+  #gp200(frame: NonNullable<ReturnType<typeof decodeGp200Frame>>, d: "out" | "in", decoded: unknown): string {
+    if (d === "in") return describeGp200(decoded as Gp200Message | Gp200Frame | undefined, false, this.paramName);
+    if (frame.kind !== "data") return frame.kind === "address" && frame.address === "softwareState" ? "Read pedal mode" : "SysEx";
+    const msg = this.#tx200.push(frame);
+    const chunk = Math.floor(frame.off / CHUNK.HOST) + 1;
+    if (!msg) return `Frame ${chunk} of ${Math.ceil(frame.len / CHUNK.HOST)}`;
+    return describeGp200(decodeGp200Message(msg), true, this.paramName) + (chunk > 1 ? ` (${chunk} frames)` : "");
   }
 }
 
