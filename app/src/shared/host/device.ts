@@ -1,6 +1,6 @@
 // Device diagnostics that need the OS: USB enumeration, bound driver, Linux /dev/snd/seq access, Valeton Suite running,
 // saving the diagnostic report, picking the Valeton Suite program. Owner: Device screen.
-import { VALETON_VID, deviceForUsbPid, isBootloaderPid, type DeviceKey } from "../devices";
+import { VALETON_VID, deviceForUsbPid, type DeviceKey } from "../devices";
 
 export interface UsbDeviceInfo {
   vendorId: number;
@@ -51,9 +51,9 @@ export function pedalOnUsb(status: DeviceHostStatus | null): DeviceKey | null {
   return null;
 }
 
-/** A Valeton device in firmware update mode is on USB (and no pedal in normal mode). */
+/** A Valeton device that is not a known pedal (firmware update mode) is on USB, and no pedal in normal mode. */
 export function updaterOnUsb(status: DeviceHostStatus | null): boolean {
-  return !pedalOnUsb(status) && !!status?.usb?.some((d) => d.vendorId === VALETON_VID && isBootloaderPid(d.productId));
+  return !pedalOnUsb(status) && !!status?.usb?.some((d) => d.vendorId === VALETON_VID);
 }
 
 export interface DeviceHostApi {

@@ -42,8 +42,6 @@ export interface DeviceProfile {
   family: DeviceFamily;
   /** USB product ids in normal mode */
   usbPids: readonly number[];
-  /** USB product ids of the firmware updater, when known (other Valeton ids are treated as update mode too) */
-  bootloaderPids: readonly number[];
   /** USB interface number of the MIDI interface, for the driver check; null when not measured */
   usbMidiInterface: number | null;
   /** Matches the model's MIDI port name and no other model's */
@@ -106,7 +104,6 @@ const USER_IR_FXID = 0x0a100000;
 /** Shared by the GP-5 and GP-50 (gp5/lib: prst.mjs, snaptone.mjs, userir.mjs). */
 const gp5Family = {
   family: "gp5",
-  bootloaderPids: [],
   usbMidiInterface: 3,
   ...decimalSlots(100),
   blocks: GP5_BLOCKS,
@@ -139,7 +136,6 @@ const GP200_PRST: PrstFormat = {
 /** Shared by the GP-200 (R, X), GP-200LT and GP-200JR. */
 const gp200Family = {
   family: "gp200",
-  bootloaderPids: [0x002b],
   usbMidiInterface: null,
   blocks: GP200_BLOCKS,
   ctrls: 8,
@@ -195,14 +191,6 @@ export function familyKeys(family: DeviceFamily): DeviceKey[] {
 /** Model with this USB product id in normal mode, or null (another Valeton product, e.g. an updater). */
 export function deviceForUsbPid(pid: number): DeviceKey | null {
   return DEVICE_KEYS.find((k) => PROFILES[k].usbPids.includes(pid)) ?? null;
-}
-
-/**
- * A Valeton product id that is not a pedal in normal mode: a known updater id, or any other id (the GP-5 and GP-50
- * updater ids are unknown, so everything the registry does not list counts as update mode).
- */
-export function isBootloaderPid(pid: number): boolean {
-  return DEVICE_KEYS.some((k) => PROFILES[k].bootloaderPids.includes(pid)) || deviceForUsbPid(pid) === null;
 }
 
 /** Model whose MIDI port this is ("GP-5 MIDI 1", "GP-200 MIDI 1"), or null. */

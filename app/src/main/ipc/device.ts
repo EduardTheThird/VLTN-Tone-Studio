@@ -1,4 +1,4 @@
-import { app, dialog, type BrowserWindow } from "electron";
+import { app, type BrowserWindow } from "electron";
 import { execFile } from "node:child_process";
 import { access, constants, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { VALETON_VID, deviceForUsbPid, profileFor } from "@shared/devices";
 import type { DeviceHostStatus, LinuxSeqAccess, UsbDeviceInfo } from "@shared/host/device";
 import { HostError } from "@shared/ipc";
-import { handle } from "./handle";
+import { handle, showOpenDialog, showSaveDialog } from "./handle";
 
 const run = promisify(execFile);
 const EXEC = { timeout: 8000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 };
@@ -158,8 +158,7 @@ export function registerDeviceIpc(getWindow: () => BrowserWindow | null): void {
     if (typeof text !== "string" || text.length > MAX_REPORT) throw new HostError("invalid", "The report must be text under 1 MB");
     const name = typeof fileName === "string" && /^[\w.-]+\.txt$/.test(fileName) ? fileName : "valeton-diagnostics.txt";
     const opts = { defaultPath: join(app.getPath("documents"), name), filters: [{ name: "Text", extensions: ["txt"] }] };
-    const win = getWindow();
-    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    const res = await showSaveDialog(getWindow(), opts);
     if (res.canceled || !res.filePath) return null;
     await writeFile(res.filePath, text, "utf8");
     return res.filePath;
@@ -177,8 +176,7 @@ export function registerDeviceIpc(getWindow: () => BrowserWindow | null): void {
             : [{ name: "All files", extensions: ["*"] }],
       defaultPath: process.platform === "darwin" ? "/Applications" : undefined,
     };
-    const win = getWindow();
-    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    const res = await showOpenDialog(getWindow(), opts);
     return res.canceled ? null : (res.filePaths[0] ?? null);
   });
 }

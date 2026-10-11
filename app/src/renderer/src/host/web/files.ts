@@ -22,6 +22,7 @@ import {
   presetFileName,
   uniqueFileName,
 } from "@shared/files-naming";
+import { pickFiles } from "./pick-files";
 
 interface CollectionRow {
   id: string;
@@ -164,20 +165,6 @@ async function readFiles(files: File[]): Promise<PickedFile[]> {
   );
 }
 
-/** Open the browser's file picker; resolves with the chosen files ([] when cancelled). */
-function chooseFiles(opts: { multiple: boolean; directory: boolean }): Promise<File[]> {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".prst";
-    input.multiple = opts.multiple;
-    if (opts.directory) input.webkitdirectory = true;
-    input.addEventListener("change", () => resolve(Array.from(input.files ?? [])), { once: true });
-    input.addEventListener("cancel", () => resolve([]), { once: true });
-    input.click();
-  });
-}
-
 function download(fileName: string, bytes: Uint8Array) {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
   const a = document.createElement("a");
@@ -271,11 +258,11 @@ export const webFiles: FilesApi = {
   },
 
   async pickPrstFiles() {
-    return readFiles(await chooseFiles({ multiple: true, directory: false }));
+    return readFiles(await pickFiles(".prst", { multiple: true }));
   },
 
   async pickPrstFolder() {
-    const files = (await chooseFiles({ multiple: true, directory: true })).filter((f) => /\.prst$/i.test(f.name));
+    const files = (await pickFiles(".prst", { multiple: true, directory: true })).filter((f) => /\.prst$/i.test(f.name));
     if (!files.length) return null;
     files.sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }));
     const folder = files[0].webkitRelativePath.split("/")[0] || "Folder";

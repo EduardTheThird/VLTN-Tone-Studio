@@ -8,7 +8,6 @@ import {
   deviceForPortName,
   deviceForUsbPid,
   familyKeys,
-  isBootloaderPid,
   isDeviceKey,
   listNames,
   prstName,
@@ -77,19 +76,13 @@ describe("USB product ids", () => {
     expect(deviceForUsbPid(0x002b)).toBeNull();
   });
 
-  it("treats the GP-200 updater and unknown Valeton pids as update mode, pedals not", () => {
-    expect(isBootloaderPid(0x002b)).toBe(true);
-    expect(isBootloaderPid(0x0185)).toBe(true);
-    expect(isBootloaderPid(0x0184)).toBe(false);
-    expect(isBootloaderPid(0x002a)).toBe(false);
-  });
-
   it("reports a GP-200 on USB as a GP-200, its updater as update mode", () => {
     const status = (productId: number) => ({ usb: [{ vendorId: 0x84ef, productId, product: null }] }) as unknown as DeviceHostStatus;
     expect(pedalOnUsb(status(0x002a))).toBe("gp200");
     expect(updaterOnUsb(status(0x002a))).toBe(false);
     expect(pedalOnUsb(status(0x002b))).toBeNull();
     expect(updaterOnUsb(status(0x002b))).toBe(true);
+    expect(updaterOnUsb(status(0x0185))).toBe(true);
     expect(pedalOnUsb(status(0x018a))).toBe("gp50");
     expect(pedalOnUsb({ usb: [{ vendorId: 0x1234, productId: 0x0184, product: null }] } as unknown as DeviceHostStatus)).toBeNull();
   });

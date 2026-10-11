@@ -1,10 +1,10 @@
-import { app, dialog, shell, type BrowserWindow, type OpenDialogOptions } from "electron";
+import { app, shell, type BrowserWindow } from "electron";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { HostError } from "@shared/ipc";
 import type { BackupSlot, ExportItem, NewPreset } from "@shared/host/files";
 import { isSafePresetFileName, sanitizeFileName, uniqueFileName } from "@shared/files-naming";
-import { handle } from "./handle";
+import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { LibraryStore, readPrstPaths } from "./files-store";
 
 const PRST_FILTER = [{ name: "Valeton presets", extensions: ["prst"] }];
@@ -12,11 +12,6 @@ const PRST_FILTER = [{ name: "Valeton presets", extensions: ["prst"] }];
 /** Desktop implementation of FilesApi (src/shared/host/files.ts) over userData. */
 export function registerFilesIpc(getWindow: () => BrowserWindow | null): void {
   const store = new LibraryStore(app.getPath("userData"));
-
-  const openDialog = async (options: OpenDialogOptions) => {
-    const win = getWindow();
-    return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
-  };
 
   const openFolder = async (path: string) => {
     await mkdir(path, { recursive: true });
@@ -34,12 +29,12 @@ export function registerFilesIpc(getWindow: () => BrowserWindow | null): void {
   handle("files:removePreset", (_e, id: string, presetId: string) => store.removePreset(id, presetId));
 
   handle("files:pickPrstFiles", async () => {
-    const res = await openDialog({ title: "Import presets", properties: ["openFile", "multiSelections"], filters: PRST_FILTER });
+    const res = await showOpenDialog(getWindow(), { title: "Import presets", properties: ["openFile", "multiSelections"], filters: PRST_FILTER });
     return res.canceled ? [] : readPrstPaths(res.filePaths);
   });
 
   handle("files:pickPrstFolder", async () => {
-    const res = await openDialog({ title: "Choose a folder of .prst files", properties: ["openDirectory"] });
+    const res = await showOpenDialog(getWindow(), { title: "Choose a folder of .prst files", properties: ["openDirectory"] });
     if (res.canceled || !res.filePaths[0]) return null;
     const dir = res.filePaths[0];
     const names = (await readdir(dir)).filter((f) => /\.prst$/i.test(f)).sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
@@ -58,12 +53,12 @@ export function registerFilesIpc(getWindow: () => BrowserWindow | null): void {
         defaultPath: join(app.getPath("documents"), sanitizeFileName(item.fileName)),
         filters: PRST_FILTER,
       };
-      const res = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+      const res = await showSaveDialog(win, options);
       if (res.canceled || !res.filePath) return null;
       await writeFile(res.filePath, item.prst);
       return res.filePath;
     }
-    const res = await openDialog({ title: `Export ${items.length} presets to a folder`, properties: ["openDirectory", "createDirectory"] });
+    const res = await showOpenDialog(win, { title: `Export ${items.length} presets to a folder`, properties: ["openDirectory", "createDirectory"] });
     if (res.canceled || !res.filePaths[0]) return null;
     const dir = res.filePaths[0];
     const taken = await readdir(dir);
