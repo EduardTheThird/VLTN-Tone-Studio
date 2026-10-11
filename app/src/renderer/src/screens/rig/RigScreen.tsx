@@ -160,10 +160,10 @@ function useRigKeys(readOnly: boolean) {
   }, [readOnly]);
 }
 
+/** While connecting: the model may not be known yet (the remembered one can be another model), so no name. */
 function RigSkeleton() {
-  const pedal = usePedalName();
   return (
-    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label={`Reading the ${pedal}`}>
+    <div className="flex h-full flex-col gap-4 px-7 pt-4" aria-busy="true" aria-label="Reading the pedal">
       <Skeleton className="h-9 w-72 rounded-sm" />
       <Skeleton className="h-4 w-96 rounded-sm" />
       <Skeleton className="h-20 w-full rounded-xl" />
