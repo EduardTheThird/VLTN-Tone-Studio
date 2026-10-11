@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceHostStatus } from "@shared/host/device";
 import type { ConnectionErrorCode } from "@/state/device-types";
-import { refineConnectionError } from "@/state/device";
+import { refineConnectionError } from "@/state/connection-error";
 import { connectionView, diagnosticChecks, formatWhen, requestErrorLine, type GuidanceInput } from "./guidance";
 
 const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
@@ -17,6 +17,8 @@ const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
 const gp5 = { vendorId: 0x84ef, productId: 0x0184, product: "GP-5" };
 const gp50 = { vendorId: 0x84ef, productId: 0x018a, product: "GP-50" };
 const updater = { vendorId: 0x84ef, productId: 0x0185, product: "Valeton Upgrade" };
+const gp200 = { vendorId: 0x84ef, productId: 0x002a, product: "GP-200" };
+const gp200Updater = { vendorId: 0x84ef, productId: 0x002b, product: null };
 
 const err = (code: ConnectionErrorCode, input: Partial<GuidanceInput> = {}) =>
   connectionView({ status: "error", error: { code, message: code }, mode: "webmidi", hostStatus: null, platform: "linux", ...input });
@@ -114,6 +116,12 @@ describe("connectionView", () => {
     expect(err("bootloader")).toMatchObject({ kind: "bootloader", chip: "Update mode", action: "none", offline: true });
   });
 
+  it("unsupported model: says which pedal, sends nothing, offers Check again", () => {
+    const v = connectionView({ status: "error", error: { code: "unsupported-model", message: "GP-200 support is coming in a later version of Tone Studio." }, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp5" });
+    expect(v).toMatchObject({ kind: "unsupported-model", led: "warn", action: "check", offline: true, detail: "GP-200 support is coming in a later version of Tone Studio." });
+    expect(v.note).toMatch(/simulated GP-5 or GP-50/);
+  });
+
   it("timeout after bytes arrived = wrong device / firmware", () => {
     const v = err("timeout", { device: "gp5" });
     expect(v.kind).toBe("wrong-device");
@@ -122,7 +130,7 @@ describe("connectionView", () => {
   });
 
   it("every connection error code maps to a view with text", () => {
-    const codes: ConnectionErrorCode[] = ["unsupported", "insecure", "permission", "no-sysex", "broken-browser", "not-found", "busy", "timeout", "bootloader", "unknown"];
+    const codes: ConnectionErrorCode[] = ["unsupported", "insecure", "permission", "no-sysex", "broken-browser", "not-found", "busy", "timeout", "bootloader", "unsupported-model", "unknown"];
     for (const code of codes) {
       const v = err(code);
       expect(v.state.length).toBeGreaterThan(0);
@@ -144,6 +152,11 @@ describe("refineConnectionError", () => {
   it("never treats a GP-50 as update mode, even next to another Valeton device", () => {
     expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp50] })).code).toBe("not-found");
     expect(refineConnectionError({ code: "busy", message: "" }, host({ usb: [gp50, updater] })).code).toBe("busy");
+  });
+  it("reports a GP-200 on USB as that model, its updater as update mode", () => {
+    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200] }))).toMatchObject({ code: "unsupported-model", message: expect.stringMatching(/^GP-200 /) });
+    expect(refineConnectionError({ code: "not-found", message: "" }, host({ usb: [gp200Updater] })).code).toBe("bootloader");
+    expect(refineConnectionError({ code: "permission", message: "" }, host({ usb: [gp200] })).code).toBe("permission");
   });
 });
 

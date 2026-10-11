@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, RotateCcw, TriangleAlert } from "lucide-react";
+import { profileFor } from "@shared/devices";
 import type { T3kModel } from "@shared/host/tones";
 import { firstEmptySlot, sanitizeSlotName } from "@shared/tone3000";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { userIrFxId } from "@/gp5/lib/userir.mjs";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
+import { blockCodes } from "@/state/device-model";
 import { notifyError } from "@/app/notify";
 import { irSlotLabel, readSlots, runSend, updateDraft, writeUserIr, type SendState } from "./store";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
@@ -55,6 +56,7 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
   const listRef = useRef<HTMLOListElement>(null);
   const connected = useDevice((s) => s.status === "connected");
   const userIRs = useDevice((s) => s.userIRs);
+  const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
   const slot = send.proposedSlot;
   const blocker = useIrWriteBlocker(slot);
@@ -70,8 +72,8 @@ export function UserIrSteps({ send, model }: { send: SendState; model: T3kModel 
     if (connected && !userIRs && !busy) void readSlots();
   }, [connected, userIRs, busy]);
   useEffect(() => {
-    if (slot === null && userIRs) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("ir", userIRs) });
-  }, [slot, send.toneId, userIRs]);
+    if (slot === null && userIRs) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("ir", userIRs, device) });
+  }, [slot, send.toneId, userIRs, device]);
 
   const status = (n: number): StepStatus => {
     if (phase === "linked") return "done";
@@ -173,10 +175,13 @@ export function UseOnGp5({ isIr, slot }: { isIr: boolean; slot: number }) {
   const [busy, setBusy] = useState(false);
   const use = async () => {
     const d = useDevice.getState();
+    if (!d.preset) return;
+    const { device } = d.preset;
+    const { snapTone, userIr } = profileFor(device);
     setBusy(true);
     try {
-      const block = isIr ? 4 : 9;
-      await d.setModel(block, isIr ? userIrFxId(slot) : 0x0f000000 | slot);
+      const block = blockCodes(device).indexOf(isIr ? "CAB" : "NS");
+      await d.setModel(block, isIr ? userIr.fxidBase + slot : snapTone.fxidBase + slot);
       d.setBlockEnabled(block, true);
     } catch (e) {
       notifyError("Couldn't use it in the current preset", e);

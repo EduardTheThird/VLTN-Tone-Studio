@@ -1,28 +1,32 @@
-// Device layer: one Gp5Session per app (gp5-app-development rules 1–7). Screens use `useDevice`.
+// Device layer: one DeviceDriver per app; every request goes through it one at a time, live edits are coalesced, and
+// memory writes run only after the user confirmed them. Screens use `useDevice`.
 import { create } from "zustand";
-import { Gp5Session } from "@/gp5/lib/session.mjs";
-import { MockGp5 } from "@/gp5/lib/mock-device.mjs";
-import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
-import { DEVICES, applyEdits, convertPrst, parsePrst, rebuildPrst, bodyOf } from "@/gp5/lib/prst.mjs";
-import { clampParam, modelByFxid } from "@/gp5/lib/catalog.mjs";
-import { GLOBALS } from "@/gp5/lib/protocol.mjs";
+import { applyEdits, bodyOf, parsePrst, validateFootswitches, validateOrder } from "@/gp5/lib/prst.mjs";
+import { EXP_FIELDS, PATCH_SETTINGS } from "@/gp5/lib/protocol.mjs";
+import { SYNC_ON_DIVISION, clampParam, displayedParam, modelByFxid } from "@/gp5/lib/catalog.mjs";
 import { host } from "@/host";
-import { PEDAL_PIDS, VALETON_VID, pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
+import { type DeviceProfile } from "@shared/devices";
+import { pedalOnUsb } from "@shared/host/device";
+import { refineConnectionError, toConnectionError } from "./connection-error";
 import { MIDI_LOG_CAP, MidiLogDecoder, RingBuffer } from "./midi-log";
-import { DEVICE_KEYS, pedalName, pedalNameOrBoth } from "./device-model";
+import { DEFAULT_DEVICE, blockCodes, gateFeatures, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
+import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
+import { openPort, simulate } from "./driver";
+import type { DeviceDriver, DriverEvent } from "./driver/types";
+import { SendQueue } from "./send-queue";
 import {
-  BLOCK_CODES,
   RestoreError,
-  type BackupEntry,
   type BlockState,
   type ConnectionError,
-  type ConnectionErrorCode,
+  type DeviceFeature,
   type DeviceKey,
   type DeviceMode,
   type DeviceState,
-  type GlobalName,
+  type ExpSettings,
+  type Gp5FamilyKey,
   type MidiLogEntry,
   type ModelInfo,
+  type ParamInfo,
   type PresetState,
   type SlotName,
 } from "./device-types";
@@ -37,183 +41,84 @@ export class DeviceError extends Error {
   }
 }
 
-const NAMES_KEY = "gp5.names.v1";
-const LAST_CONNECTED_KEY = "gp5.lastConnected.v1";
-/** Model of the last connected pedal ("gp5" | "gp50"). */
-const DEVICE_KEY = "gp5.device.v1";
 const RESYNC_DEBOUNCE_MS = 400;
 const MAX_RECONNECTS = 3;
 /** While the pedal is missing (desktop only), poll the host's USB list this often and connect when a pedal appears. */
 const WATCH_MS = 4000;
 const LOG_NOTIFY_MS = 120;
+/** Pedal echoes of a setting edited here within this window are not applied (they would undo newer values). */
+const ECHO_GRACE_MS = 1500;
 
 // ------------------------------------------------------------------------------------------- pure helpers
 
-export function toModel(fxid: number, device: DeviceKey): ModelInfo | undefined {
-  return modelByFxid(fxid, device) as ModelInfo | undefined;
+/**
+ * Catalog model of `fxid` on `device`. With the block's `params`, a synced Time/Rate param is described as the pedal
+ * shows it (note divisions, catalog displayedParam), so knobs, clamping and diffs follow the Sync toggle.
+ */
+export function toModel(fxid: number, device: Gp5FamilyKey, params?: readonly number[]): ModelInfo | undefined {
+  const m = modelByFxid(fxid, device) as ModelInfo | undefined;
+  if (!m || !params || !m.params.some((p) => p.syncs !== undefined)) return m;
+  return { ...m, params: m.params.map((p) => (displayedParam(fxid, p.index, params, device) as ParamInfo | undefined) ?? p) };
 }
 
 export function toPresetState(slot: number, prst: Uint8Array): PresetState {
   const p = parsePrst(prst);
-  const device = p.device as DeviceKey;
-  const blocks: BlockState[] = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => ({
-    index,
-    code: BLOCK_CODES[index],
-    enabled: b.enabled,
-    fxid: b.fxid >>> 0,
-    model: toModel(b.fxid, device),
-    params: b.params.map((v) => Math.round(v * 1000) / 1000),
-  }));
+  const device: Gp5FamilyKey = p.device;
+  const codes = blockCodes(device);
+  const blocks: BlockState[] = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
+    const params = b.params.map((v) => Math.round(v * 1000) / 1000);
+    return { index, code: codes[index], enabled: b.enabled, fxid: b.fxid >>> 0, model: toModel(b.fxid, device, params), params };
+  });
+  // parsePrst is untyped JS: settings = { volume, bpm, exp? } with `exp` on GP-50 presets (prst.mjs readSettings)
+  const settings: { volume: number; bpm: number; exp?: ExpSettings } = p.settings;
   return {
     device,
     slot,
     name: p.name,
     blocks,
     order: p.order,
-    volume: p.settings.volume,
-    bpm: p.settings.bpm,
+    volume: settings.volume,
+    bpm: settings.bpm,
     footswitches: { fs1: p.footswitches.fs1, fs2: p.footswitches.fs2 },
+    exp: settings.exp ?? null,
     prst,
   };
 }
 
-/** Number of user-visible differences (params, on/off, models, order, volume, footswitches). */
+/** Number of user-visible differences (params, on/off, models, order, volume, tempo, footswitches, EXP fields). */
 export function countChanges(a: PresetState | null, b: PresetState | null): number {
   if (!a || !b) return 0;
   let n = 0;
-  for (let k = 0; k < 10; k++) {
-    const x = a.blocks[k];
+  a.blocks.forEach((x, k) => {
     const y = b.blocks[k];
     if (x.enabled !== y.enabled) n++;
     if (x.fxid !== y.fxid) {
       n++;
-      continue;
+      return;
     }
-    for (let i = 0; i < 8; i++) if (Math.abs(x.params[i] - y.params[i]) > 1e-3) n++;
-  }
+    x.params.forEach((v, i) => {
+      if (Math.abs(v - y.params[i]) > 1e-3) n++;
+    });
+  });
   if (a.order.join() !== b.order.join()) n++;
   if (a.volume !== b.volume) n++;
+  if (a.bpm !== b.bpm) n++;
   if (a.footswitches.fs1.join() !== b.footswitches.fs1.join() || a.footswitches.fs2.join() !== b.footswitches.fs2.join()) n++;
+  if (a.exp && b.exp) for (const f of EXP_FIELDS as (keyof typeof a.exp)[]) if (a.exp[f] !== b.exp[f]) n++;
   return n;
-}
-
-/**
- * Model of the last connected pedal, persisted across launches. Before this key existed only the GP-5 was
- * supported, so a user who connected before (LAST_CONNECTED_KEY set) had a GP-5.
- */
-function loadDevice(): DeviceKey | null {
-  try {
-    const v = localStorage.getItem(DEVICE_KEY);
-    if (v && (DEVICE_KEYS as readonly string[]).includes(v)) return v as DeviceKey;
-    return localStorage.getItem(LAST_CONNECTED_KEY) ? "gp5" : null;
-  } catch {
-    return null;
-  }
-}
-function saveDevice(device: DeviceKey) {
-  try {
-    localStorage.setItem(DEVICE_KEY, device);
-  } catch {
-    /* storage unavailable: the model is detected again on connect */
-  }
-}
-
-/** Cached slot names of `device`'s pedal; entries written before the GP-50 existed belong to a GP-5. */
-function loadCachedNames(device: DeviceKey | null): SlotName[] {
-  try {
-    const env = JSON.parse(localStorage.getItem(NAMES_KEY) ?? "null");
-    if (env?.v === 1 && Array.isArray(env.names) && (env.device ?? "gp5") === device) return env.names;
-  } catch {
-    /* corrupt cache: start empty */
-  }
-  return [];
-}
-function cacheNames(device: DeviceKey | null, names: SlotName[]) {
-  if (!device) return;
-  try {
-    localStorage.setItem(NAMES_KEY, JSON.stringify({ v: 1, device, names }));
-  } catch {
-    /* storage full or unavailable: the cache is only an optimisation */
-  }
-}
-
-const CONNECT_CODES: Record<string, ConnectionErrorCode> = {
-  "no-webmidi": "unsupported",
-  insecure: "insecure",
-  permission: "permission",
-  "sysex-denied": "no-sysex",
-  "chrome-152": "broken-browser",
-  "not-found": "not-found",
-};
-
-/** `device`: the pedal model for the copy; unknown → "GP-5 / GP-50". */
-function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceKey | null): ConnectionError {
-  const pedal = pedalNameOrBoth(device);
-  const err = e as { code?: string; message?: string; visiblePorts?: string[] };
-  if (err?.code && CONNECT_CODES[err.code]) return { code: CONNECT_CODES[err.code], message: err.message ?? String(e), ports: err.visiblePorts };
-  if (err?.code === "timeout")
-    return gotBytes
-      ? { code: "timeout", message: `The pedal answered but not like a ${pedal}. Check the firmware or the device.` }
-      : { code: "busy", message: `The ${pedal} port is open but silent. Close Valeton Suite, then reconnect.` };
-  if (err?.code === "length") return { code: "unknown", message: err.message ?? `Unexpected reply length (is this a ${pedal}?)` };
-  return { code: "unknown", message: err?.message ?? String(e) };
-}
-
-/** The pedal is in firmware update mode: a Valeton (0x84EF) device that is neither a GP-5 nor a GP-50, and no pedal present. */
-export function inUpdateMode(status: DeviceHostStatus | null): boolean {
-  return !pedalOnUsb(status) && !!status?.usb?.some((d) => d.vendorId === VALETON_VID && !PEDAL_PIDS.includes(d.productId));
-}
-
-/** Use the host's USB view to sharpen a failed connect: no port + a Valeton device in update mode = "bootloader". */
-export function refineConnectionError(error: ConnectionError, status: DeviceHostStatus | null): ConnectionError {
-  if ((error.code === "not-found" || error.code === "busy" || error.code === "timeout") && inUpdateMode(status))
-    return { ...error, code: "bootloader", message: "The pedal is in firmware update mode. The app sends nothing until it restarts normally." };
-  return error;
-}
-
-function loadLastConnected(): number | null {
-  try {
-    const v = Number(localStorage.getItem(LAST_CONNECTED_KEY));
-    return Number.isFinite(v) && v > 0 ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Simulated pedal's user SnapTone (slots 50..57) and IR names, as on the pedal in design/screens/tones.md. */
-const MOCK_SNAPTONES = [...new Array<string>(50).fill(""), "GP1000", "ALEXI-1", "ALEXI-2", "GP1000-YT", "PNTR-CWBYS", "PNTR-BRKEN", "PNTR-TGSTK", "Walk"];
-const MOCK_USER_IRS = ["A7X-WTF", "A7X-CITY", "V30-4X12-A", "V30-4X12-B"];
-
-/**
- * Mock presets: the bundled 100-slot GP-5 backup (dev + browser demo). For a simulated GP-50 the bank is converted
- * (lossless) and empty slots get the GP-50's empty name. Tests inject their own via `connectWith`.
- */
-async function loadMockPresets(device: DeviceKey): Promise<Uint8Array[]> {
-  const urls = import.meta.glob("../gp5/fixtures/backup/*.prst", { query: "?url", import: "default", eager: true }) as Record<string, string>;
-  const files = Object.keys(urls).sort();
-  const bank = await Promise.all(files.map(async (f) => new Uint8Array(await (await fetch(urls[f])).arrayBuffer())));
-  if (device === "gp5") return bank;
-  return bank.map((p) => {
-    const converted: Uint8Array = convertPrst(p, device);
-    return parsePrst(p).name.trim() === DEVICES.gp5.emptyName ? applyEdits(converted, { name: DEVICES[device].emptyName }) : converted;
-  });
 }
 
 // ------------------------------------------------------------------------------------------- store
 
-let session: Gp5Session | null = null;
-let mock: MockGp5 | null = null;
+let driver: DeviceDriver | null = null;
 /** Model the simulator plays; kept for later `connect("mock")` calls in this session. */
-let mockDevice: DeviceKey = "gp5";
+let mockDevice: DeviceKey = DEFAULT_DEVICE;
 let reconnects = 0;
 let userDisconnected = false;
 let resyncTimer: number | undefined;
-/** Coalesced live edits: latest value per (block,param) with one send in flight per key. */
-const pending = new Map<string, number>();
-const inflight = new Set<string>();
-/** Pedal settings: latest value per global with one send in flight per name (like dials on the Rig). */
-const pendingGlobals = new Map<GlobalName, number>();
-const inflightGlobals = new Set<GlobalName>();
+const listTimers: Partial<Record<"presets" | "snaptones" | "irs", number>> = {};
+/** When a setting/global/assignment was last edited here (key → ms), to recognise the pedal's echoes. */
+const localEdits = new Map<string, number>();
 /** A connection attempt the user cancelled; checked after every await in connect(). */
 let connectAttempt = 0;
 let watchTimer: number | undefined;
@@ -221,16 +126,15 @@ let watchTimer: number | undefined;
 const midiLog = new RingBuffer<MidiLogEntry>(MIDI_LOG_CAP);
 let logNotifyTimer: number | undefined;
 
-/** Advanced access for diagnostics (Device screen MIDI log); not for screens' normal use. */
-export const getSession = () => session;
-export const getMock = () => mock;
+/** Advanced access for diagnostics and tests (the open connection); not for screens' normal use. */
+export const getDriver = () => driver;
 /** MIDI monitor lines, oldest first (re-read when `midiLogVersion` changes). */
 export const getMidiLog = (): MidiLogEntry[] => midiLog.toArray();
 
 export const useDevice = create<DeviceState>((set, get) => {
-  const requireSession = () => {
-    if (!session || get().status !== "connected") throw new DeviceError("not-connected", `The ${pedalName(get().device)} is not connected`);
-    return session;
+  const requireDriver = () => {
+    if (!driver || get().status !== "connected") throw new DeviceError("not-connected", `The ${pedalName(get().device)} is not connected`);
+    return driver;
   };
   const requireIdle = () => {
     const busy = get().busy;
@@ -239,6 +143,15 @@ export const useDevice = create<DeviceState>((set, get) => {
   const guardUnsaved = (what: string) => {
     if (get().unsavedChanges > 0) throw new DeviceError("unsaved", `${what} switches presets on the pedal; save or discard the unsaved changes first`);
   };
+  const isLive = () => driver !== null && get().status === "connected";
+  /** The open driver when `feature` is usable on a live connection, else null. */
+  const liveWith = (feature: DeviceFeature) => (isLive() && get().features.includes(feature) ? driver : null);
+  const requireFeature = (feature: DeviceFeature) => {
+    const d = requireDriver();
+    if (get().features.includes(feature)) return d;
+    const locked = get().lockedFeatures.includes(feature);
+    throw new DeviceError("unsafe", locked ? "This needs GP-50 extras (experimental), which you can turn on in Settings." : `The ${pedalName(get().device)} can't do this from Tone Studio.`);
+  };
 
   /** Replace the live preset (and optionally the saved copy) and recount changes. */
   const setPreset = (preset: PresetState, saved?: PresetState) => {
@@ -246,6 +159,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     set({ preset, ...(saved ? { saved } : {}), unsavedChanges: countChanges(preset, s) });
   };
 
+  /** Apply .prst edits to the live preset (applyEdits validates: RangeError on an illegal order or footswitch set). */
   const editLocal = (edits: Record<string, unknown>) => {
     const p = get().preset;
     if (!p) return;
@@ -258,11 +172,26 @@ export const useDevice = create<DeviceState>((set, get) => {
     set({ lastError: { code: err?.code ?? "unknown", message: err?.message ?? String(e), at: Date.now() } });
   };
 
+  /** Coalesced live edits: newest value per key, one send in flight per key. */
+  const sends = new SendQueue(noteError);
+  const touch = (key: string) => localEdits.set(key, Date.now());
+  const isEcho = (key: string) => sends.busy(key) || Date.now() - (localEdits.get(key) ?? 0) < ECHO_GRACE_MS;
+
+  const setNames = (names: SlotName[]) => {
+    cacheNames(get().device, names);
+    set({ names });
+  };
+
+  const setFeatures = (d: DeviceDriver | null, mode = get().mode, extras = get().gp50Extras) => {
+    const { features, locked } = gateFeatures(d?.features ?? [], mode, extras);
+    set({ features, lockedFeatures: locked });
+  };
+
   const logDecoder = new MidiLogDecoder(
     (block, index) => get().preset?.blocks[block]?.model?.params.find((p) => p.index === index)?.name,
-    () => session?.device ?? get().device,
+    () => driver?.device ?? get().device,
   );
-  /** Gp5Session `log` option: records frames only while the monitor is on; the UI re-reads at most every LOG_NOTIFY_MS. */
+  /** Driver `log` hook: records frames only while the monitor is on; the UI re-reads at most every LOG_NOTIFY_MS. */
   const onLog = (dir: string, bytes: Uint8Array, decoded?: unknown) => {
     if (!get().monitor) return;
     const line = logDecoder.line(dir, bytes, decoded);
@@ -274,15 +203,14 @@ export const useDevice = create<DeviceState>((set, get) => {
         set({ midiLogVersion: get().midiLogVersion + 1 });
       }, LOG_NOTIFY_MS);
   };
-  const newSession = (transport: ConstructorParameters<typeof Gp5Session>[0]) => new Gp5Session(transport, { log: onLog });
 
   const stopWatch = () => {
     clearInterval(watchTimer);
     watchTimer = undefined;
   };
   /**
-   * Desktop only: while the pedal is missing or in update mode, watch the host's USB list and connect once a GP-5 or
-   * GP-50 (normal mode) appears. Never runs after the user disconnected on purpose, and never talks to an update-mode device.
+   * Desktop only: while the pedal is missing or in update mode, watch the host's USB list and connect once a pedal
+   * (normal mode) appears. Never runs after the user disconnected on purpose, and never talks to an update-mode device.
    */
   const startWatch = () => {
     if (watchTimer !== undefined || host.kind !== "electron") return;
@@ -300,63 +228,112 @@ export const useDevice = create<DeviceState>((set, get) => {
     }, WATCH_MS);
   };
 
-  const readActive = async (s: Gp5Session, names = get().names) => {
-    const slot: number = await s.readCurrentSlot();
-    const body: Uint8Array = await s.readCurrentBody();
-    const prst = rebuildPrst(names[slot]?.name ?? "", body, await s.identify());
+  /**
+   * The stored copy of the active preset for "saved": the edit buffer itself unless the pedal reports unsaved edits
+   * (GP-50). Then the slot is exported when possible; otherwise the previous saved copy of the same slot is kept when
+   * `keepPrevious`, else the edit buffer stands in (the count starts at 0).
+   */
+  const storedCopy = async (d: DeviceDriver, state: PresetState, modified: boolean | null, keepPrevious: boolean): Promise<PresetState> => {
+    const has = (f: DeviceFeature) => get().features.includes(f);
+    if (!has("modified") || !d.readModified) return state;
+    const edited = modified ?? (await d.readModified().catch(() => null));
+    if (!edited) return state;
+    if (has("exportPreset") && d.exportPreset) {
+      const stored = await d.exportPreset(state.slot).catch(() => null);
+      if (stored) return toPresetState(state.slot, stored);
+    }
+    const prev = get().saved;
+    return keepPrevious && prev && prev.slot === state.slot && prev.device === state.device ? prev : state;
+  };
+
+  /** Read the active slot and preset; `checkModified`: ask the pedal whether it holds unsaved edits (see storedCopy). */
+  const readActive = async (d: DeviceDriver, names = get().names, checkModified = false) => {
+    const { slot, prst } = await d.readActive(names);
     const state = toPresetState(slot, prst);
+    const saved = checkModified ? await storedCopy(d, state, null, true) : state;
     set({ slot });
-    setPreset(state, state);
+    setPreset(state, saved);
   };
 
   const scheduleResync = () => {
     clearTimeout(resyncTimer);
     resyncTimer = window.setTimeout(() => {
       resyncTimer = undefined;
-      if (session && get().status === "connected" && !get().busy) void readActive(session).catch(() => {});
+      if (driver && get().status === "connected" && !get().busy) void readActive(driver, get().names, true).catch(() => {});
     }, RESYNC_DEBOUNCE_MS);
   };
 
-  const onUnsolicited = (ev: Event) => {
-    const msg = (ev as Event & { message: { type: string; block?: number; index?: number; value?: number; enabled?: boolean; fxid?: number; slot?: number } }).message;
-    const p = get().preset;
-    if (msg.type === "slot" || msg.type === "presetChanged" || msg.type === "model") return scheduleResync();
-    if (!p) return;
-    if (msg.type === "param" && msg.block !== undefined && msg.index !== undefined && msg.value !== undefined)
-      editLocal({ blocks: { [msg.block]: { params: { [msg.index]: msg.value } } } });
-    else if (msg.type === "block" && msg.block !== undefined) editLocal({ blocks: { [msg.block]: { enabled: msg.enabled } } });
+  /** A name list changed on the pedal: re-read it (debounced; a running job re-reads what it changed itself). */
+  const scheduleListRead = (list: "presets" | "snaptones" | "irs") => {
+    clearTimeout(listTimers[list]);
+    listTimers[list] = window.setTimeout(async () => {
+      listTimers[list] = undefined;
+      const d = driver;
+      if (!d || get().status !== "connected" || get().busy) return;
+      try {
+        if (list === "presets") setNames(await d.readNames());
+        else if (list === "snaptones") set({ snapTones: await d.readSnapTones() });
+        else set({ userIRs: await d.readUserIRs() });
+      } catch (e) {
+        noteError(e);
+      }
+    }, RESYNC_DEBOUNCE_MS);
   };
 
-  const attach = async (s: Gp5Session, mode: DeviceMode, portName: string) => {
-    let gotBytes = false;
-    s.addEventListener("message", onUnsolicited);
-    s.addEventListener("badframe", () => (gotBytes = true));
-    session = s;
+  /** Pedal-side edits of the active preset; echoes of what this app just sent are skipped. */
+  const onPresetEvent = (e: DriverEvent) => {
+    const p = get().preset;
+    if (!p) return;
+    if (e.type === "param") editLocal({ blocks: { [e.block]: { params: { [e.index]: e.value } } } });
+    else if (e.type === "block") editLocal({ blocks: { [e.block]: { enabled: e.enabled } } });
+    else if (e.type === "patchSetting" && !isEcho(`setting:${e.field}`)) {
+      if (e.field === "volume" || e.field === "bpm") editLocal({ [e.field]: e.value });
+      else if (p.exp) editLocal({ exp: { [e.field]: e.value } });
+    } else if (e.type === "footswitches" && !isEcho("footswitches")) editLocal({ footswitches: { fs1: e.fs1, fs2: e.fs2 } });
+    else if (e.type === "order" && !isEcho("order") && validateOrder(e.order) === null) editLocal({ order: e.order });
+  };
+
+  const onDriverEvent = (e: DriverEvent) => {
+    if (e.type === "resync") return scheduleResync();
+    if (e.type === "listChanged") return scheduleListRead(e.list);
+    if (e.type === "global") {
+      if (!isEcho(`global:${e.name}`)) set({ globals: { ...(get().globals ?? {}), [e.name]: e.value } });
+      return;
+    }
     try {
-      const snap = await s.syncState();
+      onPresetEvent(e);
+    } catch (err) {
+      // A value the preset can't hold (a newer firmware's range): keep the preset, note it for diagnostics.
+      noteError(err);
+    }
+  };
+
+  const attach = async (d: DeviceDriver, mode: DeviceMode) => {
+    let gotBytes = false;
+    d.subscribe((e) => (e.type === "badframe" ? (gotBytes = true) : onDriverEvent(e)));
+    driver = d;
+    try {
+      const snap = await d.sync();
       gotBytes = true;
-      const names: SlotName[] = snap.names.map((n: { slot: number; name: string }) => ({ slot: n.slot, name: n.name }));
-      cacheNames(snap.device, names);
+      setFeatures(d, mode);
+      cacheNames(snap.device, snap.names);
       saveDevice(snap.device);
       const state = toPresetState(snap.slot, snap.prst);
+      const saved = await storedCopy(d, state, snap.modified ?? null, false);
       reconnects = 0;
-      const { records, ...globals } = snap.globals ?? { records: [] };
       const now = Date.now();
-      try {
-        localStorage.setItem(LAST_CONNECTED_KEY, String(now));
-      } catch {
-        /* storage unavailable: "last connected" is informational only */
-      }
+      saveLastConnected(now);
       set({
         mode,
         status: "connected",
         error: null,
-        portName,
+        portName: d.portName,
         device: snap.device,
-        names,
+        names: snap.names,
         slot: snap.slot,
-        globals: snap.globals ? globals : null,
-        globalRecords: snap.globals ? records : null,
+        globals: snap.globals?.values ?? null,
+        globalRecords: snap.globals?.records ?? null,
+        firmware: snap.globals?.firmware ?? null,
         snapTones: null,
         userIRs: null,
         connectedAt: now,
@@ -364,52 +341,89 @@ export const useDevice = create<DeviceState>((set, get) => {
         disconnectReason: null,
         lastError: null,
       });
-      setPreset(state, state);
+      setPreset(state, saved);
     } catch (e) {
-      session = null;
-      await s.close().catch(() => {});
-      throw toConnectionError(e, gotBytes, s.device ?? get().device);
+      driver = null;
+      setFeatures(null);
+      await d.close().catch(() => {});
+      throw toConnectionError(e, gotBytes, d.device ?? get().device);
     }
   };
 
   const onPortLost = () => {
-    const s = session;
-    session = null;
-    void s?.close().catch(() => {});
-    set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "lost" });
+    const d = driver;
+    driver = null;
+    sends.clear();
+    void d?.close().catch(() => {});
+    set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "lost", features: [], lockedFeatures: [] });
     if (!userDisconnected && get().mode === "webmidi" && reconnects < MAX_RECONNECTS) {
       reconnects++;
       setTimeout(() => void get().connect("webmidi").catch(() => {}), 1000 * reconnects);
     } else startWatch();
   };
 
-  /** Send the latest coalesced value for `key`, then any value queued while it was in flight. */
-  const pump = async (key: string, block: number, paramIndex: number) => {
-    if (inflight.has(key) || !session) return;
-    inflight.add(key);
+  /** Run an upload with busy progress, then re-read the slot table it changed. */
+  const upload = async (kind: "snaptone" | "userir", label: string, send: (onProgress: (done: number, total: number) => void) => Promise<string>, reread: () => Promise<unknown>, onProgress?: (f: number) => void) => {
+    requireIdle();
+    set({ busy: { kind, progress: 0, label } });
     try {
-      while (pending.has(key) && session) {
-        const v = pending.get(key)!;
-        pending.delete(key);
-        await session.setParam(block, paramIndex, v).catch(noteError);
-      }
+      const stored = await send((done, total) => {
+        set({ busy: { kind, progress: done / total, label } });
+        onProgress?.(done / total);
+      });
+      await reread();
+      return stored;
+    } catch (e) {
+      noteError(e);
+      throw e;
     } finally {
-      inflight.delete(key);
+      set({ busy: null });
     }
   };
 
-  const pumpGlobal = async (name: GlobalName) => {
-    if (inflightGlobals.has(name) || !session) return;
-    inflightGlobals.add(name);
+  /**
+   * A preset-management command inside the pedal (delete / copy / move) touching `affected` slots: refuses to change
+   * the active slot while it has unsaved edits, then re-reads the names and, when it was affected, the active preset.
+   */
+  const manage = async (d: DeviceDriver, label: string, affected: number[], run: (progress: (f: number) => void) => Promise<void>) => {
+    requireIdle();
+    const active = get().slot;
+    const touchesActive = active !== null && affected.includes(active);
+    if (touchesActive && get().unsavedChanges > 0) throw new DeviceError("unsaved", "This changes the active preset on the pedal; save or discard the unsaved changes first");
+    set({ busy: { kind: "manage", progress: 0, label } });
     try {
-      while (pendingGlobals.has(name) && session) {
-        const v = pendingGlobals.get(name)!;
-        pendingGlobals.delete(name);
-        await session.setGlobal(name, v).catch(noteError);
-      }
+      await run((progress) => set({ busy: { kind: "manage", progress, label } }));
+    } catch (e) {
+      noteError(e);
+      throw e;
     } finally {
-      inflightGlobals.delete(name);
+      if (driver === d) {
+        const names = await d.readNames().catch(() => null);
+        if (names) setNames(names);
+        if (touchesActive) await readActive(d).catch(noteError);
+      }
+      set({ busy: null });
     }
+  };
+
+  /** Sync toggle on a GP-50 block: the pedal resets the bound Time/Rate, so show what it reports after the toggle. */
+  const toggleSync = (p: PresetState, block: number, toggle: ParamInfo, on: boolean) => {
+    const b = p.blocks[block];
+    // The raw catalog param (b.model shows the synced spec), whose default the pedal restores when Sync turns off
+    const target = toModel(b.fxid, p.device)?.params.find((x) => x.index === toggle.syncs);
+    // Locally the same reset the pedal does (division 1/4 on, the param's default off), so offline edits read right.
+    editLocal({ blocks: { [block]: { params: { [toggle.index]: on ? 1 : 0, ...(target ? { [target.index]: on ? SYNC_ON_DIVISION : target.default } : {}) } } } });
+    if (!isLive()) return;
+    const d = driver!;
+    const key = `param:${block}:${toggle.index}`;
+    const synced = liveWith("sync");
+    if (!synced?.setSync) return sends.push(key, () => d.setParam(block, toggle.index, on ? 1 : 0));
+    sends.push(key, async () => {
+      const fresh: number[] = parsePrst(await synced.setSync!(block, toggle.index, on, get().preset?.name ?? p.name)).blocks[block].params;
+      // Refresh the block from the re-read body, except params with an edit still on its way.
+      const params = Object.fromEntries(fresh.flatMap((v, i) => (sends.busy(`param:${block}:${i}`) ? [] : [[i, v]])));
+      editLocal({ blocks: { [block]: { params } } });
+    });
   };
 
   const lastDevice = loadDevice();
@@ -426,6 +440,10 @@ export const useDevice = create<DeviceState>((set, get) => {
     saved: null,
     unsavedChanges: 0,
     globals: null,
+    firmware: null,
+    features: [],
+    lockedFeatures: [],
+    gp50Extras: false,
     snapTones: null,
     userIRs: null,
     busy: null,
@@ -461,10 +479,9 @@ export const useDevice = create<DeviceState>((set, get) => {
       if (get().status !== "connecting") return;
       connectAttempt++;
       userDisconnected = true;
-      const s = session;
-      session = null;
-      mock = null;
-      await s?.close().catch(() => {});
+      const d = driver;
+      driver = null;
+      await d?.close().catch(() => {});
       set({ status: "disconnected", error: null, portName: null, disconnectReason: "user" });
     },
 
@@ -472,37 +489,45 @@ export const useDevice = create<DeviceState>((set, get) => {
       set({ lastError: null });
     },
 
+    can(feature) {
+      return get().features.includes(feature);
+    },
+
+    setGp50Extras(on) {
+      set({ gp50Extras: on });
+      setFeatures(isLive() ? driver : null, get().mode, on);
+    },
+
     async connect(mode = get().mode, opts) {
       if (get().status === "connecting") return;
       stopWatch();
       userDisconnected = false;
-      if (session) await get().disconnect();
+      if (driver) await get().disconnect();
       userDisconnected = false;
       const attempt = ++connectAttempt;
       const cancelled = () => attempt !== connectAttempt;
       set({ mode, status: "connecting", error: null });
       // OS-side checks (USB, driver, Suite) run alongside; they sharpen errors and feed the Diagnostics card.
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
+      const driverOpts = { log: onLog, onDisconnect: onPortLost };
       try {
+        const settings = await host.app.getSettings().catch(() => null);
+        if (settings) set({ gp50Extras: settings.gp50Extras });
+        let d: DeviceDriver;
         if (mode === "mock") {
           if (opts?.mockDevice) mockDevice = opts.mockDevice;
-          const presets = await loadMockPresets(mockDevice);
-          if (cancelled()) return;
-          mock = new MockGp5({ presets, latencyMs: 2, snapTones: MOCK_SNAPTONES, userIRs: MOCK_USER_IRS });
-          await attach(newSession(mock.transport()), "mock", `${pedalName(mockDevice)} (simulated)`);
+          d = await simulate(mockDevice, driverOpts);
         } else {
-          const settings = await host.app.getSettings().catch(() => null);
-          const port = settings?.portPattern ? settings.portPattern : undefined;
-          const transport = await connectWebMidi({ ...(port ? { port } : {}), onDisconnect: onPortLost });
-          if (cancelled()) {
-            await transport.close();
-            return;
-          }
-          await attach(newSession(transport), "webmidi", transport.name);
+          d = await openPort(settings?.portPattern || undefined, driverOpts);
         }
+        if (cancelled()) {
+          await d.close();
+          return;
+        }
+        await attach(d, mode);
       } catch (e) {
         if (cancelled()) return;
-        // attach() throws a ConnectionError; connectWebMidi throws a Gp5ConnectError (an Error) that still needs mapping.
+        // attach() and the factory throw a ConnectionError; WebMIDI failures are a Gp5ConnectError (an Error) that still needs mapping.
         const base = e instanceof Error ? toConnectionError(e, false, get().device) : (e as ConnectionError);
         const error = refineConnectionError(base, await hostCheck);
         set({ status: "error", error });
@@ -514,29 +539,23 @@ export const useDevice = create<DeviceState>((set, get) => {
     async disconnect() {
       userDisconnected = true;
       stopWatch();
-      const s = session;
-      session = null;
-      mock = null;
-      pending.clear();
-      pendingGlobals.clear();
-      await s?.close().catch(() => {});
-      set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "user" });
+      const d = driver;
+      driver = null;
+      sends.clear();
+      await d?.close().catch(() => {});
+      set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "user", features: [], lockedFeatures: [] });
     },
 
     async sync() {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
       set({ busy: { kind: "sync", progress: 0, label: "Reading the pedal" } });
       try {
-        const names: SlotName[] = (await s.readPresetNames()).map((n: { slot: number; name: string }) => ({ slot: n.slot, name: n.name }));
-        cacheNames(get().device, names);
-        set({ names });
-        await readActive(s, names);
-        const raw = await s.readGlobals().catch(() => null);
-        if (raw) {
-          const { records, ...globals } = raw;
-          set({ globals, globalRecords: records });
-        }
+        const names = await d.readNames();
+        setNames(names);
+        await readActive(d, names, true);
+        const globals = await d.readGlobals().catch(() => null);
+        if (globals) set({ globals: globals.values, globalRecords: globals.records, firmware: globals.firmware ?? get().firmware });
         set({ lastError: null });
       } catch (e) {
         noteError(e);
@@ -547,11 +566,11 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     async selectSlot(slot) {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
-      pending.clear();
-      await s.selectPreset(slot);
-      await readActive(s);
+      sends.clear();
+      await d.select(slot);
+      await readActive(d);
     },
 
     setParam(block, paramIndex, value) {
@@ -559,66 +578,99 @@ export const useDevice = create<DeviceState>((set, get) => {
       if (!p) return;
       const info = p.blocks[block]?.model?.params.find((x) => x.index === paramIndex);
       const v = info ? (clampParam(info, value) as number) : value;
+      if (info?.syncs !== undefined) return toggleSync(p, block, info, v >= 0.5);
       editLocal({ blocks: { [block]: { params: { [paramIndex]: v } } } });
-      if (!session || get().status !== "connected") return;
-      const key = `${block}:${paramIndex}`;
-      pending.set(key, v);
-      void pump(key, block, paramIndex);
+      if (!isLive()) return;
+      const d = driver!;
+      sends.push(`param:${block}:${paramIndex}`, () => d.setParam(block, paramIndex, v));
     },
 
     setBlockEnabled(block, on) {
       editLocal({ blocks: { [block]: { enabled: on } } });
-      if (session && get().status === "connected") void session.setBlockEnabled(block, on).catch(() => {});
+      if (isLive()) void driver!.setBlockEnabled(block, on).catch(noteError);
     },
 
     async setModel(block, fxid) {
-      const s = requireSession();
-      await s.setModel(block, fxid);
+      const d = requireDriver();
+      await d.setModel(block, fxid);
       const p = get().preset!;
       // The pedal loads the model's defaults: re-read the active buffer, keep `saved` as it was.
-      const body: Uint8Array = await s.readCurrentBody();
-      setPreset(toPresetState(p.slot, rebuildPrst(p.name, body, await s.identify())));
+      setPreset(toPresetState(p.slot, await d.readEditBuffer(p.name)));
     },
 
-    // Order and footswitch assignments have no live command: they change the preset and reach the pedal on save.
+    // Order, footswitches and tempo change the preset here; they play live where the pedal has a command for them
+    // (GP-50 extras), and otherwise reach the pedal with the full write on save.
     setOrder(order) {
       editLocal({ order });
+      touch("order");
+      const d = liveWith("liveOrder");
+      if (d?.setOrder) sends.push("order", () => d.setOrder!(order));
     },
+
     setFootswitches(fs) {
+      const p = get().preset;
+      if (!p) return;
+      if (p.device === "gp50") {
+        const err = validateFootswitches(fs.fs1, fs.fs2);
+        if (err) throw new RangeError(err);
+      }
       editLocal({ footswitches: fs });
+      touch("footswitches");
+      const d = liveWith("liveFootswitches");
+      if (d?.setFootswitches) sends.push("footswitches", () => d.setFootswitches!(fs.fs1, fs.fs2));
     },
 
     setVolume(volume) {
       editLocal({ volume });
-      if (session && get().status === "connected") void session.setPatchVolume(volume).catch(() => {});
+      touch("setting:volume");
+      if (!isLive()) return;
+      const d = driver!;
+      sends.push("setting:volume", () => d.setPatchVolume(volume));
+    },
+
+    setBpm(bpm) {
+      const p = get().preset;
+      if (!p) return;
+      const v = Math.max(PATCH_SETTINGS.bpm.min, Math.min(PATCH_SETTINGS.bpm.max, Math.round(bpm)));
+      if (v === p.bpm) return;
+      editLocal({ bpm: v });
+      touch("setting:bpm");
+      const d = liveWith("liveBpm");
+      if (d?.setBpm) sends.push("setting:bpm", () => d.setBpm!(v));
+    },
+
+    setExp(edit) {
+      const p = get().preset;
+      if (!p?.exp) throw new DeviceError("unsafe", `${p ? `${pedalName(p.device)} presets have` : "This preset has"} no EXP settings`);
+      const d = requireFeature("exp");
+      editLocal({ exp: edit });
+      for (const [field, value] of Object.entries(edit)) {
+        touch(`setting:${field}`);
+        sends.push(`setting:${field}`, () => d.setExp!({ [field]: value }));
+      }
     },
 
     async discard() {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
-      const slot = get().slot!;
-      pending.clear();
-      // Re-selecting the active slot does not reload flash: hop away and back.
-      await s.selectPreset((slot + 1) % 100);
-      await s.selectPreset(slot);
-      await readActive(s);
+      sends.clear();
+      await d.reloadSlot(get().slot!);
+      await readActive(d);
     },
 
     async saveToSlot(slot, name) {
       const p = get().preset;
       if (!p) throw new DeviceError("not-connected", "No preset loaded");
       const prst = name !== undefined && name !== p.name ? applyEdits(p.prst, { name }) : p.prst;
-      // A full write keeps everything (order and footswitches have no live command, so the edit buffer alone is not enough).
+      // A full write keeps everything (order, footswitches, tempo and EXP may have been edited without a live command).
       await get().writePreset(slot, prst);
     },
 
     async rename(slot, name) {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
-      await s.renamePreset(slot, name, { confirm: true });
-      const names = get().names.map((n) => (n.slot === slot ? { ...n, name } : n));
-      cacheNames(get().device, names);
-      set({ names });
+      await d.rename(slot, name);
+      setNames(get().names.map((n) => (n.slot === slot ? { ...n, name } : n)));
       const { preset, saved } = get();
       if (preset?.slot === slot && saved) {
         const rename = (x: PresetState) => toPresetState(slot, applyEdits(x.prst, { name }));
@@ -627,23 +679,22 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     async writePreset(slot, prst, opts) {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
-      set({ busy: { kind: "write", progress: 0, label: `Writing slot ${slot}` } });
+      const label = `Writing slot ${slot}`;
+      set({ busy: { kind: "write", progress: 0, label } });
       try {
-        await s.writePreset(slot, prst, {
-          confirm: true,
-          onProgress: (done: number, total: number) => {
+        await d.writePreset(slot, prst, {
+          onProgress: (done, total) => {
             const f = done / total;
-            set({ busy: { kind: "write", progress: f, label: `Writing slot ${slot}` } });
+            set({ busy: { kind: "write", progress: f, label } });
             opts?.onProgress?.(f);
           },
         });
         const written = toPresetState(slot, prst);
-        const names = get().names.map((n) => (n.slot === slot ? { ...n, name: written.name } : n));
-        cacheNames(get().device, names);
+        setNames(get().names.map((n) => (n.slot === slot ? { ...n, name: written.name } : n)));
         // writePreset verifies by selecting `slot`, so it is now the active preset.
-        set({ names, slot });
+        set({ slot });
         setPreset(written, written);
       } finally {
         set({ busy: null });
@@ -651,112 +702,99 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     async readPreset(slot) {
-      const s = requireSession();
+      const d = requireDriver();
       const p = get().preset;
       if (p && p.slot === slot) return p.prst;
       requireIdle();
+      // The export read leaves the active preset (and its unsaved edits) alone.
+      if (get().features.includes("exportPreset") && d.exportPreset) return d.exportPreset(slot);
       guardUnsaved("Reading another slot");
       const original = get().slot;
-      const prst: Uint8Array = await s.readPreset(slot, { names: get().names });
+      const prst = await d.readPreset(slot, get().names);
       if (original !== null) {
-        await s.selectPreset(original);
-        await readActive(s);
+        await d.select(original);
+        await readActive(d);
       }
       return prst;
     },
 
     async backupAll(opts) {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
       guardUnsaved("A backup");
-      set({ busy: { kind: "backup", progress: 0, label: "Backing up 100 slots" } });
+      set({ busy: { kind: "backup", progress: 0, label: `Backing up ${profileOrDefault(get().device).slotCount} slots` } });
       try {
-        const entries: BackupEntry[] = await s.backupAll({
-          onProgress: (done: number, total: number) => {
+        const entries = await d.backupAll({
+          onProgress: (done, total) => {
             const f = done / total;
             set({ busy: { kind: "backup", progress: f, label: `Backing up slot ${done} of ${total}` } });
             opts?.onProgress?.(f);
           },
         });
-        await readActive(s);
-        return entries.map((e) => ({ slot: e.slot, name: e.name, prst: e.prst }));
+        await readActive(d);
+        return entries;
       } finally {
         set({ busy: null });
       }
     },
 
+    async deletePresets(slots) {
+      const d = requireFeature("deletePreset");
+      const label = slots.length === 1 ? `Clearing slot ${slots[0]}` : `Clearing ${slots.length} slots`;
+      await manage(d, label, slots, async (progress) => {
+        for (const [i, slot] of slots.entries()) {
+          await d.deletePreset!(slot);
+          progress((i + 1) / slots.length);
+        }
+      });
+    },
+
+    async copyPreset(from, to) {
+      const d = requireFeature("copyPreset");
+      await manage(d, `Copying slot ${from} to slot ${to}`, [to], () => d.copyPreset!(from, to));
+    },
+
+    async movePreset(from, to) {
+      const d = requireFeature("movePreset");
+      const affected = Array.from({ length: Math.abs(to - from) + 1 }, (_, i) => Math.min(from, to) + i);
+      await manage(d, `Moving slot ${from} to slot ${to}`, affected, () => d.movePreset!(from, to));
+    },
+
     setGlobal(name, value) {
-      requireSession();
-      const g = GLOBALS[name];
-      const v = Math.max(g.min, Math.min(g.max, Math.round(value)));
+      const d = requireDriver();
+      const v = d.clampGlobal(name, value);
       set({ globals: { ...(get().globals ?? {}), [name]: v } });
-      pendingGlobals.set(name, v);
-      void pumpGlobal(name);
+      touch(`global:${name}`);
+      sends.push(`global:${name}`, () => d.setGlobal(name, v));
     },
 
     async readSnapTones() {
-      const s = requireSession();
-      const list: SlotName[] = (await s.readSnapTones()).map((x) => ({ slot: x.index, name: x.name, kind: x.kind }));
+      const list = await requireDriver().readSnapTones();
       set({ snapTones: list });
       return list;
     },
 
     async uploadSnapTone(slot, name, file, opts) {
-      const s = requireSession();
-      requireIdle();
-      const label = `Writing SnapTone slot ${slot}`;
-      set({ busy: { kind: "snaptone", progress: 0, label } });
-      try {
-        const result = await s.uploadSnapTone(slot, name, file, {
-          confirm: true,
-          onProgress: (done: number, total: number) => {
-            set({ busy: { kind: "snaptone", progress: done / total, label } });
-            opts?.onProgress?.(done / total);
-          },
-        });
-        await get().readSnapTones();
-        return result.name;
-      } catch (e) {
-        noteError(e);
-        throw e;
-      } finally {
-        set({ busy: null });
-      }
+      const d = requireDriver();
+      const send = (onProgress: (done: number, total: number) => void) => d.uploadSnapTone(slot, name, file, { onProgress });
+      return upload("snaptone", `Writing SnapTone slot ${slot}`, send, () => get().readSnapTones(), opts?.onProgress);
     },
 
     async readUserIRs() {
-      const s = requireSession();
-      const list: SlotName[] = (await s.readUserIRs()).map((x) => ({ slot: x.index, name: x.name, kind: x.kind }));
+      const list = await requireDriver().readUserIRs();
       set({ userIRs: list });
       return list;
     },
 
     async uploadUserIr(slot, name, data, opts) {
-      const s = requireSession();
-      requireIdle();
+      const d = requireDriver();
       // The pedal, Suite and the UI number User IRs from 1 ("User IR 1" = slot 0).
-      const label = `Writing User IR ${slot + 1}`;
-      set({ busy: { kind: "userir", progress: 0, label } });
-      try {
-        const result = await s.uploadUserIr(slot, name, data, {
-          confirm: true,
-          onProgress: (done: number, total: number) => {
-            set({ busy: { kind: "userir", progress: done / total, label } });
-            opts?.onProgress?.(done / total);
-          },
-        });
-        await get().readUserIRs();
-        return result.name;
-      } catch (e) {
-        noteError(e);
-        throw e;
-      } finally {
-        set({ busy: null });
-      }
+      const send = (onProgress: (done: number, total: number) => void) => d.uploadUserIr(slot, name, data, { onProgress });
+      return upload("userir", `Writing User IR ${slot + 1}`, send, () => get().readUserIRs(), opts?.onProgress);
     },
 
     async restoreAll(entries, opts) {
-      const s = requireSession();
+      const d = requireDriver();
       requireIdle();
       guardUnsaved("A restore");
       const slots = entries.map((e) => e.slot);
@@ -770,11 +808,9 @@ export const useDevice = create<DeviceState>((set, get) => {
           const { slot, prst } = entries[i];
           set({ busy: { kind: "restore", progress: i / total, label: label(i) } });
           try {
-            await s.writePreset(slot, prst, {
-              confirm: true,
-              verify: true,
+            await d.writePreset(slot, prst, {
               attempts: 3,
-              onProgress: (f: number, n: number) => set({ busy: { kind: "restore", progress: (i + f / n) / total, label: label(i) } }),
+              onProgress: (f, n) => set({ busy: { kind: "restore", progress: (i + f / n) / total, label: label(i) } }),
             });
           } catch (e) {
             noteError(e);
@@ -785,16 +821,10 @@ export const useDevice = create<DeviceState>((set, get) => {
         }
       } finally {
         // Names changed on the pedal: refresh them and the active preset, whatever happened.
-        if (session === s) {
-          const names: SlotName[] | null = await s
-            .readPresetNames()
-            .then((list) => list.map((n) => ({ slot: n.slot, name: n.name })))
-            .catch(() => null);
-          if (names) {
-            cacheNames(get().device, names);
-            set({ names });
-          }
-          await readActive(s).catch(noteError);
+        if (driver === d) {
+          const names = await d.readNames().catch(() => null);
+          if (names) setNames(names);
+          await readActive(d).catch(noteError);
         }
         set({ busy: null });
       }
@@ -810,3 +840,6 @@ export const usePedalName = (): string => useDevice((s) => pedalName(s.device));
 
 /** The connected (or last connected) pedal's name; "GP-5 / GP-50" before the first connection. */
 export const usePedalNameOrBoth = (): string => useDevice((s) => pedalNameOrBoth(s.device));
+
+/** Profile (geometry, labels) of the connected (or last connected) pedal; DEFAULT_DEVICE's before the first connection. */
+export const useProfile = (): DeviceProfile => useDevice((s) => profileOrDefault(s.device));

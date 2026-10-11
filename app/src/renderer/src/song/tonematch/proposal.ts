@@ -6,8 +6,8 @@
 //  - delay F.Back = feedback × 100; delay and reverb Mix = 100 · w / (1 + w) for a wet level w relative to dry.
 //  - reverb Decay: RT60 0.3 s → 0, 5 s → 100, linear.
 import { clampParam, defaultParams, findModel } from "@/gp5/lib/catalog.mjs";
-import { pedalName } from "@/state/device-model";
-import { BLOCK_CODES, type BlockCode, type DeviceKey, type ModelInfo, type ParamInfo } from "@/state/device-types";
+import { blockCodes, pedalName } from "@/state/device-model";
+import type { BlockCode, Gp5FamilyKey, ModelInfo, ParamInfo } from "@/state/device-types";
 import type { GuitarAnalysis, ToneEstimate } from "./analyse";
 import type { GainClass } from "./gain";
 
@@ -18,7 +18,7 @@ export interface ProposedSetting {
 }
 
 export interface ProposedBlock {
-  /** Preset storage index (0 NR … 9 NS) */
+  /** Preset storage index (GP-5 family: 0 NR … 9 NS) */
   index: number;
   code: BlockCode;
   enabled: boolean;
@@ -36,8 +36,8 @@ export interface ProposedBlock {
 }
 
 export interface Proposal {
-  /** Pedal model whose catalog the blocks come from; only that pedal can play it */
-  device: DeviceKey;
+  /** Pedal model whose catalog the blocks come from (the GP-5 family's catalog); only that pedal can play it */
+  device: Gp5FamilyKey;
   blocks: ProposedBlock[];
   /** Weighted overall confidence */
   confidence: number;
@@ -55,14 +55,14 @@ type CatalogModel = ModelInfo & { params: (ParamInfo & { toggle?: boolean })[] }
 const fmtDb = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(db).toFixed(1)} dB`;
 const clampStep = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
 
-function model(name: string, block: BlockCode, device: DeviceKey): CatalogModel {
+function model(name: string, block: BlockCode, device: Gp5FamilyKey): CatalogModel {
   const m = findModel(name, block, device) as CatalogModel | undefined;
   if (!m) throw new Error(`The ${pedalName(device)} catalog has no ${block} model "${name}"`);
   return m;
 }
 
 /** A block loading `name` with `values` (by param name; unknown names are skipped) on top of the model defaults. */
-function withModel(device: DeviceKey, code: BlockCode, name: string, values: Record<string, number>, why: string, confidence: number): ProposedBlock {
+function withModel(device: Gp5FamilyKey, code: BlockCode, name: string, values: Record<string, number>, why: string, confidence: number): ProposedBlock {
   const m = model(name, code, device);
   const params = defaultParams(m.fxid, device) as number[];
   const settings: ProposedSetting[] = [];
@@ -70,11 +70,11 @@ function withModel(device: DeviceKey, code: BlockCode, name: string, values: Rec
     if (values[p.name] !== undefined) params[p.index] = clampParam(p, values[p.name]) as number;
     if (!p.toggle || values[p.name] !== undefined) settings.push({ name: p.name, value: params[p.index], ...(p.unit ? { unit: p.unit } : {}) });
   }
-  return { index: BLOCK_CODES.indexOf(code), code, enabled: true, fxid: m.fxid, title: m.title, params, settings, why, confidence };
+  return { index: blockCodes(device).indexOf(code), code, enabled: true, fxid: m.fxid, title: m.title, params, settings, why, confidence };
 }
 
-const keepModel = (code: BlockCode, enabled: boolean, why: string, confidence: number | null): ProposedBlock => ({
-  index: BLOCK_CODES.indexOf(code),
+const keepModel = (device: Gp5FamilyKey, code: BlockCode, enabled: boolean, why: string, confidence: number | null): ProposedBlock => ({
+  index: blockCodes(device).indexOf(code),
   code,
   enabled,
   fxid: null,
@@ -125,7 +125,7 @@ export function ampGain(gainClass: GainClass, score: number): number {
 const knob = (db: number) => clampStep(50 + (db / 2) * STEPS_PER_DB, 25, 75);
 const eqBand = (db: number) => clampStep((db / 2) * STEPS_PER_DB, -20, 20);
 
-function ampBlock(device: DeviceKey, a: GuitarAnalysis, choice: AmpChoice): ProposedBlock {
+function ampBlock(device: Gp5FamilyKey, a: GuitarAnalysis, choice: AmpChoice): ProposedBlock {
   const { gain, tone } = a;
   const values: Record<string, number> = {
     Gain: ampGain(gain.gainClass, gain.score),
@@ -144,7 +144,7 @@ function ampBlock(device: DeviceKey, a: GuitarAnalysis, choice: AmpChoice): Prop
   return withModel(device, "AMP", choice.amp, values, why, gain.confidence);
 }
 
-function eqBlock(device: DeviceKey, tone: ToneEstimate): ProposedBlock {
+function eqBlock(device: Gp5FamilyKey, tone: ToneEstimate): ProposedBlock {
   const values = { "125Hz": eqBand(tone.bassDb), "400Hz": eqBand(tone.lowMidDb), "800Hz": eqBand(tone.midDb), "1.6kHz": eqBand(tone.trebleDb), "4kHz": eqBand(tone.presenceDb) };
   const strongest = Math.max(...Object.values(values).map(Math.abs));
   const block = withModel(
@@ -160,10 +160,10 @@ function eqBlock(device: DeviceKey, tone: ToneEstimate): ProposedBlock {
   return { ...block, enabled: strongest >= 6 };
 }
 
-function delayBlock(device: DeviceKey, a: GuitarAnalysis): ProposedBlock {
+function delayBlock(device: Gp5FamilyKey, a: GuitarAnalysis): ProposedBlock {
   const d = a.delay;
   if (!d.detected || d.confidence < EFFECT_MIN_CONFIDENCE)
-    return keepModel("DLY", false, d.detected ? "A possible echo was found, but too uncertain to add (it may be the rhythm of the part)." : "No clear echo in the guitar.", d.confidence);
+    return keepModel(device, "DLY", false, d.detected ? "A possible echo was found, but too uncertain to add (it may be the rhythm of the part)." : "No clear echo in the guitar.", d.confidence);
   const slap = d.timeMs <= 160 && d.feedback < 0.25;
   const name = slap ? "Slapback" : d.dark || d.timeMs > 1000 ? (d.dark && d.timeMs <= 1000 ? "Tape" : "Analog") : "Pure";
   const fb = Math.round(d.feedback * 100);
@@ -174,10 +174,11 @@ function delayBlock(device: DeviceKey, a: GuitarAnalysis): ProposedBlock {
   return withModel(device, "DLY", name, values, why, d.confidence);
 }
 
-function reverbBlock(device: DeviceKey, a: GuitarAnalysis): ProposedBlock {
+function reverbBlock(device: Gp5FamilyKey, a: GuitarAnalysis): ProposedBlock {
   const r = a.reverb;
   if (!r.detected || r.confidence < EFFECT_MIN_CONFIDENCE)
     return keepModel(
+      device,
       "RVB",
       false,
       r.tails + r.dryOffsets === 0 ? "No note endings to measure a reverb on." : `Notes stop without a clear tail (${r.dryOffsets} dry endings, ${r.tails} with a tail).`,
@@ -191,29 +192,30 @@ function reverbBlock(device: DeviceKey, a: GuitarAnalysis): ProposedBlock {
 }
 
 /** Build the proposal for `device` (the pedal it will play on). Blocks not listed in the analysis (PRE, MOD, NS) are
- *  switched off to keep the audition clean. */
-export function proposePreset(a: GuitarAnalysis, device: DeviceKey): Proposal {
+ *  switched off to keep the audition clean. Blocks come in the model's storage order. */
+export function proposePreset(a: GuitarAnalysis, device: Gp5FamilyKey): Proposal {
   const { gain } = a;
   const choice = chooseAmp(gain.gainClass, gain.score, a.tone);
   const boost = gain.gainClass === "high" && gain.score >= 0.8;
   const amp = ampBlock(device, a, choice);
   const cab = withModel(device, "CAB", choice.cab, {}, `The cabinet usually paired with this amp. Record your own match below to replace it with an IR.`, gain.confidence * 0.8);
-  const blocks: ProposedBlock[] = [
-    keepModel("NR", gain.gainClass === "high", gain.gainClass === "high" ? "A gate keeps high gain quiet between notes." : "Not needed at this gain.", gain.confidence),
-    keepModel("PRE", false, "Off for the audition.", null),
-    boost
+  const byCode: Record<BlockCode, ProposedBlock> = {
+    NR: keepModel(device, "NR", gain.gainClass === "high", gain.gainClass === "high" ? "A gate keeps high gain quiet between notes." : "Not needed at this gain.", gain.confidence),
+    PRE: keepModel(device, "PRE", false, "Off for the audition.", null),
+    DST: boost
       ? withModel(device, "DST", "Green OD", { Gain: 10, Tone: 60, VOL: 75 }, "Very saturated: a low-gain overdrive in front of the amp tightens the low end, the usual way to get there.", gain.confidence * 0.8)
-      : keepModel("DST", false, "The amp gives enough drive on its own.", gain.confidence),
-    amp,
-    cab,
-    eqBlock(device, a.tone),
-    keepModel("MOD", false, "Modulation isn't analysed; off for the audition.", null),
-    delayBlock(device, a),
-    reverbBlock(device, a),
-    keepModel("NS", false, "No SnapTone in the chain, so the amp model is heard alone.", null),
-  ];
+      : keepModel(device, "DST", false, "The amp gives enough drive on its own.", gain.confidence),
+    AMP: amp,
+    CAB: cab,
+    EQ: eqBlock(device, a.tone),
+    MOD: keepModel(device, "MOD", false, "Modulation isn't analysed; off for the audition.", null),
+    DLY: delayBlock(device, a),
+    RVB: reverbBlock(device, a),
+    NS: keepModel(device, "NS", false, "No SnapTone in the chain, so the amp model is heard alone.", null),
+  };
+  const blocks = blockCodes(device).map((code) => byCode[code]);
   const confidence = 0.4 * gain.confidence + 0.2 * a.tone.confidence + 0.2 * a.delay.confidence + 0.2 * a.reverb.confidence;
-  const fx = [blocks[7].enabled ? (blocks[7].title ?? "") + " delay" : null, blocks[8].enabled ? (blocks[8].title ?? "") + " reverb" : null].filter(Boolean);
+  const fx = [byCode.DLY.enabled ? (byCode.DLY.title ?? "") + " delay" : null, byCode.RVB.enabled ? (byCode.RVB.title ?? "") + " reverb" : null].filter(Boolean);
   const summary = `${GAIN_LABEL[gain.gainClass]}: ${amp.title} into ${cab.title}${fx.length ? `, ${fx.join(" and ")}` : ", no time effects"}.`;
   return { device, blocks, confidence, summary };
 }

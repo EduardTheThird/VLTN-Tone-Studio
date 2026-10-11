@@ -240,6 +240,7 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
   const [progress, setProgress] = useState(0);
   const connected = useDevice((s) => s.status === "connected");
   const userIRs = useDevice((s) => s.userIRs);
+  const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
   const blocker = useIrWriteBlocker(slot);
   const replacing = irOccupant(userIRs, slot);
@@ -266,8 +267,8 @@ export function LocalIrDialog({ file, onClose }: { file: OpenFile | null; onClos
     if (file && connected && !userIRs && !busy) void readSlots();
   }, [file, connected, userIRs, busy]);
   useEffect(() => {
-    if (file && slot === null && userIRs) setSlot(firstEmptySlot("ir", userIRs));
-  }, [file, slot, userIRs]);
+    if (file && slot === null && userIRs) setSlot(firstEmptySlot("ir", userIRs, device));
+  }, [file, slot, userIRs, device]);
 
   const write = async () => {
     if (!file || !ir || slot === null) return;

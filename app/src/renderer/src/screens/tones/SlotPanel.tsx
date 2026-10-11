@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
-import { useDevice, usePedalName } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
 import { requestPresetSwitch } from "@/app/preset-switch";
@@ -45,7 +45,7 @@ function ago(at: number, now: number): string {
   return `Read at ${new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-/** "On your GP-5" (or GP-50): SnapTone and User IR slot maps. */
+/** "On your GP-5" (or GP-50): SnapTone and User IR slot maps, laid out from the pedal's profile. */
 export function SlotPanel() {
   const status = useDevice((s) => s.status);
   const error = useDevice((s) => s.error);
@@ -61,6 +61,7 @@ export function SlotPanel() {
   const now = useNow(30_000);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
+  const profile = useProfile();
   const connected = status === "connected";
   const [reading, setReading] = useState(false);
 
@@ -95,8 +96,10 @@ export function SlotPanel() {
     setReading(false);
   };
 
-  const snapUser = snapTones?.filter((s) => s.slot >= 50 && s.slot < 80) ?? [];
-  const snapFactory = snapTones?.filter((s) => s.slot < 50) ?? [];
+  const [userFirst, userLast] = profile.snapTone.userRange;
+  const userSlots = userLast - userFirst + 1;
+  const snapUser = snapTones?.filter((s) => s.slot >= userFirst && s.slot <= userLast) ?? [];
+  const snapFactory = snapTones?.filter((s) => s.slot < userFirst) ?? [];
   const used = (list: SlotName[]) => list.filter((s) => !isEmptySlotName(s.name)).length;
   const sourceNote = usage ? `From ${usage.source}` : "Back up the pedal in Library to see which presets use each slot";
 
@@ -132,12 +135,12 @@ export function SlotPanel() {
 
       {snapTones && (
         <section aria-label="SnapTone slots" className="flex flex-col gap-1.5">
-          <SlotsHead title="SnapTone captures" count={`${used(snapUser)} of 30 user slots used`} />
+          <SlotsHead title="SnapTone captures" count={`${used(snapUser)} of ${userSlots} user slots used`} />
           <SlotGrid kind="snaptone" slots={snapUser} index={index.snaptone} links={links.snaptone} targets={targets.snaptone} note={sourceNote} />
           <Collapsible>
             <CollapsibleTrigger className="group flex h-8 w-full items-center gap-1.5 rounded-sm px-2 text-[12px] font-[550] text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam)] hover:bg-accent">
               <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90 motion-reduce:transition-none" aria-hidden />
-              <span>Factory captures 0–49</span>
+              <span>{`Factory captures 0–${userFirst - 1}`}</span>
               <span className="grow" />
               <span className="text-[11px] font-normal text-silkscreen-3">{snapFactory.length}, read-only</span>
             </CollapsibleTrigger>
@@ -150,7 +153,7 @@ export function SlotPanel() {
 
       {userIRs && (
         <section aria-label="User IR slots" className="flex flex-col gap-1.5">
-          <SlotsHead title="User IRs" count={`${used(userIRs)} of 20 slots used`} />
+          <SlotsHead title="User IRs" count={`${used(userIRs)} of ${profile.userIr.slots} slots used`} />
           <SlotGrid kind="ir" slots={userIRs} index={index.ir} links={links.ir} targets={targets.ir} note={sourceNote} />
         </section>
       )}
@@ -214,6 +217,7 @@ function SlotCell({
   const label = kind === "snaptone" ? `SnapTone ${slot.slot}` : irSlotLabel(slot.slot);
   const stale = link && link.gp5.slotName && link.gp5.slotName !== slot.name;
   const records = useTones((s) => s.records);
+  const profile = useProfile();
   const linkable = Object.values(records).filter((r) => (kind === "snaptone" ? r.format === "nam" : r.format === "ir"));
 
   const onClick = () => {
@@ -291,7 +295,7 @@ function SlotCell({
               <ContextMenuGroup>
                 {usedIn.map((p) => (
                   <ContextMenuItem key={p.slot} onSelect={() => void openOnRig(p)}>
-                    {String(p.slot).padStart(2, "0")} {p.name}
+                    {profile.slotLabel(p.slot)} {p.name}
                   </ContextMenuItem>
                 ))}
               </ContextMenuGroup>

@@ -10,6 +10,8 @@ import { useDevice } from "@/state/device";
 import { runBackupNow } from "@/screens/library/backup-now";
 import { useLibrary } from "@/screens/library/store";
 import type { CollectionInfo } from "@shared/host/files";
+import { listNames } from "@shared/devices";
+import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 import { restoreEntries, type RestoreSource } from "./restore";
 import { RestoreDialog } from "./RestoreDialog";
 import { useAppSettings } from "./settings-store";
@@ -70,7 +72,7 @@ export function BackupsPanel({ offline }: { offline: boolean }) {
       if (!picked) return;
       const { entries, converted, skipped } = restoreEntries(picked.files, useDevice.getState().device);
       if (!entries.length) {
-        notifyError("Nothing to restore", new Error(`${picked.name} has no GP-5 or GP-50 presets with a slot number (NN-Name.prst).`));
+        notifyError("Nothing to restore", new Error(`${picked.name} has no ${listNames(SUPPORTED_DEVICE_KEYS)} presets with a slot number (NN-Name.prst).`));
         return;
       }
       setRestore({ title: picked.name, location: picked.path ?? picked.name, entries, converted, skipped });

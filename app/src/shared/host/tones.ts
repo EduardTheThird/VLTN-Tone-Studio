@@ -2,7 +2,7 @@
 // Main process: src/main/ipc/tones.ts (+ src/main/tone3000/*). Tokens never leave main.
 // API reference: https://www.tone3000.com/api (v1). Free tier: Select/Load Tone flows + created/favorited/downloaded/trending/latest only.
 
-import type { PedalModel } from "./device";
+import type { DeviceKey } from "../devices";
 
 export type T3kGear = "amp" | "amp-cab" | "pedal" | "outboard" | "cab" | "space" | "experimental";
 export type T3kFormat = "nam" | "ir" | "aida-x" | "aa-snapshot" | "proteus";
@@ -153,7 +153,7 @@ export interface SlotLink {
   slot: number;
   slotName: string;
   /** Pedal the slot is on (the connected one when the link is made) */
-  device: PedalModel;
+  device: DeviceKey;
 }
 
 /** Local tone record, `tones/<tone_id>/meta.json`. */
@@ -176,7 +176,7 @@ export interface ToneRecord {
     slotName?: string;
     linkedAt?: string;
     /** Pedal model the slot link is on; absent in records linked before GP-50 support, which are GP-5 links */
-    device?: PedalModel;
+    device?: DeviceKey;
   };
   savedAt: string;
 }

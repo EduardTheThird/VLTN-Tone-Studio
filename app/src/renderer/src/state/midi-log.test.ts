@@ -92,4 +92,20 @@ describe("MidiLogDecoder", () => {
     expect(new MidiLogDecoder(undefined, () => "gp50").line("tx", wah)!.text).toBe("PRE model C-Wah");
     expect(new MidiLogDecoder(undefined, () => "gp5").line("tx", wah)!.text).toBe("PRE model 0x5000008");
   });
+
+  it("decodes the GP-50 commands and notifications readably", () => {
+    const d = new MidiLogDecoder(undefined, () => "gp50");
+    const tx = (payload: number[]) => frames(payload).map((f) => d.line("tx", f)!.text).at(-1);
+    expect(tx(encode.setFootswitchMasks([2, 6], [7]))).toBe("Footswitches FS1 DST MOD, FS2 DLY");
+    expect(tx(encode.setOrder([0, 1, 2, 9, 3, 4, 5, 6, 7, 8]))).toBe("Chain order NR PRE DST NS AMP CAB EQ MOD DLY RVB");
+    expect(tx(encode.setPatchSetting(0x2002, 120))).toBe("Tempo 120 BPM");
+    expect(tx(encode.setPatchSetting(0x2004, 13))).toBe("EXP minimum 13%");
+    expect(tx(encode.deletePreset(5))).toBe("Clear slot 5");
+    expect(tx(encode.pastePreset(7, 3))).toBe("Copy slot 3 to slot 7");
+    expect(tx(encode.movePreset(3, 9))).toBe("Move slot 3 to slot 9");
+    expect(tx(encode.exportPreset(12))).toBe("Read stored preset of slot 12");
+    expect(tx(encode.read(0x45))).toBe("Read unsaved-edits flag");
+    const listChanged = [0x12, 0x1b, 2, 0, 0, 0];
+    expect(d.line("rx", frames(listChanged)[0], { raw: Uint8Array.from(listChanged) })!.text).toBe("Pedal: Preset names changed");
+  });
 });

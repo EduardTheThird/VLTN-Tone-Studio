@@ -17,10 +17,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { describeError } from "@/components/write/write-helpers";
 import { notifySuccess } from "@/app/notify";
 import { host } from "@/host";
-import { usePedalName, useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { pedalName, presetDevice } from "@/state/device-model";
 import { REPLACED_ID } from "@shared/host/files";
-import { slotsToRead, type Step } from "./plans";
+import { readSlot, runNative } from "./native";
+import { slotsToRead, type NativeOp, type Step } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
 export interface BulkPlan {
@@ -29,19 +30,16 @@ export interface BulkPlan {
   /** Button label, e.g. "Swap slots 57 and 59" */
   action: string;
   steps: Step[];
+  /**
+   * The pedal runs this itself (GP-50 delete / copy / move); `steps` then only preview the result. The replaced slots
+   * are always backed up first.
+   */
+  native?: NativeOp;
   /** Toast title on success */
   doneTitle: string;
 }
 
 const MAX_ROWS = 6;
-
-/** Current preset of a slot: the saved body of the active slot, otherwise a read (switches presets on the pedal). */
-async function readSlot(slot: number): Promise<Uint8Array> {
-  const d = useDevice.getState();
-  const prst = d.slot === slot && d.saved ? d.saved.prst : await d.readPreset(slot);
-  useLibrary.getState().setBody(slot, prst, "pedal");
-  return prst;
-}
 
 /**
  * An empty preset (named like the pedal's empty slots) to clear slots with: a known empty slot's body of the
@@ -61,6 +59,7 @@ async function blankPreset(): Promise<Uint8Array> {
 export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null; onOpenChange(open: boolean): void }) {
   const names = useDevice((s) => s.names);
   const pedal = usePedalName();
+  const { slotLabel } = useProfile();
   const connected = useDevice((s) => s.status === "connected");
   const [backupFirst, setBackupFirst] = useState(true);
   const [running, setRunning] = useState(false);
@@ -87,7 +86,8 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
   if (!plan) return null;
   const nameOf = (slot: number) => names[slot]?.name ?? emptyName();
   const replaced = plan.steps.filter((s) => !isEmptyName(nameOf(s.slot))).map((s) => s.slot);
-  const doBackup = backupFirst && replaced.length > 0;
+  // In-pedal commands always back up what they replace first; writes follow the "back up first" setting.
+  const doBackup = (backupFirst || plan.native !== undefined) && replaced.length > 0;
 
   const run = async () => {
     setRunning(true);
@@ -96,6 +96,13 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
     const failedAt = { slot: undefined as number | undefined };
     try {
       if (useDevice.getState().unsavedChanges > 0) throw Object.assign(new Error("unsaved"), { code: "unsaved" });
+      if (plan.native) {
+        const job = { op: plan.native, steps, pedal, read: read.current, backedUp: backedUp.current, onStatus: (text: string, f: number) => (setStatus(text), setProgress(f)) };
+        await runNative(job).finally(() => (backedUp.current = job.backedUp));
+        notifySuccess(plan.doneTitle, replaced.length ? "The replaced presets are in Replaced presets." : undefined);
+        onOpenChange(false);
+        return;
+      }
       const original = useDevice.getState().slot;
       const sources = slotsToRead(steps);
       const toRead = doBackup && !backedUp.current ? [...new Set([...sources, ...replaced])].sort((a, b) => a - b) : sources;
@@ -146,7 +153,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
         <AlertDialogHeader>
           <AlertDialogTitle className="text-balance">{plan.title}</AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
-            {running ? `Keep the ${pedal} connected until every slot is checked.` : plan.description}
+            {running ? `Keep the ${pedal} connected until ${plan.native ? "it finishes" : "every slot is checked"}.` : plan.description}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -160,7 +167,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg bg-well px-3.5 py-3 text-sm">
               {rows.map((s) => (
                 <div key={s.slot} className="contents">
-                  <dt className="text-silkscreen-3 tabular-nums">Slot {String(s.slot).padStart(2, "0")}</dt>
+                  <dt className="text-silkscreen-3 tabular-nums">Slot {slotLabel(s.slot)}</dt>
                   <dd className="min-w-0 truncate text-silkscreen">
                     <span className="font-semibold">{s.from === "blank" ? "Empty preset" : nameOf(s.from)}</span>
                     <span className="text-silkscreen-3">
@@ -176,7 +183,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
                 id={checkboxId}
                 className="mt-0.5"
                 checked={doBackup}
-                disabled={!replaced.length || backedUp.current}
+                disabled={!replaced.length || backedUp.current || plan.native !== undefined}
                 onCheckedChange={(v) => {
                   setBackupFirst(v === true);
                   void host.app.setSettings({ backupBeforeWrite: v === true }).catch(() => {});
@@ -186,7 +193,11 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
                 <span>
                   {replaced.length ? `Back up the ${replaced.length === 1 ? "replaced slot" : `${replaced.length} replaced slots`} first` : "Back up first (not needed, the slots are empty)"}
                 </span>
-                {replaced.length > 0 && <span className="text-xs text-silkscreen-3">Saves them to Replaced presets on this computer</span>}
+                {replaced.length > 0 && (
+                  <span className="text-xs text-silkscreen-3">
+                    {plan.native ? "Always done before the pedal changes slots itself. Saves them to Replaced presets on this computer" : "Saves them to Replaced presets on this computer"}
+                  </span>
+                )}
               </Label>
             </div>
           </>
@@ -202,7 +213,7 @@ export function BulkWriteDialog({ plan, onOpenChange }: { plan: BulkPlan | null;
           {running ? (
             <Button disabled>
               <Spinner data-icon="inline-start" />
-              Writing
+              {plan.native ? "Working" : "Writing"}
             </Button>
           ) : (
             <>

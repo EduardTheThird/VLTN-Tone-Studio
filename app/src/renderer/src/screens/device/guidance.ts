@@ -1,9 +1,11 @@
 // Connection state → what the Device screen, the title-bar chip and the status bar say, and how to fix it.
 // Pure: every input comes from the device store and the host checks, so the mapping is unit-tested.
-import { PEDAL_PID, VALETON_VID, pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
+import { VALETON_VID, listNames, profileFor } from "@shared/devices";
+import { pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
 import type { HostApi } from "@shared/host";
 import { pedalName, pedalNameOrBoth } from "@/state/device-model";
 import type { ConnectionError, ConnectionStatus, DeviceKey, DeviceMode, RequestError } from "@/state/device-types";
+import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
 
 export type ViewKind =
   | "connected"
@@ -12,6 +14,7 @@ export type ViewKind =
   | "no-port"
   | "driver"
   | "bootloader"
+  | "unsupported-model"
   | "suite"
   | "silent"
   | "wrong-device"
@@ -64,6 +67,8 @@ export interface GuidanceInput {
 }
 
 const MIDI2_RE = /midi\s*2|usbmidi2/i;
+/** "GP-5 or GP-50" */
+const SUPPORTED_EITHER = listNames(SUPPORTED_DEVICE_KEYS);
 
 /** Pedal model for the copy: the connected one, else the one on USB, else the last connected; unknown = both models. */
 export function pedalModelName(input: Pick<GuidanceInput, "status" | "hostStatus" | "device">): string {
@@ -162,6 +167,15 @@ export function connectionView(input: GuidanceInput): ConnectionView {
         statusText: `${pedal} in firmware update mode, the app is not sending anything`,
       });
 
+    case "unsupported-model":
+      // The message names the model (the remembered `pedal` may be another one).
+      return base("unsupported-model", "warn", "Not supported", "Not supported yet", error.message, {
+        note: `Tone Studio sends nothing to this pedal. Until it is supported, use Valeton's own editor with it. You can still try everything with a simulated ${SUPPORTED_EITHER}.`,
+        action: "check",
+        actionLabel: "Check again",
+        statusText: "Pedal not supported yet",
+      });
+
     case "unsupported":
       return base("unsupported", "fault", "Not available", "MIDI not available", desktop ? "This build has no WebMIDI" : "This browser can't talk to MIDI devices", {
         note: desktop
@@ -256,7 +270,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
 
     case "timeout":
       return base("wrong-device", "warn", "No answer", "Unexpected reply", `A device answered, but not like a ${pedal}`, {
-        note: "Check that this is a GP-5 or GP-50 (not another Valeton pedal) and that its firmware is up to date. The diagnostic report helps if it keeps happening.",
+        note: `Check that this is a ${SUPPORTED_EITHER} (not another Valeton pedal) and that its firmware is up to date. The diagnostic report helps if it keeps happening.`,
         statusText: `The device on the ${pedal} port answers unexpectedly`,
       });
 
@@ -311,7 +325,7 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
     : view.kind === "bootloader"
       ? { id: "usb", name: "USB device", state: "warn", detail: "Valeton device in firmware update mode", hint: "The app stays silent until the pedal restarts normally." }
       : onUsb
-        ? { id: "usb", name: "USB device", state: "ok", detail: `Valeton ${pedalName(onUsb)} found, ${hex4(VALETON_VID)}:${hex4(PEDAL_PID[onUsb])}` }
+        ? { id: "usb", name: "USB device", state: "ok", detail: `Valeton ${pedalName(onUsb)} found, ${hex4(VALETON_VID)}:${hex4(profileFor(onUsb).usbPids[0])}` }
         : !h?.usb
           ? status === "connected"
             ? { id: "usb", name: "USB device", state: "ok", detail: `The ${pedal} answers over MIDI` }
@@ -320,7 +334,7 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
               id: "usb",
               name: "USB device",
               state: "fault",
-              detail: valeton.length ? `Other Valeton device: ${valeton.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}`).join(", ")}` : "No GP-5 or GP-50 on USB",
+              detail: valeton.length ? `Other Valeton device: ${valeton.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}`).join(", ")}` : `No ${SUPPORTED_EITHER} on USB`,
               hint: "Use a data cable, not a charge-only one, and plug it straight into the computer rather than a hub.",
             };
 

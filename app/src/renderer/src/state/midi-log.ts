@@ -1,8 +1,8 @@
 // MIDI monitor: a bounded ring buffer of tx/rx lines fed by the Gp5Session `log` option, and the decoder that
 // turns raw frames into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32").
-import { BLOCKS, CC, CMD, GLOBALS, KIND, READ, Reassembler, decodeMessage, parseSysex } from "@/gp5/lib/protocol.mjs";
+import { BLOCKS, CC, CMD, EXP_TARGETS, KIND, READ, Reassembler, decodeMessage, globalsFor, parseSysex, patchSettingByRecord } from "@/gp5/lib/protocol.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
-import type { DeviceKey, MidiLogEntry } from "./device-types";
+import type { DeviceKey, GlobalSpec, MidiLogEntry } from "./device-types";
 
 export const MIDI_LOG_CAP = 2000;
 
@@ -50,7 +50,8 @@ export class RingBuffer<T> {
 
 const hex = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0").toUpperCase()).join(" ");
 const u32 = (b: Uint8Array, o: number) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-const i8 = (v: number) => (v & 0x80 ? v - 0x100 : v);
+const i32 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
+const u16 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
 
 const READ_NAMES: Record<number, string> = {
   [READ.GLOBALS]: "pedal settings",
@@ -59,16 +60,11 @@ const READ_NAMES: Record<number, string> = {
   [READ.PRESET_NAMES]: "preset names",
   [READ.CURRENT_PATCH]: "active preset",
   [READ.CURRENT_SLOT]: "active slot",
+  [READ.MODIFIED]: "unsaved-edits flag",
+  [READ.EXPORT_PRESET]: "stored preset",
 };
 
-const GLOBAL_LABELS: Record<string, string> = {
-  inputTrim: "Input trim",
-  masterVolume: "Master volume",
-  cabSimBypass: "Cab sim bypass",
-  recordLevel: "Record level",
-  monitorLevel: "Monitor level",
-  btLevel: "Bluetooth level",
-};
+const LIST_NAMES: Record<string, string> = { presets: "Preset names", snaptones: "SnapTone names", irs: "User IR names" };
 
 /** Param name lookup (block storage index, algId) → "Gain"; the store passes the active preset's models. */
 export type ParamNamer = (block: number, index: number) => string | undefined;
@@ -76,45 +72,123 @@ export type ParamNamer = (block: number, index: number) => string | undefined;
 export type DeviceGetter = () => DeviceKey | null;
 
 const blockName = (b: number) => BLOCKS[b] ?? `Block ${b}`;
+const blockList = (blocks: number[]) => (blocks.length ? blocks.map(blockName).join(" ") : "none");
+
+/** "Global Monitor level -20" / "Global FS3 function Tap tempo" from the model's settings table (unknown model: GP-5's). */
+function describeGlobal(a: number, b: number, value: number, device: DeviceKey | null): string {
+  const table = globalsFor(device === "gp50" ? "gp50" : "gp5") as Record<string, GlobalSpec>;
+  const g = Object.values(table).find((x) => x.addr[0] === a && x.addr[1] === b);
+  if (!g) return `Global ${a}.${b} ${value}`;
+  return `Global ${g.label} ${g.labels?.[value - g.min] ?? value}`;
+}
+
+/** One 0x42 record: "Tempo 120 BPM", "EXP target DLY", "Patch volume 50". */
+function describeSetting(record: number, value: number): string {
+  const field: string | undefined = patchSettingByRecord(record)?.[0];
+  switch (field) {
+    case "volume":
+      return `Patch volume ${value}`;
+    case "bpm":
+      return `Tempo ${value} BPM`;
+    case "on":
+      return `EXP ${value ? "on" : "off"}`;
+    case "paramMin":
+      return `EXP minimum ${value}%`;
+    case "paramMax":
+      return `EXP maximum ${value}%`;
+    case "volPosition":
+      return `EXP volume ${value ? "Post" : "Pre"}`;
+    case "volMin":
+      return `EXP volume minimum ${value}%`;
+    case "volMax":
+      return `EXP volume maximum ${value}%`;
+    case "targetModule":
+      return `EXP target ${EXP_TARGETS[value] ?? value}`;
+    case "targetParam":
+      return `EXP parameter ${value + 1}`;
+    default:
+      return `Patch setting 0x${record.toString(16)} = ${value}`;
+  }
+}
+
+/** Host commands that carry their meaning in the payload (the rest decode like device messages). */
+function describeCommand(p: Uint8Array, device: DeviceKey | null): string | null {
+  switch (p[1]) {
+    case CMD.SELECT_PRESET:
+      return `Select preset ${u32(p, 2)}`;
+    case CMD.SAVE_PRESET:
+      return `Save to slot ${u32(p, 2)}`;
+    case CMD.RENAME_PRESET:
+      return `Rename slot ${u32(p, 2)}`;
+    case CMD.WRITE_PRESET:
+      return `Write slot ${p[2]}`;
+    case CMD.SET_GLOBAL:
+      return describeGlobal(p[2], p[3], i32(p, 6), device);
+    case CMD.DELETE_PRESET:
+      return `Clear slot ${u32(p, 2)}`;
+    case CMD.PASTE_PRESET:
+      return `Copy slot ${u16(p, 4)} to slot ${u16(p, 2)}`;
+    case CMD.MOVE_PRESET:
+      return `Move slot ${u32(p, 2)} to slot ${u32(p, 6)}`;
+    default:
+      return null;
+  }
+}
+
+interface Decoded {
+  type: string;
+  block?: number;
+  index?: number;
+  value?: number;
+  enabled?: boolean;
+  fxid?: number;
+  slot?: number;
+  sel?: number;
+  list?: string;
+  settings?: { record: number; value: number }[];
+  fs1?: number[];
+  fs2?: number[];
+  order?: number[];
+  a?: number;
+  b?: number;
+}
 
 /** Describe one complete logical payload (both directions). `device` picks the catalog; unknown → GP-50 (a superset). */
 export function describePayload(p: Uint8Array, dir: "out" | "in", paramName?: ParamNamer, device: DeviceKey | null = null): { text: string; ack: boolean } {
   const kind = p[0];
   const fn = p[1];
   if (kind === KIND.ACK) return { text: "Acknowledged", ack: true };
-  if (kind === KIND.GET && dir === "out") return { text: `Read ${READ_NAMES[fn] ?? `selector 0x${fn?.toString(16)}`}`, ack: false };
-  if (kind === KIND.SET && dir === "out") {
-    switch (fn) {
-      case CMD.SELECT_PRESET:
-        return { text: `Select preset ${u32(p, 2)}`, ack: false };
-      case CMD.SAVE_PRESET:
-        return { text: `Save to slot ${u32(p, 2)}`, ack: false };
-      case CMD.RENAME_PRESET:
-        return { text: `Rename slot ${u32(p, 2)}`, ack: false };
-      case CMD.WRITE_PRESET:
-        return { text: `Write slot ${p[2]}`, ack: false };
-      case CMD.SET_GLOBAL: {
-        const entry = Object.entries(GLOBALS).find(([, g]) => g.addr[0] === p[2] && g.addr[1] === p[3]);
-        return { text: `Global ${entry ? GLOBAL_LABELS[entry[0]] : `${p[2]}.${p[3]}`} ${i8(p[6])}`, ack: false };
-      }
-      case CMD.SET_PATCH_SETTING:
-        return { text: `Patch volume ${p[6]}`, ack: false };
-    }
+  if (kind === KIND.GET && dir === "out") {
+    const what = READ_NAMES[fn] ?? `selector 0x${fn?.toString(16)}`;
+    return { text: fn === READ.EXPORT_PRESET ? `Read ${what} of slot ${u32(p, 2)}` : `Read ${what}`, ack: false };
   }
-  const msg = decodeMessage(p) as { type: string; block?: number; index?: number; value?: number; enabled?: boolean; fxid?: number; slot?: number; sel?: number };
+  const command = kind === KIND.SET && dir === "out" ? describeCommand(p, device) : null;
+  if (command) return { text: command, ack: false };
+  const msg: Decoded = decodeMessage(p);
   const who = dir === "in" ? "Pedal: " : "";
+  const say = (text: string) => ({ text: who + text, ack: false });
   switch (msg.type) {
     case "param": {
       const name = paramName?.(msg.block!, msg.index!) ?? `param ${msg.index}`;
       const v = msg.value!;
-      return { text: `${who}${blockName(msg.block!)} ${name} ${Number.isInteger(v) ? v : v.toFixed(1)}`, ack: false };
+      return say(`${blockName(msg.block!)} ${name} ${Number.isInteger(v) ? v : v.toFixed(1)}`);
     }
     case "block":
-      return { text: `${who}${blockName(msg.block!)} ${msg.enabled ? "on" : "off"}`, ack: false };
+      return say(`${blockName(msg.block!)} ${msg.enabled ? "on" : "off"}`);
     case "model": {
       const m = modelByFxid(msg.fxid!, device ?? "gp50") as { name?: string } | undefined;
-      return { text: `${who}${blockName(msg.block!)} model ${m?.name ?? `0x${msg.fxid!.toString(16)}`}`, ack: false };
+      return say(`${blockName(msg.block!)} model ${m?.name ?? `0x${msg.fxid!.toString(16)}`}`);
     }
+    case "patchSetting":
+      return say((msg.settings ?? []).map((s) => describeSetting(s.record, s.value)).join(", "));
+    case "footswitch":
+      return say(`Footswitches FS1 ${blockList(msg.fs1 ?? [])}, FS2 ${blockList(msg.fs2 ?? [])}`);
+    case "order":
+      return say(`Chain order ${blockList(msg.order ?? [])}`);
+    case "global":
+      return say(describeGlobal(msg.a!, msg.b!, msg.value!, device));
+    case "listChanged":
+      return say(`${LIST_NAMES[msg.list!] ?? "A list"} changed`);
     case "slot":
       return { text: `Active slot ${msg.slot}`, ack: false };
     case "presetChanged":

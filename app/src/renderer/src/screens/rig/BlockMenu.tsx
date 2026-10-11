@@ -12,13 +12,14 @@ import { modelTitle } from "@/components/gear";
 import { useDevice } from "@/state/device";
 import type { BlockState } from "@/state/device-types";
 import { copyBlock, pasteBlock } from "./clipboard";
-import { editEnabled, editOrder, resetToDefaults, toggleFootswitch } from "./edits";
+import { editEnabled, editOrder, footswitchToggle, resetToDefaults, toggleFootswitch } from "./edits";
 import { isMovable, nudge } from "./order";
 import { useRig } from "./rig-store";
 
 /** Right-click menu of a pedal: on/off, change model, copy/paste settings, FS1/FS2, move, reset. */
 export function BlockMenu({ block, readOnly, children }: { block: BlockState; readOnly: boolean; children: ReactNode }) {
-  const fs = useDevice((s) => s.preset?.footswitches);
+  const preset = useDevice((s) => s.preset);
+  const fs = preset?.footswitches;
   const order = useDevice((s) => s.preset?.order);
   const clip = useRig((s) => s.clipboard);
   const canPaste = !!clip && clip.code === block.code && !readOnly;
@@ -48,12 +49,21 @@ export function BlockMenu({ block, readOnly, children }: { block: BlockState; re
           {clip && clip.code === block.code ? `Paste ${clip.title} settings` : "Paste settings"}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuCheckboxItem disabled={readOnly} checked={!!fs?.fs1.includes(block.index)} onCheckedChange={() => toggleFootswitch("fs1", block.index)}>
-          Assign to FS1
-        </ContextMenuCheckboxItem>
-        <ContextMenuCheckboxItem disabled={readOnly} checked={!!fs?.fs2.includes(block.index)} onCheckedChange={() => toggleFootswitch("fs2", block.index)}>
-          Assign to FS2
-        </ContextMenuCheckboxItem>
+        {(["fs1", "fs2"] as const).map((which) => {
+          const label = which.toUpperCase();
+          const other = which === "fs1" ? "FS2" : "FS1";
+          const t = preset ? footswitchToggle(preset, which, block.index) : null;
+          const assigned = !!fs?.[which].includes(block.index);
+          const moves = !assigned && preset?.device === "gp50" && !!fs?.[which === "fs1" ? "fs2" : "fs1"].includes(block.index);
+          const full = !!t && "reason" in t;
+          return (
+            <ContextMenuCheckboxItem key={which} disabled={readOnly || full} checked={assigned} onCheckedChange={() => toggleFootswitch(which, block.index)}>
+              Assign to {label}
+              {full && <ContextMenuShortcut>3 blocks max</ContextMenuShortcut>}
+              {moves && <ContextMenuShortcut>moves from {other}</ContextMenuShortcut>}
+            </ContextMenuCheckboxItem>
+          );
+        })}
         {isMovable(block.index) && (
           <>
             <ContextMenuSeparator />

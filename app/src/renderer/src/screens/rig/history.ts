@@ -1,5 +1,6 @@
 // Local undo/redo of Rig edits. Entries describe what changed; screens/rig/edits.ts applies them to the pedal.
 import { create } from "zustand";
+import type { ExpEdit } from "@/state/device-types";
 
 /** Model, on/off and params of one block (enough to put it back exactly). */
 export interface BlockSnapshot {
@@ -14,6 +15,8 @@ export type Edit =
   | { kind: "enabled"; block: number; from: boolean; to: boolean }
   | { kind: "order"; from: number[]; to: number[] }
   | { kind: "volume"; from: number; to: number; at: number }
+  | { kind: "bpm"; from: number; to: number; at: number }
+  | { kind: "exp"; from: ExpEdit; to: ExpEdit; at: number }
   | { kind: "footswitches"; from: { fs1: number[]; fs2: number[] }; to: { fs1: number[]; fs2: number[] } }
   | { kind: "block"; label: string; from: BlockSnapshot; to: BlockSnapshot };
 
@@ -26,7 +29,10 @@ export function pushEdit(past: Edit[], e: Edit): Edit[] {
   const last = past[past.length - 1];
   if (last && e.kind === "param" && last.kind === "param" && last.block === e.block && last.index === e.index && e.at - last.at < MERGE_MS)
     return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
-  if (last && e.kind === "volume" && last.kind === "volume" && e.at - last.at < MERGE_MS) return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
+  if (last && (e.kind === "volume" || e.kind === "bpm") && last.kind === e.kind && e.at - last.at < MERGE_MS) return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
+  // EXP slider drags: same fields within the window merge, keeping the first `from`
+  if (last && e.kind === "exp" && last.kind === "exp" && Object.keys(e.to).join() === Object.keys(last.to).join() && e.at - last.at < MERGE_MS)
+    return [...past.slice(0, -1), { ...last, to: e.to, at: e.at }];
   return [...past, e].slice(-LIMIT);
 }
 

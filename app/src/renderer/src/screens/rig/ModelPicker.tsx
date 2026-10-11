@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CheckIcon, ExternalLinkIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
+import { profileFor, type SlotTables } from "@shared/devices";
 import { defaultParams, modelsForBlock } from "@/gp5/lib/catalog.mjs";
 import { notifyError } from "@/app/notify";
 import { Capture, GearFor } from "@/components/gear";
@@ -9,13 +10,14 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
-import { BLOCK_CODES, type BlockCode, type BlockState, type DeviceKey, type ModelInfo, type SlotName } from "@/state/device-types";
+import { blockCodes } from "@/state/device-model";
+import type { BlockCode, BlockState, DeviceKey, ModelInfo, SlotName } from "@/state/device-types";
 import { useNav } from "@/state/nav";
 import { applyBlock, recordBlock, snapshot } from "./edits";
 import type { BlockSnapshot } from "./history";
 import { groupsOf, groupOf } from "./order";
 import { useRig } from "./rig-store";
-import { snapToneIndex } from "./snaptone";
+import { isUserSnapTone, snapToneIndex } from "./snaptone";
 
 const CATEGORY: Record<BlockCode, string> = {
   NR: "Noise gate",
@@ -61,12 +63,14 @@ interface Tile {
 
 function tilesFor(code: BlockCode, device: DeviceKey, snapTones: SlotName[] | null, userIRs: SlotName[] | null): Tile[] {
   const models = modelsForBlock(code, device) as ModelInfo[];
+  const { snapTone } = profileFor(device);
   if (code === "NS")
     return models.map((m) => {
       const n = snapToneIndex(m.fxid);
       const name = snapTones?.find((s) => s.slot === n)?.name;
-      const empty = n >= 50 && name === "Empty";
-      return { model: m, title: name ? `${n} ${name}` : m.title, sub: n >= 50 ? (empty ? "Empty user slot" : "User slot") : "Factory slot", empty };
+      const user = isUserSnapTone(n, snapTone);
+      const empty = user && name === "Empty";
+      return { model: m, title: name ? `${n} ${name}` : m.title, sub: user ? (empty ? "Empty user slot" : "User slot") : "Factory slot", empty };
     });
   return models.map((m) => {
     if (m.type === "User IR") {
@@ -79,14 +83,20 @@ function tilesFor(code: BlockCode, device: DeviceKey, snapTones: SlotName[] | nu
   });
 }
 
-function tabsFor(code: BlockCode, tiles: Tile[]): { value: string; label: string }[] {
-  if (code === "NS") return [{ value: "user", label: "User 50–79" }, { value: "factory", label: "Factory 0–49" }, { value: "fav", label: "Favorites" }];
+function tabsFor(code: BlockCode, tiles: Tile[], snapTone: SlotTables): { value: string; label: string }[] {
+  const [first, last] = snapTone.userRange;
+  if (code === "NS")
+    return [
+      { value: "user", label: `User ${first}–${last}` },
+      { value: "factory", label: `Factory 0–${first - 1}` },
+      { value: "fav", label: "Favorites" },
+    ];
   if (code === "CAB") return [{ value: "all", label: "All" }, { value: "factory", label: "Factory cabs" }, { value: "User IR", label: "User IRs" }, { value: "fav", label: "Favorites" }];
   const types = [...new Set(tiles.map((t) => t.model.type))];
   return [{ value: "all", label: "All" }, ...(types.length > 1 ? types.map((t) => ({ value: t, label: t })) : []), { value: "fav", label: "Favorites" }];
 }
 
-function inTab(tab: string, t: Tile, favs: number[]): boolean {
+function inTab(tab: string, t: Tile, favs: number[], snapTone: SlotTables): boolean {
   const n = snapToneIndex(t.model.fxid);
   switch (tab) {
     case "all":
@@ -94,9 +104,9 @@ function inTab(tab: string, t: Tile, favs: number[]): boolean {
     case "fav":
       return favs.includes(t.model.fxid);
     case "user":
-      return n >= 50;
+      return isUserSnapTone(n, snapTone);
     case "factory":
-      return t.model.block === "NS" ? n < 50 : t.model.type !== "User IR";
+      return t.model.block === "NS" ? !isUserSnapTone(n, snapTone) : t.model.type !== "User IR";
     default:
       return t.model.type === tab;
   }
@@ -130,11 +140,12 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
   const userIRs = useDevice((s) => s.userIRs);
   const block = preset.blocks[blockIndex];
   const code = block.code;
+  const { snapTone } = profileFor(preset.device);
   const original = useRef<BlockSnapshot>(snapshot(block)).current;
   const originalTitle = useRef(block.model?.title ?? "the original model").current;
   const tiles = useMemo(() => tilesFor(code, preset.device, snapTones, userIRs), [code, preset.device, snapTones, userIRs]);
-  const tabs = useMemo(() => tabsFor(code, tiles), [code, tiles]);
-  const [tab, setTab] = useState(() => initialTab ?? (code === "NS" ? (snapToneIndex(block.fxid) >= 50 ? "user" : "factory") : "all"));
+  const tabs = useMemo(() => tabsFor(code, tiles, snapTone), [code, tiles, snapTone]);
+  const [tab, setTab] = useState(() => initialTab ?? (code === "NS" ? (isUserSnapTone(snapToneIndex(block.fxid), snapTone) ? "user" : "factory") : "all"));
   const [query, setQuery] = useState("");
   const [favs, setFavs] = useState(loadFavs);
   const [focusFx, setFocusFx] = useState<number>(highlight ?? block.fxid);
@@ -152,7 +163,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
   }, [code, connected]);
 
   const q = query.trim().toLowerCase();
-  const visible = tiles.filter((t) => inTab(tab, t, favs) && (!q || t.title.toLowerCase().includes(q) || t.model.name.toLowerCase().includes(q) || (t.model.origin ?? "").toLowerCase().includes(q)));
+  const visible = tiles.filter((t) => inTab(tab, t, favs, snapTone) && (!q || t.title.toLowerCase().includes(q) || t.model.name.toLowerCase().includes(q) || (t.model.origin ?? "").toLowerCase().includes(q)));
   const playing = block.fxid;
   const auditioning = playing !== original.fxid;
   const playingTile = tiles.find((t) => t.model.fxid === playing);
@@ -249,7 +260,9 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
   const focusTile = tiles.find((t) => t.model.fxid === focusFx);
   const favOn = favs.includes(focusFx);
   const title = `Choose ${article(NOUN[code])} ${NOUN[code]}`;
-  const count = code === "NS" ? `NS, ${tiles.filter((t) => snapToneIndex(t.model.fxid) >= 50 && !t.empty).length} of 30 user slots used` : `${code}, ${tiles.length} models`;
+  const userSlots = snapTone.userRange[1] - snapTone.userRange[0] + 1;
+  const count =
+    code === "NS" ? `NS, ${tiles.filter((t) => isUserSnapTone(snapToneIndex(t.model.fxid), snapTone) && !t.empty).length} of ${userSlots} user slots used` : `${code}, ${tiles.length} models`;
 
   return (
     <div
@@ -298,7 +311,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
       <div className="grid min-h-0 flex-1 grid-cols-[210px_1fr]">
         <nav aria-label="Blocks" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-seam px-2.5 py-3">
           {cats.map((b) => {
-            const c = BLOCK_CODES[b];
+            const c = blockCodes(preset.device)[b];
             const enabled = inGroup.includes(b);
             return (
               <button

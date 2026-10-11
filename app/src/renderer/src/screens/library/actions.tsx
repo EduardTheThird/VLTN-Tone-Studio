@@ -8,11 +8,13 @@ import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
 import { requestPresetSwitch } from "@/app/preset-switch";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { pedalName, prepareForDevice, presetDevice } from "@/state/device-model";
+import type { DeviceFeature } from "@/state/device-types";
+import { pedalName, prepareForDevice, presetDevice, profileOrDefault } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import type { OpenFile } from "@/state/ui";
 import { IMPORTED_ID, type CollectionInfo, type LocalPreset, type PickedFile } from "@shared/host/files";
 import { slotFileName } from "@shared/files-naming";
+import { PRST_MODELS, sniffPrst } from "@shared/devices";
 import { BulkWriteDialog, type BulkPlan } from "./BulkWriteDialog";
 import { SlotPickerDialog, type SlotPick } from "./SlotPickerDialog";
 import { CollectionDialogs, type CollectionDialog } from "./CollectionDialogs";
@@ -24,6 +26,10 @@ import { emptyName, isEmptyName, useLibrary } from "./store";
 const nameOf = (slot: number) => useDevice.getState().names[slot]?.name ?? emptyName();
 /** "GP-5" / "GP-50" for copy built outside React (dialog plans, errors) */
 const pedal = () => pedalName(useDevice.getState().device);
+/** Slots on the connected (or last) pedal, for plans built outside React */
+const slotCount = () => profileOrDefault(useDevice.getState().device).slotCount;
+/** The connected pedal can run `feature` itself now (GP-50 with its extras on) */
+const can = (feature: DeviceFeature) => useDevice.getState().can(feature);
 const slotList = (slots: number[]) => (slots.length === 2 ? `slots ${slots[0]} and ${slots[1]}` : slots.length === 1 ? `slot ${slots[0]}` : `${slots.length} slots`);
 
 /** Body the app knows for `slot` and still trusts (its name matches the pedal's current name). */
@@ -35,7 +41,11 @@ export function knownBody(slot: number): Uint8Array | null {
   return summarize(body.prst)?.name === nameOf(slot) ? body.prst : null;
 }
 
-/** Read the current preset of each slot (switches presets on the pedal); during a backup, use what is known. */
+/**
+ * Read the current preset of each slot; during a backup, use what is known. The export read (GP-50) leaves the
+ * active preset and its unsaved edits alone; without it reading switches presets, which readPreset refuses while
+ * there are unsaved edits.
+ */
 async function readSlots(slots: number[], verb: string): Promise<{ slot: number; name: string; prst: Uint8Array }[]> {
   const d = useDevice.getState();
   const lib = useLibrary.getState();
@@ -124,26 +134,53 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
     };
 
     const planCopy = (slots: number[], target: number) => {
-      const steps = copySteps(slots, target);
+      const steps = copySteps(slots, target, slotCount());
       if (!steps?.length) return;
+      const title = slots.length === 1 ? `Copy ${nameOf(slots[0])} to slot ${target}?` : `Copy ${slots.length} slots to slots ${target}–${target + slots.length - 1}?`;
+      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} is now also in slot ${target}` : `Copied ${slots.length} slots`;
+      // One source can't overwrite a slot a later step reads, so the pedal can copy it itself.
+      if (slots.length === 1 && can("copyPreset")) {
+        setBulk({
+          title,
+          description: `The ${pedal()} copies the preset inside the pedal.`,
+          action: `Copy to slot ${target}`,
+          steps,
+          native: { kind: "copy", from: slots[0], to: target },
+          doneTitle,
+        });
+        return;
+      }
       setBulk({
-        title: slots.length === 1 ? `Copy ${nameOf(slots[0])} to slot ${target}?` : `Copy ${slots.length} slots to slots ${target}–${target + slots.length - 1}?`,
+        title,
         description: `Tone Studio reads the presets from the ${pedal()}, writes them to the new slots and reads each one back to check it.`,
         action: steps.length === 1 ? `Write to slot ${target}` : `Write ${steps.length} slots`,
         steps,
-        doneTitle: slots.length === 1 ? `${nameOf(slots[0])} is now also in slot ${target}` : `Copied ${slots.length} slots`,
+        doneTitle,
       });
     };
 
     const planMove = (slots: number[], target: number) => {
-      const steps = moveSteps(slots, target);
+      const steps = moveSteps(slots, target, slotCount());
       if (!steps?.length) return;
+      const title = slots.length === 1 ? `Move ${nameOf(slots[0])} to slot ${target}?` : `Move ${slots.length} slots to slot ${target}?`;
+      const doneTitle = slots.length === 1 ? `${nameOf(slots[0])} moved to slot ${target}` : `Moved ${slots.length} slots`;
+      if (slots.length === 1 && can("movePreset")) {
+        setBulk({
+          title,
+          description: `The ${pedal()} moves it inside the pedal; the slots in between shift by one.`,
+          action: `Move to slot ${target}`,
+          steps,
+          native: { kind: "move", from: slots[0], to: target },
+          doneTitle,
+        });
+        return;
+      }
       setBulk({
-        title: slots.length === 1 ? `Move ${nameOf(slots[0])} to slot ${target}?` : `Move ${slots.length} slots to slot ${target}?`,
+        title,
         description: `The slots in between shift to make room, so ${steps.length} slots are rewritten. Each one is read back to check it.`,
         action: `Rewrite ${steps.length} slots`,
         steps,
-        doneTitle: slots.length === 1 ? `${nameOf(slots[0])} moved to slot ${target}` : `Moved ${slots.length} slots`,
+        doneTitle,
       });
     };
 
@@ -176,8 +213,9 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
         const collection = useLibrary.getState().collections.find((c) => c.id === preset.collectionId);
         try {
           prepareForDevice(preset.prst, useDevice.getState().device ?? presetDevice(preset.prst));
-        } catch {
-          notifyError(`Can't write ${preset.name}`, new Error("This file can't be read as a GP-5 or GP-50 preset."));
+        } catch (e) {
+          // A preset of another family carries its plain refusal (crossFamilyNote); unrecognised bytes get the generic reason.
+          notifyError(`Can't write ${preset.name}`, sniffPrst(preset.prst) ? e : new Error(`This file can't be read as a ${PRST_MODELS} preset.`));
           return;
         }
         if (slot !== undefined) {
@@ -205,7 +243,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
           description: "Choose where the first one goes; the others follow in order.",
           confirmLabel: (s) => `Continue with slot ${s}`,
           initial: useDevice.getState().names.find((n) => isEmptyName(n.name))?.slot ?? null,
-          preview: (s) => copySteps(slots, s),
+          preview: (s) => copySteps(slots, s, slotCount()),
           onPick: (s) => {
             setPick(null);
             planCopy(slots, s);
@@ -219,7 +257,7 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
           description: "Choose the new position. The slots in between shift to make room.",
           confirmLabel: (s) => `Continue with slot ${s}`,
           initial: null,
-          preview: (s) => moveSteps(slots, s),
+          preview: (s) => moveSteps(slots, s, slotCount()),
           onPick: (s) => {
             setPick(null);
             planMove(slots, s);
@@ -238,11 +276,15 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       clearSlots(slots) {
         const used = slots.filter((s) => !isEmptyName(nameOf(s)));
         if (!used.length) return;
+        const native = can("deletePreset");
         setBulk({
           title: `Clear ${slotList(used)}?`,
-          description: `They become empty presets named ${emptyName()}, copied from an empty slot on your pedal.`,
+          description: native
+            ? `The ${pedal()} clears ${used.length === 1 ? "the slot" : "the slots"} itself.`
+            : `They become empty presets named ${emptyName()}, copied from an empty slot on your pedal.`,
           action: `Clear ${slotList(used)}`,
           steps: clearSteps(used),
+          ...(native ? { native: { kind: "delete" as const, slots: used } } : {}),
           doneTitle: `Cleared ${slotList(used)}`,
         });
       },

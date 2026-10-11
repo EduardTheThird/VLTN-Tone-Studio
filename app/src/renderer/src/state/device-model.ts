@@ -1,46 +1,140 @@
-// Pedal-model helpers shared by the device store, screens and file flows (GP-5 vs GP-50). Pure: no store access;
-// the hook `usePedalName` lives in ./device.
-import { DEVICES, GP50_ONLY_FXIDS, convertPrst, detectDevice, parsePrst } from "@/gp5/lib/prst.mjs";
-import { encode, packetize } from "@/gp5/lib/protocol.mjs";
-import { BLOCK_CODES, type DeviceKey } from "./device-types";
+// Pedal-model helpers shared by the device store, screens and file flows, on top of the registry (@shared/devices).
+// Pure: no store access; the hooks (usePedalName, useProfile) live in ./device. Preset conversion is the GP-5 family's
+// (gp5/lib/prst.mjs); presets never convert across families.
+import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
+import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
+import { PRST_MODELS, profileFor, sniffPrst, type DeviceKey, type DeviceProfile } from "@shared/devices";
+import type { BlockCode, DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5FamilyKey, ParamInfo, PresetState } from "./device-types";
+import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
-export const DEVICE_KEYS: readonly DeviceKey[] = ["gp5", "gp50"];
+/**
+ * Features built on GP-50 commands known only from static reverse engineering of Valeton Suite 2.1.0, not yet tested
+ * on hardware:
+ * on a real pedal they stay off until the user turns on "GP-50 extras (experimental)"; the simulator always has them.
+ */
+export const EXPERIMENTAL_FEATURES: Readonly<Partial<Record<DeviceFeature, true>>> = {
+  exportPreset: true,
+  exp: true,
+  liveBpm: true,
+  liveFootswitches: true,
+  liveOrder: true,
+  deletePreset: true,
+  copyPreset: true,
+  movePreset: true,
+};
 
-/** "GP-5" / "GP-50"; "pedal" when the model is not known yet (reads well in "Connect the pedal"). */
+/** Split a driver's features into the usable ones and the ones the experimental setting keeps off. */
+export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, extras: boolean): { features: DeviceFeature[]; locked: DeviceFeature[] } {
+  const open = (f: DeviceFeature) => mode === "mock" || extras || !EXPERIMENTAL_FEATURES[f];
+  return { features: all.filter(open), locked: all.filter((f) => !open(f)) };
+}
+
+/** Settings table of `device` (protocol.mjs globalsFor) in menu order; empty for models without one in this build. */
+export function globalSpecsFor(device: DeviceKey | null): readonly GlobalSpec[] {
+  if (!device || !isGp5Family(device)) return [];
+  return Object.values(globalsFor(device) as Record<string, GlobalSpec>);
+}
+
+/** "1.1.0" >= "1.0.5": numeric comparison of dotted versions. */
+export function versionAtLeast(version: string, min: string): boolean {
+  const a = version.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
+/**
+ * The settings a pedal shows: everything without `since`, and the later ones when the pedal reports them or its
+ * firmware is at least `since`.
+ */
+export function visibleGlobals(specs: readonly GlobalSpec[], globals: Globals | null, firmware: string | null): GlobalSpec[] {
+  return specs.filter((g) => !g.since || globals?.[g.name] !== undefined || (firmware !== null && versionAtLeast(firmware, g.since)));
+}
+
+/** Params the EXP pedal can sweep for target `module` (protocol EXP_TARGETS; 0 = the EXP volume, none) on `preset`. */
+export function expTargetParams(preset: PresetState, module: number): readonly ParamInfo[] {
+  const block: number | null = module === 0 ? null : expTargetBlock(module);
+  return block === null ? [] : (preset.blocks[block]?.model?.params ?? []);
+}
+
+/**
+ * The model the UI lays itself out for (slot count and labels, blocks) before any pedal was connected; the app began
+ * as a GP-5 editor. Data is never assumed to be this model: files are sniffed, links and backups carry their model.
+ */
+export const DEFAULT_DEVICE: DeviceKey = "gp5";
+
+/** Profile of the connected (or last connected) pedal, else DEFAULT_DEVICE's. */
+export function profileOrDefault(device: DeviceKey | null): DeviceProfile {
+  return profileFor(device ?? DEFAULT_DEVICE);
+}
+
+/** "GP-5" / "GP-200LT"; "pedal" when the model is not known yet (reads well in "Connect the pedal"). */
 export function pedalName(device: DeviceKey | null): string {
-  return device ? DEVICES[device].name : "pedal";
+  return device ? profileFor(device).name : "pedal";
 }
 
-/** Copy about what both models share (SnapTones, IRs) or before any pedal was connected. */
-export const BOTH_PEDALS = "GP-5 / GP-50";
+/** "GP-5 / GP-50": the models this build supports, for copy about all of them or before any pedal was connected. */
+export const SUPPORTED_PEDALS = SUPPORTED_DEVICE_KEYS.map((k) => profileFor(k).name).join(" / ");
 
-/** The connected (or last connected) pedal's name, else both models. */
+/** The connected (or last connected) pedal's name, else every supported model's. */
 export function pedalNameOrBoth(device: DeviceKey | null): string {
-  return device ? pedalName(device) : BOTH_PEDALS;
+  return device ? pedalName(device) : SUPPORTED_PEDALS;
 }
 
-/** The name the pedal gives a slot without a user preset. Unknown model: either default name counts. */
+/** "07" (GP-5) or "12-C" (GP-200): slot label on the connected (or last connected) pedal, DEFAULT_DEVICE's before. */
+export function slotLabel(device: DeviceKey | null, slot: number): string {
+  return profileOrDefault(device).slotLabel(slot);
+}
+
+/** The name the pedal gives a slot without a user preset. Unknown model: any supported model's default name counts. */
 export function isEmptySlotName(name: string, device: DeviceKey | null): boolean {
   const n = name.trim();
-  return device ? n === DEVICES[device].emptyName : DEVICE_KEYS.some((k) => n === DEVICES[k].emptyName);
+  return (device ? [device] : SUPPORTED_DEVICE_KEYS).some((k) => profileFor(k).emptyName === n);
 }
 
-/** Model a .prst belongs to; throws when the bytes are not a GP-5 or GP-50 preset. */
+export function isGp5Family(device: DeviceKey): device is Gp5FamilyKey {
+  return profileFor(device).family === "gp5";
+}
+
+/** Block codes of a GP-5 family model in storage order (block index k = codes[k]). */
+export function blockCodes(device: Gp5FamilyKey): readonly BlockCode[] {
+  // The GP-5 family profiles list exactly the BlockCode union.
+  return profileFor(device).blocks as readonly BlockCode[];
+}
+
+/** Model a .prst belongs to (see sniffPrst); throws when the bytes are no known preset. */
 export function presetDevice(prst: Uint8Array): DeviceKey {
-  return detectDevice(prst).key as DeviceKey;
+  const device = sniffPrst(prst);
+  if (!device) throw new Error(`Not a ${PRST_MODELS} preset`);
+  return device;
 }
 
-/** SysEx frames a full preset write of `prst` takes (26 on GP-5, 29 on GP-50). */
+/** SysEx frames a full preset write of GP-5 family `prst` takes (26 on GP-5, 29 on GP-50). */
 export function writeFrameCount(prst: Uint8Array): number {
   return packetize(encode.writePreset(0, prst)).length;
 }
 
-/** Blocks of `prst` whose model does not exist on `target`, e.g. ["PRE (PRE C-Wah)"]. Empty when nothing is lost. */
-export function modelsMissingOn(prst: Uint8Array, target: DeviceKey): string[] {
-  if (target === "gp50") return []; // every GP-5 model exists on the GP-50
-  return parsePrst(prst).blocks.flatMap((b: { fxid: number }, k: number) => {
+/** Converting `from` → `to` keeps every block: the GP-50 catalog holds every GP-5 model. */
+export function convertsLosslessly(from: DeviceKey, to: DeviceKey): boolean {
+  return from === to || (from === "gp5" && to === "gp50");
+}
+
+/** Plain refusal for a preset of another family ("This preset is for a GP-200; Tone Studio can't convert it for a GP-5."). */
+export function crossFamilyNote(from: DeviceKey, to: DeviceKey): string {
+  return `This preset is for a ${pedalName(from)}; Tone Studio can't convert it for a ${pedalName(to)}.`;
+}
+
+/** Blocks of GP-5 family `prst` whose model does not exist on `target`, e.g. ["PRE (PRE C-Wah)"]. Empty when nothing is lost. */
+export function modelsMissingOn(prst: Uint8Array, target: Gp5FamilyKey): string[] {
+  const p = parsePrst(prst);
+  if (convertsLosslessly(p.device, target)) return [];
+  const codes = blockCodes(p.device);
+  return p.blocks.flatMap((b: { fxid: number }, k: number) => {
     const only = (GP50_ONLY_FXIDS as Record<number, string>)[b.fxid >>> 0];
-    return only ? [`${BLOCK_CODES[k]} (${only})`] : [];
+    return only ? [`${codes[k]} (${only})`] : [];
   });
 }
 
@@ -55,11 +149,14 @@ export interface PreparedPreset {
 
 /**
  * Make `prst` writable to a `target` pedal. GP-5 → GP-50 is lossless; GP-50 → GP-5 clears GP-50-only models,
- * which callers MUST show the user (the `dropped` list) before writing.
+ * which callers MUST show the user (the `dropped` list) before writing. Models of one GP-200 family file share one
+ * layout. Throws for a preset of another family (crossFamilyNote) and for bytes that are no preset.
  */
 export function prepareForDevice(prst: Uint8Array, target: DeviceKey): PreparedPreset {
   const from = presetDevice(prst);
   if (from === target) return { prst, from, converted: false, dropped: [] };
+  if (profileFor(from).family !== profileFor(target).family) throw new Error(crossFamilyNote(from, target));
+  if (!isGp5Family(from) || !isGp5Family(target)) return { prst, from, converted: false, dropped: [] };
   const dropped = modelsMissingOn(prst, target);
   return { prst: convertPrst(prst, target, { force: dropped.length > 0 }), from, converted: true, dropped };
 }

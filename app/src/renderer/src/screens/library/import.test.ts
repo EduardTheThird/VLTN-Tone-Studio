@@ -17,9 +17,16 @@ describe("checkPrst", () => {
   });
 
   it("rejects files of unknown length and damaged presets with a reason", () => {
-    expect(checkPrst(new Uint8Array(100))).toEqual({ ok: false, reason: "Not a GP-5 or GP-50 preset." });
+    expect(checkPrst(new Uint8Array(100))).toEqual({ ok: false, reason: "Not a GP-5, GP-50 or GP-200 preset." });
     const damaged = gp5.slice();
     damaged[0x14] ^= 0xff;
     expect(checkPrst(damaged)).toEqual({ ok: false, reason: "The file is damaged (its checksum doesn't match)." });
+  });
+
+  it("turns away a GP-200 preset with its own reason", () => {
+    const gp200 = new Uint8Array(1224);
+    gp200.set([..."TSRP"].map((c) => c.charCodeAt(0)), 0);
+    gp200.set([..."2-PG"].map((c) => c.charCodeAt(0)), 0x10);
+    expect(checkPrst(gp200)).toEqual({ ok: false, reason: "GP-200 presets can't be opened in this version yet." });
   });
 });

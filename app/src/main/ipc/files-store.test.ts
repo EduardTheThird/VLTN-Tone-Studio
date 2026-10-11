@@ -14,6 +14,15 @@ function fakePrst(name: string, device: "gp5" | "gp50" = "gp5"): Uint8Array {
   return b;
 }
 
+/** A 1224-byte GP-200 `.prst` header ("TSRP", "2-PG") with the patch name at 0x44. */
+function fakeGp200Prst(name: string): Uint8Array {
+  const b = new Uint8Array(1224);
+  b.set(new TextEncoder().encode("TSRP"), 0);
+  b.set(new TextEncoder().encode("2-PG"), 0x10);
+  b.set(new TextEncoder().encode(name), 0x44);
+  return b;
+}
+
 let root: string;
 let store: LibraryStore;
 
@@ -59,13 +68,20 @@ describe("backups", () => {
     expect(json.device).toBe("gp50");
   });
 
+  it("names GP-200 backups gp200-… with bank-letter slot labels", async () => {
+    const info = await store.saveBackup([{ slot: 46, name: "Lead", prst: fakeGp200Prst("Lead") }], day);
+    expect(info).toMatchObject({ id: "backups/gp200-2026-10-07", title: "GP-200 backup", device: "gp200", count: 1 });
+    expect(await readdir(join(root, "backups", "gp200-2026-10-07"))).toContain("12-C-Lead.prst");
+    expect((await store.listPresets(info.id)).map((p) => [p.slot, p.name])).toEqual([[46, "Lead"]]);
+  });
+
   it("refuses a backup that mixes models or holds no presets", async () => {
     const mixed = [
       { slot: 0, name: "A", prst: fakePrst("A") },
       { slot: 1, name: "B", prst: fakePrst("B", "gp50") },
     ];
-    await expect(store.saveBackup(mixed, day)).rejects.toThrow(/one GP-5 or one GP-50/);
-    await expect(store.saveBackup([{ slot: 0, name: "X", prst: new Uint8Array(507) }], day)).rejects.toThrow(/one GP-5 or one GP-50/);
+    await expect(store.saveBackup(mixed, day)).rejects.toThrow(/one pedal model/);
+    await expect(store.saveBackup([{ slot: 0, name: "X", prst: new Uint8Array(507) }], day)).rejects.toThrow(/one pedal model/);
   });
 
   it("treats backup.json without a device as a GP-5 backup", async () => {
@@ -166,7 +182,7 @@ describe("readPrstPaths", () => {
     const [a, b, c, d] = await readPrstPaths([ok, big, txt, join(root, "missing.prst")]);
     expect(a).toMatchObject({ fileName: "65-Puppy.prst", error: null });
     expect(a.bytes?.length).toBe(507);
-    expect(b.error).toBe("Not a GP-5 or GP-50 preset.");
+    expect(b.error).toBe("Not a GP-5, GP-50 or GP-200 preset.");
     expect(c.error).toBe("Not a .prst preset file.");
     expect(d.error).toMatch(/Couldn't read/);
   });

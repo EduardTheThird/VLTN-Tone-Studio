@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { getMock, useDevice } from "./device";
+import { getDriver, useDevice } from "./device";
+import type { Gp5Driver } from "./driver/gp5-driver";
 
 // The simulator loads the bundled backup by URL; serve those URLs from disk (paths are relative to the app root).
 vi.stubGlobal("fetch", async (url: string) => new Response(readFileSync(resolve(`.${decodeURIComponent(url)}`))));
@@ -52,7 +53,7 @@ describe("device store on a simulated GP-50", () => {
     expect(s.slot).toBe(40);
     expect(s.preset).toMatchObject({ device: "gp50", name: "US Lead" });
     expect(s.names.find((n) => n.slot === 40)?.name).toBe("US Lead");
-    expect(getMock()!.slots[40].body.length).toBe(511);
+    expect((getDriver() as Gp5Driver).mock!.slots[40].body.length).toBe(511);
     await expect(useDevice.getState().writePreset(41, fixture("65-Puppy.prst"))).rejects.toThrow(/convert it first/);
   }, 60_000);
 

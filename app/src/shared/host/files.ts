@@ -1,8 +1,8 @@
 // Library: backups folder, .prst collections, import/export dialogs. Owner: Library.
-// Desktop: files under userData (`backups/<gp5|gp50>-YYYY-MM-DD[-n]/NN-Name.prst`, `library/<dir>/collection.json` + .prst).
+// Desktop: files under userData (`backups/<device key>-YYYY-MM-DD[-n]/<slot label>-Name.prst`, `library/<dir>/collection.json` + .prst).
 // Browser build: the same model in IndexedDB; file pickers and downloads instead of native dialogs.
 
-import type { PedalModel } from "./device";
+import type { DeviceKey } from "../devices";
 
 export type CollectionKind = "backup" | "imported" | "replaced" | "collection";
 
@@ -16,8 +16,8 @@ export interface CollectionInfo {
   kind: CollectionKind;
   /** "GP-5 backup", "GP-50 backup", "Imported files", "Replaced presets" or the user's title */
   title: string;
-  /** Model of the pedal a backup was made from; null for library collections */
-  device: PedalModel | null;
+  /** Model of the pedal a backup was made from; null for library collections and backups of unknown origin */
+  device: DeviceKey | null;
   /** ISO timestamp */
   createdAt: string;
   count: number;
@@ -34,13 +34,13 @@ export interface LocalPreset {
   name: string;
   /** Pedal slot it came from (backups, copies of pedal slots) */
   slot: number | null;
-  /** Where it came from: original file name or "Slot 63 on GP-5" / "Slot 63 on GP-50" */
+  /** Where it came from: original file name or "Slot 63 on GP-5" */
   source: string | null;
   /** ISO timestamp */
   addedAt: string;
   /** Absolute file path (desktop only) */
   path: string | null;
-  /** Raw .prst bytes (GP-5 507 B or GP-50 552 B, as stored) */
+  /** Raw .prst bytes as stored (any model, see sniffPrst) */
   prst: Uint8Array;
 }
 
@@ -78,8 +78,8 @@ export interface FilesApi {
   listCollections(): Promise<CollectionInfo[]>;
   listPresets(collectionId: string): Promise<LocalPreset[]>;
   /**
-   * Save a full (or partial) pedal backup as a new `backups/<model>-YYYY-MM-DD[-n]` folder of `NN-Name.prst` files
-   * (`gp5-…` / `gp50-…`). The model is read from the presets, which must all belong to one model.
+   * Save a full (or partial) pedal backup as a new `backups/<model>-YYYY-MM-DD[-n]` folder of
+   * `<slot label>-Name.prst` files (`gp5-…`, `gp50-…`, `gp200-…`). The model is read from the presets, which must all belong to one model.
    */
   saveBackup(slots: BackupSlot[]): Promise<CollectionInfo>;
   createCollection(title: string): Promise<CollectionInfo>;

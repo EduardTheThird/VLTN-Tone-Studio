@@ -7,6 +7,8 @@ export interface ValueSpec {
   /** Smallest increment; 0 or absent means 1 */
   step?: number;
   unit?: string;
+  /** Enum values: labels[value - min] is shown instead of the number (MidFreq "220 Hz", a synced Time "1/8D") */
+  labels?: readonly string[];
 }
 
 /** Pixels of vertical drag for the full range (Shift multiplies by FINE_FACTOR). */
@@ -70,19 +72,24 @@ export function wheelValue(value: number, deltaY: number, spec: ValueSpec, fine 
   return clampStep(value + (deltaY < 0 ? notch : -notch), spec);
 }
 
-/** Parse a typed value ("320", "320 ms", "-3,5"); null when not a number. */
+/** Parse a typed value ("320", "320 ms", "-3,5", or one of the enum labels like "1/8D"); null when not a value. */
 export function parseTyped(text: string, spec: ValueSpec): number | null {
-  const m = /-?\d+(?:[.,]\d+)?/.exec(text.trim());
+  const t = text.trim().toLowerCase();
+  const label = spec.labels?.findIndex((l) => l.toLowerCase() === t) ?? -1;
+  if (label >= 0) return clampStep(spec.min + label, spec);
+  const m = /-?\d+(?:[.,]\d+)?/.exec(t);
   if (!m) return null;
   return clampStep(Number(m[0].replace(",", ".")), spec);
 }
 
-/** Display string without unit, using the step's decimals. */
+/** Display string without unit, using the step's decimals; enum values show their label. */
 export function formatValue(value: number, spec: ValueSpec): string {
-  return value.toFixed(decimalsOf(stepOf(spec)));
+  return spec.labels?.[Math.round(value - spec.min)] ?? value.toFixed(decimalsOf(stepOf(spec)));
 }
 
-/** Value text for assistive tech, e.g. "320 ms". */
+/** Value text for assistive tech, e.g. "320 ms" or "1/8D". */
 export function valueText(value: number, spec: ValueSpec): string {
+  const label = spec.labels?.[Math.round(value - spec.min)];
+  if (label !== undefined) return label;
   return spec.unit ? `${formatValue(value, spec)} ${spec.unit}` : formatValue(value, spec);
 }

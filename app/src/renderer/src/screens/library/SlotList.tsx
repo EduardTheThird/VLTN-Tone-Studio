@@ -13,7 +13,7 @@ import { MiniChain } from "@/components/write/MiniChain";
 import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize, type PresetSummary } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
-import { usePedalName, useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
 import { knownBody, useLibraryActions } from "./actions";
@@ -52,6 +52,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   const drag = useLibrary((s) => s.drag);
   const actions = useLibraryActions();
   const pedal = usePedalName();
+  const profile = useProfile();
   const writable = useWritable();
   const connected = status === "connected";
   const gridRef = useRef<HTMLDivElement>(null);
@@ -77,9 +78,9 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
       if (filter === "empty" && !r.empty) return false;
       if (!q) return true;
       const lead = r.summary ? ampOrSnapTone(r.summary, snapTones)?.title : undefined;
-      return r.name.toLowerCase().includes(q) || String(r.slot).padStart(2, "0").includes(q) || (lead?.toLowerCase().includes(q) ?? false);
+      return r.name.toLowerCase().includes(q) || profile.slotLabel(r.slot).toLowerCase().includes(q) || (lead?.toLowerCase().includes(q) ?? false);
     });
-  }, [rows, filter, query, snapTones]);
+  }, [rows, filter, query, snapTones, profile]);
 
   const used = rows.filter((r) => !r.empty).length;
   const selSet = new Set(selected);
@@ -122,7 +123,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
       e.preventDefault();
       if (!selected.length || !writable) return;
       const target = selected[0] + (e.key === "ArrowUp" ? -1 : 1);
-      if (target >= 0 && target + selected.length <= 100) actions.moveSlots(selected, target);
+      if (target >= 0 && target + selected.length <= profile.slotCount) actions.moveSlots(selected, target);
       return;
     }
     switch (e.key) {
@@ -217,7 +218,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
       <span className="flex-1" />
       <Tabs value={filter} onValueChange={(v) => useLibrary.setState({ slotFilter: v as SlotFilter })}>
         <TabsList aria-label="Show">
-          <TabsTrigger value="all">All {rows.length || 100}</TabsTrigger>
+          <TabsTrigger value="all">All {rows.length || profile.slotCount}</TabsTrigger>
           <TabsTrigger value="used">Used</TabsTrigger>
           <TabsTrigger value="empty">Empty</TabsTrigger>
         </TabsList>
@@ -259,7 +260,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
         <div className={cn("min-h-0 flex-1 overflow-auto", status !== "connected" && "opacity-60")} onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(null)}>
           {loading && Array.from({ length: 14 }, (_, i) => <Skeleton key={i} className="mx-2 my-1 h-6" />)}
           {!loading && !names.length && (
-            <p className="px-3 py-6 text-sm text-silkscreen-3">Connect the {pedal} to see its 100 slots. Presets on this computer work without it.</p>
+            <p className="px-3 py-6 text-sm text-silkscreen-3">Connect the {pedal} to see its {profile.slotCount} slots. Presets on this computer work without it.</p>
           )}
           {names.length > 0 && !visible.length && (
             <p className="px-3 py-6 text-sm text-silkscreen-3">
@@ -408,6 +409,7 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
   const connected = useDevice((s) => s.status === "connected");
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
+  const { slotLabel } = useProfile();
   const writable = useWritable();
   const collections = useLibrary((s) => s.collections);
   const actions = useLibraryActions();
@@ -450,13 +452,13 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
             <Checkbox checked={selected} aria-label={`Select slot ${slot}`} tabIndex={-1} onClick={(e) => e.stopPropagation()} onCheckedChange={() => onToggle(slot)} />
           </span>
           <span role="gridcell" className={cn("text-sm font-semibold tabular-nums", selected ? "text-silkscreen" : "text-silkscreen-3", drop && "text-lamp", empty && !drop && "font-medium text-silkscreen-4")}>
-            {String(slot).padStart(2, "0")}
+            {slotLabel(slot)}
           </span>
           <span role="gridcell" className={cn("truncate font-semibold text-silkscreen", empty && !incoming && "font-medium text-silkscreen-4", drop && "font-[650] text-lamp")}>
             {name}
           </span>
           <span role="gridcell" className={cn("flex", drop && "opacity-85")}>
-            {empty && !incoming ? <MiniChain enabled={null} /> : <MiniChain order={shown?.order} enabled={shown ? shown.blocks.map((b) => b.enabled) : null} />}
+            <MiniChain chain={empty && !incoming ? null : shown} />
           </span>
           <span role="gridcell" className="flex min-w-0 items-center gap-2 text-silkscreen-2">
             {lead && (

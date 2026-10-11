@@ -1,4 +1,4 @@
-// "Back up now": read all 100 slots (backupAll), save them as a backups folder, report. Shared with the Device screen.
+// "Back up now": read every slot (backupAll), save them as a backups folder, report. Shared with the Device screen.
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
 import { pedalName } from "@/state/device-model";

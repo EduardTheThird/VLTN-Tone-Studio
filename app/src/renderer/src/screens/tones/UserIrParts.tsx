@@ -1,12 +1,12 @@
 import { isEmptySlotName } from "@shared/tone3000";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_IR } from "@/gp5/lib/userir.mjs";
-import { useDevice, usePedalName } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import type { SlotName } from "@/state/device-types";
 import type { UserIrFile } from "@/userir/convert";
 import { irSlotLabel } from "./store";
 
-const IR_SLOTS = Array.from({ length: USER_IR.SLOTS }, (_, i) => i);
+// The GP-5 family converter's output (see userir/convert); the slot count comes from the pedal's profile.
 const KEPT_MS = (USER_IR.SAMPLES / USER_IR.RATE) * 1000;
 
 /** What the slot holds now, or null when it is empty (or the pedal's list isn't read). */
@@ -44,10 +44,12 @@ export function ReplaceIrNote({ name }: { name: string }) {
   return <span className="text-pretty text-silkscreen-2">Replaces {name}. An IR can't be read back from the pedal, so it is gone unless you have its file.</span>;
 }
 
-/** The 20 User IR slots (shown 1-based, like the pedal) with what each holds; nothing when the list isn't read. */
+/** The pedal's User IR slots (shown 1-based, like the pedal) with what each holds; nothing when the list isn't read. */
 export function UserIrSlotPicker({ value, onChange, disabled }: { value: number | null; onChange: (slot: number) => void; disabled?: boolean }) {
   const userIRs = useDevice((s) => s.userIRs);
+  const [first, last] = useProfile().userIr.userRange;
   if (!userIRs) return null;
+  const irSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
     const name = irOccupant(userIRs, slot);
     return `${irSlotLabel(slot)}${name ? `, ${name}` : ", empty"}`;
@@ -58,7 +60,7 @@ export function UserIrSlotPicker({ value, onChange, disabled }: { value: number 
         <SelectValue placeholder="Choose a slot" />
       </SelectTrigger>
       <SelectContent>
-        {IR_SLOTS.map((slot) => (
+        {irSlots.map((slot) => (
           <SelectItem key={slot} value={String(slot)}>
             {label(slot)}
           </SelectItem>

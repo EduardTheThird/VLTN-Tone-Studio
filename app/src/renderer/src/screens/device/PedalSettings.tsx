@@ -1,29 +1,25 @@
 import { ChevronDown, List, Lock, Zap } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dial } from "@/components/gear";
-import { GLOBALS } from "@/gp5/lib/protocol.mjs";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
-import type { GlobalName, GlobalRecord } from "@/state/device-types";
+import { globalSpecsFor } from "@/state/device-model";
+import type { GlobalRecord, GlobalSpec, Globals } from "@/state/device-types";
+import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
-const DIALS: { name: GlobalName; label: string }[] = [
-  { name: "inputTrim", label: "Input trim" },
-  { name: "masterVolume", label: "Master volume" },
-  { name: "monitorLevel", label: "Monitor level" },
-  { name: "recordLevel", label: "Record level" },
-  { name: "btLevel", label: "Bluetooth level" },
-];
-
-const range = (name: GlobalName) => `${GLOBALS[name].min < 0 ? "−" : ""}${Math.abs(GLOBALS[name].min)} to ${GLOBALS[name].max}`;
-
-/** Pedal settings faceplate: globals stored on the pedal, outside every preset. Same layout as the Rig faceplate. */
+/**
+ * Pedal settings faceplate: globals stored on the pedal, outside every preset, as the connected (or last connected)
+ * model's settings table grouped like its menu. Same layout as the Rig faceplate.
+ */
 export function PedalSettings({ offline }: { offline: boolean }) {
-  const globals = useDevice((s) => s.globals);
-  const setGlobal = useDevice((s) => s.setGlobal);
+  const { device, globals, firmware } = useDevice(useShallow((s) => ({ device: s.device, globals: s.globals, firmware: s.firmware })));
   const pedal = usePedalName();
   const live = !offline;
+  const groups = settingsGroups(device, globals, firmware);
+  const cabSim = globalSpecsFor(device).find((g) => g.name === "cabSimBypass");
 
   return (
     <section
@@ -36,25 +32,20 @@ export function PedalSettings({ offline }: { offline: boolean }) {
       </div>
 
       {globals ? (
-        <div className={cn("flex min-w-0 justify-around border-l px-2 min-[1360px]:border-r", offline && "pointer-events-none opacity-45")} aria-disabled={offline || undefined}>
-          {DIALS.map(({ name, label }) => (
-            <div key={name} className="flex w-[92px] flex-col items-center">
-              <Dial
-                label={label}
-                value={globals[name] ?? GLOBALS[name].min}
-                spec={{ min: GLOBALS[name].min, max: GLOBALS[name].max, step: 1 }}
-                size={64}
-                disabled={!live || globals[name] === undefined}
-                onChange={(v) => setGlobal(name, v)}
-                className="[&>span:first-child]:whitespace-nowrap"
-              />
-              <span className="mt-0.5 text-center text-xs text-silkscreen-4">{range(name)}</span>
+        <div
+          className={cn("flex min-w-0 flex-wrap justify-around gap-x-8 gap-y-5 border-l px-4 min-[1360px]:border-r", offline && "pointer-events-none opacity-45")}
+          aria-disabled={offline || undefined}
+        >
+          {groups.map(({ group, title, items }) => (
+            <div key={group} role="group" aria-label={title} className="flex min-w-0 flex-col gap-2.5">
+              <h3 className="text-sm font-[550] text-silkscreen-2">{title}</h3>
+              <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
+                {items.map((spec) => (
+                  <SettingControl key={spec.name} spec={spec} globals={globals} disabled={!live || globals[spec.name] === undefined} />
+                ))}
+              </div>
             </div>
           ))}
-          <div className="flex w-[92px] flex-col items-center">
-            <ToggleDial label="Cab sim bypass" on={!!globals.cabSimBypass} disabled={!live || globals.cabSimBypass === undefined} onChange={(on) => setGlobal("cabSimBypass", on ? 1 : 0)} />
-            <span className="mt-0.5 text-center text-xs text-silkscreen-4">On or off</span>
-          </div>
         </div>
       ) : (
         <div className="flex min-h-[132px] items-center justify-center border-l px-6 text-center text-silkscreen-3 min-[1360px]:border-r">
@@ -74,11 +65,59 @@ export function PedalSettings({ offline }: { offline: boolean }) {
             Read-only until connected
           </span>
         )}
-        <span className="text-xs text-pretty text-silkscreen-3">Every turn is sent to the pedal as you make it. There is nothing to save.</span>
-        <span className="text-xs text-pretty text-silkscreen-3">Turn cab sim bypass on when the pedal feeds a real guitar cabinet.</span>
+        <span className="text-xs text-pretty text-silkscreen-3">Every change is sent to the pedal as you make it. There is nothing to save.</span>
+        {cabSim && <span className="text-xs text-pretty text-silkscreen-3">{cabSim.label}: turn it on when the pedal feeds a real guitar cabinet.</span>}
       </div>
     </section>
   );
+}
+
+/** One setting: a dial for numbers, an on/off dial for Off/On, a list for other choices. */
+function SettingControl({ spec, globals, disabled }: { spec: GlobalSpec; globals: Globals; disabled: boolean }) {
+  const value = globals[spec.name];
+  const set = (v: number) => useDevice.getState().setGlobal(spec.name, v);
+  switch (controlKind(spec)) {
+    case "dial":
+      return (
+        <div className="flex min-w-[92px] flex-col items-center">
+          <Dial
+            label={spec.label}
+            value={value ?? spec.min}
+            spec={{ min: spec.min, max: spec.max, step: 1, unit: spec.unit }}
+            size={64}
+            disabled={disabled}
+            onChange={set}
+            className="[&>span:first-child]:whitespace-nowrap"
+          />
+          <span className="mt-0.5 text-center text-xs text-silkscreen-4">{rangeCaption(spec)}</span>
+        </div>
+      );
+    case "toggle":
+      return (
+        <div className="flex min-w-[92px] flex-col items-center">
+          <ToggleDial label={spec.label} on={value === spec.max} disabled={disabled} onChange={(on) => set(on ? spec.max : spec.min)} />
+          <span className="mt-0.5 text-center text-xs text-silkscreen-4">On or off</span>
+        </div>
+      );
+    case "select":
+      return (
+        <div className="flex w-[168px] flex-col gap-1.5">
+          <span className="text-xs font-medium tracking-wide whitespace-nowrap text-silkscreen-3 uppercase">{spec.label}</span>
+          <Select value={value === undefined ? "" : String(value)} onValueChange={(v) => set(Number(v))} disabled={disabled}>
+            <SelectTrigger className="h-8 w-full" aria-label={spec.label}>
+              <SelectValue placeholder="Not reported" />
+            </SelectTrigger>
+            <SelectContent>
+              {(spec.labels ?? []).map((label, i) => (
+                <SelectItem key={label} value={String(spec.min + i)}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+  }
 }
 
 /** On/off dial (cab sim bypass): the knob sits at min or max; Space or Enter toggles. */
@@ -133,7 +172,7 @@ const rawBytes = (r: GlobalRecord) => {
 /** Read-only list of the 0x10 records the toolkit can't name. The app never writes unknown records. */
 export function RawRecords() {
   const records = useDevice(
-    useShallow((s) => s.globalRecords?.filter((r) => !Object.values(GLOBALS).some((g) => g.addr[0] === r.a && g.addr[1] === r.b)) ?? null),
+    useShallow((s) => s.globalRecords?.filter((r) => !isNamedRecord(s.device, r.a, r.b)) ?? null),
   );
   if (!records?.length) return null;
   return (

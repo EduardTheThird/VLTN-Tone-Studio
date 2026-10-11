@@ -1,5 +1,5 @@
-// Pure TONE3000 → pedal (GP-5 / GP-50) helpers shared by main and renderer (no I/O).
-import type { PedalModel } from "./host/device";
+// Pure TONE3000 → pedal helpers shared by main and renderer (no I/O).
+import { profileFor, type DeviceKey } from "./devices";
 import type { T3kGear, T3kModel, T3kTone, ToneRecord } from "./host/tones";
 
 export type Verdict =
@@ -65,8 +65,8 @@ export function verdictLabel(v: Verdict, pedal: string): string {
   }
 }
 
-/** Pedal model a record's slot link is on. Links made before GP-50 support carry no model and are GP-5 links. */
-export const linkDevice = (record: Pick<ToneRecord, "gp5">): PedalModel => record.gp5.device ?? "gp5";
+/** Pedal model a record's slot link is on. Links made before GP-50 support carry no model; only the GP-5 existed then. */
+export const linkDevice = (record: Pick<ToneRecord, "gp5">): DeviceKey => record.gp5.device ?? "gp5";
 
 /**
  * The record's slot link as seen from `device` (the connected or last connected pedal; null before the first
@@ -75,8 +75,8 @@ export const linkDevice = (record: Pick<ToneRecord, "gp5">): PedalModel => recor
  */
 export function slotLinkOn(
   record: Pick<ToneRecord, "gp5"> | null | undefined,
-  device: PedalModel | null,
-): { kind: "snaptone" | "ir"; slot: number; slotName?: string; other: PedalModel | null } | null {
+  device: DeviceKey | null,
+): { kind: "snaptone" | "ir"; slot: number; slotName?: string; other: DeviceKey | null } | null {
   if (!record) return null;
   const { snaptoneSlot, irSlot, slotName } = record.gp5;
   const link = snaptoneSlot !== undefined ? { kind: "snaptone" as const, slot: snaptoneSlot } : irSlot !== undefined ? { kind: "ir" as const, slot: irSlot } : null;
@@ -86,7 +86,7 @@ export function slotLinkOn(
 }
 
 /** The linked slot of `kind` when it is on `device`'s pedal, else null (see slotLinkOn). */
-export function linkedSlotOn(record: Pick<ToneRecord, "gp5"> | null | undefined, kind: "snaptone" | "ir", device: PedalModel | null): number | null {
+export function linkedSlotOn(record: Pick<ToneRecord, "gp5"> | null | undefined, kind: "snaptone" | "ir", device: DeviceKey | null): number | null {
   const link = slotLinkOn(record, device);
   return link && link.kind === kind && link.other === null ? link.slot : null;
 }
@@ -150,11 +150,12 @@ export function sanitizeSlotName(name: string): string {
     .trim();
 }
 
-/** First empty user SnapTone slot (50–79) or User IR slot (0–19). */
-export function firstEmptySlot(kind: "snaptone" | "ir", slots: { slot: number; name: string }[] | null): number | null {
-  if (!slots) return null;
-  const range = kind === "snaptone" ? slots.filter((s) => s.slot >= 50 && s.slot < 80) : slots.filter((s) => s.slot < 20);
-  return range.find((s) => isEmptySlotName(s.name))?.slot ?? null;
+/** First empty user SnapTone slot (GP-5: 50–79) or User IR slot (0–19) of `device`; null when none or unknown. */
+export function firstEmptySlot(kind: "snaptone" | "ir", slots: { slot: number; name: string }[] | null, device: DeviceKey | null): number | null {
+  if (!slots || !device) return null;
+  const p = profileFor(device);
+  const [first, last] = kind === "snaptone" ? p.snapTone.userRange : p.userIr.userRange;
+  return slots.find((s) => s.slot >= first && s.slot <= last && isEmptySlotName(s.name))?.slot ?? null;
 }
 
 /** Pedal slot tables mark empty slots by name: "Empty" (SnapTone) or "User IR n" (IR). */

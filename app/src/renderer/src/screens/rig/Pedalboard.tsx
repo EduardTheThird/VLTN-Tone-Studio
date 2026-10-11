@@ -29,8 +29,10 @@ function stateLine(b: BlockState) {
   if (b.code === "NS") return b.enabled ? "SnapTone on, replacing the amp and cab" : "SnapTone off";
   const base = `${b.code} ${b.enabled ? "on" : "off"}`;
   const time = b.model?.params.find((p) => p.name === "Time");
-  if (b.enabled && b.code === "DLY" && time) return `${base}, time ${Math.round(b.params[time.index])} ${time.unit ?? "ms"}`;
-  return base;
+  if (!b.enabled || b.code !== "DLY" || !time) return base;
+  const v = b.params[time.index];
+  // A synced Time holds a note division (GP-50 Sync on)
+  return `${base}, time ${time.labels?.[Math.round(v - time.min)] ?? `${Math.round(v)} ${time.unit ?? "ms"}`}`;
 }
 
 interface BoardProps {

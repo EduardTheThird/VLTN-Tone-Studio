@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { host } from "@/host";
 import { connectionView } from "@/screens/device/guidance";
-import { useDevice, usePedalName } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 
 const LED = { on: "bg-led-on", off: "bg-led-off", warn: "bg-led-warn", fault: "bg-led-fault" } as const;
@@ -18,10 +18,11 @@ export function DeviceChip() {
   const portName = useDevice((s) => s.portName);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
+  const { slotCount } = useProfile();
   const chipName = device ? pedal : "Pedal";
   const go = useNav((s) => s.go);
   const view = connectionView({ status, error, mode, hostStatus, platform: host.platform, disconnectReason, lastConnectedAt, device });
-  const detail = status === "connected" ? (mode === "mock" ? `Simulated ${pedal} with a bundled 100-slot backup` : `MIDI port ${portName}`) : `${view.state}: ${view.detail}`;
+  const detail = status === "connected" ? (mode === "mock" ? `Simulated ${pedal} with a bundled ${slotCount}-slot backup` : `MIDI port ${portName}`) : `${view.state}: ${view.detail}`;
   return (
     <Tooltip>
       <TooltipTrigger asChild>

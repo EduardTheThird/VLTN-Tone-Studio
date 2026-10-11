@@ -190,6 +190,7 @@ type LocalPhase = "idle" | "converting" | "writing";
 function LocalSend({ title, exportFile }: { title: string; exportFile: () => string }) {
   const connected = useDevice((s) => s.status === "connected");
   const snapTones = useDevice((s) => s.snapTones);
+  const device = useDevice((s) => s.device);
   const deviceBusy = useDevice((s) => s.busy);
   const hasSignal = useTestSignal((s) => s.has);
   const pedal = usePedalName();
@@ -206,8 +207,8 @@ function LocalSend({ title, exportFile }: { title: string; exportFile: () => str
     if (connected && !snapTones && !deviceBusy) void useDevice.getState().readSnapTones().catch(() => {});
   }, [connected, snapTones, deviceBusy]);
   useEffect(() => {
-    if (slot === null && snapTones) setSlot(firstEmptySlot("snaptone", snapTones));
-  }, [slot, snapTones]);
+    if (slot === null && snapTones) setSlot(firstEmptySlot("snaptone", snapTones, device));
+  }, [slot, snapTones, device]);
 
   const occupant = slot === null ? null : snapTones?.find((s) => s.slot === slot)?.name;
   const replacing = occupant && !isEmptySlotName(occupant) ? occupant : null;

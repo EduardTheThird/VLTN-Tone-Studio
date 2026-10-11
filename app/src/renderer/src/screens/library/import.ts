@@ -1,8 +1,9 @@
 // Import: validate picked/dropped .prst files with the toolkit, then copy them into "Imported files".
 import { isCrcValid, parsePrst, validateOrder } from "@/gp5/lib/prst.mjs";
 import { host } from "@/host";
-import { presetDevice } from "@/state/device-model";
-import type { DeviceKey } from "@/state/device-types";
+import { isGp5Family, pedalName } from "@/state/device-model";
+import type { Gp5FamilyKey } from "@/state/device-types";
+import { PRST_MODELS, sniffPrst } from "@shared/devices";
 import { IMPORTED_ID, type LocalPreset, type NewPreset, type PickedFile } from "@shared/host/files";
 
 export interface Rejected {
@@ -10,16 +11,14 @@ export interface Rejected {
   reason: string;
 }
 
-const NOT_A_PRESET = "Not a GP-5 or GP-50 preset.";
+const NOT_A_PRESET = `Not a ${PRST_MODELS} preset.`;
 
-/** Check one file of either model as stored; converting for the connected pedal happens when it is written. */
-export function checkPrst(bytes: Uint8Array): { ok: true; name: string; device: DeviceKey } | { ok: false; reason: string } {
-  let device: DeviceKey;
-  try {
-    device = presetDevice(bytes);
-  } catch {
-    return { ok: false, reason: NOT_A_PRESET };
-  }
+/** Check one file of either GP-5 family model as stored; converting for the connected pedal happens when it is written. */
+export function checkPrst(bytes: Uint8Array): { ok: true; name: string; device: Gp5FamilyKey } | { ok: false; reason: string } {
+  const device = sniffPrst(bytes);
+  if (!device) return { ok: false, reason: NOT_A_PRESET };
+  // A recognised preset of a family the library can't edit yet gets its own reason, not a parse error.
+  if (!isGp5Family(device)) return { ok: false, reason: `${pedalName(device)} presets can't be opened in this version yet.` };
   try {
     const p = parsePrst(bytes);
     if (!isCrcValid(bytes)) return { ok: false, reason: "The file is damaged (its checksum doesn't match)." };

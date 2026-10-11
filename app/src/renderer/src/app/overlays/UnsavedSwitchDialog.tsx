@@ -10,14 +10,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useDevice } from "@/state/device";
+import { useDevice, useProfile } from "@/state/device";
 import { useUi } from "@/state/ui";
 import { describeError } from "../notify";
 import { switchNow } from "../preset-switch";
 import { diffPresets, type ChangeRow } from "../unsaved-diff";
 
 const MAX_ROWS = 5;
-const pad = (n: number) => String(n).padStart(2, "0");
 
 /** overlays.md B: "Save your changes to …?" when switching presets with unsaved edits. */
 export function UnsavedSwitchDialog() {
@@ -26,6 +25,7 @@ export function UnsavedSwitchDialog() {
   const preset = useDevice((s) => s.preset);
   const saved = useDevice((s) => s.saved);
   const names = useDevice((s) => s.names);
+  const { slotLabel } = useProfile();
   const [running, setRunning] = useState<null | "save" | "discard">(null);
   const [error, setError] = useState<string | null>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
@@ -51,7 +51,7 @@ export function UnsavedSwitchDialog() {
       await switchNow(target);
       setTarget(null);
     } catch (e) {
-      setError(kind === "save" ? `Couldn't save slot ${pad(preset.slot)}. ${describeError(e)}` : describeError(e));
+      setError(kind === "save" ? `Couldn't save slot ${slotLabel(preset.slot)}. ${describeError(e)}` : describeError(e));
     } finally {
       setRunning(null);
     }
@@ -73,7 +73,7 @@ export function UnsavedSwitchDialog() {
             <AlertDialogHeader>
               <AlertDialogTitle className="text-lg font-semibold text-balance">Save your changes to {view.name}?</AlertDialogTitle>
               <AlertDialogDescription className="text-[13px] text-pretty text-silkscreen-2">
-                You're switching to {pad(view.target)} {view.targetName}. These changes only live in the pedal's buffer and are lost if you switch now.
+                You're switching to {slotLabel(view.target)} {view.targetName}. These changes only live in the pedal's buffer and are lost if you switch now.
               </AlertDialogDescription>
             </AlertDialogHeader>
             {view.rows.length > 0 && (
@@ -123,7 +123,7 @@ export function UnsavedSwitchDialog() {
               <AlertDialogCancel disabled={!!running}>Cancel</AlertDialogCancel>
               <Button ref={saveRef} disabled={!!running} onClick={() => void finish("save")}>
                 {running === "save" && <Spinner />}
-                {running === "save" ? `Saving slot ${pad(view.slot)}` : `Save to slot ${pad(view.slot)}`}
+                {running === "save" ? `Saving slot ${slotLabel(view.slot)}` : `Save to slot ${slotLabel(view.slot)}`}
               </Button>
             </AlertDialogFooter>
           </>

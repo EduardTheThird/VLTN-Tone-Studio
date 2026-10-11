@@ -44,7 +44,7 @@ export interface SendState {
   file: Uint8Array | null;
   /** IR: the converted 2048-byte User IR block and what was cut, kept for retrying the write */
   ir: UserIrFile | null;
-  /** Target slot chosen by the user: SnapTone 50–79, User IR 0–19 (shown as User IR 1–20) */
+  /** Target slot chosen by the user, in the pedal's user range (GP-5: SnapTone 50–79, User IR 0–19 shown as User IR 1–20) */
   proposedSlot: number | null;
   linkedSlot: number | null;
   /** Edited .nam text from the capture editor, used instead of the download */
@@ -287,8 +287,15 @@ function isDevicePreset(prst: Uint8Array, device: DeviceKey): boolean {
 // ---------------------------------------------------------------------------------- send to the pedal
 
 const pedal = () => pedalName(useDevice.getState().device);
-/** Slot links belong to the pedal the slots were read from; before any connection there is none, which reads as GP-5. */
-const linkDevice = (): DeviceKey => useDevice.getState().device ?? "gp5";
+/**
+ * Slot links belong to the pedal the slots were read from. A link is only made right after an upload to the connected
+ * pedal or from its read slot tables, so the model is known; without one there is no slot to link.
+ */
+function linkDevice(): DeviceKey {
+  const device = useDevice.getState().device;
+  if (!device) throw new Error("Connect the pedal first: a slot link needs the pedal model the slot is on.");
+  return device;
+}
 
 /**
  * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
@@ -315,7 +322,7 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
         check: null,
         file: null,
         ir: null,
-        proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs),
+        proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs, d.device),
         linkedSlot: null,
         text: opts.text ?? null,
       },

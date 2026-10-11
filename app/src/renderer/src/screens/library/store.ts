@@ -1,9 +1,8 @@
 // Library screen state: local collections, the known body of each pedal slot, and the slot selection.
 import { create } from "zustand";
-import { DEVICES } from "@/gp5/lib/prst.mjs";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
-import { isEmptySlotName } from "@/state/device-model";
+import { isEmptySlotName, profileOrDefault } from "@/state/device-model";
 import type { BackupEntry } from "@/state/device-types";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 
@@ -59,8 +58,12 @@ export interface LibraryState {
 /** A slot name meaning "no user preset" on the connected (or last) pedal; before the first connection either model's. */
 export const isEmptyName = (name: string | undefined) => !name || isEmptySlotName(name, useDevice.getState().device);
 
-/** The name an empty slot has on the connected (or last) pedal; a GP-5's before the first connection. */
-export const emptyName = (): string => DEVICES[useDevice.getState().device ?? "gp5"].emptyName;
+/**
+ * The name an empty slot has on the connected (or last) pedal; DEFAULT_DEVICE's before the first connection. Models
+ * without empty slots (GP-200 family) give "", which isEmptyName also reads as empty, so a slot whose name is not
+ * known yet never shows a made-up name.
+ */
+export const emptyName = (): string => profileOrDefault(useDevice.getState().device).emptyName ?? "";
 
 /**
  * Load bodies from the newest backup of the current pedal's model once, so chains show without stepping through

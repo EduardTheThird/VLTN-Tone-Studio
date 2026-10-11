@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
-import { usePedalName, useDevice } from "@/state/device";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { useCommand, useFileHandler, useStatusHints, useStatusMessage } from "@/state/ui";
 import { LibraryActionsProvider, useLibraryActions } from "./actions";
 import { runBackupNow } from "./backup-now";
@@ -28,7 +28,7 @@ function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Preset librarian: presets on this computer, the 100 slots on the pedal, and the selection's details. */
+/** Preset librarian: presets on this computer, the slots on the pedal, and the selection's details. */
 export function LibraryScreen() {
   return (
     <LibraryActionsProvider>
@@ -146,6 +146,7 @@ function LibraryHead() {
   const unsaved = useDevice((s) => s.unsavedChanges);
   const device = useDevice((s) => s.device);
   const pedal = usePedalName();
+  const { slotCount } = useProfile();
   const [, tick] = useState(0);
   // The last backup of this pedal's model (a GP-5 backup says little about a connected GP-50).
   const newest = collections.find((c) => c.kind === "backup" && (!device || c.device === device));
@@ -159,14 +160,15 @@ function LibraryHead() {
 
   let right;
   if (backup) {
-    const done = Math.round(backup.progress * 100);
+    // Progress runs 0..1 across every slot; the label counts slots from 1.
+    const done = Math.round(backup.progress * slotCount);
     const elapsed = startedAt ? (Date.now() - startedAt) / 1000 : 0;
     const left = backup.progress > 0.02 ? Math.max(0, Math.round((elapsed / backup.progress) * (1 - backup.progress))) : null;
     right = (
       <div role="status" className="flex w-[420px] flex-col gap-1.5">
         <div className="flex justify-between gap-3 text-sm text-silkscreen-3">
           <span>
-            Backing up slot <b className="font-semibold text-silkscreen">{Math.min(100, done + 1)}</b> of 100
+            Backing up slot <b className="font-semibold text-silkscreen">{Math.min(slotCount, done + 1)}</b> of {slotCount}
           </span>
           <span>{left === null ? "About 75 s in total" : `About ${left} s left`}</span>
         </div>
@@ -189,7 +191,7 @@ function LibraryHead() {
             <>
               <span className="flex items-center gap-1.5">
                 <CircleCheckIcon className="size-3.5" aria-hidden />
-                Last {newest.count === 100 ? "full " : ""}backup{" "}
+                Last {newest.count === slotCount ? "full " : ""}backup{" "}
                 <b className="font-semibold text-silkscreen">
                   {today ? "today, " : ""}
                   {formatDay(newest.createdAt)}
@@ -206,7 +208,7 @@ function LibraryHead() {
         <Button
           variant="outline"
           disabled={status !== "connected" || busy !== null || unsaved > 0}
-          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? `Connect the ${pedal} to back it up` : "Reads all 100 slots, about 75 s"}
+          title={unsaved > 0 ? "Save or discard your unsaved changes on the Rig first" : status !== "connected" ? `Connect the ${pedal} to back it up` : `Reads all ${slotCount} slots, about 75 s`}
           onClick={() => void runBackupNow()}
         >
           <HardDriveDownloadIcon data-icon="inline-start" />

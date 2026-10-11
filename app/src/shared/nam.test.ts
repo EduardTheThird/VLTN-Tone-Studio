@@ -213,10 +213,13 @@ describe("slot helpers", () => {
     expect(name).toMatch(/^5150III/);
     expect(name.endsWith("4")).toBe(true);
   });
-  it("finds the first empty user slot", () => {
+  it("finds the first empty user slot in the model's user range", () => {
     const slots = Array.from({ length: 80 }, (_, i) => ({ slot: i, name: i < 50 ? `Factory ${i}` : i < 58 ? `S${i}` : "Empty" }));
-    expect(firstEmptySlot("snaptone", slots)).toBe(58);
-    expect(firstEmptySlot("ir", [{ slot: 0, name: "A7X" }, { slot: 1, name: "User IR 2" }])).toBe(1);
+    expect(firstEmptySlot("snaptone", slots, "gp5")).toBe(58);
+    expect(firstEmptySlot("snaptone", slots, null)).toBeNull();
+    expect(firstEmptySlot("ir", [{ slot: 0, name: "A7X" }, { slot: 1, name: "User IR 2" }], "gp50")).toBe(1);
+    // GP-200: all 10 SnapTone slots are user slots
+    expect(firstEmptySlot("snaptone", [{ slot: 0, name: "AMP-1" }, { slot: 1, name: "" }], "gp200")).toBe(1);
   });
   it("scopes a slot link to the pedal model it was made on; old records are GP-5 links", () => {
     const old = { gp5: { verdict: "ready" as const, snaptoneSlot: 58, slotName: "5150-RED4" } };

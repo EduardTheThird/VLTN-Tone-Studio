@@ -13,13 +13,14 @@ export type BackupSource =
   | { kind: "none"; reason: string };
 
 /**
- * The active slot uses its saved body (not the live edits). Other slots are read from the pedal, which switches
- * presets; with unsaved edits that would drop them, so the newest backup's copy is used when its name still matches.
+ * The active slot uses its saved body (not the live edits). Other slots are read from the pedal: the export read
+ * (GP-50) leaves the active preset alone; otherwise reading switches presets, which would drop unsaved edits, so
+ * the newest backup's copy is used when its name still matches.
  */
 export async function resolveBackupSource(slot: number): Promise<BackupSource> {
   const d = useDevice.getState();
   if (d.slot === slot && d.saved) return { kind: "saved", prst: d.saved.prst };
-  if (d.unsavedChanges === 0) return { kind: "pedal" };
+  if (d.unsavedChanges === 0 || d.can("exportPreset")) return { kind: "pedal" };
   const name = d.names[slot]?.name;
   // Only a backup of this pedal's model can stand in for its slot.
   const newest = (await host.files.listCollections().catch(() => [])).find((c) => c.kind === "backup" && c.device === d.device);

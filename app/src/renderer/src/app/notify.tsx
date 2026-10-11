@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
 
 /** "GP-5" / "GP-50" for the connected (or last connected) pedal, "pedal" before the first connection. */
 const currentPedal = () => pedalName(useDevice.getState().device);
@@ -109,7 +109,7 @@ export function notifySuccess(title: string, body?: string, action?: ToastAction
 
 /** A3: a verified write. `go` selects the written slot (omit when it is already active). */
 export function notifyWriteDone({ name, slot, backedUp, go }: { name: string; slot: number; backedUp: boolean; go?: () => void | Promise<void> }): void {
-  const nn = String(slot).padStart(2, "0");
+  const nn = slotLabel(useDevice.getState().device, slot);
   showToast({
     tone: "ok",
     title: `${name} is now in slot ${nn}`,
@@ -120,7 +120,7 @@ export function notifyWriteDone({ name, slot, backedUp, go }: { name: string; sl
 
 /** G: a failed write. A write the pedal doesn't fully acknowledge is discarded, so the slot is unchanged. */
 export function notifyWriteFailed({ slot, error, retry }: { slot: number; error: unknown; retry?: () => void | Promise<void> }): void {
-  const nn = String(slot).padStart(2, "0");
+  const nn = slotLabel(useDevice.getState().device, slot);
   const code = (error as { code?: string } | null)?.code;
   if (code === "verify") {
     showToast({
@@ -141,11 +141,12 @@ export function notifyWriteFailed({ slot, error, retry }: { slot: number; error:
 }
 
 /** G: backup finished. `path` is the backup folder on disk (desktop app). */
-export function notifyBackupDone({ folder, path, count = 100 }: { folder: string; path?: string | null; count?: number }): void {
+export function notifyBackupDone({ folder, path, count }: { folder: string; path?: string | null; count: number }): void {
+  const all = count === profileOrDefault(useDevice.getState().device).slotCount;
   showToast({
     tone: "ok",
     title: "Backup finished",
-    body: `${count === 100 ? "All 100 slots are" : `${count} slots are`} in the ${folder} backup folder.`,
+    body: `${all ? `All ${count} slots are` : `${count} slots are`} in the ${folder} backup folder.`,
     action: path && host.kind === "electron" ? { label: "Show folder", run: () => host.app.showItemInFolder(path) } : undefined,
   });
 }

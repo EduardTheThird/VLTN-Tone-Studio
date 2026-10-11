@@ -150,7 +150,7 @@ export function ConfirmWriteDialog({ open, onOpenChange, title, slot, replacing,
               <dt className="text-silkscreen-3">Preset</dt>
               <dd className="flex min-w-0 items-center gap-2 text-silkscreen">
                 <span className="truncate font-semibold">{incoming.name}</span>
-                {chain && <MiniChain order={chain.order} enabled={chain.blocks.map((b) => b.enabled)} />}
+                {chain && <MiniChain chain={chain} />}
               </dd>
               {incoming.detail && (
                 <>

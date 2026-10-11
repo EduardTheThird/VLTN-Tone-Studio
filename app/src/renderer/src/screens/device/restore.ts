@@ -1,8 +1,9 @@
 // Restore sources: a backup collection or a folder picked by the user → slot-addressed presets to write, each
-// prepared for the connected pedal's model (GP-5 ⇄ GP-50).
-import { DEVICES, applyEdits, readName } from "@/gp5/lib/prst.mjs";
+// prepared for the connected pedal's model (GP-5 ⇄ GP-50; presets of another family are skipped).
+import { applyEdits } from "@/gp5/lib/prst.mjs";
 import { parseSlotFileName } from "@shared/files-naming";
-import { isEmptySlotName, prepareForDevice, presetDevice, type PreparedPreset } from "@/state/device-model";
+import { PRST_MODELS, prstName, profileFor, sniffPrst } from "@shared/devices";
+import { isEmptySlotName, prepareForDevice, profileOrDefault, type PreparedPreset } from "@/state/device-model";
 import type { BackupEntry, DeviceKey } from "@/state/device-types";
 
 /** An entry made on the other model, converted for the connected pedal. */
@@ -48,29 +49,38 @@ export function restoreEntries(files: SourceFile[], target: DeviceKey | null): O
       skipped.push(`${f.fileName}: ${f.error ?? "unreadable"}`);
       continue;
     }
-    const slot = f.slot ?? parseSlotFileName(f.fileName)?.slot ?? null;
-    if (slot === null || slot < 0 || slot > 99) {
+    const model = sniffPrst(f.bytes);
+    // File names carry the slot label of the model the file was saved from; bytes that are no preset are reported
+    // below, after their slot (named as on the target pedal) is checked.
+    const naming = model ?? target;
+    const slot = f.slot ?? (naming ? parseSlotFileName(f.fileName, naming)?.slot : null) ?? null;
+    if (slot === null || slot < 0 || slot >= profileOrDefault(target ?? model).slotCount) {
       skipped.push(`${f.fileName}: no slot number in the file name`);
+      continue;
+    }
+    if (!model) {
+      skipped.push(`${f.fileName}: not a ${PRST_MODELS} preset`);
       continue;
     }
     let prepared: PreparedPreset;
     try {
-      prepared = prepareForDevice(f.bytes, target ?? presetDevice(f.bytes));
-    } catch {
-      skipped.push(`${f.fileName}: not a GP-5 or GP-50 preset`);
+      prepared = prepareForDevice(f.bytes, target ?? model);
+    } catch (e) {
+      // Another family's preset (crossFamilyNote) or a file that fails to convert.
+      skipped.push(`${f.fileName}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     if (bySlot.has(slot)) {
       skipped.push(`${f.fileName}: slot ${slot} appears twice`);
       continue;
     }
-    const stored = readName(f.bytes).trim();
-    if (prepared.converted && target && isEmptySlotName(stored, prepared.from)) {
-      const empty = DEVICES[target].emptyName;
-      bySlot.set(slot, { entry: { slot, name: empty, prst: applyEdits(prepared.prst, { name: empty }) }, conversion: null });
+    const stored = prstName(f.bytes, model);
+    const targetEmpty = target ? profileFor(target).emptyName : null;
+    if (prepared.converted && targetEmpty !== null && isEmptySlotName(stored, prepared.from)) {
+      bySlot.set(slot, { entry: { slot, name: targetEmpty, prst: applyEdits(prepared.prst, { name: targetEmpty }) }, conversion: null });
       continue;
     }
-    const name = stored || DEVICES[prepared.from].emptyName;
+    const name = stored || (profileFor(prepared.from).emptyName ?? "");
     const conversion = prepared.converted ? { slot, name, from: prepared.from, dropped: prepared.dropped } : null;
     bySlot.set(slot, { entry: { slot, name, prst: prepared.prst }, conversion });
   }
@@ -82,10 +92,8 @@ export function restoreEntries(files: SourceFile[], target: DeviceKey | null): O
   };
 }
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
-
-/** "Slots 00–99", "Slots 00–04 and 07", "Slot 12" */
-export function describeSlots(slots: number[]): string {
+/** "Slots 00–99", "Slots 00–04 and 07", "Slot 12" with the pedal's `label` per slot ("01-A–02-D" on a GP-200). */
+export function describeSlots(slots: number[], label: (slot: number) => string): string {
   if (!slots.length) return "No slots";
   const runs: [number, number][] = [];
   for (const s of [...slots].sort((a, b) => a - b)) {
@@ -93,7 +101,7 @@ export function describeSlots(slots: number[]): string {
     if (last && s === last[1] + 1) last[1] = s;
     else runs.push([s, s]);
   }
-  const parts = runs.map(([a, b]) => (a === b ? pad2(a) : `${pad2(a)}–${pad2(b)}`));
+  const parts = runs.map(([a, b]) => (a === b ? label(a) : `${label(a)}–${label(b)}`));
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
   return `${slots.length === 1 ? "Slot" : "Slots"} ${list}`;
 }

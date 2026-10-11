@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { profileFor } from "@shared/devices";
 import { CheckIcon, ChevronDownIcon, EllipsisIcon, GitCompareArrowsIcon, Redo2Icon, SaveIcon, Undo2Icon, XIcon } from "lucide-react";
 import { keyLabel } from "@/app/keys";
 import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
@@ -13,12 +14,12 @@ import { useDevice, usePedalName } from "@/state/device";
 import type { PresetState } from "@/state/device-types";
 import { useCommand } from "@/state/ui";
 import { playPreset, redo, undo } from "./edits";
+import { ExpControl } from "./ExpControl";
+import { TempoControl } from "./TempoControl";
 import { useHistory } from "./history";
 import { useRig } from "./rig-store";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-/** overlays.md F: 10 printable ASCII characters. */
-const NAME_MAX = 10;
+/** overlays.md F: printable ASCII characters, as many as the pedal shows (profile nameLength). */
 const BAD_CHAR = /[^\x20-\x7e]/;
 
 interface Props {
@@ -33,6 +34,7 @@ export function RigHeader({ preset, connected }: Props) {
   const busy = useDevice((s) => s.busy);
   const names = useDevice((s) => s.names);
   const pedal = usePedalName();
+  const profile = profileFor(preset.device);
   const canUndo = useHistory((s) => s.past.length > 0);
   const canRedo = useHistory((s) => s.future.length > 0);
   const compare = useRig((s) => s.compare);
@@ -77,7 +79,7 @@ export function RigHeader({ preset, connected }: Props) {
 
   const exportPrst = async () => {
     try {
-      const where = await host.files.exportPresets([{ fileName: `${pad(preset.slot)}-${preset.name.trim() || "Preset"}.prst`, prst: preset.prst }]);
+      const where = await host.files.exportPresets([{ fileName: `${profile.slotLabel(preset.slot)}-${preset.name.trim() || "Preset"}.prst`, prst: preset.prst }]);
       if (where) notifySuccess(`Exported ${preset.name}`, where);
     } catch (e) {
       notifyError("Couldn't export the preset", e);
@@ -102,8 +104,8 @@ export function RigHeader({ preset, connected }: Props) {
     target === null
       ? ""
       : target === preset.slot
-        ? `Overwrite ${saved?.name ?? preset.name} in slot ${pad(target)}?`
-        : `Write ${preset.name} to slot ${pad(target)}?`;
+        ? `Overwrite ${saved?.name ?? preset.name} in slot ${profile.slotLabel(target)}?`
+        : `Write ${preset.name} to slot ${profile.slotLabel(target)}?`;
   const replacingName = target === null ? "" : target === preset.slot ? (saved?.name ?? preset.name) : (names[target]?.name ?? "");
 
   return (
@@ -116,7 +118,7 @@ export function RigHeader({ preset, connected }: Props) {
             className={cn("m-0 truncate text-[32px] leading-[1.05] font-bold tracking-[-0.02em]", !connected && "text-silkscreen-2")}
             onDoubleClick={() => editable && setRenaming(true)}
           >
-            <span className="mr-3 font-semibold text-silkscreen-4">{pad(preset.slot)}</span>
+            <span className="mr-3 font-semibold text-silkscreen-4">{profile.slotLabel(preset.slot)}</span>
             {preset.name}
           </h1>
         )}
@@ -130,11 +132,10 @@ export function RigHeader({ preset, connected }: Props) {
           ) : (
             <span>No unsaved changes</span>
           )}
-          <span className="flex items-center gap-1.5">
-            Tempo <b className="font-semibold text-silkscreen">{preset.bpm} BPM</b>
-          </span>
+          <TempoControl bpm={preset.bpm} disabled={!editable} />
           <FsChips label="FS1" blocks={preset.footswitches.fs1} preset={preset} />
           <FsChips label="FS2" blocks={preset.footswitches.fs2} preset={preset} />
+          {preset.exp && <ExpControl preset={preset} exp={preset.exp} disabled={!editable} />}
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -185,7 +186,7 @@ export function RigHeader({ preset, connected }: Props) {
               <span tabIndex={connected ? -1 : 0}>
                 <Button disabled={!editable} onClick={() => saveTarget(preset.slot)} className="rounded-r-none pr-3">
                   <SaveIcon aria-hidden />
-                  {busy?.kind === "write" ? `Writing ${Math.round(busy.progress * 100)}%` : `Save to slot ${pad(preset.slot)}`}
+                  {busy?.kind === "write" ? `Writing ${Math.round(busy.progress * 100)}%` : `Save to slot ${profile.slotLabel(preset.slot)}`}
                 </Button>
               </span>
             </TooltipTrigger>
@@ -199,7 +200,7 @@ export function RigHeader({ preset, connected }: Props) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem disabled={!editable} onSelect={() => saveTarget(preset.slot)}>
-                Save to slot {pad(preset.slot)}
+                Save to slot {profile.slotLabel(preset.slot)}
                 <DropdownMenuShortcut>{keyLabel(["Mod", "S"])}</DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem disabled={!editable} onSelect={() => setSlotPicker(true)}>
@@ -224,14 +225,14 @@ export function RigHeader({ preset, connected }: Props) {
             {names.map((n) => (
               <CommandItem
                 key={n.slot}
-                value={`${pad(n.slot)} ${n.name}`}
+                value={`${profile.slotLabel(n.slot)} ${n.name}`}
                 disabled={n.slot === preset.slot}
                 onSelect={() => {
                   setSlotPicker(false);
                   saveTarget(n.slot);
                 }}
               >
-                <span className="w-6 font-semibold text-silkscreen-3 tabular-nums">{pad(n.slot)}</span>
+                <span className="w-6 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
                 <span className="flex-1 truncate">{n.name}</span>
                 {n.slot === preset.slot && <span className="text-xs text-silkscreen-3">This preset</span>}
               </CommandItem>
@@ -248,7 +249,7 @@ export function RigHeader({ preset, connected }: Props) {
           slot={target}
           replacing={replacingName.trim() ? { name: replacingName, detail: target === preset.slot ? `Saved version of ${replacingName}` : undefined } : null}
           incoming={{ name: preset.name, detail: unsaved > 0 ? `As edited now, including ${unsaved === 1 ? "1 unsaved change" : `${unsaved} unsaved changes`}` : "As shown on the Rig", prst: preset.prst }}
-          action={`Write to slot ${pad(target)}`}
+          action={`Write to slot ${profile.slotLabel(target)}`}
           onConfirm={async ({ backupFirst }) => {
             const slot = target;
             await useDevice.getState().saveToSlot(slot);
@@ -292,15 +293,17 @@ function FsChips({ label, blocks, preset }: { label: string; blocks: number[]; p
   );
 }
 
-/** overlays.md F: inline rename with a 10-character counter; commits on the pedal immediately. */
+/** overlays.md F: inline rename with a character counter (10 on the GP-5); commits on the pedal immediately. */
 function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }) {
   const [value, setValue] = useState(preset.name.trimEnd());
   const [busy, setBusy] = useState(false);
   const pedal = usePedalName();
+  const profile = profileFor(preset.device);
+  const nameLength = profile.nameLength;
   const bad = BAD_CHAR.exec(value)?.[0];
   const trimmed = value.trimEnd();
   const error = bad ? `The ${pedal} can't show “${bad}”. Use letters A to Z, digits, spaces and keyboard symbols.` : trimmed === "" ? "A slot needs a name." : null;
-  const atLimit = value.length >= NAME_MAX;
+  const atLimit = value.length >= nameLength;
   const slot = preset.slot;
   const before = preset.name;
 
@@ -310,13 +313,13 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
     setBusy(true);
     try {
       await useDevice.getState().rename(slot, trimmed);
-      notifySuccess(`Slot ${pad(slot)} renamed to ${trimmed}`, undefined, {
+      notifySuccess(`Slot ${profile.slotLabel(slot)} renamed to ${trimmed}`, undefined, {
         label: "Undo",
         run: () => useDevice.getState().rename(slot, before.trimEnd()),
       });
       onDone();
     } catch (e) {
-      notifyError(`Couldn't rename slot ${pad(slot)}`, e);
+      notifyError(`Couldn't rename slot ${profile.slotLabel(slot)}`, e);
       setBusy(false);
     }
   };
@@ -324,13 +327,13 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <span className="text-[32px] leading-[1.05] font-semibold text-silkscreen-4">{pad(slot)}</span>
+        <span className="text-[32px] leading-[1.05] font-semibold text-silkscreen-4">{profile.slotLabel(slot)}</span>
         <input
           autoFocus
-          aria-label={`Name of slot ${pad(slot)}`}
+          aria-label={`Name of slot ${profile.slotLabel(slot)}`}
           aria-invalid={!!error}
           value={value}
-          maxLength={NAME_MAX}
+          maxLength={nameLength}
           disabled={busy}
           onChange={(e) => setValue(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -347,7 +350,7 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
           )}
         />
         <span className={cn("text-xs tabular-nums", atLimit ? "text-led-warn" : "text-silkscreen-3")}>
-          {value.length}/{NAME_MAX}
+          {value.length}/{nameLength}
         </span>
         <Button variant="ghost" size="icon-sm" aria-label="Rename on pedal" disabled={!!error || busy} onClick={() => void commit()}>
           <CheckIcon aria-hidden />
@@ -357,7 +360,7 @@ function RenameField({ preset, onDone }: { preset: PresetState; onDone(): void }
         </Button>
       </div>
       <span role={error ? "alert" : undefined} className={cn("text-xs", error ? "text-led-fault" : "text-led-warn")}>
-        {error ?? (atLimit ? `The ${pedal} stores 10 characters. Further typing is ignored.` : "")}
+        {error ?? (atLimit ? `The ${pedal} stores ${nameLength} characters. Further typing is ignored.` : "")}
       </span>
     </div>
   );

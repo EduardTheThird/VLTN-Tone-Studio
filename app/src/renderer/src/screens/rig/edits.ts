@@ -1,8 +1,9 @@
 // Rig edit actions: every user edit goes through here so it lands in the undo history, then plays on the pedal
-// through the device store (live edits) or changes the preset locally (order, footswitches).
+// through the device store (live edits) or changes the preset locally (reaching the pedal on save).
 import { defaultParams } from "@/gp5/lib/catalog.mjs";
+import { MAX_FOOTSWITCH_BLOCKS } from "@/gp5/lib/prst.mjs";
 import { useDevice } from "@/state/device";
-import type { BlockState, PresetState } from "@/state/device-types";
+import type { BlockState, ExpEdit, ExpSettings, PresetState } from "@/state/device-types";
 import { invert, useHistory, type BlockSnapshot, type Edit } from "./history";
 
 const dev = () => useDevice.getState();
@@ -41,6 +42,27 @@ export function editVolume(volume: number) {
   useHistory.getState().record({ kind: "volume", from, to: volume, at: performance.now() });
 }
 
+export function editBpm(bpm: number) {
+  const p = dev().preset;
+  if (!p) return;
+  const from = p.bpm;
+  dev().setBpm(bpm);
+  const to = dev().preset?.bpm ?? from;
+  if (to !== from) useHistory.getState().record({ kind: "bpm", from, to, at: performance.now() });
+}
+
+const EXP_KEYS: readonly (keyof ExpSettings)[] = ["on", "paramMin", "paramMax", "volPosition", "volMin", "volMax", "targetModule", "targetParam"];
+
+/** EXP settings edit (GP-50); the store checks every value and throws RangeError for one out of range. */
+export function editExp(edit: ExpEdit) {
+  const exp = dev().preset?.exp;
+  if (!exp) return;
+  // The same fields as `edit`, with the preset's current values (what undo puts back)
+  const from = Object.fromEntries(EXP_KEYS.filter((k) => edit[k] !== undefined).map((k) => [k, exp[k]])) as ExpEdit;
+  dev().setExp(edit);
+  useHistory.getState().record({ kind: "exp", from, to: edit, at: performance.now() });
+}
+
 export function editFootswitches(fs: { fs1: number[]; fs2: number[] }) {
   const p = dev().preset;
   if (!p) return;
@@ -49,18 +71,33 @@ export function editFootswitches(fs: { fs1: number[]; fs2: number[] }) {
   useHistory.getState().record({ kind: "footswitches", from, to: fs });
 }
 
-/** Toggle `block` in FS1 or FS2. */
+export type FootswitchToggle = { next: { fs1: number[]; fs2: number[] } } | { reason: string };
+
+/**
+ * Assignment after toggling `block` on `which`. GP-50 rules: at most 3 blocks per switch, and a block on one switch
+ * only (assigning it moves it from the other switch). The GP-5 keeps its free assignment.
+ */
+export function footswitchToggle(p: PresetState, which: "fs1" | "fs2", block: number): FootswitchToggle {
+  const list = p.footswitches[which];
+  if (list.includes(block)) return { next: { ...p.footswitches, [which]: list.filter((b) => b !== block) } };
+  const added = [...list, block].sort((a, b) => a - b);
+  if (p.device !== "gp50") return { next: { ...p.footswitches, [which]: added } };
+  if (list.length >= MAX_FOOTSWITCH_BLOCKS) return { reason: `${which.toUpperCase()} already switches ${MAX_FOOTSWITCH_BLOCKS} blocks, the most it can` };
+  const rest = p.footswitches[which === "fs1" ? "fs2" : "fs1"].filter((b) => b !== block);
+  return { next: which === "fs1" ? { fs1: added, fs2: rest } : { fs1: rest, fs2: added } };
+}
+
+/** Toggle `block` in FS1 or FS2 (callers disable the menu item when footswitchToggle gives a reason). */
 export function toggleFootswitch(which: "fs1" | "fs2", block: number) {
   const p = dev().preset;
   if (!p) return;
-  const list = p.footswitches[which];
-  const next = list.includes(block) ? list.filter((b) => b !== block) : [...list, block].sort((a, b) => a - b);
-  editFootswitches({ ...p.footswitches, [which]: next });
+  const t = footswitchToggle(p, which, block);
+  if ("next" in t) editFootswitches(t.next);
 }
 
 /**
- * Put a block back to `target` with live edits: model (the pedal loads its defaults), then every catalog param
- * that differs, then on/off.
+ * Put a block back to `target` with live edits: model (the pedal loads its defaults), then Sync toggles (they reset
+ * and re-scale their Time/Rate), then every other catalog param that differs, then on/off.
  */
 export async function applyBlock(target: BlockSnapshot) {
   let cur = dev().preset?.blocks[target.index];
@@ -70,7 +107,10 @@ export async function applyBlock(target: BlockSnapshot) {
     cur = dev().preset?.blocks[target.index];
     if (!cur) return;
   }
-  for (const p of cur.model?.params ?? []) if (Math.abs(cur.params[p.index] - target.params[p.index]) > 1e-3) dev().setParam(target.index, p.index, target.params[p.index]);
+  const differs = (b: BlockState, i: number) => Math.abs(b.params[i] - target.params[i]) > 1e-3;
+  for (const p of cur.model?.params ?? []) if (p.syncs !== undefined && differs(cur, p.index)) dev().setParam(target.index, p.index, target.params[p.index]);
+  cur = dev().preset?.blocks[target.index] ?? cur;
+  for (const p of cur.model?.params ?? []) if (p.syncs === undefined && differs(cur, p.index)) dev().setParam(target.index, p.index, target.params[p.index]);
   if (cur.enabled !== target.enabled) dev().setBlockEnabled(target.index, target.enabled);
 }
 
@@ -107,6 +147,10 @@ async function apply(e: Edit) {
       return dev().setOrder(e.to);
     case "volume":
       return dev().setVolume(e.to);
+    case "bpm":
+      return dev().setBpm(e.to);
+    case "exp":
+      return dev().setExp(e.to);
     case "footswitches":
       return dev().setFootswitches(e.to);
     case "block":
@@ -125,10 +169,22 @@ export async function redo() {
 }
 
 /**
- * Play `target` on the pedal with live edits (Compare with saved). Order has no live command, so it is left as
- * is; volume and every block are applied.
+ * Play `target` on the pedal with live edits (Compare with saved): every block and the volume; chain order, tempo,
+ * footswitches and EXP only where the pedal takes them live (GP-50 features), since otherwise they don't play.
  */
 export async function playPreset(target: PresetState) {
   for (const b of target.blocks) await applyBlock(snapshot(b));
-  if (dev().preset?.volume !== target.volume) dev().setVolume(target.volume);
+  const d = dev();
+  const now = d.preset;
+  if (!now) return;
+  if (now.volume !== target.volume) d.setVolume(target.volume);
+  if (d.can("liveOrder") && now.order.join() !== target.order.join()) d.setOrder(target.order);
+  if (d.can("liveBpm") && now.bpm !== target.bpm) d.setBpm(target.bpm);
+  if (d.can("liveFootswitches") && (now.footswitches.fs1.join() !== target.footswitches.fs1.join() || now.footswitches.fs2.join() !== target.footswitches.fs2.join()))
+    d.setFootswitches(target.footswitches);
+  if (d.can("exp") && target.exp && now.exp) {
+    const exp = target.exp;
+    const changed = EXP_KEYS.filter((k) => now.exp?.[k] !== exp[k]);
+    if (changed.length) d.setExp(Object.fromEntries(changed.map((k) => [k, exp[k]])) as ExpEdit);
+  }
 }

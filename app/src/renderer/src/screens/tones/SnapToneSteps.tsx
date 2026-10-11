@@ -10,11 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { host, isElectron } from "@/host";
 import { checkTestSignal, chooseTestSignal, useTestSignal } from "@/snaptone/signal";
-import { useDevice, usePedalName } from "@/state/device";
+import { useDevice, usePedalName, useProfile } from "@/state/device";
 import { readSlots, runSend, updateDraft, writeSnapTone, type SendState } from "./store";
 import { Step, StepError, UseOnGp5, kb, type StepStatus } from "./SendSteps";
-
-const USER_SLOTS = Array.from({ length: 30 }, (_, i) => 50 + i);
 
 /**
  * Send a NAM capture to the pedal as a SnapTone (tones.md "The Send to GP-5 flow"): download, check, convert
@@ -25,6 +23,7 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
   const listRef = useRef<HTMLOListElement>(null);
   const connected = useDevice((s) => s.status === "connected");
   const snapTones = useDevice((s) => s.snapTones);
+  const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
   const hasSignal = useTestSignal((s) => s.has);
   const pedal = usePedalName();
@@ -38,8 +37,8 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
     if (connected && !snapTones && !busy) void readSlots();
   }, [connected, snapTones, busy]);
   useEffect(() => {
-    if (send.proposedSlot === null && snapTones) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("snaptone", snapTones) });
-  }, [send.proposedSlot, send.toneId, snapTones]);
+    if (send.proposedSlot === null && snapTones) updateDraft(send.toneId, { proposedSlot: firstEmptySlot("snaptone", snapTones, device) });
+  }, [send.proposedSlot, send.toneId, snapTones, device]);
 
   const status = (n: number): StepStatus => {
     if (phase === "linked") return "done";
@@ -140,10 +139,12 @@ export function SnapToneSteps({ send, model }: { send: SendState; model: T3kMode
   );
 }
 
-/** User SnapTone slot (50–79) with what it holds now; nothing when the pedal's list isn't read. */
+/** User SnapTone slot (GP-5: 50–79) with what it holds now; nothing when the pedal's list isn't read. */
 export function SnapToneSlotPicker({ value, onChange, disabled }: { value: number | null; onChange: (slot: number) => void; disabled?: boolean }) {
   const snapTones = useDevice((s) => s.snapTones);
+  const [first, last] = useProfile().snapTone.userRange;
   if (!snapTones) return null;
+  const userSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
     const name = snapTones.find((s) => s.slot === slot)?.name ?? "";
     return `Slot ${slot}${isEmptySlotName(name) ? ", empty" : `, ${name}`}`;
@@ -154,7 +155,7 @@ export function SnapToneSlotPicker({ value, onChange, disabled }: { value: numbe
         <SelectValue placeholder="Choose a slot" />
       </SelectTrigger>
       <SelectContent>
-        {USER_SLOTS.map((slot) => (
+        {userSlots.map((slot) => (
           <SelectItem key={slot} value={String(slot)}>
             {label(slot)}
           </SelectItem>

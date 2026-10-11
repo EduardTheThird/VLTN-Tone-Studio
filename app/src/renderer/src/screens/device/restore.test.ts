@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyEdits, detectDevice, readName, rebuildPrst } from "@/gp5/lib/prst.mjs";
+import { profileFor } from "@shared/devices";
 import { describeSlots, restoreEntries } from "./restore";
 
 const fixture = (name: string): Uint8Array => rebuildPrst(name.replace(/^\d+-|\.prst$/g, ""), new Uint8Array(466), "gp5");
@@ -42,7 +43,7 @@ describe("restoreEntries", () => {
     expect(entries).toHaveLength(1);
     expect(skipped).toEqual([
       "Puppy.prst: no slot number in the file name",
-      "07-Broken.prst: not a GP-5 or GP-50 preset",
+      "07-Broken.prst: not a GP-5, GP-50 or GP-200 preset",
       "08-Gone.prst: too big",
       "65-Again.prst: slot 65 appears twice",
     ]);
@@ -81,12 +82,27 @@ describe("restoreEntries", () => {
     expect(entries[0].prst).toBe(usLeadWah);
     expect(converted).toEqual([]);
   });
+
+  it("skips a GP-200 preset for a GP-5 with the plain refusal", () => {
+    const gp200 = new Uint8Array(1224);
+    gp200.set([..."TSRP"].map((c) => c.charCodeAt(0)), 0);
+    gp200.set([..."2-PG"].map((c) => c.charCodeAt(0)), 0x10);
+    const { entries, skipped } = restoreEntries([{ fileName: "01-A-Lead.prst", bytes: gp200 }], "gp5");
+    expect(entries).toEqual([]);
+    expect(skipped).toEqual(["01-A-Lead.prst: This preset is for a GP-200; Tone Studio can't convert it for a GP-5."]);
+  });
 });
 
 describe("describeSlots", () => {
   it("collapses runs", () => {
-    expect(describeSlots(Array.from({ length: 100 }, (_, i) => i))).toBe("Slots 00–99");
-    expect(describeSlots([7, 0, 1, 2, 3, 4])).toBe("Slots 00–04 and 07");
-    expect(describeSlots([12])).toBe("Slot 12");
+    const gp5 = profileFor("gp5").slotLabel;
+    expect(describeSlots(Array.from({ length: 100 }, (_, i) => i), gp5)).toBe("Slots 00–99");
+    expect(describeSlots([7, 0, 1, 2, 3, 4], gp5)).toBe("Slots 00–04 and 07");
+    expect(describeSlots([12], gp5)).toBe("Slot 12");
+  });
+
+  it("uses the pedal's slot labels", () => {
+    const gp200 = profileFor("gp200").slotLabel;
+    expect(describeSlots([0, 1, 2, 3, 9], gp200)).toBe("Slots 01-A–01-D and 03-B");
   });
 });

@@ -33,9 +33,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { isElectron } from "@/host";
-import { useDevice } from "@/state/device";
-import { pedalName } from "@/state/device-model";
-import { BLOCK_CODES, type DeviceKey, type ModelInfo } from "@/state/device-types";
+import { useDevice, useProfile } from "@/state/device";
+import { DEFAULT_DEVICE, blockCodes, isGp5Family, pedalName } from "@/state/device-model";
+import type { BlockCode, ModelInfo } from "@/state/device-types";
 import { runCommand, useUi, type AppCommand } from "@/state/ui";
 import { useNav, type Screen } from "@/state/nav";
 import { keyLabel } from "../keys";
@@ -64,8 +64,8 @@ interface Group {
   limit: number;
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const BLOCK_VAR: Record<string, string> = Object.fromEntries(BLOCK_CODES.map((c) => [c, `var(--block-${c.toLowerCase()})`]));
+/** GP-5 backup time for the hint; other models list their slot count only. */
+const GP5_BACKUP_HINT = "about 75 s";
 
 /** fxid per block of a .prst body, cached per byte array (bodies come from the last backup or read). */
 const fxidCache = new WeakMap<Uint8Array, number[]>();
@@ -103,7 +103,7 @@ const Keys = ({ keys }: { keys: string[] }) => <Kbd className="h-5 rounded-xs bg
 
 function BlockChip({ code }: { code: string }) {
   return (
-    <span className="inline-flex w-10 shrink-0 items-center gap-1.5 text-xs font-bold text-silkscreen-2" style={{ "--c": BLOCK_VAR[code] } as React.CSSProperties}>
+    <span className="inline-flex w-10 shrink-0 items-center gap-1.5 text-xs font-bold text-silkscreen-2" style={{ "--c": `var(--block-${code.toLowerCase()})` } as React.CSSProperties}>
       <span className="size-2 rounded-pill bg-(--c)" aria-hidden />
       {code}
     </span>
@@ -138,12 +138,16 @@ function useGroups(close: () => void): Group[] {
   const userIRs = useDevice((s) => s.userIRs);
   const busy = useDevice((s) => s.busy);
   const lastDevice = useDevice((s) => s.device);
+  const profile = useProfile();
   const recent = useUi((s) => s.recentSlots);
   const connected = status === "connected";
 
   return useMemo(() => {
-    // The live preset's model, else the connected (or last connected) pedal's.
-    const device: DeviceKey = preset?.device ?? lastDevice ?? "gp5";
+    // Model catalog: the live preset's model, else the connected (or last connected) pedal's, else DEFAULT_DEVICE's
+    // for browsing before any pedal was connected. Only the GP-5 family has a model catalog.
+    const catalogDevice = preset?.device ?? lastDevice ?? DEFAULT_DEVICE;
+    const catalog = isGp5Family(catalogDevice) ? catalogDevice : null;
+    const codes: readonly BlockCode[] = catalog ? blockCodes(catalog) : [];
     const needsPedal = `Needs the ${pedalName(lastDevice)}`;
     const pedal = connected ? (busy ? `Wait for the ${busy.kind}` : undefined) : needsPedal;
     const cmd = (c: AppCommand) => () => {
@@ -154,7 +158,7 @@ function useGroups(close: () => void): Group[] {
       close();
       useNav.getState().go(screen, param);
     };
-    const nn = slot === null ? null : pad(slot);
+    const nn = slot === null ? null : profile.slotLabel(slot);
 
     // Presets: current, then recents, then the rest in slot order.
     const order = [...(slot !== null ? [slot] : []), ...recent.filter((s) => s !== slot)];
@@ -175,7 +179,7 @@ function useGroups(close: () => void): Group[] {
       },
       render: (ranges) => (
         <>
-          <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{pad(n.slot)}</span>
+          <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(n.slot)}</span>
           <Name text={n.name} ranges={ranges} className="flex-1" />
           {n.slot === slot ? <Badge>Current</Badge> : !connected ? <Hint>Last read</Hint> : recent.includes(n.slot) ? <Hint>Recent</Hint> : null}
         </>
@@ -183,7 +187,15 @@ function useGroups(close: () => void): Group[] {
     }));
 
     const actions: Entry[] = [
-      actionEntry({ id: "backup", label: "Back up now", icon: HardDriveDownload, hint: "All 100 slots, about 75 s", words: ["backup"], blocked: pedal, run: cmd("backup-pedal") }),
+      actionEntry({
+        id: "backup",
+        label: "Back up now",
+        icon: HardDriveDownload,
+        hint: profile.family === "gp5" ? `All ${profile.slotCount} slots, ${GP5_BACKUP_HINT}` : `All ${profile.slotCount} slots`,
+        words: ["backup"],
+        blocked: pedal,
+        run: cmd("backup-pedal"),
+      }),
       actionEntry({
         id: "compare",
         label: "Compare with saved",
@@ -257,8 +269,8 @@ function useGroups(close: () => void): Group[] {
       ] as const
     ).map(([screen, label, icon, n]) => actionEntry({ id: `go-${screen}`, label: `Go to ${label}`, icon, keys: ["Mod", "Shift", n], words: ["screen", "open"], run: go(screen) }));
 
-    const models: Entry[] = (modelsFor(device) as ModelInfo[]).map((m) => {
-      const block = BLOCK_CODES.indexOf(m.block);
+    const models: Entry[] = (catalog ? (modelsFor(catalog) as ModelInfo[]) : []).map((m) => {
+      const block = codes.indexOf(m.block);
       const inUse = preset?.blocks[block]?.fxid === m.fxid;
       return {
         id: `model:${m.fxid}`,
@@ -287,11 +299,11 @@ function useGroups(close: () => void): Group[] {
       };
     });
 
-    const NS = BLOCK_CODES.indexOf("NS");
-    const CAB = BLOCK_CODES.indexOf("CAB");
+    const NS = codes.indexOf("NS");
+    const CAB = codes.indexOf("CAB");
     const tones: Entry[] = [
       ...(snapTones ?? []).map((t) => {
-        const fxid = (0x0f000000 | t.slot) >>> 0;
+        const fxid = (profile.snapTone.fxidBase + t.slot) >>> 0;
         return {
           id: `snaptone:${t.slot}`,
           search: { primary: t.name, secondary: ["SnapTone", "NS", "capture", "nam"], slot: t.slot + 1 },
@@ -343,13 +355,14 @@ function useGroups(close: () => void): Group[] {
       { heading: "Tones", entries: tones, idle: 3, limit: 5 },
       { heading: "Go to", entries: screens, limit: 5 },
     ];
-  }, [names, slot, connected, unsaved, preset, lastDevice, snapTones, userIRs, busy, recent, close]);
+  }, [names, slot, connected, unsaved, preset, lastDevice, profile, snapTones, userIRs, busy, recent, close]);
 }
 
 /** Ranked, grouped results for `query` (groups ordered by their best hit while typing). */
 function useResults(groups: Group[], query: string) {
   const bodies = useLibrary((s) => s.bodies);
   const preset = useDevice((s) => s.preset);
+  const profile = useProfile();
   return useMemo(() => {
     const q = query.trim();
     if (!q) {
@@ -390,7 +403,7 @@ function useResults(groups: Group[], query: string) {
             id: `uses:${slot}`,
             render: () => (
               <>
-                <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{pad(slot)}</span>
+                <span className="w-5 shrink-0 font-semibold text-silkscreen-3 tabular-nums">{profile.slotLabel(slot)}</span>
                 <span className="flex-1 truncate">{e.search.primary}</span>
                 <span className="shrink-0 text-xs text-silkscreen-3">
                   <Name text={title} ranges={hit.ranges} />
@@ -409,7 +422,7 @@ function useResults(groups: Group[], query: string) {
       }
     }
     return ranked;
-  }, [groups, query, bodies, preset]);
+  }, [groups, query, bodies, preset, profile]);
 }
 
 /** Command palette (overlays.md D): Ctrl/Cmd K, title-bar Search, menu View › Command palette. */

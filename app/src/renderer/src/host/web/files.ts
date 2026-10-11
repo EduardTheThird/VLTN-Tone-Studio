@@ -11,10 +11,8 @@ import {
   type NewPreset,
   type PickedFile,
 } from "@shared/host/files";
-import type { PedalModel } from "@shared/host/device";
+import { MAX_PRST_BYTES, PRST_MODELS, profileFor, sniffPrst, type DeviceKey } from "@shared/devices";
 import {
-  MAX_PRST_BYTES,
-  PEDAL_NAMES,
   backupDirName,
   collectionDirName,
   commonModel,
@@ -22,7 +20,6 @@ import {
   parseBackupDirName,
   parseCollectionId,
   presetFileName,
-  prstModel,
   uniqueFileName,
 } from "@shared/files-naming";
 
@@ -31,8 +28,8 @@ interface CollectionRow {
   kind: CollectionKind;
   title: string;
   createdAt: string;
-  /** Backups only; rows saved before GP-50 support have none (they are GP-5 backups) */
-  device?: PedalModel;
+  /** Backups only; rows saved before GP-50 support have none (their id names the model, see info) */
+  device?: DeviceKey;
 }
 
 interface PresetRow {
@@ -112,7 +109,7 @@ const toPreset = (r: PresetRow): LocalPreset => ({
 
 async function info(row: CollectionRow): Promise<CollectionInfo> {
   const count = await done((await db()).transaction("presets").objectStore("presets").index("collection").count(row.id));
-  const device = row.kind === "backup" ? (row.device ?? parseBackupDirName(parseCollectionId(row.id)?.dir ?? "")?.device ?? "gp5") : null;
+  const device = row.kind === "backup" ? (row.device ?? parseBackupDirName(parseCollectionId(row.id)?.dir ?? "")?.device ?? null) : null;
   return { ...row, device, count, path: null };
 }
 
@@ -136,7 +133,7 @@ async function putPresets(collectionId: string, items: NewPreset[]): Promise<Loc
   const taken = existing.map((r) => r.fileName);
   let seq = existing.reduce((m, r) => Math.max(m, r.seq), 0);
   const rows: PresetRow[] = items.map((item) => {
-    const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot, prstModel(item.prst) ?? "gp5");
+    const preferred = item.fileName && isSafePresetFileName(item.fileName) ? item.fileName : presetFileName(item.name, item.slot, sniffPrst(item.prst));
     const fileName = uniqueFileName(preferred, taken);
     taken.push(fileName);
     return {
@@ -161,7 +158,7 @@ async function readFiles(files: File[]): Promise<PickedFile[]> {
   return Promise.all(
     files.map(async (f): Promise<PickedFile> => {
       if (!/\.prst$/i.test(f.name)) return { fileName: f.name, path: null, bytes: null, error: "Not a .prst preset file." };
-      if (f.size > MAX_PRST_BYTES) return { fileName: f.name, path: null, bytes: null, error: "Not a GP-5 or GP-50 preset." };
+      if (f.size > MAX_PRST_BYTES) return { fileName: f.name, path: null, bytes: null, error: `Not a ${PRST_MODELS} preset.` };
       return { fileName: f.name, path: null, bytes: new Uint8Array(await f.arrayBuffer()), error: null };
     }),
   );
@@ -208,13 +205,13 @@ export const webFiles: FilesApi = {
   async saveBackup(slots) {
     if (!slots.length) throw new HostError("invalid", "Nothing to back up");
     const device = commonModel(slots.map((s) => s.prst));
-    if (!device) throw new HostError("invalid", "A backup holds presets of one GP-5 or one GP-50");
+    if (!device) throw new HostError("invalid", "A backup holds the presets of one pedal model");
     const now = new Date();
     const dirs = (await allCollections()).filter((c) => c.kind === "backup").map((c) => parseCollectionId(c.id)!.dir);
     const row: CollectionRow = {
       id: `backups/${backupDirName(now, dirs, device)}`,
       kind: "backup",
-      title: `${PEDAL_NAMES[device]} backup`,
+      title: `${profileFor(device).name} backup`,
       createdAt: now.toISOString(),
       device,
     };

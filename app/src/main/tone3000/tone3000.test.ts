@@ -204,6 +204,8 @@ describe("tone records (meta.json)", () => {
     const linked = linkRecord(old, { kind: "ir", slot: 3, slotName: "MESA", device: "gp50" }, now);
     expect(linked.gp5).toEqual({ verdict: "ready", irSlot: 3, slotName: "MESA", linkedAt: "2026-10-10T08:00:00.000Z", device: "gp50" });
     expect(linkRecord(linked, null, now).gp5).toEqual({ verdict: "ready" });
+    expect(linkRecord(old, { kind: "snaptone", slot: 2, slotName: "AMP-3", device: "gp200" }, now).gp5.device).toBe("gp200");
+    expect(() => linkRecord(old, { kind: "ir", slot: 3, slotName: "MESA", device: "gp500" as never }, now)).toThrow(/Unknown pedal model/);
   });
 
   it("lists only folders with a readable meta.json", async () => {

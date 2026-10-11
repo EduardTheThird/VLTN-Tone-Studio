@@ -8,13 +8,13 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MiniChain } from "@/components/write/MiniChain";
-import { conversionFor, conversionNote } from "@/components/write/conversion";
+import { conversionFor, conversionNote, isLossy } from "@/components/write/conversion";
 import { ampOrSnapTone, summarize } from "@/components/write/preset-summary";
 import { notifyError } from "@/app/notify";
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice } from "@/state/device";
-import { pedalName } from "@/state/device-model";
+import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { useLibrary } from "./store";
@@ -24,8 +24,10 @@ const ICONS = { backup: ArchiveIcon, imported: ImportIcon, replaced: HistoryIcon
 
 function subtitle(c: CollectionInfo): string {
   switch (c.kind) {
-    case "backup":
-      return `${formatDay(c.createdAt)} ${new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}, ${c.count === 100 ? "all 100 slots" : `${c.count} ${c.count === 1 ? "slot" : "slots"}`}`;
+    case "backup": {
+      const all = c.count === profileOrDefault(c.device).slotCount;
+      return `${formatDay(c.createdAt)} ${new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}, ${all ? `all ${c.count} slots` : `${c.count} ${c.count === 1 ? "slot" : "slots"}`}`;
+    }
     case "imported":
       return ".prst files you added";
     case "replaced":
@@ -278,9 +280,9 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
   const pedal = usePedalName();
   const actions = useLibraryActions();
   const s = summarize(p.prst);
-  // Cards flag only GP-50 → GP-5 (it can drop blocks); the lossless GP-5 → GP-50 note lives in the inspector.
+  // Cards flag only conversions that can drop blocks (GP-50 → GP-5) or are refused; lossless notes live in the inspector.
   const conversion = s ? conversionFor(s, device) : null;
-  const lossy = conversion?.to === "gp5" ? conversion : null;
+  const lossy = conversion && isLossy(conversion) ? conversion : null;
   const lead = s ? ampOrSnapTone(s, snapTones) : null;
   const targets = writableCollections(collections).filter((c) => c.id !== collection.id);
 
@@ -303,7 +305,7 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
           )}
         >
           <span className="flex items-center gap-2">
-            {p.slot !== null && <span className="text-xs font-semibold text-silkscreen-3 tabular-nums">{String(p.slot).padStart(2, "0")}</span>}
+            {p.slot !== null && <span className="text-xs font-semibold text-silkscreen-3 tabular-nums">{slotLabel(s?.device ?? collection.device, p.slot)}</span>}
             <span className="truncate font-[650] text-silkscreen">{p.name}</span>
             {s && (
               <Badge variant={lossy ? "warn" : "outline"} className="ml-auto">
@@ -311,7 +313,7 @@ function PresetCard({ p, collection }: { p: LocalPreset; collection: CollectionI
               </Badge>
             )}
           </span>
-          <MiniChain order={s?.order} enabled={s ? s.blocks.map((b) => b.enabled) : null} />
+          <MiniChain chain={s} />
           <span className="flex min-w-0 items-center gap-2 text-xs text-silkscreen-3">
             {lead && <span className="truncate">{lead.title}</span>}
             <span className="truncate">{p.fileName}</span>

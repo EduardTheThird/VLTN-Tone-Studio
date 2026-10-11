@@ -9,7 +9,6 @@ import {
   parseCollectionId,
   parseSlotFileName,
   presetFileName,
-  prstModel,
   sanitizeFileName,
   slotFileName,
   uniqueFileName,
@@ -34,20 +33,27 @@ describe("sanitizeFileName", () => {
 });
 
 describe("slot files", () => {
-  it("names backup files NN-Name.prst, blank names after the model's empty slot", () => {
+  it("names backup files <slot label>-Name.prst, blank names after the model's empty slot", () => {
     expect(slotFileName(0, "GreatPedal", "gp5")).toBe("00-GreatPedal.prst");
     expect(slotFileName(97, "FF/CC", "gp5")).toBe("97-FF_CC.prst");
     expect(slotFileName(64, "", "gp5")).toBe("64-GP-5.prst");
     expect(slotFileName(64, "", "gp50")).toBe("64-GP-50.prst");
+    expect(slotFileName(46, "Lead", "gp200")).toBe("12-C-Lead.prst");
+    expect(slotFileName(255, "", "gp200")).toBe("64-D-GP-200.prst");
   });
-  it("parses them back", () => {
-    expect(parseSlotFileName("07-Blues Man.prst")).toEqual({ slot: 7, name: "Blues Man" });
-    expect(parseSlotFileName("Puppy.prst")).toBeNull();
-    expect(parseSlotFileName("7-Blues.prst")).toBeNull();
+  it("parses them back with the model's slot labels", () => {
+    expect(parseSlotFileName("07-Blues Man.prst", "gp5")).toEqual({ slot: 7, name: "Blues Man" });
+    expect(parseSlotFileName("07-A-B.prst", "gp5")).toEqual({ slot: 7, name: "A-B" });
+    expect(parseSlotFileName("Puppy.prst", "gp5")).toBeNull();
+    expect(parseSlotFileName("7-Blues.prst", "gp5")).toBeNull();
+    expect(parseSlotFileName("12-C-Lead.prst", "gp200")).toEqual({ slot: 46, name: "Lead" });
+    expect(parseSlotFileName("12-Lead.prst", "gp200")).toBeNull();
+    expect(parseSlotFileName("64-D-X.prst", "gp200jr")).toBeNull();
   });
-  it("uses the slot prefix only when the preset came from a slot", () => {
+  it("uses the slot prefix only when the preset came from a slot of a known model", () => {
     expect(presetFileName("Puppy", 65, "gp5")).toBe("65-Puppy.prst");
     expect(presetFileName("US Lead", null, "gp50")).toBe("US Lead.prst");
+    expect(presetFileName("Odd", 3, null)).toBe("Odd.prst");
   });
 });
 
@@ -68,9 +74,13 @@ describe("backup folders", () => {
     expect(parseBackupDirName("gp5-2026-10-07-2")?.date.getDate()).toBe(7);
     expect(parseBackupDirName("gp50-2026-10-07")).toMatchObject({ device: "gp50" });
     expect(parseBackupDirName("gp50-2026-10-07")?.date.getMonth()).toBe(9);
+    expect(parseBackupDirName("gp200lt-2026-10-07")).toMatchObject({ device: "gp200lt" });
     expect(parseBackupDirName("gp5-2026-02-31")).toBeNull();
     expect(parseBackupDirName("gp500-2026-10-07")).toBeNull();
     expect(parseBackupDirName("photos")).toBeNull();
+  });
+  it("names GP-200 backups gp200-…", () => {
+    expect(backupDirName(day, ["gp5-2026-10-07"], "gp200")).toBe("gp200-2026-10-07");
   });
 });
 
@@ -80,15 +90,10 @@ describe("preset models", () => {
     b.set(new TextEncoder().encode(text), 0);
     return b;
   };
-  it("reads the model from the .prst header", () => {
-    expect(prstModel(head("GP-5", 507))).toBe("gp5");
-    expect(prstModel(head("GP-50", 552))).toBe("gp50");
-    expect(prstModel(head("GP-500", 552))).toBeNull();
-    expect(prstModel(new Uint8Array(507))).toBeNull();
-  });
   it("finds the one model of a set of presets", () => {
     expect(commonModel([head("GP-50", 552), head("GP-50", 552)])).toBe("gp50");
     expect(commonModel([head("GP-5", 507), head("GP-50", 552)])).toBeNull();
+    expect(commonModel([new Uint8Array(507)])).toBeNull();
     expect(commonModel([])).toBeNull();
   });
 });

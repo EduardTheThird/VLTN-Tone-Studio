@@ -66,7 +66,7 @@ export function Dial({ label, ariaLabel, value, spec, onChange, disabled, size =
       {layout === "row" && <span className={cn("text-xs font-medium tracking-wide uppercase", active ? "text-silkscreen" : "text-silkscreen-3")}>{label}</span>}
       <span className={cn("font-semibold text-silkscreen tabular-nums", layout === "row" ? "text-sm" : "text-sm")}>
         {formatValue(value, spec)}
-        {spec.unit && <small className="ml-0.5 text-xs font-medium text-silkscreen-3">{spec.unit}</small>}
+        {spec.unit && !spec.labels && <small className="ml-0.5 text-xs font-medium text-silkscreen-3">{spec.unit}</small>}
       </span>
     </div>
   );

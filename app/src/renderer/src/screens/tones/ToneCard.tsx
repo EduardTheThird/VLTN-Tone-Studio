@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useDevice, usePedalNameOrBoth } from "@/state/device";
+import { useDevice, usePedalNameOrBoth, useProfile } from "@/state/device";
 import { pedalName } from "@/state/device-model";
 import type { DeviceKey } from "@/state/device-types";
 import { irSlotLabel, requestImage, useTones } from "./store";
@@ -38,15 +38,18 @@ export function linkLabel(record: ToneRecord | undefined, device: DeviceKey | nu
   return link.other ? `Linked to ${slot} on your ${pedalName(link.other)}` : `Linked to ${slot}`;
 }
 
-/** `model`: the pedal name, or "GP-5 / GP-50" before the first connection (both take the same SnapTones and IRs). */
-function verdictReason(kind: string, model: string): string {
+/**
+ * `model`: the pedal name, or "GP-5 / GP-50" before the first connection (both take the same SnapTones and IRs);
+ * `irSlots`: its User IR slot count.
+ */
+function verdictReason(kind: string, model: string, irSlots: number): string {
   switch (kind) {
     case "ready":
       return `This tone has NAM A1 or A2 models. Tone Studio turns them into ${model} SnapTones the way Valeton Suite does.`;
     case "reshape":
       return "The A1 file is in NAM 0.7 format. Tone Studio converts it to the 0.5 layout Valeton Suite imports, without changing the sound.";
     case "ir":
-      return `Tone Studio writes IRs over USB to one of the ${model}'s 20 User IR slots. The pedal keeps the first 11.6 ms.`;
+      return `Tone Studio writes IRs over USB to one of the ${model}'s ${irSlots} User IR slots. The pedal keeps the first 11.6 ms.`;
     case "custom":
       return "This tone uses a custom NAM layout. Tone Studio can't turn it into a SnapTone.";
     default:
@@ -56,9 +59,10 @@ function verdictReason(kind: string, model: string): string {
 
 export function CompatVerdict({ verdict, linked, className }: { verdict: Verdict; linked: string | null; className?: string }) {
   const model = usePedalNameOrBoth();
+  const irSlots = useProfile().userIr.slots;
   const ok = verdict.kind === "ready" || verdict.kind === "reshape";
   const Icon = linked ? Link2 : verdict.kind === "ir" ? Speaker : ok ? CircleCheck : CircleX;
-  const reason = verdictReason(verdict.kind === "not-loadable" ? verdict.reason : verdict.kind, model);
+  const reason = verdictReason(verdict.kind === "not-loadable" ? verdict.reason : verdict.kind, model, irSlots);
   return (
     <Tooltip>
       <TooltipTrigger asChild>

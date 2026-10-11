@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { findParam } from "@/gp5/lib/catalog.mjs";
-import { rebuildPrst } from "@/gp5/lib/prst.mjs";
 import { useHistory } from "@/screens/rig/history";
-import { getMock, getSession, toPresetState, useDevice } from "@/state/device";
+import { getDriver, toPresetState, useDevice } from "@/state/device";
 import type { BlockState } from "@/state/device-types";
+import type { Gp5Driver } from "@/state/driver/gp5-driver";
 import { auditionProposal, restoreBlocks } from "./apply";
 import { proposePreset } from "./proposal";
 import { analysisFixture } from "./test-signals";
@@ -24,10 +24,12 @@ const played = (b: BlockState) => ({
 
 /** The blocks in the simulator's live buffer, read over MIDI (queued behind the live edits still in flight). */
 async function pedalBlocks(): Promise<BlockState[]> {
-  const body: Uint8Array = await getSession()!.readCurrentBody();
   const p = useDevice.getState().preset!;
-  return toPresetState(p.slot, rebuildPrst(p.name, body, p.device)).blocks;
+  return toPresetState(p.slot, await getDriver()!.readEditBuffer(p.name)).blocks;
 }
+
+/** Memory of the simulated pedal (what a write would change). */
+const simulator = () => (getDriver() as Gp5Driver).mock!;
 
 describe("auditionProposal on the simulated pedal", () => {
   beforeAll(async () => {
@@ -42,7 +44,7 @@ describe("auditionProposal on the simulated pedal", () => {
     const before = useDevice.getState().preset!.blocks.map(played);
     const savedBefore = useDevice.getState().saved;
     const slot = useDevice.getState().slot!;
-    const flashBefore = getMock()!.slots[slot].body.slice();
+    const flashBefore = simulator().slots[slot].body.slice();
 
     const snapshots = await auditionProposal(proposal);
     expect(snapshots).toHaveLength(10);
@@ -63,7 +65,7 @@ describe("auditionProposal on the simulated pedal", () => {
     expect(useDevice.getState().preset!.blocks.map(played)).toEqual(live.map(played));
     expect(useDevice.getState().saved).toEqual(savedBefore);
     expect(useDevice.getState().unsavedChanges).toBeGreaterThan(0);
-    expect(getMock()!.slots[slot].body).toEqual(flashBefore);
+    expect(simulator().slots[slot].body).toEqual(flashBefore);
     expect(useHistory.getState().past.some((e) => e.kind === "block" && e.label === "Tone Match AMP")).toBe(true);
 
     await restoreBlocks(snapshots);

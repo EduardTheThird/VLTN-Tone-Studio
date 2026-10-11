@@ -9,8 +9,10 @@ import { MiniChain } from "@/components/write/MiniChain";
 import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
-import { usePedalName, useDevice } from "@/state/device";
-import { BLOCK_CODES } from "@/state/device-types";
+import { usePedalName, useDevice, useProfile } from "@/state/device";
+import { blockCodes } from "@/state/device-model";
+import type { BlockCode } from "@/state/device-types";
+import { PRST_MODELS } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
 import { formatDay } from "./dnd";
@@ -175,6 +177,7 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
   const pedal = usePedalName();
+  const { nameLength } = useProfile();
   useEffect(() => inputRef.current?.select(), []);
   const trimmed = value.replace(/\s+$/, "");
   const bad = [...value].find((c) => !NAME_RE.test(c));
@@ -191,11 +194,11 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
         <Input
           ref={inputRef}
           value={value}
-          maxLength={10}
+          maxLength={nameLength}
           aria-label={`New name for slot ${slot}`}
           aria-describedby={hintId}
           aria-invalid={error ? true : undefined}
-          onChange={(e) => setValue(e.target.value.slice(0, 10))}
+          onChange={(e) => setValue(e.target.value.slice(0, nameLength))}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               // Keep Enter from also activating the confirmation dialog's focused button.
@@ -219,8 +222,10 @@ function RenameField({ slot, name }: { slot: number; name: string }) {
         <FieldError id={hintId}>{error}</FieldError>
       ) : (
         <div id={hintId} className="flex justify-between gap-3 text-xs text-silkscreen-3">
-          <span className="text-pretty">{value.length >= 10 ? `The ${pedal} stores 10 characters. Further typing is ignored.` : `The ${pedal} shows up to 10 characters.`}</span>
-          <span className={cn("tabular-nums", value.length >= 10 && "text-led-warn")}>{value.length}/10</span>
+          <span className="text-pretty">{value.length >= nameLength ? `The ${pedal} stores ${nameLength} characters. Further typing is ignored.` : `The ${pedal} shows up to ${nameLength} characters.`}</span>
+          <span className={cn("tabular-nums", value.length >= nameLength && "text-led-warn")}>
+            {value.length}/{nameLength}
+          </span>
         </div>
       )}
     </Field>
@@ -236,6 +241,7 @@ function MultiInspector({ slots }: { slots: number[] }) {
   const bodies = useLibrary((s) => s.bodies);
   const actions = useLibraryActions();
   const pedal = usePedalName();
+  const { slotLabel } = useProfile();
   const both = slots.length === 2;
   const usedSlots = slots.filter((s) => !isEmptyName(names[s]?.name));
 
@@ -250,9 +256,9 @@ function MultiInspector({ slots }: { slots: number[] }) {
             const ok = s && s.name === name;
             return (
               <li key={slot} className="grid h-8 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 px-1.5 text-[13px]">
-                <span className="text-sm font-semibold text-silkscreen-3 tabular-nums">{String(slot).padStart(2, "0")}</span>
+                <span className="text-sm font-semibold text-silkscreen-3 tabular-nums">{slotLabel(slot)}</span>
                 <span className={cn("truncate font-semibold text-silkscreen", isEmptyName(name) && "font-medium text-silkscreen-4")}>{isEmptyName(name) ? "Empty" : name}</span>
-                <MiniChain order={ok ? s.order : undefined} enabled={ok ? s.blocks.map((b) => b.enabled) : null} />
+                <MiniChain chain={ok ? s : null} />
               </li>
             );
           })}
@@ -324,7 +330,7 @@ function LocalInspector({ p }: { p: LocalPreset }) {
             {p.source && <p className="text-xs text-silkscreen-3">From {p.source}, added {formatDay(p.addedAt)}</p>}
           </>
         ) : (
-          <p className="text-sm text-led-fault">This file can't be read as a GP-5 or GP-50 preset.</p>
+          <p className="text-sm text-led-fault">This file can't be read as a {PRST_MODELS} preset.</p>
         )}
       </div>
       <Actions>
@@ -391,7 +397,8 @@ function valueText(b: SummaryBlock): string {
   const p = b.model?.params.find((x) => x.index === 0) ?? b.model?.params[0];
   if (!p) return "";
   const v = b.params[p.index];
-  if (p.options?.length) return p.options[Math.round(v)] ?? "";
+  const label = p.labels?.[Math.round(v - p.min)];
+  if (label !== undefined) return `${paramTitle(p.name)} ${label}`;
   const n = Number.isInteger(p.step) ? Math.round(v) : Math.round(v * 10) / 10;
   return `${paramTitle(p.name)} ${n}${p.unit ? ` ${p.unit}` : ""}`;
 }
@@ -412,10 +419,12 @@ function ChainRow({ b, replaced }: { b: SummaryBlock; replaced: boolean }) {
 }
 
 function ChainPreview({ s }: { s: PresetSummary }) {
-  const seq = s.order.length === 10 ? s.order : [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
+  const codes = blockCodes(s.device);
+  const seq = s.order.length === codes.length ? s.order : [0, 1, 2, 9, 3, 4, 5, 6, 7, 8];
   const start = seq.findIndex((i) => CORE.includes(i));
-  const nsOn = s.blocks[9].enabled;
-  const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && (i === 3 || i === 4)} />;
+  const nsOn = s.blocks[codes.indexOf("NS")].enabled;
+  const replacedByNs = [codes.indexOf("AMP"), codes.indexOf("CAB")];
+  const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && replacedByNs.includes(i)} />;
   return (
     <section aria-label="Chain" className="flex flex-col gap-1.5">
       <h3 className="text-[13px] font-semibold text-silkscreen">Chain</h3>
@@ -434,14 +443,14 @@ function ChainPreview({ s }: { s: PresetSummary }) {
   );
 }
 
-function FsChips({ blocks }: { blocks: number[] }) {
+function FsChips({ blocks, codes }: { blocks: number[]; codes: readonly BlockCode[] }) {
   if (!blocks.length) return <span className="text-sm text-silkscreen-3">None</span>;
   return (
     <span className="col-span-3 flex flex-wrap gap-1">
       {blocks.map((k) => (
         <span key={k} className="inline-flex h-5 items-center gap-[5px] rounded-full px-[7px] text-xs font-semibold tracking-[0.04em] text-silkscreen-2 shadow-[inset_0_0_0_1px_var(--seam-strong)]">
-          <span className="size-1.5 rounded-full" style={{ background: `var(--block-${BLOCK_CODES[k].toLowerCase()})` }} aria-hidden />
-          {BLOCK_CODES[k]}
+          <span className="size-1.5 rounded-full" style={{ background: `var(--block-${codes[k].toLowerCase()})` }} aria-hidden />
+          {codes[k]}
         </span>
       ))}
     </span>
@@ -450,6 +459,7 @@ function FsChips({ blocks }: { blocks: number[] }) {
 
 function Patch({ s }: { s: PresetSummary }) {
   const key = "text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase";
+  const codes = blockCodes(s.device);
   return (
     <dl className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
       <dt className={key}>Volume</dt>
@@ -460,11 +470,11 @@ function Patch({ s }: { s: PresetSummary }) {
       </dd>
       <dt className={key}>FS1</dt>
       <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs1} />
+        <FsChips blocks={s.footswitches.fs1} codes={codes} />
       </dd>
       <dt className={key}>FS2</dt>
       <dd className="col-span-3">
-        <FsChips blocks={s.footswitches.fs2} />
+        <FsChips blocks={s.footswitches.fs2} codes={codes} />
       </dd>
     </dl>
   );

@@ -19,7 +19,9 @@ export function SettingsView() {
   const go = useNav((s) => s.go);
 
   useEffect(() => {
-    void load().catch((e) => notifyError("Couldn't read the settings", e));
+    void load()
+      .then(() => useDevice.getState().setGp50Extras(useAppSettings.getState().settings.gp50Extras))
+      .catch((e) => notifyError("Couldn't read the settings", e));
     void loadAccount();
   }, [load]);
 
@@ -54,6 +56,24 @@ export function SettingsView() {
           {isElectron && host.platform !== "linux" && (
             <SuitePathRow value={settings.valetonSuitePath} disabled={!loaded} onSave={(valetonSuitePath) => save({ valetonSuitePath })} />
           )}
+          <Row
+            label="GP-50 extras (experimental)"
+            description="Lets Tone Studio use GP-50 commands that are known from Valeton Suite but not yet tested on a real pedal: EXP settings, live tempo, footswitch and chain changes without saving, and deleting, copying, moving and exporting presets inside the pedal. Back up your pedal first. The simulator always has them."
+          >
+            <Switch
+              checked={settings.gp50Extras}
+              disabled={!loaded}
+              onCheckedChange={(v) => {
+                useDevice.getState().setGp50Extras(v);
+                // A failed save restores the previous value; the connected session follows it back.
+                void patch({ gp50Extras: v }).catch((e) => {
+                  useDevice.getState().setGp50Extras(useAppSettings.getState().settings.gp50Extras);
+                  notifyError("Couldn't save the setting", e);
+                });
+              }}
+              aria-label="GP-50 extras (experimental)"
+            />
+          </Row>
         </Section>
 
         <Section title="TONE3000 account">

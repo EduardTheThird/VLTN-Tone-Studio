@@ -3,11 +3,14 @@ import { CircleCheck, LoaderCircle, RefreshCw, TriangleAlert, Unlink, Wrench } f
 import { Button } from "@/components/ui/button";
 import { notifyError } from "@/app/notify";
 import { cn } from "@/lib/utils";
-import { PEDAL_PID, pedalOnUsb } from "@shared/host/device";
+import { DEVICE_KEYS, profileFor } from "@shared/devices";
+import { pedalOnUsb } from "@shared/host/device";
 import { useDevice } from "@/state/device";
-import { DEVICE_KEYS, pedalName } from "@/state/device-model";
+import { pedalName, slotLabel } from "@/state/device-model";
 import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led } from "./guidance";
 
+/** Models the Device screen offers to simulate (registry profiles with a simulator). */
+const SIMULATED = DEVICE_KEYS.filter((k) => profileFor(k).simulator);
 export const LED_CLASS: Record<Led, string> = { on: "bg-led-on", warn: "bg-led-warn", fault: "bg-led-fault", off: "bg-led-off" };
 
 /** Device name plus its state line; owns the primary action in problem states (device.md › Layout). */
@@ -59,7 +62,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
           </span>
           {onUsb && (
             <span>
-              USB <b className="font-semibold text-silkscreen">84EF:{PEDAL_PID[onUsb].toString(16).toUpperCase().padStart(4, "0")}</b>
+              USB <b className="font-semibold text-silkscreen">84EF:{profileFor(onUsb).usbPids[0].toString(16).toUpperCase().padStart(4, "0")}</b>
             </span>
           )}
           {(connected || view.kind === "connecting") && d.portName && (
@@ -71,7 +74,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
             <span>
               Active preset{" "}
               <b className="font-semibold text-silkscreen">
-                {String(d.activeSlot).padStart(2, "0")} {d.activeName}
+                {slotLabel(d.device, d.activeSlot)} {d.activeName}
               </b>
             </span>
           )}
@@ -125,7 +128,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
           <>
             {view.kind !== "bootloader" &&
               view.kind !== "connecting" &&
-              DEVICE_KEYS.map((key) => (
+              SIMULATED.map((key) => (
                 <Button key={key} variant={view.action === "none" ? "outline" : "ghost"} onClick={() => void d.connect("mock", { mockDevice: key }).catch(() => {})}>
                   Simulate a {pedalName(key)}
                 </Button>

@@ -1,4 +1,5 @@
 import { LayersIcon, PowerIcon } from "lucide-react";
+import { profileFor } from "@shared/devices";
 import stageUrl from "@/assets/backdrops/stage.svg";
 import { AmpHead, AmpPanel, Cab, Dial, knobsForBlock, modelTitle } from "@/components/gear";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,11 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
     >
       <BoardHead
         title="Amp & cab"
-        hint={nsOn ? "NS is on, so the SnapTone replaces the amp and cab. Their settings stay in the preset." : "The amp's controls stay in the strip below. Pick a cab or one of your 20 User IR slots."}
+        hint={
+          nsOn
+            ? "NS is on, so the SnapTone replaces the amp and cab. Their settings stay in the preset."
+            : `The amp's controls stay in the strip below. Pick a cab or one of your ${profileFor(preset.device).userIr.slots} User IR slots.`
+        }
       />
       <div className={cn("relative grid min-h-0 flex-1 grid-cols-2", readOnly && "opacity-70", nsOn && "saturate-[.4]")}>
         <div className="flex min-h-0 flex-col items-center gap-3.5 px-6 py-1 [@media(max-height:820px)]:gap-2.5" onPointerDownCapture={() => useRig.getState().select(3)}>

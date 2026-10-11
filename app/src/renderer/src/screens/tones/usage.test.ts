@@ -3,6 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { profileFor } from "@shared/devices";
 import { buildUsage, slotOfFxid } from "./usage";
 
 const DIR = join(__dirname, "../../gp5/fixtures/backup");
@@ -14,11 +15,18 @@ const presets = readdirSync(DIR)
   });
 
 describe("slotOfFxid", () => {
+  const gp5 = profileFor("gp5");
   it("maps SnapTone and User IR fxids to 0-based pedal slots", () => {
-    expect(slotOfFxid(0x0f000033)).toEqual({ kind: "snaptone", slot: 51 });
-    expect(slotOfFxid(0x0a100002)).toEqual({ kind: "ir", slot: 2 });
-    expect(slotOfFxid(0x0a000001)).toBeNull();
-    expect(slotOfFxid(0x0f000050)).toBeNull();
+    expect(slotOfFxid(0x0f000033, gp5)).toEqual({ kind: "snaptone", slot: 51 });
+    expect(slotOfFxid(0x0a100002, gp5)).toEqual({ kind: "ir", slot: 2 });
+    expect(slotOfFxid(0x0a000001, gp5)).toBeNull();
+    expect(slotOfFxid(0x0f000050, gp5)).toBeNull();
+  });
+  it("uses the model's slot counts", () => {
+    const gp200 = profileFor("gp200");
+    expect(slotOfFxid(0x0f000009, gp200)).toEqual({ kind: "snaptone", slot: 9 });
+    expect(slotOfFxid(0x0f00000a, gp200)).toBeNull();
+    expect(slotOfFxid(0x0a100013, gp200)).toEqual({ kind: "ir", slot: 19 });
   });
 });
 

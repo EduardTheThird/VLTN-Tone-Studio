@@ -1,7 +1,9 @@
-// Read-only summary of a .prst (GP-5 or GP-50) for lists, chain previews and write confirmations.
+// Read-only summary of a GP-5 family .prst (GP-5 or GP-50) for lists, chain previews and write confirmations.
 import { parsePrst, GP50_ONLY_FXIDS } from "@/gp5/lib/prst.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
-import { BLOCK_CODES, type BlockCode, type DeviceKey, type ModelInfo, type SlotName } from "@/state/device-types";
+import { profileFor } from "@shared/devices";
+import { blockCodes } from "@/state/device-model";
+import type { BlockCode, Gp5FamilyKey, ModelInfo, SlotName } from "@/state/device-types";
 
 export interface SummaryBlock {
   index: number;
@@ -14,9 +16,9 @@ export interface SummaryBlock {
 
 export interface PresetSummary {
   /** Model the file was made for (from its header); its catalog names the blocks */
-  device: DeviceKey;
+  device: Gp5FamilyKey;
   name: string;
-  /** Storage order NR..NS */
+  /** Storage order (profileFor(device).blocks) */
   blocks: SummaryBlock[];
   /** Chain order (block indices) */
   order: number[];
@@ -27,9 +29,6 @@ export interface PresetSummary {
   gp50Only: string[];
 }
 
-const NS = 9;
-const AMP = 3;
-
 const cache = new WeakMap<Uint8Array, PresetSummary | null>();
 
 /** Parse once per byte array; null when the bytes are not a valid preset. */
@@ -38,13 +37,14 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   let out: PresetSummary | null = null;
   try {
     const p = parsePrst(prst);
-    const device: DeviceKey = p.device;
+    const device: Gp5FamilyKey = p.device;
+    const codes = blockCodes(device);
     const gp50Only: string[] = [];
     const blocks = p.blocks.map((b: { enabled: boolean; fxid: number; params: number[] }, index: number) => {
       const fxid = b.fxid >>> 0;
       const only = (GP50_ONLY_FXIDS as Record<number, string>)[fxid];
-      if (only) gp50Only.push(`${BLOCK_CODES[index]} (${only})`);
-      return { index, code: BLOCK_CODES[index], enabled: b.enabled, fxid, model: modelByFxid(fxid, device) as ModelInfo | undefined, params: b.params };
+      if (only) gp50Only.push(`${codes[index]} (${only})`);
+      return { index, code: codes[index], enabled: b.enabled, fxid, model: modelByFxid(fxid, device) as ModelInfo | undefined, params: b.params };
     });
     out = {
       device,
@@ -63,22 +63,24 @@ export function summarize(prst: Uint8Array): PresetSummary | null {
   return out;
 }
 
-/** SnapTone slot (0-based) for an NS fxid ("Tone Catch N" = slot N−1). */
-export function snapToneIndex(fxid: number): number | null {
-  return fxid >>> 24 === 0x0f ? fxid & 0xff : null;
+/** SnapTone slot (0-based) of `device` for an NS fxid ("Tone Catch N" = slot N−1); null for any other fxid. */
+function snapToneIndex(fxid: number, device: Gp5FamilyKey): number | null {
+  const base = profileFor(device).snapTone.fxidBase;
+  return fxid >>> 24 === base >>> 24 ? fxid & 0xff : null;
 }
 
 /**
  * The "Amp or SnapTone" column: with NS on, the SnapTone slot name (user names when read), otherwise the amp.
  */
 export function ampOrSnapTone(s: PresetSummary, snapTones: SlotName[] | null): { kind: "snaptone" | "amp"; title: string } | null {
-  const ns = s.blocks[NS];
+  const codes = blockCodes(s.device);
+  const ns = s.blocks[codes.indexOf("NS")];
   if (ns.enabled) {
-    const idx = snapToneIndex(ns.fxid);
+    const idx = snapToneIndex(ns.fxid, s.device);
     const named = idx === null ? undefined : snapTones?.find((t) => t.slot === idx)?.name;
     return { kind: "snaptone", title: named || ns.model?.title || "SnapTone" };
   }
-  const amp = s.blocks[AMP];
+  const amp = s.blocks[codes.indexOf("AMP")];
   return amp.model ? { kind: "amp", title: amp.model.title } : null;
 }
 
@@ -86,5 +88,5 @@ export function ampOrSnapTone(s: PresetSummary, snapTones: SlotName[] | null): {
 export function describeSummary(s: PresetSummary, snapTones: SlotName[] | null): string {
   const lead = ampOrSnapTone(s, snapTones)?.title;
   const on = s.blocks.filter((b) => b.enabled).length;
-  return [lead, `${on} of 10 blocks on`].filter(Boolean).join(", ");
+  return [lead, `${on} of ${s.blocks.length} blocks on`].filter(Boolean).join(", ");
 }
