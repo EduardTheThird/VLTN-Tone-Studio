@@ -11,13 +11,11 @@
 
 export const SNAPTONE = Object.freeze({
   MAGIC: 0x49535456, // "VTSI" as u32 LE
-  CLONE_SIZE: 0x2288, // blob from the clone algorithm
   EXTEND_OFFSET: 0x88,
   EXTEND_SIZE: 0x1200, // GP-200: arr1 (128 floats) + arr2 capped at 1024 taps
   BLOB_SIZE: 0x88 + 0x1200,
   ARR2_MAX: 0x400,
   SLOTS: 10, // 0-4 AMP SnapTone 1-5, 5-9 DST SnapTone 6-10
-  AMP_SLOTS: 5,
   FXID_BASE: 0x0f000000, // slot n = FXID_BASE + n (AMP 0x0F000000-04, DST 0x0F000005-09)
 });
 

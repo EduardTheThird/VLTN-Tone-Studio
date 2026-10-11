@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MockGp200 } from "../lib/mock-device.mjs";
-import { CMD, REC, decodeFrame, encode, encodeFrames, rec, tlv } from "../lib/protocol.mjs";
+import { CMD, REC, decodeFrame, encode, encodeFrames, rec, slotLabel, tlv } from "../lib/protocol.mjs";
 import { applyPatchEdits, buildPrst, encodePatchImage, imagesMatch, parsePatch } from "../lib/prst.mjs";
 import { Gp200Session } from "../lib/session.mjs";
 import { checkGp200SnapTone, crc16Modbus } from "../lib/snaptone.mjs";
@@ -78,7 +78,7 @@ test("LT and JR: device keys, JR has 255 slots, labels 01-A..64-C", async () => 
     assert.equal(s.device, key);
     assert.equal(s.slotCount, count);
     if (key === "gp200jr") {
-      assert.equal(s.slotLabel(254), "64-C");
+      assert.equal(slotLabel(254), "64-C");
       assert.throws(() => s.readStored(255), RangeError);
     }
     await s.close();

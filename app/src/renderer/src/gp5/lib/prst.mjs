@@ -12,7 +12,7 @@
 // ids 3..10, protocol.mjs PATCH_SETTINGS), footswitch 0x0003 = 10 bytes (masks + 2 state bytes: 06 when the switch has
 // blocks and all are enabled, else 05). The 390-byte tone block is identical.
 
-import { BLOCKS, EXP_FIELDS, PATCH_SETTINGS, blockMask, blocksOfMask, crc8, patchSettingValue, u32le } from "./protocol.mjs";
+import { BLOCKS, EXP_FIELDS, PATCH_SETTINGS, blockMask, blocksOfMask, crc8, isBlockList, patchSettingValue, toBytes, u32le } from "./protocol.mjs";
 
 export const NAME_OFF = 0x19;
 export const NAME_LEN = 16;
@@ -22,9 +22,8 @@ export const N_BLOCKS = 10;
 export const PARAMS_PER_BLOCK = 8;
 
 const hx = (s) => Uint8Array.from(s.match(/../g), (h) => parseInt(h, 16));
-const profile = (key, name, header, length, devtag) =>
-  // emptyName: what the pedal names a slot that holds no user preset (the factory default name)
-  Object.freeze({ key, name, header: hx(header), length, bodyLength: length - BODY_OFF, devtag: hx(devtag), emptyName: name });
+const profile = (key, name, header, length, devtag) => Object.freeze({ key, name, header: hx(header), length, bodyLength: length - BODY_OFF, devtag: hx(devtag) });
+/** Devices; `name` is also what the pedal names a slot that holds no user preset (the factory default name). */
 export const DEVICES = Object.freeze({
   gp5: profile("gp5", "GP-5", "47502d3500000000000000000000000000000100", 507, "0a454d51"),
   gp50: profile("gp50", "GP-50", "47502d3530000000000000000000000000000100", 552, "47503530"),
@@ -51,7 +50,6 @@ export const MOVABLE_BLOCKS = Object.freeze([0, 1, 6, 7, 8]);
 export const CORE_SEQUENCE = Object.freeze([2, 9, 3, 4, 5]);
 export const DEFAULT_ORDER = Object.freeze([0, 1, 2, 9, 3, 4, 5, 6, 7, 8]);
 
-const u8 = (b) => (b instanceof Uint8Array ? b : Uint8Array.from(b));
 const view = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 function find(hay, needle, from = 0) {
   outer: for (let i = from; i <= hay.length - needle.length; i++) {
@@ -79,17 +77,17 @@ const concat = (...parts) => {
 
 /** Identify the device a .prst belongs to (header first, then length). */
 export function detectDevice(prst) {
-  const b = u8(prst);
+  const b = toBytes(prst);
   for (const d of Object.values(DEVICES)) if (d.header.every((v, i) => b[i] === v)) return d;
   for (const d of Object.values(DEVICES)) if (b.length === d.length) return d;
   throw new Error(`unrecognized .prst (length ${b.length})`);
 }
 
 export function computeCrc(prst) {
-  return crc8(u8(prst).subarray(CRC_OFF + 1));
+  return crc8(toBytes(prst).subarray(CRC_OFF + 1));
 }
 export function isCrcValid(prst) {
-  return u8(prst)[CRC_OFF] === computeCrc(prst);
+  return toBytes(prst)[CRC_OFF] === computeCrc(prst);
 }
 /** Recompute the file CRC in place; returns the buffer. */
 export function refixCrc(prst) {
@@ -99,7 +97,7 @@ export function refixCrc(prst) {
 
 /** Walk the body TLV chain -> [{ tag, offset (absolute, of payload), length }]. */
 export function listRecords(prst) {
-  const b = u8(prst);
+  const b = toBytes(prst);
   const d = view(b);
   const out = [];
   for (let off = BODY_OFF; off + 4 <= b.length; ) {
@@ -123,7 +121,7 @@ function toneOffsets(b) {
 
 /** Name helpers (16 bytes in the file; the device's rename/save commands carry only 10). */
 export function readName(prst) {
-  const b = u8(prst);
+  const b = toBytes(prst);
   let s = "";
   for (let i = NAME_OFF; i < NAME_OFF + NAME_LEN && b[i]; i++) s += String.fromCharCode(b[i]);
   return s.trim();
@@ -175,7 +173,7 @@ export const footswitchState = (enableMask, fsMask) => (fsMask !== 0 && (enableM
  * settings = { volume, bpm, exp? } — `exp` (EXP_FIELDS, `on` as a boolean) only for GP-50 presets.
  */
 export function parsePrst(prst) {
-  const b = u8(prst);
+  const b = toBytes(prst);
   const device = detectDevice(b);
   if (b.length !== device.length) throw new Error(`${device.name} .prst must be ${device.length} bytes, got ${b.length}`);
   const d = view(b);
@@ -199,8 +197,7 @@ export function parsePrst(prst) {
 
 /** Validate a chain order: permutation of 0..9 with the fixed core DST,NS,AMP,CAB,EQ contiguous. */
 export function validateOrder(order) {
-  if (!Array.isArray(order) || order.length !== N_BLOCKS || new Set(order).size !== N_BLOCKS || order.some((v) => !Number.isInteger(v) || v < 0 || v > 9))
-    return "order must be a permutation of 0..9";
+  if (!isBlockList(order) || order.length !== N_BLOCKS) return "order must be a permutation of 0..9";
   const start = order.indexOf(CORE_SEQUENCE[0]);
   if (CORE_SEQUENCE.some((blk, i) => order[start + i] !== blk)) return "DST, NS, AMP, CAB, EQ must stay contiguous in that order";
   return null;
@@ -212,8 +209,7 @@ export const MAX_FOOTSWITCH_BLOCKS = 3;
 /** Validate GP-50 footswitch assignments: block indices 0..9, at most 3 per switch, no block on both. null = valid. */
 export function validateFootswitches(fs1, fs2) {
   for (const [label, list] of [["FS1", fs1], ["FS2", fs2]]) {
-    if (!Array.isArray(list) || new Set(list).size !== list.length || list.some((k) => !Number.isInteger(k) || k < 0 || k > 9))
-      return `${label} must list distinct block indices 0..9`;
+    if (!isBlockList(list)) return `${label} must list distinct block indices 0..9`;
     if (list.length > MAX_FOOTSWITCH_BLOCKS) return `${label} can switch at most ${MAX_FOOTSWITCH_BLOCKS} blocks`;
   }
   if (fs1.some((k) => fs2.includes(k))) return "a block can be on one footswitch only";
@@ -262,7 +258,7 @@ function applyFootswitches(b, rec, device, enableMask, edit) {
  * with validateFootswitches.
  */
 export function applyEdits(prst, edits = {}) {
-  const b = Uint8Array.from(u8(prst));
+  const b = Uint8Array.from(toBytes(prst));
   const device = detectDevice(b).key;
   const d = view(b);
   const off = toneOffsets(b);
@@ -298,7 +294,7 @@ export function applyEdits(prst, edits = {}) {
 /** Rebuild a full .prst from a device read: name (from 0x40) + body (from 0x41) for device `deviceKey`. */
 export function rebuildPrst(name, body, deviceKey) {
   const dev = deviceProfile(deviceKey);
-  const bb = u8(body);
+  const bb = toBytes(body);
   if (bb.length !== dev.bodyLength) throw new Error(`expected a ${dev.bodyLength}-byte ${dev.name} body, got ${bb.length}`);
   const out = concat(dev.header, [0], [0xff, 0xff, 0xff, 0xff], new Uint8Array(NAME_LEN), bb);
   writeName(out, name);
@@ -306,7 +302,7 @@ export function rebuildPrst(name, body, deviceKey) {
 }
 
 /** Body part of a .prst (what the device returns for read 0x41). */
-export const bodyOf = (prst) => u8(prst).slice(BODY_OFF);
+export const bodyOf = (prst) => toBytes(prst).slice(BODY_OFF);
 
 /** 390-byte tone record payload: enable mask, order[10], fxid[10], f32 params[80]. */
 function tonePayload({ mask, order, fxids, params }) {
@@ -358,7 +354,7 @@ function assemblePrst(target, name, settings, tone, footswitches) {
  * GP-50-only models block conversion unless { force: true } (their model records get zeroed).
  */
 export function convertPrst(prst, targetKey, { force = false } = {}) {
-  const b = u8(prst);
+  const b = toBytes(prst);
   const source = detectDevice(b);
   const target = deviceProfile(targetKey);
   if (source.key === target.key) return b.slice();
@@ -383,7 +379,7 @@ const BLANK_FXIDS = [0x1b, 0, 0x03000000, 0x07000001, 0x0a000001, 0x01000035, 0x
 const BLANK_PARAMS = [[20], [20, 50], [40, 70, 50], [30, 50, 50], [50], [0, 0, 0, 0, 0, 50], [50, 0.5, 50], [20, 500, 30], [30, 0, 50], [50, 50, 50, 50, 50]];
 
 /** A new empty GP-50 preset (what the pedal holds in a cleared slot), named `name`. */
-export function blankGp50Prst(name = DEVICES.gp50.emptyName) {
+export function blankGp50Prst(name = DEVICES.gp50.name) {
   const params = BLANK_PARAMS.flatMap((p) => [...p, ...new Array(PARAMS_PER_BLOCK - p.length).fill(0)]);
   const tone = tonePayload({ mask: 0, order: DEFAULT_ORDER, fxids: BLANK_FXIDS, params });
   return assemblePrst(DEVICES.gp50, name, { volume: 50, bpm: 120, exp: EXP_DEFAULTS }, tone, { fs1: [], fs2: [] });

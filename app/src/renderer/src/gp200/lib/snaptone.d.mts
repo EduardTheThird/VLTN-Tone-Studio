@@ -3,13 +3,11 @@ import type { Bytes } from "./protocol.mjs";
 
 export const SNAPTONE: Readonly<{
   MAGIC: number;
-  CLONE_SIZE: 0x2288;
   EXTEND_OFFSET: 0x88;
   EXTEND_SIZE: 0x1200;
   BLOB_SIZE: 0x1288;
   ARR2_MAX: 0x400;
   SLOTS: 10;
-  AMP_SLOTS: 5;
   FXID_BASE: number;
 }>;
 export function crc16Modbus(bytes: Iterable<number>): number;

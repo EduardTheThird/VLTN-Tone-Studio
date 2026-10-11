@@ -12,7 +12,7 @@
 // big-endian | 0x12 type, 0x13 version (both 0) | 0x14 u32 extend length | 0x18..0x77 f64/f32 filter data |
 // 0x78 arr1 {offset, count} | 0x80 arr2 {offset, count} | 0x88 extend (float32 arrays).
 
-import { CMD, KIND, u32le } from "./protocol.mjs";
+import { CMD, KIND, readU32, toBytes, u32le } from "./protocol.mjs";
 
 export const SNAPTONE = Object.freeze({
   MAGIC: 0x49535456, // "VTSI" as u32 LE
@@ -30,11 +30,10 @@ export const SNAPTONE = Object.freeze({
 
 const NODE_FIELD = 16;
 const FPARA_FIELD = 32;
+/** Offset of the data in a file-import command (SnapTone and User IR): 74. */
+const IMPORT_DATA_AT = 10 + SNAPTONE.NAME_FIELD + NODE_FIELD + FPARA_FIELD;
 /** Suite's Reg.dataFileNameReg, applied per character: printable ASCII except `$`. */
 const NAME_CHAR = /^[a-zA-Z0-9~!@#%.&^*,?_+/\-'"();:<=>[\]\\`{}| ]$/;
-
-const readU32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-const toBytes = (b) => (b instanceof Uint8Array ? b : Uint8Array.from(b));
 
 /** CRC-16/MODBUS (poly 0xA001 reflected, init 0xFFFF). crc16Modbus("123456789") === 0x4B37. */
 export function crc16Modbus(bytes) {
@@ -133,28 +132,38 @@ export function snapToneFxId(slot) {
   return SNAPTONE.FXID_BASE + slot;
 }
 
+/**
+ * File-import command shared by SnapTone and User IR uploads:
+ * [0x11, cmd, nId u32 = 0, fxId u32, name[16], node[16] = 0, fPara f32[8] = 0, data].
+ */
+export function encodeFileImport(cmd, fxId, label, data) {
+  const out = new Uint8Array(IMPORT_DATA_AT + data.length);
+  out.set([KIND.SET, cmd, ...u32le(0), ...u32le(fxId)], 0);
+  for (let i = 0; i < label.length; i++) out[10 + i] = label.charCodeAt(i);
+  out.set(data, IMPORT_DATA_AT);
+  return out;
+}
+
+/** Inverse of encodeFileImport: { slot: fxId - fxBase, name, data }, or null unless it is a `cmd` import of `size` data bytes. */
+export function decodeFileImport(payload, cmd, fxBase, size) {
+  const p = toBytes(payload);
+  if (p[0] !== KIND.SET || p[1] !== cmd || p.length !== IMPORT_DATA_AT + size) return null;
+  let name = "";
+  for (let i = 10; i < 10 + SNAPTONE.NAME_FIELD && p[i]; i++) name += String.fromCharCode(p[i]);
+  return { slot: readU32(p, 6) - fxBase, name, data: p.slice(IMPORT_DATA_AT) };
+}
+
 /** Command payload that imports `file` (2696-byte SnapTone file) into user slot `slot` (50..79) as `name`. */
 export function encodeImportSnapTone(slot, name, file) {
   if (!isUserSnapToneSlot(slot)) throw new RangeError(`SnapTone uploads go to user slots ${SNAPTONE.FIRST_USER_SLOT}..${SNAPTONE.LAST_USER_SLOT}, got ${slot}`);
   const f = toBytes(file);
   const err = checkSnapToneFile(f);
   if (err) throw new Error(err);
-  const label = sanitizeSnapToneName(name);
-  const head = [KIND.SET, CMD.IMPORT_SNAPTONE, ...u32le(0), ...u32le(snapToneFxId(slot))];
-  const out = new Uint8Array(head.length + SNAPTONE.NAME_FIELD + NODE_FIELD + FPARA_FIELD + f.length);
-  out.set(head, 0);
-  for (let i = 0; i < label.length; i++) out[head.length + i] = label.charCodeAt(i);
-  out.set(f, head.length + SNAPTONE.NAME_FIELD + NODE_FIELD + FPARA_FIELD);
-  return out;
+  return encodeFileImport(CMD.IMPORT_SNAPTONE, snapToneFxId(slot), sanitizeSnapToneName(name), f);
 }
 
 /** Inverse of encodeImportSnapTone (mock pedal, tests): { slot, name, file } or null if it is not an import. */
 export function decodeImportSnapTone(payload) {
-  const p = toBytes(payload);
-  const fileAt = 10 + SNAPTONE.NAME_FIELD + NODE_FIELD + FPARA_FIELD;
-  if (p[0] !== KIND.SET || p[1] !== CMD.IMPORT_SNAPTONE || p.length !== fileAt + SNAPTONE.FILE_SIZE) return null;
-  const slot = readU32(p, 6) - SNAPTONE.FXID_BASE;
-  let name = "";
-  for (let i = 10; i < 10 + SNAPTONE.NAME_FIELD && p[i]; i++) name += String.fromCharCode(p[i]);
-  return { slot, name, file: p.slice(fileAt) };
+  const up = decodeFileImport(payload, CMD.IMPORT_SNAPTONE, SNAPTONE.FXID_BASE, SNAPTONE.FILE_SIZE);
+  return up && { slot: up.slot, name: up.name, file: up.data };
 }

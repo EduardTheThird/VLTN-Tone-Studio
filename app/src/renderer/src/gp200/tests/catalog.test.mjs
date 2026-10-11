@@ -5,8 +5,6 @@ import {
   clampParam,
   defaultParams,
   describePatch,
-  findModel,
-  findParam,
   modelByFxid,
   modelsForBlock,
   optionValues,
@@ -61,7 +59,7 @@ test("builder: shape, counts and XML attribute semantics", () => {
   const amp = c.modules[2].algs[0];
   assert.deepEqual(
     { ...amp, knobs: undefined },
-    { name: "Test Amp", module: "AMP", code: 0x07000001, codeHex: "0x07000001", index: 0, cabCode: 0x0a000002, cabCodeHex: "0x0A000002", knobs: undefined },
+    { name: "Test Amp", module: "AMP", code: 0x07000001, index: 0, cabCode: 0x0a000002, knobs: undefined },
   );
   assert.deepEqual(amp.knobs[0], { kind: "Knob", name: "Detune", idx: 0, id: 0, type: 1, default: -25, defaultRaw: "-25 Cents", min: -50, max: 50, step: 1, suffix: "cents" });
   assert.deepEqual(amp.knobs[1], { kind: "Slider", name: "Level", idx: 1, id: 2, type: 1, default: 0, min: -50, max: 50, step: 1 });
@@ -91,29 +89,25 @@ test("builder: shape, counts and XML attribute semantics", () => {
   assert.equal(c.modules[0].algs[1].knobs[0].valueType, 1);
 });
 
-test("lookups: shared fxids per block, list order, params by name or id", () => {
+test("lookups: shared fxids per block, list order", () => {
   const c = buildCatalogFromXml(XML);
   assert.equal(modelByFxid(c, 26, "DST").knobs[0].default, 35);
   assert.equal(modelByFxid(c, 26, 0).knobs[0].default, 20);
   assert.equal(modelByFxid(c, 26).module, "PRE");
   assert.equal(modelByFxid(c, 0xdeadbeef), undefined);
   assert.deepEqual(modelsForBlock(c, "PRE").map((m) => m.name), ["Test Wah", "Test Boost"], "editor list order (Index)");
-  assert.equal(findModel(c, "mode od").code, 50331681);
-  assert.equal(findModel(c, "boost", "DST").module, "DST");
-  assert.equal(findParam(c, 50331681, "mode").id, 3);
-  assert.equal(findParam(c, 50331681, 1).name, "Wow & Flutter");
-  assert.throws(() => findParam(c, 50331681, "Gain"), /has no param Gain/);
 });
 
 test("values: defaults with TrueID, clamping, tempo-sync pair", () => {
   const c = buildCatalogFromXml(XML);
   assert.deepEqual(defaultParams(c, 50331681, "DST"), [0, 50, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual(defaultParams(c, 0x07000001).slice(0, 6), [-25, 0, 0, 0, 0, 19]);
-  const mode = findParam(c, 50331681, "Mode");
+  const knob = (fxid, name) => modelByFxid(c, fxid).knobs.find((k) => k.name === name);
+  const mode = knob(50331681, "Mode");
   assert.deepEqual(optionValues(mode), [1, 2]);
   assert.equal(clampParam(mode, 2), 2);
   assert.throws(() => clampParam(mode, 0), RangeError);
-  const rate = findParam(c, 16777231, "Rate");
+  const rate = knob(16777231, "Rate");
   assert.equal(clampParam(rate, 20), 10);
   assert.equal(clampParam(rate, 0.123), 0.1);
   const wah = modelByFxid(c, 16777231);

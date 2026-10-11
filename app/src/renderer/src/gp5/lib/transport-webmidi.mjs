@@ -57,7 +57,7 @@ function pick(ports, match) {
 }
 
 /**
- * Open the pedal's MIDI ports. Returns a transport for Gp5Session plus `ports` and an `ondisconnect` hook.
+ * Open the pedal's MIDI ports. Returns a transport for Gp5Session; `onDisconnect` fires when either port goes away.
  * @param opts { access?: MIDIAccess, port?: string | RegExp, onDisconnect?: () => void }
  */
 export async function connectWebMidi({ access, port = PEDAL_PORT_RE, onDisconnect } = {}) {
@@ -83,7 +83,6 @@ export async function connectWebMidi({ access, port = PEDAL_PORT_RE, onDisconnec
   access.addEventListener("statechange", onState);
   return {
     name: output.name,
-    ports: { input, output, access },
     send: (bytes) => output.send(bytes),
     onMessage: (cb) => {
       listener = cb;

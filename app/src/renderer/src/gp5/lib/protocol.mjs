@@ -13,8 +13,6 @@
 // Sources: drewmerc302/valeton-gp50 (MIT),
 // fsanchezlme97-ui/gp5-editor (MIT), helvecioneto/gp5-wc (Apache-2.0), Builty/TonexOneController (Apache-2.0).
 
-export const USB_IDS = Object.freeze({ vendorId: 0x84ef, gp5: 0x0184, gp50: 0x018a, midiInterface: 3 });
-
 /** Storage/block order used everywhere: bypass bit k, model record k, params k*8.., live-edit block index k. */
 export const BLOCKS = Object.freeze(["NR", "PRE", "DST", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "NS"]);
 export const BLOCK = Object.freeze(Object.fromEntries(BLOCKS.map((b, i) => [b, i])));
@@ -230,19 +228,10 @@ export const CC_GP50 = Object.freeze({
   BLOCK_SWITCH: CC.BLOCK_SWITCH,
 });
 
-const CC_TABLES = Object.freeze({ gp5: CC, gp50: CC_GP50 });
-
-/** MIDI CC table of `device` ("gp5" | "gp50"). */
-export function ccFor(device) {
-  const t = CC_TABLES[device];
-  if (!t) throw new RangeError(`unknown device ${JSON.stringify(device)}; expected "gp5" or "gp50"`);
-  return t;
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // byte helpers
 
-const toBytes = (b) => (b instanceof Uint8Array ? b : Uint8Array.from(b));
+export const toBytes = (b) => (b instanceof Uint8Array ? b : Uint8Array.from(b));
 export const u32le = (v) => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
 const u16le = (v) => [v & 0xff, (v >>> 8) & 0xff];
 export const f32le = (v) => {
@@ -250,15 +239,16 @@ export const f32le = (v) => {
   d.setFloat32(0, v, true);
   return [d.getUint8(0), d.getUint8(1), d.getUint8(2), d.getUint8(3)];
 };
-const readU32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+export const readU32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
 const readF32 = (b, o) => new DataView(b.buffer, b.byteOffset + o, 4).getFloat32(0, true);
 const readI8 = (v) => (v & 0x80 ? v - 0x100 : v);
 const readS16 = (b, o) => ((b[o] | (b[o + 1] << 8)) << 16) >> 16;
-const readI32 = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
+export const readI32 = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
+/** True when `list` holds distinct block indices 0..9. */
+export const isBlockList = (list) => Array.isArray(list) && new Set(list).size === list.length && list.every((k) => Number.isInteger(k) && k >= 0 && k <= 9);
 /** Block index list (0..9, no repeats) -> bit mask; and back. */
 export function blockMask(blocks) {
-  if (!Array.isArray(blocks) || new Set(blocks).size !== blocks.length || blocks.some((k) => !Number.isInteger(k) || k < 0 || k > 9))
-    throw new RangeError(`block list must hold distinct block indices 0..9, got ${JSON.stringify(blocks)}`);
+  if (!isBlockList(blocks)) throw new RangeError(`block list must hold distinct block indices 0..9, got ${JSON.stringify(blocks)}`);
   return blocks.reduce((m, k) => m | (1 << k), 0) >>> 0;
 }
 export const blocksOfMask = (mask) => BLOCKS.flatMap((_, k) => (mask & (1 << k) ? [k] : []));
@@ -326,12 +316,12 @@ export function frameToSysex(buf) {
 }
 
 /** Split a logical payload into SysEx messages ready to send (19-byte frames, total = frame count). */
-export function packetize(payload, chunk = FRAME_PAYLOAD_MAX) {
+export function packetize(payload) {
   const p = toBytes(payload);
-  const total = Math.max(1, Math.ceil(p.length / chunk));
+  const total = Math.max(1, Math.ceil(p.length / FRAME_PAYLOAD_MAX));
   if (total > 0xff) throw new RangeError("payload needs more than 255 frames");
   const out = [];
-  for (let i = 0; i < total; i++) out.push(frameToSysex(buildFrame(total, i, p.subarray(i * chunk, (i + 1) * chunk))));
+  for (let i = 0; i < total; i++) out.push(frameToSysex(buildFrame(total, i, p.subarray(i * FRAME_PAYLOAD_MAX, (i + 1) * FRAME_PAYLOAD_MAX))));
   return out;
 }
 
@@ -440,8 +430,7 @@ export const encode = Object.freeze({
   setFootswitchMasks: (fs1, fs2) => [KIND.SET, CMD.SET_FOOTSWITCH, ...u32le(blockMask(fs1)), ...u32le(blockMask(fs2))],
   /** GP-50 chain order: 10 storage block indices. Check with prst.validateOrder first (fixed core). */
   setOrder: (order) => {
-    if (!Array.isArray(order) || order.length !== 10 || new Set(order).size !== 10 || order.some((k) => !Number.isInteger(k) || k < 0 || k > 9))
-      throw new RangeError("order must be a permutation of the block indices 0..9");
+    if (!isBlockList(order) || order.length !== 10) throw new RangeError("order must be a permutation of the block indices 0..9");
     return [KIND.SET, CMD.SET_ORDER, ...order];
   },
   /** GP-50: reset `slot` to the empty preset. */
@@ -468,20 +457,15 @@ export const encode = Object.freeze({
   },
 });
 
-/** Standard MIDI short messages (channel 0 = MIDI channel 1). */
+/** Standard MIDI short messages on MIDI channel 1. */
 export const midi = Object.freeze({
-  cc: (num, value, channel = 0) => [0xb0 | (channel & 0x0f), num & 0x7f, Math.max(0, Math.min(127, Math.round(value)))],
-  selectPreset: (slot, channel = 0) => (assertSlot(slot), midi.cc(CC.PRESET_SELECT, slot, channel)),
+  cc: (num, value) => [0xb0, num & 0x7f, Math.max(0, Math.min(127, Math.round(value)))],
+  selectPreset: (slot) => (assertSlot(slot), midi.cc(CC.PRESET_SELECT, slot)),
   /** Select a preset with Program Change (GP-50, hardware-proven; the GP-5 ignores it). */
-  programSelect: (slot, channel = 0) => (assertSlot(slot), midi.programChange(slot, channel)),
-  patchVolume: (vol, channel = 0) => midi.cc(CC.PATCH_VOLUME, Math.max(0, Math.min(100, vol)), channel),
-  blockSwitch: (block, on, channel = 0) => {
-    const name = BLOCKS[blockIndex(block)];
-    return midi.cc(CC.BLOCK_SWITCH[name], on ? 127 : 0, channel);
-  },
-  tuner: (on, channel = 0) => midi.cc(CC.TUNER, on ? 127 : 0, channel),
-  ctl: (value, channel = 0) => midi.cc(CC.CTL, value, channel),
-  programChange: (program, channel = 0) => [0xc0 | (channel & 0x0f), program & 0x7f],
+  programSelect: (slot) => (assertSlot(slot), midi.programChange(slot)),
+  blockSwitch: (block, on) => midi.cc(CC.BLOCK_SWITCH[BLOCKS[blockIndex(block)]], on ? 127 : 0),
+  tuner: (on) => midi.cc(CC.TUNER, on ? 127 : 0),
+  programChange: (program) => [0xc0, program & 0x7f],
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -582,17 +566,9 @@ export function decodeGlobals(data, device = "gp5") {
 
 /** 0x42 from the device: [u16 record][u16 size][value]... (the host form [u32 record][u32 value] is read as one entry). */
 function decodePatchSettings(p) {
-  const tlv = [];
-  let o = 2;
-  while (o + 4 <= p.length) {
-    const size = p[o + 2] | (p[o + 3] << 8);
-    if (size < 1 || size > 4 || o + 4 + size > p.length) break;
-    let value = 0;
-    for (let i = size - 1; i >= 0; i--) value = value * 256 + p[o + 4 + i];
-    tlv.push({ record: p[o] | (p[o + 1] << 8), value });
-    o += 4 + size;
-  }
-  if (o === p.length && tlv.length) return tlv;
+  const records = readRecords(p, 2);
+  const end = records.reduce((o, r) => o + 4 + r.len, 2);
+  if (end === p.length && records.length && records.every((r) => r.len >= 1 && r.len <= 4)) return records.map((r) => ({ record: r.a | (r.b << 8), value: r.value }));
   return p.length === 10 ? [{ record: readU32(p, 2), value: readI32(p, 6) }] : null;
 }
 

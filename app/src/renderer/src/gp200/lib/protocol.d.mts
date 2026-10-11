@@ -19,11 +19,12 @@ export type BlockName = "PRE" | "WAH" | "DST" | "AMP" | "NR" | "CAB" | "EQ" | "M
 /** The 11 blocks in record order (= default chain order). */
 export const BLOCKS: readonly ["PRE", "WAH", "DST", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB", "VOL"];
 export const BLOCK: Readonly<Record<BlockName, number>>;
+/** f32 params per block record. */
+export const PARAM_COUNT: 15;
 export const PATCH_SETTING: Readonly<{ VOL: 0; TEMPO: 1; STYLE: 2; SEND: 3; RETURN: 4; LOOP_MODE: 5; PAN: 6 }>;
 /** Quick-Access / EXP block bytes that are not blocks. */
 export const TARGET: Readonly<{ PATCH_VOL: 0x0b; PATCH_TEMPO: 0x0c; NONE: 0xff }>;
 export const STATUS: Readonly<{ DRUM: 0; DIRTY: 1; EXP1_AB: 2 }>;
-export const DRUM: Readonly<{ RHYTHM: 0; VOLUME: 1; BPM: 2 }>;
 export const STYLE_COUNT: 20;
 export const NAME_FIELD: 16;
 
@@ -37,12 +38,8 @@ export interface Gp200DeviceInfo {
   footswitches: number;
 }
 export const DEVICE_TYPES: Readonly<Record<2 | 3 | 4, Gp200DeviceInfo>>;
-export function deviceByType(type: number): Gp200DeviceInfo | null;
 export function deviceByKey(key: string): Gp200DeviceInfo | null;
-export const USB_IDS: Readonly<{ VID: number; GP200: number; BOOTLOADER: number; GP200LT: number; GP200JR: number }>;
 export const GP200_PORT_RE: RegExp;
-/** 2 GP-200, 3 LT, 4 JR from a MIDI port name; null when the name is not a GP-200 port. */
-export function deviceTypeFromPortName(name: string): 2 | 3 | 4 | null;
 /** "01-A" ... "64-D". */
 export function slotLabel(slot: number): string;
 
@@ -164,7 +161,6 @@ export const rec: {
   drumStateQuery(): Uint8Array;
   drumState(s: { playing: boolean; flag?: number; exp1AB?: number }): Uint8Array;
   drum(id: number, value: number): Uint8Array;
-  globalEqAll(values: ArrayLike<number>): Uint8Array;
   globalEq(index: number, value: number): Uint8Array;
   stateDump(): Uint8Array;
   globals(bytes72: Bytes): Uint8Array;
@@ -180,7 +176,6 @@ export const rec: {
   identity(): Uint8Array;
   identityReply(state: number, type: number): Uint8Array;
   save(slot: number, text: string): Uint8Array;
-  resetProgress(percent: number): Uint8Array;
   favourite(slot: number, add: boolean): Uint8Array;
   move(from: number, to: number): Uint8Array;
   moveCommit(): Uint8Array;
@@ -236,11 +231,6 @@ export const encode: {
 /** Why a frame must never be sent (firmware jump, updater, destructive globals), or null. */
 export function dangerOf(bytes: Bytes): string | null;
 export function dangerOfMessage(msg: Message): string | null;
-export class DangerousFrameError extends Error {
-  constructor(reason: string);
-  code: "unsafe";
-}
-export function assertSafeFrame(bytes: Bytes): void;
 
 export function decodeFirmware(d: ArrayLike<number>): string;
 export function encodeFirmware(version: string): number[];

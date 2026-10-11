@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BLOCKS, REC, walkTlv } from "../lib/protocol.mjs";
+import { BLOCKS, REC, byteSum, walkTlv } from "../lib/protocol.mjs";
 import {
   IMAGE_SIZE,
   IMAGE_SIZE_4CTRL,
@@ -39,7 +39,6 @@ const sample = (extra = {}) =>
     ctrl: Array.from({ length: 8 }, (_, i) => ({ mask: i === 0 ? 0b100 : 0 })),
     ...extra,
   });
-const beSum = (b, end) => b.subarray(0, end).reduce((s, x) => (s + x) >>> 0, 0);
 
 test("image layout: 1168 bytes in editor record order", () => {
   const img = sample();
@@ -76,7 +75,7 @@ test(".prst round trip: TSRP/2-PG/MRAP, position word, big-endian byte sum", () 
   assert.equal(new TextDecoder().decode(file.subarray(0x10, 0x14)), "2-PG");
   assert.equal(new TextDecoder().decode(file.subarray(0x28, 0x2c)), "MRAP");
   assert.deepEqual([...file.subarray(0x4c0, 0x4c4)], [0xc0, 0x04, 0x00, 0x00]);
-  assert.equal(new DataView(file.buffer).getUint32(0x4c4, false), beSum(file, 0x4c4));
+  assert.equal(new DataView(file.buffer).getUint32(0x4c4, false), byteSum(file.subarray(0, 0x4c4)));
   const p = parsePrst(file);
   assert.equal(p.checksumOk, true);
   assert.equal(p.fwTag, 6);

@@ -10,13 +10,12 @@
 //   The MRAP size covers the image plus the 4-byte position word ("data minus last 4 bytes" on import); the chunk
 //   table size adds the 8-byte chunk header (inferred from the layout; the importer does not check it).
 
-import { BLOCKS, REC, TARGET, imageWithSlot, readAscii, readF32, readU16, readU32, rec, sanitizeName, walkTlv } from "./protocol.mjs";
+import { BLOCKS, PARAM_COUNT, REC, TARGET, byteSum, concat, decodeRecord, imageWithSlot, readAscii, readU16, readU32, rec, sanitizeName, tlv, u16le, walkTlv } from "./protocol.mjs";
 
 export const IMAGE_SIZE = 1168;
 export const IMAGE_SIZE_4CTRL = 1120;
 export const PRST_SIZE = 1224;
 export const PRST_SIZE_4CTRL = 1176;
-export const PARAM_COUNT = 15;
 export const EXP_SLOTS = 9;
 export const QA_KNOBS = 3;
 export const CTRL_COUNT = 8;
@@ -56,6 +55,7 @@ function recordsOf(image) {
 /** Position of EXP key (exp << 4 | para) in the 9-slot list: EXP1A 0-2, EXP1B 3-5, EXP2 6-8. */
 export const expIndex = (key) => (key >> 4) * 3 + (key & 0x0f);
 export const expKey = (index) => ((Math.floor(index / 3) << 4) | index % 3) & 0xff;
+const withoutKind = ({ kind, ...fields }) => fields;
 
 /**
  * Image -> neutral patch structure:
@@ -82,24 +82,13 @@ export function parsePatch(image) {
     author: readAscii(d, 32, 16),
     note: readAscii(d, 48, 40),
     chain: { sendPos: c[2], returnPos: c[3], order: Array.from(c.subarray(4, 4 + BLOCK_COUNT)) },
-    blocks: r.blocks.map((b) => ({
-      index: b.data[0],
-      name: BLOCKS[b.data[0]],
-      enabled: b.data[1] === 1,
-      fxid: readU32(b.data, 4),
-      params: Array.from({ length: PARAM_COUNT }, (_, i) => readF32(b.data, 8 + 4 * i)),
-    })),
-    exp: r.exp.map((e) => ({
-      key: e.data[0],
-      pedal: e.data[0] >> 4,
-      para: e.data[0] & 0x0f,
-      block: e.data[1] === TARGET.NONE ? null : e.data[1],
-      param: readU16(e.data, 2),
-      max: readF32(e.data, 4),
-      min: readF32(e.data, 8),
-    })),
-    quickAccess: r.qa.map((q) => ({ index: q.data[0], block: q.data[1] === TARGET.NONE ? null : q.data[1], param: q.data[2] })),
-    ctrl: r.ctrl.map((x) => ({ index: x.data[0], state: x.data[1], mask: readU16(x.data, 4) & 0x7ff })),
+    blocks: r.blocks.map((b) => {
+      const { kind, block, ...x } = decodeRecord(b);
+      return { index: block, name: BLOCKS[block], ...x };
+    }),
+    exp: r.exp.map((e) => withoutKind(decodeRecord(e))),
+    quickAccess: r.qa.map((q) => withoutKind(decodeRecord(q))),
+    ctrl: r.ctrl.map((x) => withoutKind(decodeRecord(x))),
   };
 }
 
@@ -108,10 +97,7 @@ export function validateOrder(order) {
   return Array.isArray(order) && order.length === BLOCK_COUNT && [...order].sort((a, b) => a - b).every((v, i) => v === i);
 }
 
-const setU16 = (b, o, v) => {
-  b[o] = v & 0xff;
-  b[o + 1] = (v >>> 8) & 0xff;
-};
+const setU16 = (b, o, v) => b.set(u16le(v), o);
 const setU32 = (b, o, v) => new DataView(b.buffer, b.byteOffset).setUint32(o, v >>> 0, true);
 const setF32 = (b, o, v) => new DataView(b.buffer, b.byteOffset).setFloat32(o, Number(v), true);
 const setText = (b, o, width, text) => {
@@ -210,30 +196,17 @@ export function encodePatchImage(p = {}) {
   const ctrlCount = p.ctrl?.length === 4 ? 4 : CTRL_COUNT;
   const ctrl = Array.from({ length: ctrlCount }, (_, i) => ({ state: 0, mask: 0, ...p.ctrl?.[i] }));
   const parts = [
-    concatRecord(REC.INFO, info),
+    tlv(REC.INFO, info),
     rec.chain(p.slot ?? 0, { sendPos: p.chain?.sendPos ?? 0, returnPos: p.chain?.returnPos ?? 0, order: p.chain?.order ?? BLOCKS.map((_, i) => i) }).subarray(0, 20),
     ...blocks.map((b, i) => rec.block({ block: i, enabled: b.enabled ?? false, fxid: b.fxid ?? 0, params: b.params })),
     ...exp.map((e) => rec.exp({ key: e.key, block: targetByte(e.block), param: e.param, max: e.max, min: e.min })),
     ...qa.map((q, i) => rec.quickAccess(i, targetByte(q.block), q.param)),
     ...ctrl.map((c, i) => rec.ctrl(i, c.state, c.mask)),
   ];
-  const image = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
-  let o = 0;
-  for (const x of parts) {
-    image.set(x, o);
-    o += x.length;
-  }
+  const image = concat(parts);
   const defaults = { slot: 0, tempo: 120, volume: 50, pan: 0, style: 0, sendLevel: 0, returnLevel: 0, loopMode: 0, name: "", author: "", note: "" };
   const fields = Object.fromEntries(Object.keys(defaults).map((k) => [k, p[k] ?? defaults[k]]));
   return imageWithSlot(applyPatchEdits(image, fields), fields.slot);
-}
-
-function concatRecord(type, data) {
-  const out = new Uint8Array(4 + data.length);
-  setU16(out, 0, type);
-  setU16(out, 2, data.length);
-  out.set(data, 4);
-  return out;
 }
 
 /** Image with 8 CTRL records (adds zeroed CTRL 5-8 to a pre-1.4.0 image); 8-CTRL images are returned as a copy. */
@@ -242,14 +215,7 @@ export function withEightCtrl(image) {
   const ctrl = recordsOf(img).ctrl;
   if (ctrl.length >= CTRL_COUNT) return img.slice();
   const extra = Array.from({ length: CTRL_COUNT - ctrl.length }, (_, i) => rec.ctrl(ctrl.length + i, 0, 0));
-  const out = new Uint8Array(img.length + extra.reduce((n, x) => n + x.length, 0));
-  out.set(img);
-  let o = img.length;
-  for (const x of extra) {
-    out.set(x, o);
-    o += x.length;
-  }
-  return out;
+  return concat([img, ...extra]);
 }
 
 /**
@@ -304,17 +270,12 @@ export function isGp200Prst(bytes) {
   return b.length >= FILE.IMAGE + 8 && has(b, 0, MAGIC.TSRP) && has(b, 0x10, MAGIC.PG);
 }
 
-const sumBe = (b, end) => {
-  let s = 0;
-  for (let i = 0; i < end; i++) s = (s + b[i]) >>> 0;
-  return s;
-};
 const readU32Be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 
 /** True when the trailing big-endian byte sum matches. */
 export function isChecksumValid(bytes) {
   const b = toBytes(bytes);
-  return b.length >= 4 && readU32Be(b, b.length - 4) === sumBe(b, b.length - 4);
+  return b.length >= 4 && readU32Be(b, b.length - 4) === byteSum(b.subarray(0, b.length - 4));
 }
 
 /**
@@ -365,7 +326,7 @@ export function buildPrst(image, { fwTag } = {}) {
   dv.setUint32(FILE.CHUNK + 4, img.length + 4, true);
   out.set(img, FILE.IMAGE);
   dv.setUint32(end, end, true);
-  dv.setUint32(end + 4, sumBe(out, end + 4), false);
+  dv.setUint32(end + 4, byteSum(out.subarray(0, end + 4)), false);
   return out;
 }
 

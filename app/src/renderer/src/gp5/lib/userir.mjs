@@ -11,8 +11,8 @@
 // Data block: the first 512 samples of the IR at 44.1 kHz, each the sign-extended 24-bit value stored as int32
 // little-endian (NOT left-justified), zero-padded to 2048 bytes. No header, size or CRC.
 
-import { CMD, KIND, u32le } from "./protocol.mjs";
-import { SNAPTONE, sanitizeUserIrName } from "./snaptone.mjs";
+import { CMD, toBytes } from "./protocol.mjs";
+import { decodeFileImport, encodeFileImport, sanitizeUserIrName } from "./snaptone.mjs";
 
 export const USER_IR = Object.freeze({
   SLOTS: 20,
@@ -22,14 +22,8 @@ export const USER_IR = Object.freeze({
   FXID_BASE: 0x0a100000, // CAB fxid of "User IR 1"; slot n = FXID_BASE + n
 });
 
-const NODE_FIELD = 16;
-const FPARA_FIELD = 32;
-const DATA_AT = 10 + SNAPTONE.NAME_FIELD + NODE_FIELD + FPARA_FIELD; // 74
 const S24_MIN = -0x800000;
 const S24_MAX = 0x7fffff;
-
-const readU32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-const toBytes = (b) => (b instanceof Uint8Array ? b : Uint8Array.from(b));
 
 export const isUserIrSlot = (slot) => Number.isInteger(slot) && slot >= 0 && slot < USER_IR.SLOTS;
 
@@ -57,21 +51,11 @@ export function encodeImportUserIr(slot, name, data) {
   const fxId = userIrFxId(slot);
   const d = toBytes(data);
   if (d.length !== USER_IR.DATA_BYTES) throw new Error(`a User IR data block is ${USER_IR.DATA_BYTES} bytes, got ${d.length}`);
-  const label = sanitizeUserIrName(name);
-  const out = new Uint8Array(DATA_AT + USER_IR.DATA_BYTES);
-  out.set([KIND.SET, CMD.IMPORT_USER_IR, ...u32le(0), ...u32le(fxId)], 0);
-  for (let i = 0; i < label.length; i++) out[10 + i] = label.charCodeAt(i);
-  out.set(d, DATA_AT);
-  return out;
+  return encodeFileImport(CMD.IMPORT_USER_IR, fxId, sanitizeUserIrName(name), d);
 }
 
 /** Inverse of encodeImportUserIr (mock pedal, tests): { slot, name, data } or null if it is not a User IR import. */
 export function decodeImportUserIr(payload) {
-  const p = toBytes(payload);
-  if (p[0] !== KIND.SET || p[1] !== CMD.IMPORT_USER_IR || p.length !== DATA_AT + USER_IR.DATA_BYTES) return null;
-  const slot = readU32(p, 6) - USER_IR.FXID_BASE;
-  if (!isUserIrSlot(slot)) return null;
-  let name = "";
-  for (let i = 10; i < 10 + SNAPTONE.NAME_FIELD && p[i]; i++) name += String.fromCharCode(p[i]);
-  return { slot, name, data: p.slice(DATA_AT) };
+  const up = decodeFileImport(payload, CMD.IMPORT_USER_IR, USER_IR.FXID_BASE, USER_IR.DATA_BYTES);
+  return up && isUserIrSlot(up.slot) ? up : null;
 }

@@ -15,7 +15,6 @@
 // Gp5Error("unsafe").
 
 import {
-  BLOCKS,
   EXP_FIELDS,
   KIND,
   PATCH_SETTINGS,
@@ -34,7 +33,7 @@ import {
   midi,
   packetize,
   parseSysex,
-  toHex,
+  patchSettingByRecord,
 } from "./protocol.mjs";
 import { DEVICES, bodyOf, detectDevice, deviceByBodyLength, rebuildPrst, validateFootswitches, validateOrder } from "./prst.mjs";
 import { encodeImportSnapTone, isUserSnapToneSlot, sanitizeSnapToneName, sanitizeUserIrName } from "./snaptone.mjs";
@@ -170,16 +169,17 @@ export class Gp5Session extends EventTarget {
   }
 
   /** Read selector `sel` (READ.*); resolves with the reassembled payload incl. the [0x12, sel] echo. */
-  read(sel, opts) {
-    return this.#request([KIND.GET, sel], opts);
+  read(sel) {
+    return this.#request([KIND.GET, sel]);
   }
 
   /** Send a read request payload [0x12, sel, ...args] and wait for the reply starting with [0x12, sel]. */
-  #request(payload, { timeoutMs = this.#timing.readTimeoutMs, retries = this.#timing.readRetries } = {}) {
-    return this.exclusive(() => this.#requestNow(payload, timeoutMs, retries));
+  #request(payload) {
+    return this.exclusive(() => this.#requestNow(payload));
   }
 
-  async #requestNow(payload, timeoutMs, retries) {
+  async #requestNow(payload) {
+    const { readTimeoutMs: timeoutMs, readRetries: retries } = this.#timing;
     const sel = payload[1];
     for (let attempt = 0; ; attempt++) {
       this.#reasm.reset();
@@ -195,22 +195,21 @@ export class Gp5Session extends EventTarget {
   }
 
   /** Send a logical command payload (framed + paced); waits up to ackTimeoutMs per frame for an ACK. */
-  command(payload, opts = {}) {
-    return this.exclusive(() => this.#commandNow(payload, opts), this.#timing.editSettleMs);
+  command(payload) {
+    return this.exclusive(() => this.#commandNow(payload), this.#timing.editSettleMs);
   }
 
-  async #commandNow(payload, { ackTimeoutMs = this.#timing.ackTimeoutMs, requireAck = false } = {}) {
+  async #commandNow(payload) {
     const frames = packetize(payload);
     let acked = 0;
     for (const f of frames) {
-      const ack = this.#waitFor((p) => p[0] === KIND.ACK, ackTimeoutMs).then(
+      const ack = this.#waitFor((p) => p[0] === KIND.ACK, this.#timing.ackTimeoutMs).then(
         () => true,
         () => false
       );
       await this.#send(f);
       if (await ack) acked++;
     }
-    if (requireAck && acked < frames.length) throw new Gp5Error("verify", `only ${acked}/${frames.length} frames acknowledged`);
     return { frames: frames.length, acked };
   }
 
@@ -339,10 +338,10 @@ export class Gp5Session extends EventTarget {
   }
 
   /** Back up every slot. Restores the originally active slot afterwards. onProgress(done, total, entry). */
-  async backupAll({ onProgress, slots } = {}) {
+  async backupAll({ onProgress } = {}) {
     const names = await this.readPresetNames();
     const original = await this.readCurrentSlot();
-    const wanted = slots ?? names.map((n) => n.slot);
+    const wanted = names.map((n) => n.slot);
     const out = [];
     try {
       for (const slot of wanted) {
@@ -385,8 +384,8 @@ export class Gp5Session extends EventTarget {
   /** Patch setting record (protocol.mjs PATCH_SETTINGS); EXP records are GP-50 only. */
   async setPatchSetting(record, value) {
     const payload = encode.setPatchSetting(record, value);
-    const field = Object.keys(PATCH_SETTINGS).find((f) => PATCH_SETTINGS[f].record === record);
-    if (PATCH_SETTINGS[field].gp50Only) await this.#requireGp50(`patch setting ${field}`);
+    const [field, s] = patchSettingByRecord(record);
+    if (s.gp50Only) await this.#requireGp50(`patch setting ${field}`);
     return this.#coalesced(`42:${record}`, payload);
   }
   /** Tempo of the active preset, 40..260 BPM (record 0x2002). */
@@ -404,9 +403,9 @@ export class Gp5Session extends EventTarget {
     const fields = exp ?? {};
     const unknown = Object.keys(fields).filter((f) => !EXP_FIELDS.includes(f));
     if (unknown.length) throw new RangeError(`unknown EXP setting ${unknown.join(", ")}`);
-    const payloads = EXP_FIELDS.filter((f) => fields[f] !== undefined).map((f) => encode.setPatchSetting(PATCH_SETTINGS[f].record, fields[f]));
+    const payloads = EXP_FIELDS.filter((f) => fields[f] !== undefined).map((f) => [PATCH_SETTINGS[f].record, encode.setPatchSetting(PATCH_SETTINGS[f].record, fields[f])]);
     const results = [];
-    for (const p of payloads) results.push(await this.#coalesced(`42:${p[2] | (p[3] << 8)}`, p));
+    for (const [record, p] of payloads) results.push(await this.#coalesced(`42:${record}`, p));
     return results;
   }
   /**
@@ -600,5 +599,3 @@ export class Gp5Session extends EventTarget {
     return { device: this.#device, names, slot, prst: rebuildPrst(names[slot]?.name ?? "", body, this.#device), globals, modified };
   }
 }
-
-export { BLOCKS, toHex };

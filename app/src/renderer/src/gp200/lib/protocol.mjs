@@ -71,14 +71,14 @@ export const REC = Object.freeze({
 /** The 11 blocks in record order (= default chain order); all are movable. */
 export const BLOCKS = Object.freeze(["PRE", "WAH", "DST", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB", "VOL"]);
 export const BLOCK = Object.freeze(Object.fromEntries(BLOCKS.map((b, i) => [b, i])));
+/** f32 params per block record. */
+export const PARAM_COUNT = 15;
 /** 0x0006 targets. */
 export const PATCH_SETTING = Object.freeze({ VOL: 0, TEMPO: 1, STYLE: 2, SEND: 3, RETURN: 4, LOOP_MODE: 5, PAN: 6 });
 /** Quick-Access / EXP block bytes that are not blocks. */
 export const TARGET = Object.freeze({ PATCH_VOL: 0x0b, PATCH_TEMPO: 0x0c, NONE: 0xff });
 /** 0x1011 sub-ids: host sub 0 = drum play/stop; device sub 1 = edit buffer dirty, sub 2 = EXP1 A/B. */
 export const STATUS = Object.freeze({ DRUM: 0, DIRTY: 1, EXP1_AB: 2 });
-/** 0x1001 drum ids. */
-export const DRUM = Object.freeze({ RHYTHM: 0, VOLUME: 1, BPM: 2 });
 export const STYLE_COUNT = 20;
 export const NAME_FIELD = 16;
 
@@ -88,17 +88,9 @@ export const DEVICE_TYPES = Object.freeze({
   3: Object.freeze({ type: 3, key: "gp200lt", name: "GP-200LT", slots: 256, footswitches: 4 }),
   4: Object.freeze({ type: 4, key: "gp200jr", name: "GP-200JR", slots: 255, footswitches: 3 }),
 });
-export const deviceByType = (type) => DEVICE_TYPES[type] ?? null;
 export const deviceByKey = (key) => Object.values(DEVICE_TYPES).find((d) => d.key === key) ?? null;
-/** USB ids (driver DB / OSS, not in the editor). 0x002B is the bootloader: never talk to it. */
-export const USB_IDS = Object.freeze({ VID: 0x84ef, GP200: 0x002a, BOOTLOADER: 0x002b, GP200LT: 0x002c, GP200JR: 0x0180 });
 /** The editor's only port detector (case-sensitive substring). */
 export const GP200_PORT_RE = /GP-?200/;
-export function deviceTypeFromPortName(name) {
-  if (/GP-?200LT/.test(name)) return 3;
-  if (/GP-?200JR/.test(name)) return 4;
-  return GP200_PORT_RE.test(name) ? 2 : null;
-}
 
 /** Slot label as on the pedal: 64 banks x A-D, 0 -> "01-A", 255 -> "64-D". */
 export function slotLabel(slot) {
@@ -412,14 +404,13 @@ export const rec = {
   /** 0x0013 declares 8 bytes but the editor sends 4. */
   focus: (block) => tlv(REC.FOCUS, [block, 0, 0, 0], 8),
   block: ({ block, enabled, fxid, params, opaque = 0x000f }) =>
-    tlv(REC.BLOCK, [block, enabled ? 1 : 0, ...u16le(opaque), ...u32le(fxid), ...Array.from({ length: 15 }, (_, i) => f32le(params?.[i] ?? 0)).flat()]),
+    tlv(REC.BLOCK, [block, enabled ? 1 : 0, ...u16le(opaque), ...u32le(fxid), ...Array.from({ length: PARAM_COUNT }, (_, i) => f32le(params?.[i] ?? 0)).flat()]),
   blockOn: (block, on) => tlv(REC.BLOCK_ON, [block, on ? 1 : 0, 0, 0]),
   model: (block, fxid) => tlv(REC.MODEL, [block, 0, 0, 0, ...u32le(fxid)]),
   /** 0x1000 drum/EXP state query: the editor sends 6 uninitialised bytes. */
   drumStateQuery: () => tlv(REC.DRUM_STATE, new Uint8Array(6)),
   drumState: ({ playing, flag = 0, exp1AB = 0 }) => tlv(REC.DRUM_STATE, [...u16le(playing ? 1 : 0), ...u16le(flag), ...u16le(exp1AB)]),
   drum: (id, value) => tlv(REC.DRUM, [...u16le(id), ...u16le(value)]),
-  globalEqAll: (values) => tlv(REC.GLOBAL_EQ_ALL, Array.from({ length: GLOBAL_EQ_BANDS }, (_, i) => f32le(values[i] ?? 0)).flat()),
   globalEq: (index, value) => tlv(REC.GLOBAL_EQ, [...u16le(index), 0, 0, ...f32le(value)]),
   stateDump: () => tlv(REC.STATE_DUMP),
   /** 0x1007 state record (device -> host only: a host write overwrites every global). */
@@ -437,7 +428,6 @@ export const rec = {
   identity: () => tlv(REC.IDENTITY),
   identityReply: (state, type) => tlv(REC.IDENTITY, [...u16le(state), ...u16le(type)]),
   save: (slot, text) => nameRecord(REC.SAVE, slot, text),
-  resetProgress: (percent) => tlv(REC.RESET_PROGRESS, [...u16le(percent), 0, 0]),
   favourite: (slot, add) => tlv(REC.FAVOURITE, [...u16le(slot), add ? 1 : 0, 0]),
   move: (from, to) => tlv(REC.MOVE, [...u16le(from), ...u16le(to)]),
   moveCommit: () => tlv(REC.MOVE_COMMIT, [1, 0, 0, 0]),
@@ -551,19 +541,6 @@ function dangerOfRecords(cmd, payload) {
   return null;
 }
 
-export class DangerousFrameError extends Error {
-  constructor(reason) {
-    super(`refusing to send ${reason}`);
-    this.code = "unsafe";
-  }
-}
-
-/** Throws DangerousFrameError for a frame dangerOf() rejects. */
-export function assertSafeFrame(bytes) {
-  const why = dangerOf(bytes);
-  if (why) throw new DangerousFrameError(why);
-}
-
 // ------------------------------------------------------------------------------------------- decoding
 
 /** Firmware version from the first 4 bytes of 0x1007: [patch, minor, major, 0]. */
@@ -633,7 +610,7 @@ export function decodeRecord({ type, data: d }) {
     case REC.FOCUS:
       return { kind: "focus", block: d[0] };
     case REC.BLOCK:
-      return { kind: "block", block: d[0], enabled: d[1] === 1, fxid: readU32(d, 4), params: Array.from({ length: 15 }, (_, i) => readF32(d, 8 + 4 * i)) };
+      return { kind: "block", block: d[0], enabled: d[1] === 1, fxid: readU32(d, 4), params: Array.from({ length: PARAM_COUNT }, (_, i) => readF32(d, 8 + 4 * i)) };
     case REC.BLOCK_ON:
       return { kind: "blockEnabled", block: d[0], enabled: d[1] === 1 };
     case REC.MODEL:

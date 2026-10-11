@@ -1,9 +1,6 @@
 // Type declarations for catalog.mjs (the JS stays the tested source of truth; keep these in sync).
 import type { Gp200Patch } from "./prst.mjs";
 
-export const PARAM_COUNT: 15;
-export const SYNC_DEFAULT_INDEX: 4;
-
 export interface CatalogOption {
   name: string;
   /** menu position */
@@ -39,10 +36,8 @@ export interface CatalogModel {
   module: string;
   /** fxid */
   code: number;
-  codeHex: string;
   index: number;
   cabCode?: number;
-  cabCodeHex?: string;
   knobs: CatalogKnob[];
 }
 export interface Gp200Catalog {
@@ -64,8 +59,6 @@ export function parseXml(text: string): XmlNode;
 export function buildCatalogFromXml(xmlText: string, opts?: { device?: string; source?: string }): Gp200Catalog;
 export function modelByFxid(catalog: Gp200Catalog, fxid: number, block?: string | number): CatalogModel | undefined;
 export function modelsForBlock(catalog: Gp200Catalog, block: string | number): CatalogModel[];
-export function findModel(catalog: Gp200Catalog, query: string, block?: string | number): CatalogModel | undefined;
-export function findParam(catalog: Gp200Catalog, fxid: number, param: string | number, block?: string | number): CatalogKnob;
 export function optionValues(knob: CatalogKnob): number[];
 export function clampParam(knob: CatalogKnob, value: number): number;
 export function defaultValue(knob: CatalogKnob): number;

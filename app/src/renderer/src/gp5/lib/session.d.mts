@@ -195,8 +195,8 @@ export class Gp5Session extends EventTarget {
   /** Detect the model (reads the active body if it is not known yet). */
   identify(): Promise<Gp5FamilyKey>;
   exclusive<T>(fn: () => Promise<T>, settleMs?: number): Promise<T>;
-  read(sel: number, opts?: { timeoutMs?: number; retries?: number }): Promise<Uint8Array>;
-  command(payload: number[], opts?: { ackTimeoutMs?: number; requireAck?: boolean }): Promise<CommandResult>;
+  read(sel: number): Promise<Uint8Array>;
+  command(payload: number[]): Promise<CommandResult>;
   sendShort(bytes: number[]): Promise<void>;
   close(): Promise<void>;
 
@@ -215,7 +215,7 @@ export class Gp5Session extends EventTarget {
   /** auto: GP-5 CC#0 then SysEx; GP-50 SysEx 11 43 then Program Change. Verified by reading 0x43. */
   selectPreset(slot: number, opts?: { method?: SelectMethod }): Promise<number>;
   readPreset(slot: number, opts?: { names?: { name: string }[] }): Promise<Uint8Array>;
-  backupAll(opts?: { onProgress?: (done: number, total: number, entry: BackupRecord) => void; slots?: number[] }): Promise<BackupRecord[]>;
+  backupAll(opts?: { onProgress?: (done: number, total: number, entry: BackupRecord) => void }): Promise<BackupRecord[]>;
 
   setBlockEnabled(block: number | string, on: boolean): Promise<CommandResult>;
   setModel(block: number | string, fxid: number): Promise<CommandResult>;
@@ -267,6 +267,3 @@ export class Gp5Session extends EventTarget {
   ): Promise<UserIrUploadResult>;
   syncState(): Promise<SyncSnapshot>;
 }
-
-export const BLOCKS: readonly ["NR", "PRE", "DST", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "NS"];
-export function toHex(bytes: ArrayLike<number>, sep?: string): string;

@@ -5,8 +5,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { SYNC_DIVISIONS, displayedParam, findParam, isSynced, modelsFor, syncToggleFor } from "../lib/catalog.mjs";
 import {
-  CC,
-  ccFor,
+  CC_GP50,
   decodeExportedPreset,
   decodeGlobals,
   decodeMessage,
@@ -140,10 +139,8 @@ test("device -> host decoding: GP-5 and GP-50 0x47 layouts, 12 1B lists, 0x42/0x
 });
 
 test("CC tables per model: the GP-50 chart has tempo, EXP, looper and drum CCs, no bank/song CCs", () => {
-  const gp50 = ccFor("gp50");
-  assert.equal(ccFor("gp5"), CC);
-  for (const k of ["BANK_DOWN", "BANK_UP", "SONG_PATCH_DOWN", "SONG_PATCH_UP"]) assert.equal(gp50[k], undefined, k);
-  assert.deepEqual([gp50.MASTER_VOLUME, gp50.EXP_VALUE, gp50.EXP_SWITCH, gp50.TEMPO_MSB, gp50.TEMPO_LSB, gp50.CTL2, gp50.LOOPER, gp50.DRUM_PLAY], [1, 11, 13, 73, 74, 70, 59, 93]);
+  for (const k of ["BANK_DOWN", "BANK_UP", "SONG_PATCH_DOWN", "SONG_PATCH_UP"]) assert.equal(CC_GP50[k], undefined, k);
+  assert.deepEqual([CC_GP50.MASTER_VOLUME, CC_GP50.EXP_VALUE, CC_GP50.EXP_SWITCH, CC_GP50.TEMPO_MSB, CC_GP50.TEMPO_LSB, CC_GP50.CTL2, CC_GP50.LOOPER, CC_GP50.DRUM_PLAY], [1, 11, 13, 73, 74, 70, 59, 93]);
   assert.deepEqual(midi.programSelect(55), [0xc0, 55]);
   assert.throws(() => midi.programSelect(100), RangeError);
 });

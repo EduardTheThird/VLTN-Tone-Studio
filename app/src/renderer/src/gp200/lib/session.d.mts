@@ -1,5 +1,5 @@
 // Type declarations for session.mjs (the JS stays the tested source of truth; keep these in sync).
-import type { Bytes, ChainDef, DecodedMessage, DecodedRecord, ExpSlotDef, GlobalName, Gp200FamilyKey, HeaderRecord, Message } from "./protocol.mjs";
+import type { Bytes, ChainDef, DecodedRecord, ExpSlotDef, GlobalName, Gp200FamilyKey, HeaderRecord, Message } from "./protocol.mjs";
 
 export type { Gp200FamilyKey };
 
@@ -101,10 +101,8 @@ export class Gp200Session extends EventTarget {
   get dirty(): boolean;
   /** 256 (GP-200, LT) or 255 (JR) */
   get slotCount(): number;
-  slotLabel(slot: number): string;
 
   exclusive<T>(fn: () => Promise<T>): Promise<T>;
-  query(msg: Message, match: (m: DecodedMessage) => boolean, what: string): Promise<DecodedMessage>;
   send(msg: Message): Promise<number>;
   sendShort(bytes: number[]): Promise<void>;
   close(): Promise<void>;
@@ -113,7 +111,7 @@ export class Gp200Session extends EventTarget {
   readStored(slot: number): Promise<Uint8Array>;
   readEditBuffer(): Promise<{ slot: number; image: Uint8Array }>;
   readPreset(slot: number): Promise<PresetEntry>;
-  backupAll(opts?: { onProgress?: (done: number, total: number, entry: PresetEntry) => void; slots?: number[] }): Promise<PresetEntry[]>;
+  backupAll(opts?: { onProgress?: (done: number, total: number, entry: PresetEntry) => void }): Promise<PresetEntry[]>;
   readPresetNames(opts?: { onProgress?: (done: number, total: number, entry: PresetEntry) => void }): Promise<{ slot: number; label: string; name: string }[]>;
   readIrNames(): Promise<NameEntry[]>;
   readSnapToneNames(): Promise<NameEntry[]>;
@@ -130,19 +128,13 @@ export class Gp200Session extends EventTarget {
   setPatchSetting(target: number, value: number): Promise<void>;
   setPatchVolume(v: number): Promise<void>;
   setTempo(bpm: number): Promise<void>;
-  setPan(v: number): Promise<void>;
   setPatchName(name: string): Promise<void>;
-  setAuthor(text: string): Promise<void>;
-  setNote(text: string): Promise<void>;
   setExp(def: ExpSlotDef): Promise<void>;
   setExpRange(which: "max" | "min", key: number, value: number): Promise<void>;
   setCtrl(index: number, mask: number, state?: number): Promise<void>;
   setQuickAccess(index: number, block: number, param: number): Promise<void>;
-  focusBlock(block: number | string): Promise<void>;
   setGlobal(name: GlobalName, value: number): Promise<void>;
   setGlobalEq(index: number, value: number): Promise<number>;
-  setDrumPlaying(on: boolean): Promise<number>;
-  setDrum(id: number, value: number): Promise<number>;
 
   savePreset(slot: number, name: string, opts: { confirm: true }): Promise<{ slot: number; name: string }>;
   renamePreset(slot: number, name: string, opts: { confirm: true }): Promise<{ slot: number; name: string }>;
@@ -156,5 +148,3 @@ export class Gp200Session extends EventTarget {
   /** SnapTone slot 0-9 (0-4 AMP, 5-9 DST): a 0x2288 clone or a 0x1288 GP-200 blob. */
   uploadSnapTone(slot: number, name: string, blob: Bytes, opts: { confirm: true; onProgress?: (done: number, total: number) => void }): Promise<UploadResult>;
 }
-
-export function slotLabel(slot: number): string;

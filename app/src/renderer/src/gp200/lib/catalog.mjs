@@ -9,15 +9,12 @@
 //   division index 0-10, set to 4) | MinISOff = the minimum shows as OFF | CABCode = Auto-CAB-Match target.
 //
 // Catalog shape (descriptions are not kept):
-//   { meta: { device, source, counts }, modules: [{ module, algs: [{ name, module, code, codeHex, index, cabCode?,
-//     cabCodeHex?, knobs: [{ kind, name, idx, id, type, default, defaultRaw?, min?, max?, step?, suffix?, valueType?,
+//   { meta: { device, source, counts }, modules: [{ module, algs: [{ name, module, code, index, cabCode?,
+//     knobs: [{ kind, name, idx, id, type, default, defaultRaw?, min?, max?, step?, suffix?, valueType?,
 //     bind?, minIsOff?, subType?, options?: [{ name, value, trueId? }] }] }] }] }
 
-import { BLOCKS } from "./protocol.mjs";
+import { BLOCKS, PARAM_COUNT } from "./protocol.mjs";
 
-export const PARAM_COUNT = 15;
-/** Note-division index the editor sets on the bound knob when a Sync switch turns on (0 = 1/1 ... 10 = 1/16). */
-export const SYNC_DEFAULT_INDEX = 4;
 const CONTROL_KINDS = new Set(["Knob", "Slider", "Combox", "Switch"]);
 
 // ------------------------------------------------------------------------------------------- XML
@@ -91,11 +88,8 @@ function buildAlg(el, module) {
   const a = el.attrs;
   const code = Number(a.Code);
   if (!Number.isInteger(code) || code < 0 || code > 0xffffffff) throw new Error(`algorithm.xml: model "${a.Name}" has an invalid Code ${a.Code}`);
-  const alg = { name: a.Name ?? "", module: a.Module ?? module, code, codeHex: hex8(code), index: int(a.Index) };
-  if (a.CABCode !== undefined) {
-    alg.cabCode = Number(a.CABCode);
-    alg.cabCodeHex = hex8(alg.cabCode);
-  }
+  const alg = { name: a.Name ?? "", module: a.Module ?? module, code, index: int(a.Index) };
+  if (a.CABCode !== undefined) alg.cabCode = Number(a.CABCode);
   alg.knobs = el.children.filter((c) => CONTROL_KINDS.has(c.tag)).map(buildKnob);
   return alg;
 }
@@ -157,22 +151,6 @@ export function modelsForBlock(catalog, block) {
   const name = blockName(block);
   const algs = catalog.modules.find((m) => m.module === name)?.algs ?? [];
   return [...algs].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-}
-
-/** Case-insensitive model search by name, within a block when given. */
-export function findModel(catalog, query, block) {
-  const q = String(query).toLowerCase();
-  const pool = block === undefined ? catalog.modules.flatMap((m) => m.algs) : modelsForBlock(catalog, block);
-  return pool.find((m) => m.name.toLowerCase() === q) ?? pool.find((m) => m.name.toLowerCase().includes(q));
-}
-
-/** A model's control by name (case-insensitive) or param id (number). Throws RangeError when absent. */
-export function findParam(catalog, fxid, param, block) {
-  const m = modelByFxid(catalog, fxid, block);
-  if (!m) throw new RangeError(`unknown fxid ${hex8(fxid)}`);
-  const k = typeof param === "number" ? m.knobs.find((x) => x.id === param) : m.knobs.find((x) => x.name.toLowerCase() === String(param).toLowerCase());
-  if (!k) throw new RangeError(`${m.name} has no param ${param}; params: ${m.knobs.map((x) => x.name).join(", ")}`);
-  return k;
 }
 
 /** Values a Combox/Switch sends on the wire (TrueID when present, else the menu position). */

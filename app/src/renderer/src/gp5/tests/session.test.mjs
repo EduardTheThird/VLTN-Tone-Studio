@@ -89,13 +89,15 @@ test("unsolicited pedal events reach listeners", async () => {
   await s.close();
 });
 
-test("backupAll restores the original slot", async () => {
-  const { dev, s } = setup();
+test("backupAll reads every slot and restores the original slot", async () => {
+  const dev = new MockGp5({ presets });
+  const s = new Gp5Session(dev.transport(), { timing: { ...fast, settleMs: 0, postSelectMs: 0, interMessageMs: 0 } });
   await s.selectPreset(1);
   const progress = [];
-  const all = await s.backupAll({ slots: [0, 2, 3], onProgress: (d, t) => progress.push(`${d}/${t}`) });
-  assert.deepEqual(all.map((e) => e.name), ["Puppy", "FF CC", "GP-5"]);
-  assert.deepEqual(progress, ["1/3", "2/3", "3/3"]);
+  const all = await s.backupAll({ onProgress: (d, t) => progress.push(`${d}/${t}`) });
+  assert.equal(all.length, 100);
+  assert.deepEqual(all.slice(0, 4).map((e) => e.name), ["Puppy", "Oerdrive M", "FF CC", "GP-5"]);
+  assert.deepEqual([progress[0], progress.at(-1)], ["1/100", "100/100"]);
   assert.equal(dev.current, 1);
   await s.close();
 });

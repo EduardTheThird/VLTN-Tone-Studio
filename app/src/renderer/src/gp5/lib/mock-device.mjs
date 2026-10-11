@@ -15,7 +15,6 @@ import {
   CC,
   CC_GP50,
   CMD,
-  FRAME_PAYLOAD_MAX,
   KIND,
   NOTIFY_LIST_CHANGED,
   PATCH_SETTINGS,
@@ -29,15 +28,16 @@ import {
   packetize,
   parseSysex,
   patchSettingByRecord,
+  readI32,
+  readU32,
   u32le,
 } from "./protocol.mjs";
-import { BODY_OFF, DEVICES, SETTING_SIZES, applyEdits, blankGp50Prst, bodyOf, detectDevice, parsePrst, readName, rebuildPrst, validateFootswitches, validateOrder } from "./prst.mjs";
+import { DEVICES, SETTING_SIZES, applyEdits, blankGp50Prst, bodyOf, detectDevice, parsePrst, readName, rebuildPrst, validateFootswitches, validateOrder } from "./prst.mjs";
 import { checkSnapToneFile, decodeImportSnapTone, isUserSnapToneSlot } from "./snaptone.mjs";
 import { decodeImportUserIr } from "./userir.mjs";
 
 const ACK = [KIND.ACK, 0x08, 0x00]; // device ACK frame BUF b2 01 00 03 14 08 00
-const readU32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-const readI32 = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
+const nameOf = (bytes) => String.fromCharCode(...bytes.filter((c) => c));
 const nameBytes = (s, n) => Array.from({ length: n }, (_, i) => (i < s.length ? s.charCodeAt(i) & 0xff : 0));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const isOn = (v) => v >= 64;
@@ -61,8 +61,8 @@ export class MockGp5 {
    *   pedal; a shorter list is cycled, extra slots get the model's empty name "GP-5" / "GP-50"; see mock-bank.mjs for a
    *   full native GP-50 bank),
    *   latencyMs = 1, minGapMs = 15 (gaps below this are recorded in .violations),
-   *   snapTones?: string[80], userIRs?: string[20], acceptProgramChange (default: GP-50 only), acceptCcSelect = true,
-   *   GP-50 only: firmware = "1.1.0" | "1.0.5", echoHostEdits = true (0x42 echo and 0x11 record push after host writes),
+   *   snapTones?: string[80], userIRs?: string[20], acceptCcSelect = true (Program Change selects on the GP-50 only),
+   *   GP-50 only: firmware = "1.1.0" | "1.0.5" (host writes are echoed: 0x42 echo and 0x11 record push),
    *   notifySelect = false (12 43 after host selects too), notifyListChanges = false (12 1B 02/03/04),
    *   wedgeOnOverrun = false, selectRaceMs = 0 }
    */
@@ -72,10 +72,8 @@ export class MockGp5 {
     minGapMs = 15,
     snapTones = [],
     userIRs = [],
-    acceptProgramChange,
     acceptCcSelect = true,
     firmware = "1.1.0",
-    echoHostEdits = true,
     notifySelect = false,
     notifyListChanges = false,
     wedgeOnOverrun = false,
@@ -90,7 +88,7 @@ export class MockGp5 {
     this.gp50 = model.key === "gp50";
     this.slots = Array.from({ length: PRESET_COUNT }, (_, i) => {
       const src = presets[i % presets.length];
-      return { name: i < presets.length ? readName(src) : model.emptyName, body: bodyOf(src) };
+      return { name: i < presets.length ? readName(src) : model.name, body: bodyOf(src) };
     });
     this.current = 0;
     this.buffer = this.slots[0].body.slice();
@@ -102,9 +100,7 @@ export class MockGp5 {
     this.userIrFiles = new Map(); // slot -> uploaded 2048-byte User IR data block
     this.latencyMs = latencyMs;
     this.minGapMs = minGapMs;
-    this.acceptProgramChange = acceptProgramChange ?? this.gp50;
     this.acceptCcSelect = acceptCcSelect;
-    this.echoHostEdits = echoHostEdits;
     this.notifySelect = notifySelect;
     this.notifyListChanges = notifyListChanges;
     this.wedgeOnOverrun = wedgeOnOverrun;
@@ -116,11 +112,6 @@ export class MockGp5 {
     this.rejected = []; // GP-50: { payload, reason } of commands the pedal would not apply (illegal masks/order)
     this.wedged = false; // GP-50 + wedgeOnOverrun: no replies until powerCycle()
     this.modified = false; // GP-50 0x45 flag: the active buffer differs from the stored slot
-    this.tuner = false;
-    this.looper = { on: false, recording: false, playing: false, recordVolume: 100, playVolume: 100 };
-    this.drum = { menu: false, playing: false, type: 0, volume: 50, sync: false };
-    this.expPosition = 0; // EXP pedal 0..100
-    this.expVolume = 100; // effect of an EXP pedal on target VOL, 0..100
     this.#reasm = new Reassembler();
   }
   #reasm;
@@ -177,7 +168,7 @@ export class MockGp5 {
     }, this.latencyMs);
   }
   #reply(payload) {
-    for (const m of packetize(payload, FRAME_PAYLOAD_MAX)) this.#emit(m, true);
+    for (const m of packetize(payload)) this.#emit(m, true);
   }
 
   /** Bytes from host. */
@@ -220,7 +211,7 @@ export class MockGp5 {
   #short([status, d1, d2]) {
     const type = status & 0xf0;
     if (type === 0xc0) {
-      if (this.acceptProgramChange && d1 < PRESET_COUNT) this.#select(d1);
+      if (this.gp50 && d1 < PRESET_COUNT) this.#select(d1);
     } else if (type === 0xb0 && d1 === CC.PRESET_SELECT) {
       if (this.acceptCcSelect && d2 < PRESET_COUNT) this.#select(d2);
     } else if (type === 0xb0) {
@@ -230,7 +221,7 @@ export class MockGp5 {
     }
   }
 
-  /** GP-50 CC chart (GP-50 manual); the GP-5-only CCs 22/23/29/30 fall through and are ignored. */
+  /** GP-50 CC chart (GP-50 manual); tuner, looper, drum and GP-5-only CCs 22/23/29/30 are accepted and ignored. */
   #ccGp50(cc, v) {
     const step = isOn(v) ? 1 : -1;
     const bpm = () => parsePrst(this.#prst()).settings.bpm;
@@ -245,23 +236,11 @@ export class MockGp5 {
       [CC_GP50.PATCH_DOWN]: () => this.#select((this.current + PRESET_COUNT - 1) % PRESET_COUNT),
       [CC_GP50.PATCH_UP]: () => this.#select((this.current + 1) % PRESET_COUNT),
       [CC_GP50.UNIT_MODE]: () => this.#setGlobalValue(1, 6, isOn(v) ? 1 : 0),
-      [CC_GP50.TUNER]: () => (this.tuner = isOn(v)),
-      [CC_GP50.LOOPER]: () => (this.looper = { ...this.looper, on: isOn(v) }),
-      [CC_GP50.LOOPER_RECORD]: () => (this.looper = { ...this.looper, recording: isOn(v) }),
-      [CC_GP50.LOOPER_PLAY]: () => (this.looper = { ...this.looper, playing: isOn(v), recording: false }),
-      [CC_GP50.LOOPER_DELETE]: () => (this.looper = { ...this.looper, recording: false, playing: false }),
-      [CC_GP50.LOOPER_RECORD_VOLUME]: () => (this.looper = { ...this.looper, recordVolume: clamp(v, 0, 100) }),
-      [CC_GP50.LOOPER_PLAY_VOLUME]: () => (this.looper = { ...this.looper, playVolume: clamp(v, 0, 100) }),
       [CC_GP50.CTL]: () => this.#toggleFootswitchBlocks(0),
       [CC_GP50.CTL2]: () => this.#toggleFootswitchBlocks(1),
       [CC_GP50.TEMPO_MSB]: () => (this.#tempoMsb = v),
       [CC_GP50.TEMPO_LSB]: () => this.#edit({ bpm: this.#tempoMsb * 128 + v }),
       [CC_GP50.TAP]: () => this.tap(),
-      [CC_GP50.DRUM_MENU]: () => (this.drum = { ...this.drum, menu: isOn(v) }),
-      [CC_GP50.DRUM_PLAY]: () => (this.drum = { ...this.drum, playing: isOn(v) }),
-      [CC_GP50.DRUM_TYPE]: () => (this.drum = { ...this.drum, type: clamp(v, 0, 9) }),
-      [CC_GP50.DRUM_VOLUME]: () => (this.drum = { ...this.drum, volume: clamp(v, 0, 100) }),
-      [CC_GP50.DRUM_SYNC]: () => (this.drum = { ...this.drum, sync: isOn(v) }),
     };
     actions[cc]?.();
   }
@@ -324,7 +303,7 @@ export class MockGp5 {
     },
     [CMD.SAVE_PRESET]: (p) => {
       const slot = readU32(p, 2);
-      this.slots[slot] = { name: String.fromCharCode(...p.subarray(6, 16).filter((c) => c)), body: this.buffer.slice() };
+      this.slots[slot] = { name: nameOf(p.subarray(6, 16)), body: this.buffer.slice() };
       if (slot === this.current) this.modified = false;
       this.#notifyList(2);
     },
@@ -337,13 +316,13 @@ export class MockGp5 {
       this.#notifyList(4);
     },
     [CMD.RENAME_PRESET]: (p) => {
-      this.slots[readU32(p, 2)].name = String.fromCharCode(...p.subarray(6, 16).filter((c) => c));
+      this.slots[readU32(p, 2)].name = nameOf(p.subarray(6, 16));
       this.#notifyList(2);
     },
     [CMD.WRITE_PRESET]: (p) => {
       const slot = p[2];
       const rest = p.subarray(6); // name(16) + body
-      this.slots[slot] = { name: String.fromCharCode(...rest.subarray(0, 16).filter((c) => c)), body: rest.slice(16) };
+      this.slots[slot] = { name: nameOf(rest.subarray(0, 16)), body: rest.slice(16) };
       if (slot === this.current) this.buffer = this.slots[slot].body.slice();
       this.#notifyList(2);
     },
@@ -369,7 +348,7 @@ export class MockGp5 {
       } catch (e) {
         return this.rejected.push({ payload: p.slice(), reason: e.message });
       }
-      if (this.echoHostEdits) this.#settingEcho(field);
+      this.#settingEcho(field);
     },
     [CMD.SET_GLOBAL]: (p) => {
       if (!this.#setGlobalValue(p[2], p[3], readI32(p, 6))) this.rejected.push({ payload: p.slice(), reason: "unknown global record" });
@@ -389,7 +368,7 @@ export class MockGp5 {
     },
     [CMD.DELETE_PRESET]: (p) => {
       const slot = readU32(p, 2);
-      this.slots[slot] = { name: DEVICES.gp50.emptyName, body: bodyOf(blankGp50Prst()) };
+      this.slots[slot] = { name: DEVICES.gp50.name, body: bodyOf(blankGp50Prst()) };
       if (slot === this.current) this.#select(slot);
       this.#notifyList(2);
     },
@@ -441,7 +420,7 @@ export class MockGp5 {
     const r = this.globalRecords.find((x) => x[0] === a && x[1] === b);
     if (!r) return false;
     r[3] = value;
-    if (this.echoHostEdits) this.#reply([KIND.SET, CMD.SET_GLOBAL, a, b, 4, 0, ...u32le(value)]);
+    this.#reply([KIND.SET, CMD.SET_GLOBAL, a, b, 4, 0, ...u32le(value)]);
     return true;
   }
 
@@ -494,12 +473,13 @@ export class MockGp5 {
   }
 
   /**
-   * GP-50 footswitch "A" | "B" | "AB": A+B toggles the tuner, a long A taps tempo; otherwise Patch mode steps the
-   * preset (A down, B up) and Stomp mode toggles the switch's blocks (all on unless all are on), with 0x49 echoes.
+   * GP-50 footswitch "A" | "B" | "AB": A+B (tuner) is accepted and ignored, a long A taps tempo; otherwise Patch mode
+   * steps the preset (A down, B up) and Stomp mode toggles the switch's blocks (all on unless all are on), with 0x49
+   * echoes.
    */
   pressFootswitch(which, { long = false } = {}) {
     if (!this.gp50) throw new Error("pressFootswitch simulates the GP-50 footswitches");
-    if (which === "AB") return void (this.tuner = !this.tuner);
+    if (which === "AB") return;
     if (which === "A" && long) return this.tap();
     if (which !== "A" && which !== "B") throw new RangeError(`footswitch must be "A", "B" or "AB", got ${which}`);
     if (this.#globalValue(1, 6) === 1) return this.#toggleFootswitchBlocks(which === "A" ? 0 : 1);
@@ -527,18 +507,17 @@ export class MockGp5 {
   }
 
   /**
-   * GP-50 EXP pedal at `position` 0..100. With EXP on: target VOL scales expVolume between volMin..volMax; any other
-   * target sets its param between paramMin..paramMax % of the param range and echoes it as 0x48.
+   * GP-50 EXP pedal at `position` 0..100. With EXP on, a target other than VOL sets its param between
+   * paramMin..paramMax % of the param range and echoes it as 0x48 (the VOL target changes no patch data).
    */
   setExp(position) {
     if (!this.gp50) throw new Error("setExp simulates the GP-50 EXP pedal");
-    this.expPosition = clamp(position, 0, 100);
     const p = parsePrst(this.#prst());
     const exp = p.settings.exp;
     if (!exp.on) return;
-    const lerp = (lo, hi) => lo + ((hi - lo) * this.expPosition) / 100;
     const block = expTargetBlock(exp.targetModule);
-    if (block === null) return void (this.expVolume = lerp(exp.volMin, exp.volMax));
+    if (block === null) return;
+    const lerp = (lo, hi) => lo + ((hi - lo) * clamp(position, 0, 100)) / 100;
     const param = modelByFxid(p.blocks[block].fxid, "gp50")?.params[exp.targetParam];
     if (!param) return;
     const value = param.min + ((param.max - param.min) * lerp(exp.paramMin, exp.paramMax)) / 100;
@@ -552,5 +531,3 @@ function gp50Globals(firmware) {
   const rows = [[1, 1, GP50_FIRMWARE[firmware]], ...GP50_GLOBALS, ...(firmware === "1.1.0" ? GP50_110_GLOBALS : [])];
   return rows.map(([a, b, v]) => [a, b, 4, v]);
 }
-
-export { BODY_OFF };

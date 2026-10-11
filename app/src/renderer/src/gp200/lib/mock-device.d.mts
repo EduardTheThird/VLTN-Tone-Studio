@@ -19,15 +19,12 @@ export interface MockGp200Options {
   push1007?: boolean;
   verifyGlitch?: number;
   loseWrites?: number;
-  junkVolatile?: boolean;
   fragmentSysex?: number;
   flushAfter?: number;
   ackWaitMs?: number;
-  allowDestructive?: boolean;
   failUploads?: boolean;
   emitKnobNotify?: boolean;
   bankPolarity?: "manual" | "inverted";
-  random?: () => number;
 }
 export type MockViolation =
   | { kind: "gap"; gapMs: number }
@@ -60,7 +57,6 @@ export class MockGp200 {
   styles: string[];
   drum: { playing: boolean; rhythm: number; volume: number; bpm: number };
   exp1AB: number;
-  tuner: boolean;
   latencyMs: number;
   verifyGlitch: number;
   loseWrites: number;
@@ -68,13 +64,12 @@ export class MockGp200 {
   failUploads: boolean;
   emitKnobNotify: boolean;
   /** decoded host messages, newest last */
-  log: { cmd: number | null; header: HeaderRecord | null; records: (DecodedRecord | { kind: "footswitch"; n: number; mode: number })[] }[];
+  log: { cmd: number; header: HeaderRecord | null; records: DecodedRecord[] }[];
   violations: MockViolation[];
   transport(): Gp200Transport;
   setOutput(cb: ((bytes: Uint8Array) => void) | null): void;
   receive(bytes: Bytes): void;
   pressPreset(slot: number): void;
-  pressFootswitch(n: number): void;
   turnKnob(block: number, paramId: number, value: number): void;
   toggleBlock(block: number, on?: boolean): void;
   tapTempo(bpm: number): void;

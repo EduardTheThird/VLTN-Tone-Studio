@@ -5,7 +5,6 @@ export const IMAGE_SIZE: 1168;
 export const IMAGE_SIZE_4CTRL: 1120;
 export const PRST_SIZE: 1224;
 export const PRST_SIZE_4CTRL: 1176;
-export const PARAM_COUNT: 15;
 export const EXP_SLOTS: 9;
 export const QA_KNOBS: 3;
 export const CTRL_COUNT: 8;

@@ -5,6 +5,7 @@
 // presets and catalog are never bundled (pass `images` or a `catalog` built from the user's algorithm.xml).
 
 import {
+  ADDRESS,
   BLOCKS,
   CHUNK,
   CMD,
@@ -12,12 +13,15 @@ import {
   DEVICE_TYPES,
   GLOBALS,
   GLOBAL_EQ_BANDS,
+  PARAM_COUNT,
   PATCH_SETTING,
   REC,
   Reassembler,
   SELECT_ID,
+  SNAPTONE_FIELD,
   STATUS,
   STYLE_COUNT,
+  SYSEX_ID,
   SysexAssembler,
   USER_IR,
   byteSum,
@@ -28,6 +32,8 @@ import {
   encodeFrames,
   encodeGlobals,
   globalNameById,
+  readU16,
+  readU32,
   rec,
   slotLabel,
   readAscii,
@@ -78,10 +84,9 @@ export class MockGp200 {
    *   images?: (image | .prst)[] seeding slots 0.. (others generated), catalog? (params of generated patches),
    *   latencyMs = 1, minGapMs = 10, deafMs = 800, push1007 = true, verifyGlitch = 0 (probability of a corrupt byte
    *   at file offset 0x9F in stored reads after a write), loseWrites = 0 (next N full writes are lost),
-   *   junkVolatile = false, fragmentSysex = 0 (deliver frames in pieces of N bytes), flushAfter = 0 (emit CMD 0x03
+   *   fragmentSysex = 0 (deliver frames in pieces of N bytes), flushAfter = 0 (emit CMD 0x03
    *   after N host frames), ackWaitMs = 200 (chunk gaps above this flag a host waiting for ACKs),
-   *   allowDestructive = false, failUploads = false, emitKnobNotify = false, bankPolarity = "manual" | "inverted",
-   *   random = Math.random }
+   *   failUploads = false, emitKnobNotify = false, bankPolarity = "manual" | "inverted" }
    */
   constructor({
     type = "gp200",
@@ -95,15 +100,12 @@ export class MockGp200 {
     push1007 = true,
     verifyGlitch = 0,
     loseWrites = 0,
-    junkVolatile = false,
     fragmentSysex = 0,
     flushAfter = 0,
     ackWaitMs = 200,
-    allowDestructive = false,
     failUploads = false,
     emitKnobNotify = false,
     bankPolarity = "manual",
-    random = Math.random,
   } = {}) {
     const dev = typeof type === "number" ? DEVICE_TYPES[type] : deviceByKey(type);
     if (!dev) throw new Error(`MockGp200: unknown type ${type}; use gp200, gp200lt or gp200jr`);
@@ -123,18 +125,14 @@ export class MockGp200 {
     this.userIr = Array.from({ length: USER_IR.SLOTS }, (_, i) => ({ name: `User IR ${i + 1}`, sum: 0, data: null }));
     this.snapTone = Array.from({ length: SNAPTONE.SLOTS }, (_, i) => ({ name: `SnapTone ${i + 1}`, sum: 0, data: null }));
     this.styles = Array.from({ length: STYLE_COUNT }, (_, i) => STYLES[i % STYLES.length]);
-    this.fsFunctions = new Map(); // `${fsMode}:${record}` -> function code
     this.drum = { playing: false, rhythm: 0, volume: 50, bpm: 120 };
     this.exp1AB = 0;
-    this.tuner = false;
     this.pendingMoves = [];
-    Object.assign(this, { latencyMs, minGapMs, deafMs, push1007, verifyGlitch, loseWrites, junkVolatile, fragmentSysex, flushAfter, ackWaitMs });
-    Object.assign(this, { allowDestructive, failUploads, emitKnobNotify, bankPolarity });
+    Object.assign(this, { latencyMs, minGapMs, deafMs, push1007, verifyGlitch, loseWrites, fragmentSysex, flushAfter, ackWaitMs });
+    Object.assign(this, { failUploads, emitKnobNotify, bankPolarity });
     this.log = []; // decoded host messages { cmd, records, header }, newest last
     this.violations = []; // { kind: "gap" | "deaf" | "danger" | "ackWait" | "hostBug", ... }
-    this.#random = random;
   }
-  #random;
   #listener = null;
   #sysex = new SysexAssembler();
   #reasm = new Reassembler({ shortChunkEnds: CHUNK.HOST });
@@ -210,12 +208,12 @@ export class MockGp200 {
     this.#lastChunkAt = now;
     if (this.flushAfter > 0 && ++this.#framesSeen >= this.flushAfter) {
       this.flushAfter = 0;
-      this.#emit(Uint8Array.from([0xf0, 0x21, 0x25, 0x7e, 0x47, 0x50, 0x2d, 0x32, CMD.FLUSH, 0, 0, 0, 0, 0xf7]));
+      this.#emit(Uint8Array.from([...SYSEX_ID, CMD.FLUSH, 0, 0, 0, 0, 0xf7]));
     }
   }
 
   #softwareState() {
-    this.#emit(Uint8Array.from([0xf0, 0x21, 0x25, 0x7e, 0x47, 0x50, 0x2d, 0x32, CMD.SET, 0x12, 0, 0, 0, this.state, this.type, 0xf7]));
+    this.#emit(encodeFrames({ cmd: CMD.SET, address: ADDRESS.SOFTWARE_STATE, data: [this.state, this.type] })[0]);
     if (this.state === 1 && this.push1007) this.#pushGlobals();
   }
 
@@ -246,28 +244,21 @@ export class MockGp200 {
       this.violations.push({ kind: "hostBug", what: `edit-buffer header names slot ${b}, current is ${this.current}` });
       return;
     }
-    if (cmd === CMD.QUERY && kinds.includes("read")) return this.#reply(rec.header(0, this.current), this.#readImage(this.editBuffer));
+    if (cmd === CMD.QUERY && kinds.includes("read")) return this.#reply(rec.header(0, this.current), this.editBuffer.slice());
     if (cmd === CMD.SET) this.#applyEdits(m.records);
-  }
-
-  #readImage(image) {
-    const out = image.slice();
-    if (!this.junkVolatile) return out;
-    for (const r of walkTlv(out)) if (r.type === REC.CTRL) [2, 3, 6, 7].forEach((o) => (out[r.offset + 4 + o] = Math.floor(this.#random() * 256)));
-    return out;
   }
 
   #readStored(slot) {
     if (slot >= this.slotCount) return;
-    const image = this.#readImage(this.slots[slot]);
-    if (this.#writtenSlots.has(slot) && this.#random() < this.verifyGlitch) image[0x9f - 0x30] ^= 0x5a; // file 0x9F (DP HW)
+    const image = this.slots[slot].slice();
+    if (this.#writtenSlots.has(slot) && Math.random() < this.verifyGlitch) image[0x9f - 0x30] ^= 0x5a; // file 0x9F (DP HW)
     this.#reply(rec.header(1, slot), image);
   }
 
   #fullWrite(slot, m, payload) {
     this.#deafUntil = Date.now() + this.deafMs;
     const pre = walkTlv(payload.subarray(0, FULL_WRITE_PREAMBLE));
-    if (slot >= this.slotCount || pre[1]?.type !== REC.READ || pre[1].data[0] + (pre[1].data[1] << 8) !== slot) {
+    if (slot >= this.slotCount || pre[1]?.type !== REC.READ || readU16(pre[1].data, 0) !== slot) {
       this.violations.push({ kind: "hostBug", what: `full write with an invalid preamble for slot ${slot}` });
       return;
     }
@@ -319,7 +310,7 @@ export class MockGp200 {
       case "blockEnabled":
         return { blocks: { [r.block]: { enabled: r.enabled } } };
       case "model": // the old model's params are not kept: the host sends the new ones after this record
-        return { blocks: { [r.block]: { fxid: r.fxid, params: this.catalog ? defaultParams(this.catalog, r.fxid, r.block) : new Array(15).fill(0) } } };
+        return { blocks: { [r.block]: { fxid: r.fxid, params: this.catalog ? defaultParams(this.catalog, r.fxid, r.block) : new Array(PARAM_COUNT).fill(0) } } };
       case "chain":
         return { chain: { order: r.order, sendPos: r.sendPos, returnPos: r.returnPos } };
       case "patchSetting":
@@ -352,7 +343,7 @@ export class MockGp200 {
 
   #system(cmd, r) {
     const d = r.data;
-    const u16 = (o) => d[o] | (d[o + 1] << 8);
+    const u16 = (o) => readU16(d, o);
     switch (r.type) {
       case REC.FIRMWARE_JUMP:
         return this.#refuse("0x2000 firmware-jump prelude", d);
@@ -396,9 +387,6 @@ export class MockGp200 {
       case REC.SNAPTONE_RENAME:
         if (u16(0) < SNAPTONE.SLOTS) this.snapTone = this.snapTone.map((x, i) => (i === u16(0) ? { ...x, name: readName(d, 4) } : x));
         return;
-      case REC.FS_FUNCTION:
-        this.fsFunctions = new Map(this.fsFunctions).set(`${u16(0)}:${d[2]}`, d[3]);
-        return;
       case REC.MOVE:
         this.pendingMoves = [...this.pendingMoves, [u16(0), u16(2)]];
         return;
@@ -420,10 +408,7 @@ export class MockGp200 {
 
   #systemValue(id, value) {
     if (id === SELECT_ID) return this.#select(value & 0xffff, true);
-    if (DESTRUCTIVE_GLOBAL_IDS.includes(id) && !this.allowDestructive) return this.#refuse(`destructive 0x1008 id 0x${id.toString(16)}`, rec.system(id, value));
-    // value = (u16) slot or fxid; the low bits name the slot
-    if (id === 0x17 && value < USER_IR.SLOTS) this.userIr = this.userIr.map((x, i) => (i === value ? { name: `User IR ${i + 1}`, sum: 0, data: null } : x));
-    if (id === 0x29) this.snapTone = this.snapTone.map((x, i) => (i === (value & 0xff) ? { name: `SnapTone ${i + 1}`, sum: 0, data: null } : x));
+    if (DESTRUCTIVE_GLOBAL_IDS.includes(id)) return this.#refuse(`destructive 0x1008 id 0x${id.toString(16)}`, rec.system(id, value));
     const name = globalNameById(id);
     if (name === "exp1AB") this.exp1AB = value;
     else if (name) this.globals = { ...this.globals, [name]: value };
@@ -450,8 +435,8 @@ export class MockGp200 {
   }
 
   #irUpload(d) {
-    const slot = d[0] | (d[1] << 8);
-    const sum = (d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24)) >>> 0;
+    const slot = readU16(d, 0);
+    const sum = readU32(d, 4);
     const pcm = d.slice(24);
     const ok = slot < USER_IR.SLOTS && pcm.length === USER_IR.DATA_BYTES && byteSum(pcm) === sum && !this.failUploads;
     if (ok) this.userIr = this.userIr.map((x, i) => (i === slot ? { name: readName(d, 8), sum, data: pcm } : x));
@@ -459,11 +444,11 @@ export class MockGp200 {
   }
 
   #snapToneUpload(d) {
-    const slot = d[0] | (d[1] << 8);
-    const sum = (d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24)) >>> 0;
+    const slot = readU16(d, 0);
+    const sum = readU32(d, 4);
     const field = d.slice(24);
     const blob = field.slice(0, SNAPTONE.BLOB_SIZE);
-    const ok = slot < SNAPTONE.SLOTS && field.length === 0x2000 && byteSum(field) === sum && checkGp200SnapTone(blob) === null && !this.failUploads;
+    const ok = slot < SNAPTONE.SLOTS && field.length === SNAPTONE_FIELD && byteSum(field) === sum && checkGp200SnapTone(blob) === null && !this.failUploads;
     if (ok) this.snapTone = this.snapTone.map((x, i) => (i === slot ? { name: readName(d, 8), sum, data: blob } : x));
     this.#reply(rec.uploadResult(REC.SNAPTONE_RESULT, slot, ok ? 1 : 0));
   }
@@ -490,7 +475,6 @@ export class MockGp200 {
     else if (d1 === 7) this.#setBuffer({ volume: Math.round((d2 * 100) / 127) });
     else if (d1 in BLOCK_CC) this.toggleBlock(BLOCK_CC[d1], d2 >= 64);
     else if (CTRL_CC.includes(d1)) this.#toggleCtrl(CTRL_CC.indexOf(d1));
-    else if (d1 === 58) this.tuner = d2 >= 64;
     else if (d1 === 73) this.#tempoHi = d2;
     else if (d1 === 74 && this.#tempoHi !== null) this.tapTempo(this.#tempoHi * 128 + d2);
   }
@@ -512,17 +496,6 @@ export class MockGp200 {
   /** Footswitch / PC on the pedal: switch patch and notify like the real unit (0x1008 {0, slot}). */
   pressPreset(slot) {
     this.#select(slot, true);
-  }
-
-  /**
-   * Footswitch n (1-based) in the current FS mode: Preset -> patch A-D of the current bank (FS 1-4), Stomp -> toggle
-   * the blocks of CTRL n, User -> recorded in `log` only.
-   */
-  pressFootswitch(n) {
-    const mode = this.globals.fsMode;
-    if (mode === 0 && n >= 1 && n <= 4) return this.pressPreset(Math.floor(this.current / 4) * 4 + n - 1);
-    if (mode === 1) return this.#toggleCtrl(n - 1);
-    this.log.push({ cmd: null, header: null, records: [{ kind: "footswitch", n, mode }] });
   }
 
   /** Knob on the pedal: changes the edit buffer; the 0x0005 notification is behind `emitKnobNotify` (unproven on HW). */

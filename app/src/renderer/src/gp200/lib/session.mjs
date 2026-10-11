@@ -125,9 +125,6 @@ export class Gp200Session extends EventTarget {
   get slotCount() {
     return DEVICE_TYPES[this.#deviceType]?.slots ?? 256;
   }
-  slotLabel(slot) {
-    return slotLabel(slot);
-  }
 
   // ------------------------------------------------------------------------------------------- receive
 
@@ -277,10 +274,6 @@ export class Gp200Session extends EventTarget {
     }
   }
 
-  query(msg, match, what) {
-    return this.exclusive(() => this.#query(msg, match, what));
-  }
-
   /** Send a host message (paced, guarded); no reply is awaited. */
   send(msg) {
     return this.exclusive(() => this.#sendMessage(msg));
@@ -370,9 +363,9 @@ export class Gp200Session extends EventTarget {
     return { slot, label: slotLabel(slot), name: parsePatch(image).name, image, prst: buildPrst(image) };
   }
 
-  /** Read every slot (or `slots`): [{ slot, label, name, image, prst }]. Reads stored slots: nothing is selected. */
-  async backupAll({ onProgress, slots } = {}) {
-    const wanted = slots ?? Array.from({ length: this.slotCount }, (_, i) => i);
+  /** Read every slot: [{ slot, label, name, image, prst }]. Reads stored slots: nothing is selected. */
+  async backupAll({ onProgress } = {}) {
+    const wanted = Array.from({ length: this.slotCount }, (_, i) => i);
     const out = [];
     for (const slot of wanted) {
       const entry = await this.readPreset(slot);
@@ -508,18 +501,9 @@ export class Gp200Session extends EventTarget {
   setTempo(bpm) {
     return this.setPatchSetting(PATCH_SETTING.TEMPO, bpm);
   }
-  setPan(v) {
-    return this.setPatchSetting(PATCH_SETTING.PAN, v);
-  }
   /** Name of the edit buffer (live; save or write to keep it). */
   setPatchName(name) {
     return this.#edit((cur) => encode.patchName(cur, sanitizeName(name)));
-  }
-  setAuthor(text) {
-    return this.#edit((cur) => encode.author(cur, sanitizeName(text)));
-  }
-  setNote(text) {
-    return this.#edit((cur) => encode.note(cur, sanitizeName(text, 40)));
   }
   /** EXP slot { key (exp << 4 | para), block (0xFF none), param, max, min }. */
   setExp(slotDef) {
@@ -536,9 +520,6 @@ export class Gp200Session extends EventTarget {
   setQuickAccess(index, block, param) {
     return this.#edit((cur) => encode.quickAccess(cur, index, block, param));
   }
-  focusBlock(block) {
-    return this.#edit((cur) => encode.focus(cur, blockOf(block)));
-  }
 
   /** Global by name (protocol GLOBALS). Destructive ids are not reachable from here. */
   setGlobal(name, value) {
@@ -553,13 +534,6 @@ export class Gp200Session extends EventTarget {
   setGlobalEq(index, value) {
     if (!Number.isInteger(index) || index < 0 || index > 30) throw new RangeError(`global EQ index must be 0..30, got ${index}`);
     return this.send(encode.globalEq(index, value));
-  }
-  setDrumPlaying(on) {
-    return this.send(encode.drumPlay(on));
-  }
-  /** Drum setting (protocol DRUM): rhythm, volume, BPM. */
-  setDrum(id, value) {
-    return this.send(encode.drum(id, value));
   }
 
   // ------------------------------------------------------------------------------------------- persistent writes
@@ -690,5 +664,3 @@ export class Gp200Session extends EventTarget {
     });
   }
 }
-
-export { slotLabel };

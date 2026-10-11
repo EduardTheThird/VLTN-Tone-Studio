@@ -6,7 +6,6 @@ import {
   REC,
   Reassembler,
   SysexAssembler,
-  assertSafeFrame,
   dangerOf,
   dangerOfMessage,
   decodeFrame,
@@ -167,10 +166,7 @@ test("full write: preamble + image with the slot set, LEN 1184, the RE frame hea
 test("danger guard: the firmware jump, updater frames, destructive ids and 0x1007 writes never pass", () => {
   const [jumpPrelude, jump] = VECTORS.DANGER_firmware_jump_do_not_send.frames;
   assert.equal(hex(encodeFrames(set(tlv(REC.FIRMWARE_JUMP)))[0]), jumpPrelude);
-  for (const f of [jumpPrelude, jump, ...VECTORS.ir_delete_slot0.frames, ...VECTORS.snaptone_delete_slot5.frames]) {
-    assert.ok(dangerOf(fromHex(f)), f);
-    assert.throws(() => assertSafeFrame(fromHex(f)), { code: "unsafe" });
-  }
+  for (const f of [jumpPrelude, jump, ...VECTORS.ir_delete_slot0.frames, ...VECTORS.snaptone_delete_slot5.frames]) assert.ok(dangerOf(fromHex(f)), f);
   assert.ok(dangerOf([0xf0, 0x7e, 0x48, 0x01, 0xf7]));
   assert.ok(dangerOfMessage(set(rec.system(0x27, 0))));
   assert.ok(dangerOfMessage(set(rec.globals(new Uint8Array(72)))));
