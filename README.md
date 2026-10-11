@@ -2,10 +2,22 @@
 
 <br>
 
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=social" alt="Star VLTN Tone Studio on GitHub"></a>
+
+<br>
+
 # VLTN Tone Studio
 
 A desktop editor and librarian for the Valeton GP-5 and GP-50.<br>
 Shape tones live, sort and back up all 100 slots, and bring in NAM captures from TONE3000.
+
+<br>
+
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/latest"><img src="https://img.shields.io/github/v/release/grzmol/VLTN-Tone-Studio?style=flat-square&label=release&color=4c8eda" alt="Latest release"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases"><img src="https://img.shields.io/github/downloads/grzmol/VLTN-Tone-Studio/total?style=flat-square&label=downloads&color=2ea043" alt="Total downloads"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/grzmol/VLTN-Tone-Studio/release.yml?style=flat-square&label=build" alt="Release build status"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/commits"><img src="https://img.shields.io/github/last-commit/grzmol/VLTN-Tone-Studio?style=flat-square&label=updated" alt="Last commit"></a>
+<img src="https://img.shields.io/badge/NAM-TONE3000-8a2be2?style=flat-square" alt="NAM captures from TONE3000">
 
 <br>
 
@@ -14,7 +26,16 @@ Shape tones live, sort and back up all 100 slots, and bring in NAM captures from
 <br>
 <br>
 
-**macOS** &nbsp;·&nbsp; **Windows** &nbsp;·&nbsp; **Linux** &nbsp;·&nbsp; **Chrome & Edge**
+### Download v0.4.0
+
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.4.0/vltn-tone-studio-0.4.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.4.0/vltn-tone-studio-0.4.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.4.0/vltn-tone-studio-0.4.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<br>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.4.0/vltn-tone-studio-0.4.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.4.0/vltn-tone-studio-0.4.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+
+<sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
 <br>
 
@@ -289,11 +310,22 @@ npm run dev        # desktop app
 npm run web        # in the browser at http://localhost:5790
 ```
 
-Installers for macOS, Windows and Linux are on the [Releases](https://github.com/grzmol/VLTN-Tone-Studio/releases) page. When a new version is out, the app asks at launch whether to download and install it. The Windows installer and the AppImage update in place. On macOS and with the `.deb`, the app opens the release page for you to download it.
+Download links for the current version are [at the top](#download-v040); older versions are on the [Releases](https://github.com/grzmol/VLTN-Tone-Studio/releases) page. When a new version is out, the app asks at launch whether to download and install it. The Windows installer and the AppImage update in place. On macOS and with the `.deb`, the app opens the release page for you to download it.
 
 No pedal? Open `http://localhost:5790/?mock` for a simulated GP-5, or `?mock=gp50` for a simulated GP-50, each loaded with a full 100-slot backup.
 
 All commands and the code layout are in [`app/README.md`](app/README.md).
+
+<div align="center">
+
+<br>
+
+**Like it?** A ⭐ on [GitHub](https://github.com/grzmol/VLTN-Tone-Studio) helps other Valeton players find Tone Studio.<br>
+Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studio/issues).
+
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
+
+</div>
 
 <br>
 
