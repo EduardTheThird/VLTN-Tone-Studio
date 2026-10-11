@@ -40,6 +40,8 @@ Shape tones live, sort and back up all 100 slots, and bring in NAM captures from
 **Like it?** A ⭐ on [GitHub](https://github.com/grzmol/VLTN-Tone-Studio) helps other Valeton players find Tone Studio.<br>
 Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studio/issues).
 
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
+
 <br>
 
 </div>
@@ -318,16 +320,6 @@ Download links for the current version are [at the top](#download-v040); older v
 No pedal? Open `http://localhost:5790/?mock` for a simulated GP-5, or `?mock=gp50` for a simulated GP-50, each loaded with a full 100-slot backup.
 
 All commands and the code layout are in [`app/README.md`](app/README.md).
-
-<div align="center">
-
-<br>
-
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
-
-</div>
-
-<br>
 
 <div align="center">
 
