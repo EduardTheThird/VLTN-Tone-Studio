@@ -208,6 +208,8 @@ export interface TonesApi {
   prepareSnapTone(req: SendRequest): Promise<SnapToneSource>;
   /** Bytes of a .wav opened from the OS by path (no TONE3000 link). Desktop only. */
   readLocalIr(path: string): Promise<Uint8Array>;
+  /** Text of a .nam opened from the OS by path, for a SnapTone (no TONE3000 link). Desktop only. */
+  readLocalNam(path: string): Promise<string>;
   /** Bytes of a downloaded IR tone's WAV (no download, no record change); not-found when nothing is on disk. */
   readIr(toneId: number): Promise<Uint8Array>;
   /** Link a tone to a pedal slot (null unlinks). Local metadata only; nothing is written to the pedal. */

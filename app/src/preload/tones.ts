@@ -18,6 +18,7 @@ export const tonesApi: TonesApi = {
   prepareIr: (req) => invoke("tones:prepareIr", req),
   prepareSnapTone: (req) => invoke("tones:prepareSnapTone", req),
   readLocalIr: (path) => invoke("tones:readLocalIr", path),
+  readLocalNam: (path) => invoke("tones:readLocalNam", path),
   readIr: (toneId) => invoke("tones:readIr", toneId),
   link: (toneId, link) => invoke("tones:link", toneId, link),
   local: () => invoke("tones:local"),
