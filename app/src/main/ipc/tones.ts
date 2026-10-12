@@ -29,6 +29,8 @@ const LIST_TTL = 10 * 60_000;
 const APP_KEY = /^[\x21-\x7e]{1,256}$/;
 /** Opened WAVs are read whole; real IRs are a few hundred KB, so anything this big isn't one. */
 const MAX_LOCAL_IR = 64 * 1024 * 1024;
+/** Opened .nam files are read whole; real captures are a few hundred KB (the capture editor's limit). */
+const MAX_LOCAL_NAM = 64 * 1024 * 1024;
 
 const userData = () => app.getPath("userData");
 const tonesDir = () => join(userData(), "tones");
@@ -306,6 +308,14 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
     if (size === undefined) throw new HostError("not-found", `${basename(path)} isn't there anymore`);
     if (size > MAX_LOCAL_IR) throw new HostError("invalid", `${basename(path)} is too large for an impulse response`);
     return new Uint8Array(await readFile(path));
+  });
+  // A .nam opened from the OS by path while Tones is showing; the renderer checks and converts it.
+  handle("tones:readLocalNam", async (_e, path: unknown) => {
+    if (typeof path !== "string" || extname(path).toLowerCase() !== ".nam") throw new HostError("invalid", "Only .nam files can become a SnapTone");
+    const size = (await stat(path).catch(() => null))?.size;
+    if (size === undefined) throw new HostError("not-found", `${basename(path)} isn't there anymore`);
+    if (size > MAX_LOCAL_NAM) throw new HostError("invalid", `${basename(path)} is too large to be a NAM capture`);
+    return readFile(path, "utf8");
   });
   handle("tones:readIr", (_e, toneId: number) => readIr(toneId));
   handle("tones:link", (_e, toneId: number, link: SlotLink | null) => updateRecord(toneId, (r) => linkRecord(r, link, new Date())));

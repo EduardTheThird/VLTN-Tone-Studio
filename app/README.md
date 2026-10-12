@@ -79,6 +79,10 @@ Electron is pinned to 43.x because Chromium 152 (Electron 44) breaks WebMIDI Sys
 - `htkpa.ts`: port of Suite's native HTKPA clone and its r8brain resampler. The tests check the whole pipeline against clones made by Suite itself (`gp5/fixtures/snaptone-a1std.clo`, `gp5/fixtures/snaptone-a2.clo`).
 - `worker.ts` / `convert.ts`: run it off the UI thread (about 10–20 s).
 - The upload is `Gp5Session.uploadSnapTone` (`gp5/lib/snaptone.mjs`): command `11 25`, 146 frames, one ACK each, verified in the 0x24 table.
+- Entry points, each ending in a slot picker and a Write button (that press is the confirmation; an occupied slot shows what it replaces):
+  - Tones › a TONE3000 NAM tone (`SnapToneSteps`; the slot is linked to the tone);
+  - Tones › *Add NAM from disk…*, or a `.nam` opened or dropped while Tones is showing (`LocalNamDialog`; main `tones:readLocalNam` reads a file opened by path; nothing is linked);
+  - the capture editor's *Write it to the pedal* for a file opened there (`LocalSend`). A `.nam` opened on any other screen opens the capture editor.
 
 `nam_input_wav.wav` is Valeton's test signal, so it isn't in the repo or in published builds. When it sits in `src/renderer/src/snaptone/fixtures/` (git-ignored), `npm run dev` and local `npm run dist` builds use it automatically (electron-builder `extraResources`; CI checkouts don't have it). Otherwise the app asks for it once ("Choose nam_input_wav.wav…" in the send steps); on Windows and macOS it is also picked up from the Valeton Suite install (Settings › Valeton Suite, hidden on Linux where it has no use). Either way main keeps a checked copy in `userData/snaptone/` (`src/main/ipc/snaptone.ts`). The browser build keeps it in memory. The same fixture copy runs the comparison tests; without it those tests are skipped.
 

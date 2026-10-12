@@ -36,6 +36,7 @@ import { CreatorAvatar, DiscoverCard, ToneCard, ToneCardSkeleton } from "./ToneC
 import { SlotPanel } from "./SlotPanel";
 import { ToneSheet } from "./ToneSheet";
 import { FlowDialog, LinkDialog, LocalIrDialog, SplashDialog } from "./T3kDialogs";
+import { LocalNamDialog } from "./LocalNamDialog";
 
 const TAB_LABEL: Record<ToneListKind, string> = { favorited: "Favorites", created: "Created", downloaded: "Downloaded", trending: "Trending", latest: "Latest" };
 const EMPTY_COPY: Record<ToneListKind, { text: string; browse: boolean }> = {
@@ -66,6 +67,7 @@ export function TonesScreen() {
   const device = useDevice((s) => s.device);
   const param = useNav((s) => s.param);
   const [localIr, setLocalIr] = useState<OpenFile | null>(null);
+  const [localNam, setLocalNam] = useState<OpenFile | null>(null);
   const signedIn = account?.status === "signed-in";
 
   useEffect(() => {
@@ -99,6 +101,8 @@ export function TonesScreen() {
   useCommand("browse-tone3000", browseOrLinkOut);
   // A .wav opened or dropped anywhere goes to a User IR slot (Song takes it while Song is showing).
   useFileHandler("wav", (files) => setLocalIr(files[0] ?? null));
+  // A .nam opened or dropped while Tones is showing becomes a SnapTone here (elsewhere it opens the capture editor).
+  useFileHandler("nam", (files) => setLocalNam(files[0] ?? null));
   useStatusHints(HINTS);
   useShortcuts();
 
@@ -108,12 +112,13 @@ export function TonesScreen() {
         <Head />
         <ToneLists />
       </section>
-      <SlotPanel />
+      <SlotPanel onAddNam={setLocalNam} />
       <ToneSheet />
       <SplashDialog />
       <FlowDialog />
       <LinkDialog />
       <LocalIrDialog file={localIr} onClose={() => setLocalIr(null)} />
+      <LocalNamDialog file={localNam} onClose={() => setLocalNam(null)} />
     </div>
   );
 }
