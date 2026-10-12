@@ -4,7 +4,8 @@ import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { isChecksumValid } from "@/gp200/lib/prst.mjs";
 import { orderError, toPresetState } from "@/state/preset-codec";
 import { profileFor } from "@shared/devices";
-import { INIT_NAME, clearSteps, copySteps, gp200InitPatch, moveSteps, slotsToRead, swapSteps } from "./plans";
+import { NONE_FXID } from "@/gp150/lib/protocol.mjs";
+import { INIT_NAME, clearSteps, copySteps, initPatch, moveSteps, slotsToRead, swapSteps } from "./plans";
 
 // A GP-5's 100 slots.
 const SLOTS = 100;
@@ -65,7 +66,7 @@ describe("copy, swap, clear", () => {
   });
 });
 
-describe("gp200InitPatch", () => {
+describe("initPatch", () => {
   // Synthetic catalog in the editor's format (written for this test; not Valeton data): two models per block, the
   // second one first in the editor's list.
   const blocks = profileFor("gp200").blocks;
@@ -85,7 +86,7 @@ describe("gp200InitPatch", () => {
   const catalog = buildCatalogFromXml(xml);
 
   it("puts the first model of every block in, at its defaults, every block off, named INIT", () => {
-    const prst = gp200InitPatch("gp200", catalog);
+    const prst = initPatch("gp200", catalog);
     expect(isChecksumValid(prst)).toBe(true);
     const p = toPresetState(0, prst, "gp200", catalog);
     expect(p.name).toBe(INIT_NAME);
@@ -95,13 +96,22 @@ describe("gp200InitPatch", () => {
 
   it("needs a model for every block: a GP-200 patch has one in each", () => {
     const noVol = buildCatalogFromXml(xml.replace(/<Catalog Name = "VOL">[\s\S]*?<\/Catalog>/, ""));
-    expect(() => gp200InitPatch("gp200", noVol)).toThrow(/no VOL model/);
+    expect(() => initPatch("gp200", noVol)).toThrow(/no VOL model/);
   });
 
   it("works with the built-in effect list on every GP-200 model", () => {
     for (const device of ["gp200", "gp200lt", "gp200jr"] as const) {
-      const p = toPresetState(0, gp200InitPatch(device, BUILT_IN_CATALOG), device, BUILT_IN_CATALOG);
+      const p = toPresetState(0, initPatch(device, BUILT_IN_CATALOG), device, BUILT_IN_CATALOG);
       expect(p.blocks.every((b) => b.model !== undefined && !b.enabled)).toBe(true);
     }
+  });
+
+  it("gives a GP-150 a GP-150 preset: every module empty (VOL on), a valid chain, named INIT", () => {
+    const p = toPresetState(0, initPatch("gp150"), "gp150");
+    expect(p.device).toBe("gp150");
+    expect(p.name).toBe(INIT_NAME);
+    expect(orderError("gp150", p.order)).toBeNull();
+    expect(p.blocks.every((b) => b.fxid === NONE_FXID && b.model !== undefined)).toBe(true);
+    expect(p.blocks.filter((b) => b.enabled).map((b) => b.code)).toEqual(["VOL"]);
   });
 });

@@ -10,7 +10,7 @@ import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { summarize, type PresetSummary, type SummaryBlock } from "@/components/write/preset-summary";
 import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
-import { isGp5Family, profileOrDefault, slotNameError, switchLabel } from "@/state/device-model";
+import { isGp5Family, profileOrDefault, slotNameError, snapToneReplacesAmpCab, switchLabel } from "@/state/device-model";
 import { EXP_TARGETS } from "@/gp5/lib/protocol.mjs";
 import { PRST_MODELS, profileFor } from "@shared/devices";
 import type { LocalPreset } from "@shared/host/files";
@@ -427,7 +427,7 @@ function ChainPreview({ s }: { s: PresetSummary }) {
   const seq = s.order.length === codes.length ? s.order : gp5 ? [0, 1, 2, 9, 3, 4, 5, 6, 7, 8] : codes.map((_, i) => i);
   // The GP-5 family's fixed core (DST NS AMP CAB EQ) is framed; the GP-200 family has none
   const start = gp5 ? seq.findIndex((i) => CORE.includes(i)) : seq.length;
-  const nsOn = !!s.blocks[codes.indexOf("NS")]?.enabled;
+  const nsOn = snapToneReplacesAmpCab(s.device) && !!s.blocks[codes.indexOf("NS")]?.enabled;
   const replacedByNs = [codes.indexOf("AMP"), codes.indexOf("CAB")];
   const row = (i: number) => <ChainRow key={i} b={s.blocks[i]} replaced={nsOn && replacedByNs.includes(i)} />;
   return (

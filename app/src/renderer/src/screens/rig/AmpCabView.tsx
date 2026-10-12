@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
+import { snapToneReplacesAmpCab } from "@/state/device-model";
 import type { PresetState } from "@/state/device-types";
 import { editEnabled, editParam } from "./edits";
 import { ampCab } from "./order";
@@ -18,10 +19,10 @@ import { snapToneName } from "./snaptone";
 const sentence = (t?: string) => (t ? t.charAt(0) + t.slice(1).toLowerCase() : "");
 
 /** Amp head and cabinet side by side on the stage backdrop. */
-/** NS index and state: on the GP-5 family an engaged NS replaces the amp and cab; the GP-200 family has no NS block. */
+/** NS index and state: on the GP-5 family an engaged NS replaces the amp and cab (the GP-200 family has no NS block, the GP-150's plays in series). */
 function nsOf(preset: PresetState): { ns: number; nsOn: boolean } {
   const ns = profileFor(preset.device).blocks.indexOf("NS");
-  return { ns, nsOn: ns >= 0 && preset.blocks[ns].enabled };
+  return { ns, nsOn: ns >= 0 && snapToneReplacesAmpCab(preset.device) && preset.blocks[ns].enabled };
 }
 
 export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly: boolean }) {

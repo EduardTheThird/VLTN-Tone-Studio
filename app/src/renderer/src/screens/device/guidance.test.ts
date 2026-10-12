@@ -3,6 +3,9 @@ import type { DeviceHostStatus } from "@shared/host/device";
 import type { ConnectionErrorCode } from "@/state/device-types";
 import { refineConnectionError, toConnectionError } from "@/state/connection-error";
 import { connectionView, diagnosticChecks, formatWhen, requestErrorLine, type Check, type GuidanceInput } from "./guidance";
+import { SUPPORTED_PEDALS } from "@/state/device-model";
+import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
+import { listNames } from "@shared/devices";
 
 const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
   checkedAt: 0,
@@ -88,7 +91,7 @@ describe("connectionView", () => {
 
   it("names the last connected model, or both models when none is known", () => {
     expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp50" }).statusText).toBe("Connecting to the GP-50");
-    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe("Connecting to the GP-5 / GP-50 / GP-200 / GP-200LT / GP-200JR");
+    expect(connectionView({ status: "connecting", error: null, mode: "webmidi", hostStatus: null, platform: "linux" }).statusText).toBe(`Connecting to the ${SUPPORTED_PEDALS}`);
   });
 
   it("names the GP-200 on the port or on USB, never the remembered GP-50", () => {
@@ -170,7 +173,7 @@ describe("connectionView", () => {
   it("unsupported model: says which pedal, sends nothing, offers Check again", () => {
     const v = connectionView({ status: "error", error: { code: "unsupported-model", message: "GP-200 support is coming in a later version of Tone Studio." }, mode: "webmidi", hostStatus: null, platform: "linux", device: "gp5" });
     expect(v).toMatchObject({ kind: "unsupported-model", led: "warn", action: "check", offline: true, detail: "GP-200 support is coming in a later version of Tone Studio." });
-    expect(v.note).toMatch(/simulated GP-5, GP-50, GP-200, GP-200LT or GP-200JR/);
+    expect(v.note).toContain(`simulated ${listNames(SUPPORTED_DEVICE_KEYS)}`);
   });
 
   it("timeout after bytes arrived = wrong device / firmware", () => {

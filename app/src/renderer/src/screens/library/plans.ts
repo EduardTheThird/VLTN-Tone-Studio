@@ -4,6 +4,7 @@
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import type { Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import { buildPrst, encodePatchImage } from "@/gp200/lib/prst.mjs";
+import { blankPrst } from "@/gp150/lib/prst.mjs";
 import { defaultParamsFor, modelsFor } from "@/state/preset-codec";
 import { profileFor, type DeviceKey } from "@shared/devices";
 
@@ -46,16 +47,17 @@ export function clearSteps(slots: number[]): Step[] {
   return slots.map((slot) => ({ slot, from: "blank" as const }));
 }
 
-/** Name of the init patch a GP-200 family slot is reset to. */
+/** Name of the init patch a slot of a pedal without empty slots (GP-200 family, GP-150) is reset to. */
 export const INIT_NAME = "INIT";
 
 /**
- * The "blank" of the GP-200 family, which has no empty slots: an init patch with the first model of every block in the
- * effect catalog at its defaults, every block off, named INIT. Written like any preset (full write, read back), not
- * with the pedal's own reset command, which hasn't been tested on hardware. Throws when the catalog lacks a block: every
- * block of a GP-200 patch holds a model.
+ * The "blank" of a pedal without empty slots, named INIT, written like any preset (full write, read back), not with a
+ * pedal's own reset command. GP-150: every module empty ("None") and off, VOL on. GP-200 family: the first model of
+ * every block in the effect catalog at its defaults, every block off; throws when the catalog lacks a block (every
+ * block of a GP-200 patch holds a model).
  */
-export function gp200InitPatch(device: DeviceKey, catalog: Gp200Catalog = useGp200Catalog.getState().catalog): Uint8Array {
+export function initPatch(device: DeviceKey, catalog: Gp200Catalog = useGp200Catalog.getState().catalog): Uint8Array {
+  if (profileFor(device).family === "gp150") return blankPrst(0, INIT_NAME);
   const blocks = profileFor(device).blocks.map((code, k) => {
     const fxid = modelsFor(device, k, catalog)[0]?.fxid;
     if (fxid === undefined) throw new Error(`The GP-200 effect list has no ${code} model, and the init patch holds a model in every block. Import the list again on the Device screen.`);

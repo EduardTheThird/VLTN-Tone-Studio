@@ -5,9 +5,11 @@ import { GP50_ONLY_FXIDS, convertPrst, parsePrst } from "@/gp5/lib/prst.mjs";
 import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protocol.mjs";
 import { encode as gp200Encode, encodeFrames } from "@/gp200/lib/protocol.mjs";
 import { imageOf, withEightCtrl } from "@/gp200/lib/prst.mjs";
+import { importPatch, packetize as gp150Packetize } from "@/gp150/lib/protocol.mjs";
 import { PRST_MODELS, deviceForPortName, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
 import { pedalOnUsb, type DeviceHostStatus, type VendorApp } from "@shared/host/device";
 import type { ConnectionStatus, DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
+import { GP150_GLOBAL_SPECS } from "./driver/gp150-globals";
 import { gp200SpecsFor } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
 
@@ -16,11 +18,13 @@ import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
  * real pedal they stay off until the user turns on "Experimental pedal commands" (app setting `gp50Extras`); the
  * simulator always has them.
  * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: the Global EQ write (0x1005, known from the
- * editor's code only); its export read and live tempo are known from hardware work.
+ * editor's code only); its export read and live tempo are known from hardware work. GP-150: every command is known
+ * from GP-180 captures of Suite itself; a real GP-150's memory stays locked by its profile (`writable`) instead.
  */
 export const EXPERIMENTAL_FEATURES: Readonly<Record<DeviceFamily, Partial<Record<DeviceFeature, true>>>> = {
   gp5: { exportPreset: true, exp: true, liveBpm: true, liveFootswitches: true, liveOrder: true, deletePreset: true, copyPreset: true, movePreset: true },
   gp200: { globalEq: true },
+  gp150: {},
 };
 
 /** Split the features of a `family` driver into the usable ones and the ones the experimental setting keeps off. */
@@ -34,10 +38,11 @@ export function writesLocked(device: DeviceKey | null, mode: DeviceMode): boolea
   return mode === "webmidi" && device !== null && !profileFor(device).writable;
 }
 
-/** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model). */
+/** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model; GP-150: gp150-globals.ts). */
 export function globalSpecsFor(device: DeviceKey | null): readonly SettingSpec[] {
   if (!device) return [];
-  return isGp5Family(device) ? Object.values(globalsFor(device) as Record<string, GlobalSpec>) : gp200SpecsFor(device);
+  if (isGp5Family(device)) return Object.values(globalsFor(device) as Record<string, GlobalSpec>);
+  return profileFor(device).family === "gp150" ? GP150_GLOBAL_SPECS : gp200SpecsFor(device);
 }
 
 /** "1.1.0" >= "1.0.5": numeric comparison of dotted versions. */
@@ -132,9 +137,13 @@ export function blockCodes(device: Gp5FamilyKey): readonly Gp5BlockCode[] {
   return profileFor(device).blocks as readonly Gp5BlockCode[];
 }
 
-/** Name of switch `index` of PresetState.footswitches on `device`: "FS1" (GP-5 family) or "CTRL 1" (GP-200 family). */
+/** An engaged NS (SnapTone) plays in place of the amp and cab: the GP-5 family. The GP-150's NS module plays in series with them. */
+export const snapToneReplacesAmpCab = (device: DeviceKey): boolean => isGp5Family(device);
+
+/** Name of switch `index` of PresetState.footswitches on `device`: "FS1" (GP-5 family), "CTRL 1" (GP-200 family), "FS A" (GP-150). */
 export function switchLabel(device: DeviceKey, index: number): string {
-  return isGp5Family(device) ? `FS${index + 1}` : `CTRL ${index + 1}`;
+  if (isGp5Family(device)) return `FS${index + 1}`;
+  return profileFor(device).family === "gp150" ? `FS ${"ABC"[index] ?? index + 1}` : `CTRL ${index + 1}`;
 }
 
 /** Model a .prst belongs to (see sniffPrst); throws when the bytes are no known preset. */
@@ -144,13 +153,15 @@ export function presetDevice(prst: Uint8Array): DeviceKey {
   return device;
 }
 
-/** SysEx frames a full write of `prst` takes (26 on the GP-5, 29 on the GP-50, 7 larger ones on the GP-200 family). */
+/** SysEx frames a full write of `prst` takes (26 on the GP-5, 29 on the GP-50, 7 larger ones on the GP-200 family, 10 on the GP-150). */
 export function writeFrameCount(prst: Uint8Array): number {
-  if (!isGp5Family(presetDevice(prst))) return encodeFrames(gp200Encode.fullWrite(0, withEightCtrl(imageOf(prst)))).length;
+  const { family } = profileFor(presetDevice(prst));
+  if (family === "gp150") return gp150Packetize(importPatch(prst), 0).length;
+  if (family === "gp200") return encodeFrames(gp200Encode.fullWrite(0, withEightCtrl(imageOf(prst)))).length;
   return packetize(encode.writePreset(0, prst)).length;
 }
 
-/** The pedal acknowledges every frame of a write (the GP-5 family does; the GP-200 family sends no ACKs). */
+/** The pedal acknowledges every frame of a write (the GP-5 family does; the GP-200 family sends no ACKs, the GP-150 one per message). */
 export const acksFrames = (device: DeviceKey): boolean => isGp5Family(device);
 
 /** Converting `from` → `to` keeps every block: the GP-50 catalog holds every GP-5 model; GP-200 family files share one format. */
