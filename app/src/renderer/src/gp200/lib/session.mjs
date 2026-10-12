@@ -259,12 +259,16 @@ export class Gp200Session extends EventTarget {
     return run;
   }
 
-  /** Send `msg` and wait for a reply matching `match`; resend on timeout (editor: 1000 ms x 3). */
+  /**
+   * Send `msg` (a host message, or a function that sends several) and wait for a reply matching `match`; resend on
+   * timeout (editor: 1000 ms x 3).
+   */
   async #query(msg, match, what, { timeoutMs = this.#timing.replyTimeoutMs, resends = this.#timing.resends } = {}) {
+    const send = typeof msg === "function" ? msg : () => this.#sendMessage(msg);
     for (let attempt = 0; ; attempt++) {
       const reply = this.#waitFor(match, timeoutMs, what);
       try {
-        await this.#sendMessage(msg);
+        await send();
         return await reply.promise;
       } catch (e) {
         reply.cancel();
@@ -294,24 +298,28 @@ export class Gp200Session extends EventTarget {
   // ------------------------------------------------------------------------------------------- connect
 
   /**
-   * Connect FSM (editor @0x1001231b0): 0x2001 query, 100 ms, SOFTWARE_STATE; state 0 = updater mode -> Gp200Error
-   * "updater" and the session sends nothing else; then wait for the pushed 0x1007 (firmware + globals + current
-   * slot), falling back to a 0x1006 state-dump request.
+   * Connect FSM (editor @0x1001231b0): 0x2001 query, 100 ms, SOFTWARE_STATE ("enter editor mode"), resent together
+   * like any query. The 0x2001 reply `{state, deviceType}` identifies the pedal; SOFTWARE_STATE has no reply in normal
+   * mode (USB captures of the editor and a GP-200 on firmware 1.8.0, phash/gp200editor), so only an update-mode answer
+   * `{0, type}` is taken from it. State 0 = updater mode -> Gp200Error "updater" and the session sends nothing else.
+   * Then wait for the pushed 0x1007 (firmware + globals + current slot), falling back to a 0x1006 state-dump request.
    */
   connect() {
     return this.exclusive(async () => {
       this.#globals = null;
-      const identity = this.#waitFor(kindIs("identity"), this.#timing.replyTimeoutMs + this.#timing.identityGapMs, "0x2001 identity");
-      await this.#sendMessage(encode.identity());
-      await sleep(this.#timing.identityGapMs);
-      const st = recordOf(await this.#query(encode.softwareState(), kindIs("softwareState"), "SOFTWARE_STATE"), "softwareState");
-      if (st.state === 0) {
-        identity.cancel();
+      const { identityGapMs, replyTimeoutMs } = this.#timing;
+      const hello = async () => {
+        await this.#sendMessage(encode.identity());
+        await sleep(identityGapMs);
+        await this.#sendMessage(encode.softwareState());
+      };
+      const answer = (m) => kindIs("identity")(m) || kindIs("softwareState", (r) => r.state === 0)(m);
+      const m = await this.#query(hello, answer, "0x2001 identity", { timeoutMs: identityGapMs + replyTimeoutMs });
+      const { state, deviceType: type } = recordOf(m, "identity") ?? recordOf(m, "softwareState");
+      if (state === 0) {
         this.#updater = true;
         throw new Gp200Error("updater", "The GP-200 is in firmware-update mode. Update or restart it with Valeton's tool, then reconnect.");
       }
-      const id = st.deviceType === null ? await identity.promise.then((m) => recordOf(m, "identity"), () => null) : (identity.cancel(), null);
-      const type = st.deviceType ?? id?.deviceType ?? this.#deviceType;
       if (!DEVICE_TYPES[type]) throw new Gp200Error("unsafe", `unknown GP-200 device type ${type}; refusing to continue`);
       this.#deviceType = type;
       if (!this.#globals) {
