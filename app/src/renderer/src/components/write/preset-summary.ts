@@ -38,7 +38,7 @@ function syncedParams(blocks: readonly SummaryBlock[]): string[] {
   );
 }
 
-const cache = new WeakMap<Uint8Array, { catalog: Gp200Catalog | null; summary: PresetSummary | null }>();
+const cache = new WeakMap<Uint8Array, { catalog: Gp200Catalog; summary: PresetSummary | null }>();
 
 /**
  * Parse once per byte array and GP-200 effect catalog (which names that family's models, so an import or removal

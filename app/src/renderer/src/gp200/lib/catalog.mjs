@@ -1,6 +1,6 @@
-// GP-200 effect catalog, built at runtime from the user's own copy of Valeton's `algorithm.xml` (the file is
-// Valeton's: never ship it or data derived from it). Pure, isomorphic ESM: no Node APIs, so the app can build the
-// catalog from a file the user picks.
+// GP-200 effect catalog, built at runtime from the user's own copy of Valeton's `algorithm.xml`, plus the lookups for
+// any catalog of this shape (the built-in one in catalog-data.mjs too). Pure, isomorphic ESM: no Node APIs, so the app
+// can build the catalog from a file the user picks.
 //
 // Semantics (editor 1.8.0 XML parser @0x1000d9de0):
 //   Alg@Code = u32 fxid (decimal) | Alg@Index = UI list position only | control@ID = param index in f32[15] and the

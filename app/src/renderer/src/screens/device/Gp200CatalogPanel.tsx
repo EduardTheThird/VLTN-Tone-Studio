@@ -21,13 +21,14 @@ const BLOCK_NAMES: Readonly<Record<string, string>> = {
 };
 
 /**
- * GP-200 effect names and knob ranges: Tone Studio may not ship Valeton's list, so it reads the user's own copy from
- * the GP-200 editor (algorithm.xml). Find it automatically (desktop), choose the file, or remove the imported list.
+ * GP-200 effect names and knob ranges: Tone Studio ships a list (from GP200 Studio). Importing the user's own copy from
+ * the GP-200 editor (algorithm.xml) adds units, Auto CAB Match and exact menu values. Find it automatically (desktop),
+ * choose the file, or remove the import to go back to the built-in list.
  */
 export function Gp200CatalogPanel() {
-  const { status, counts, source, savedAt, error, loaded } = useGp200Catalog();
-  const busy = status === "loading";
+  const { loading, counts, source, savedAt, error, loaded } = useGp200Catalog();
   const where = host.platform === "web" ? XML_IN_EDITOR.win32 : XML_IN_EDITOR[host.platform];
+  const imported = savedAt !== null;
 
   useEffect(() => {
     if (!useGp200Catalog.getState().loaded) void useGp200Catalog.getState().load();
@@ -43,42 +44,37 @@ export function Gp200CatalogPanel() {
           GP-200 effect list
         </h2>
         <p className="mt-0.5 text-sm text-pretty text-silkscreen-3">
-          Effect names and knob ranges for the GP-200 come from Valeton's own GP-200 editor, which Tone Studio is not allowed to ship. Tone Studio reads the
-          editor's {ALGORITHM_XML} once and keeps the list on this computer. Nothing is uploaded.
+          Tone Studio comes with the GP-200's effect names and knob ranges, taken from GP200 Studio. For units, Auto CAB Match and exact menu values, import
+          the {ALGORITHM_XML} from Valeton's GP-200 editor. Tone Studio keeps it on this computer; nothing is uploaded.
         </p>
       </div>
 
       <div className="flex items-end gap-4 border-b pt-1 pb-4" aria-live="polite">
         <div className="min-w-0">
-          {!loaded || (busy && !counts) ? (
+          {!loaded || loading ? (
             <div className="flex items-center gap-2 text-sm text-silkscreen-2">
               <Spinner aria-hidden />
               Reading the effect list…
             </div>
-          ) : counts && savedAt ? (
+          ) : (
             <>
               <div className="text-lg leading-tight font-semibold">{counts.uniqueModels} effects ready</div>
               <div className="text-sm text-silkscreen-3">
-                {counts.controls} knobs and switches, imported{" "}
-                {new Date(savedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                {counts.controls} knobs and switches,{" "}
+                {imported ? `imported ${new Date(savedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : "built in"}
               </div>
               {source && <div className="mt-0.5 truncate text-xs text-silkscreen-3" title={source}>From {source}</div>}
-            </>
-          ) : (
-            <>
-              <div className="text-lg leading-tight font-semibold">No effect list yet</div>
-              <div className="text-sm text-pretty text-silkscreen-3">Without it, GP-200 effects show as numbers and their knobs can't be edited.</div>
             </>
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {isElectron && (
-            <Button variant={counts ? "secondary" : "default"} disabled={busy} onClick={act("findAutomatically")}>
+            <Button variant="secondary" disabled={loading} onClick={act("findAutomatically")}>
               <FileSearch aria-hidden />
               Find automatically
             </Button>
           )}
-          <Button variant={counts || isElectron ? "secondary" : "default"} disabled={busy} onClick={act("chooseFile")}>
+          <Button variant="secondary" disabled={loading} onClick={act("chooseFile")}>
             <FolderOpen aria-hidden />
             Choose file…
           </Button>
@@ -91,23 +87,21 @@ export function Gp200CatalogPanel() {
         </p>
       )}
 
-      {counts && (
-        <dl className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-1 text-sm">
-          {Object.entries(counts.perBlock).map(([code, n]) => (
-            <div key={code} className="flex justify-between gap-2">
-              <dt className="text-silkscreen-3">{BLOCK_NAMES[code] ?? code}</dt>
-              <dd className="font-[550] tabular-nums">{n}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <dl className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-1 text-sm">
+        {Object.entries(counts.perBlock).map(([code, n]) => (
+          <div key={code} className="flex justify-between gap-2">
+            <dt className="text-silkscreen-3">{BLOCK_NAMES[code] ?? code}</dt>
+            <dd className="font-[550] tabular-nums">{n}</dd>
+          </div>
+        ))}
+      </dl>
 
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-pretty text-silkscreen-3">Where the editor keeps it: {where}.</p>
-        {counts && (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={act("remove")}>
+        {imported && (
+          <Button variant="ghost" size="sm" disabled={loading} onClick={act("remove")}>
             <Trash2 aria-hidden />
-            Remove
+            Use the built-in list
           </Button>
         )}
       </div>

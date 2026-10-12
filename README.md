@@ -277,8 +277,8 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 <br>
 
-> [!IMPORTANT]
-> **Import the effect list once.** Effect names and knob ranges come from Valeton's own GP-200 editor, which Tone Studio isn't allowed to ship. *Device › GP-200 effect list* reads the editor's `algorithm.xml` (*Find automatically* in the desktop app, or *Choose file…*) and keeps it on your computer. Without it, effects show as numbers and their knobs can't be edited.
+> [!NOTE]
+> **The effect list is built in.** Tone Studio ships the GP-200's effect names and knob ranges, taken from [GP200 Studio](https://github.com/kabir0st/gp200-studio). For units, Auto CAB Match and exact menu values, *Device › GP-200 effect list* can read `algorithm.xml` from Valeton's GP-200 editor (*Find automatically* in the desktop app, or *Choose file…*) and keep it on your computer.
 
 <br>
 
@@ -320,7 +320,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 <br>
 
 ¹ **GP-50 commands known only from Valeton Suite's code** sit behind **Settings › Experimental pedal commands** until they're tried on a GP-50: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
-² **GP-200 knobs need the [effect list](#the-gp-200-family).** Without it, effects show as numbers.<br>
+² **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
 ³ **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind the same *Experimental pedal commands* switch.
 
 <br>
@@ -409,7 +409,8 @@ The desktop app offers the same under *Device › Simulate*. All commands and th
 
 <div align="center">
 
-<sub>VLTN Tone Studio is an independent project. It is not affiliated with or endorsed by Valeton.</sub>
+<sub>VLTN Tone Studio is an independent project. It is not affiliated with or endorsed by Valeton.</sub><br>
+<sub>Free software under the [GNU General Public License v3.0](LICENSE). The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0).</sub>
 
 <br>
 <br>

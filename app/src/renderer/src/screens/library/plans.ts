@@ -52,13 +52,13 @@ export const INIT_NAME = "INIT";
 /**
  * The "blank" of the GP-200 family, which has no empty slots: an init patch with the first model of every block in the
  * effect catalog at its defaults, every block off, named INIT. Written like any preset (full write, read back), not
- * with the pedal's own reset command, which hasn't been tested on hardware. Throws without a catalog: every block of a
- * GP-200 patch holds a model.
+ * with the pedal's own reset command, which hasn't been tested on hardware. Throws when the catalog lacks a block: every
+ * block of a GP-200 patch holds a model.
  */
-export function gp200InitPatch(device: DeviceKey, catalog: Gp200Catalog | null = useGp200Catalog.getState().catalog): Uint8Array {
-  const blocks = profileFor(device).blocks.map((_, k) => {
+export function gp200InitPatch(device: DeviceKey, catalog: Gp200Catalog = useGp200Catalog.getState().catalog): Uint8Array {
+  const blocks = profileFor(device).blocks.map((code, k) => {
     const fxid = modelsFor(device, k, catalog)[0]?.fxid;
-    if (fxid === undefined) throw new Error("Resetting a slot needs the GP-200 effect list: the init patch holds a model in every block. Import the list on the Device screen.");
+    if (fxid === undefined) throw new Error(`The GP-200 effect list has no ${code} model, and the init patch holds a model in every block. Import the list again on the Device screen.`);
     return { fxid, enabled: false, params: defaultParamsFor(device, k, fxid, catalog) };
   });
   return buildPrst(encodePatchImage({ name: INIT_NAME, blocks }));

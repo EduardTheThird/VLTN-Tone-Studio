@@ -1,8 +1,9 @@
 // The device store on the simulated GP-200 family: connect and sync, live edits, the GP-200 patch fields, save, rename,
-// write, the user's effect catalog (absent, then imported), the read-only LT and JR, and a clean protocol log.
+// write, the effect catalog (built in, then the user's import), the read-only LT and JR, and a clean protocol log.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { GLOBAL_EQ_INDEX } from "@/gp200/lib/protocol.mjs";
 import { host } from "@/host";
 import { profileFor } from "@shared/devices";
@@ -53,13 +54,14 @@ describe("GP-200 in the device store", () => {
     await store().disconnect();
   });
 
-  it("connects without a catalog: every block is there, its model unknown, the GP-200 fields read", () => {
+  it("connects with the built-in effect list: every block is there with its model, the GP-200 fields read", () => {
     const s = store();
     expect(s.device).toBe("gp200");
     expect([...s.features].sort()).toEqual(["exportPreset", "globalEq", "liveBpm", "modified"]);
     const p = s.preset!;
     expect(p.blocks).toHaveLength(11);
-    expect(p.blocks.every((b) => b.params.length === 15 && b.model === undefined)).toBe(true);
+    expect(p.blocks.every((b) => b.params.length === 15 && b.model !== undefined)).toBe(true);
+    expect(p.blocks[3].model?.name).toBe("Mess2C+ 2");
     expect(p.exp).toBeNull();
     expect(p.footswitches).toHaveLength(8);
     expect(p.gp200?.exp).toHaveLength(9);
@@ -163,9 +165,9 @@ describe("GP-200 in the device store", () => {
     expect((await storedIn(target)).volume).toBe(33);
   }, 30_000);
 
-  it("describes the blocks from the user's catalog once it is imported", async () => {
+  it("describes the blocks from the user's catalog once it is imported, and from the built-in one after", async () => {
     await store().writePreset(store().slot!, editPrst(store().preset!.prst, { blocks: { 0: { fxid: 26 }, 3: { fxid: 117440513 } } }));
-    expect(store().preset!.blocks[3].model).toBeUndefined();
+    expect(store().preset!.blocks[3].model?.name).toBe("Tweedy");
 
     await useGp200Catalog.getState().importXml(XML, "algorithm.xml");
     const [pre, amp] = [store().preset!.blocks[0].model, store().preset!.blocks[3].model];
@@ -175,7 +177,7 @@ describe("GP-200 in the device store", () => {
     expect(store().preset!.blocks[3].params[0]).toBe(50);
 
     await useGp200Catalog.getState().remove();
-    expect(store().preset!.blocks[3].model).toBeUndefined();
+    expect(store().preset!.blocks[3].model?.name).toBe("Tweedy");
     await store().discard();
   }, 30_000);
 
@@ -194,7 +196,7 @@ describe("GP-200 with a catalog imported before it connects", () => {
     // The simulator's generated amp (0x0700003A) in a synthetic catalog, kept where the app reads it at startup
     const xml = XML.replace('Name="Test Amp" Module="AMP" Code="117440513"', 'Name="Init Amp" Module="AMP" Code="117440570"');
     await host.gp200Catalog.save(buildCatalogFromXml(xml), "algorithm.xml");
-    useGp200Catalog.setState({ status: "none", catalog: null, loaded: false });
+    useGp200Catalog.setState({ catalog: BUILT_IN_CATALOG, source: null, savedAt: null, loaded: false });
     await store().connect("mock", { mockDevice: "gp200" });
     expect(store().preset!.blocks[3].model?.name).toBe("Init Amp");
   }, 30_000);

@@ -43,7 +43,7 @@ function DevicePage() {
     })),
   );
   const view = connectionView({ ...input, platform: host.platform });
-  // GP-200 family effect names come from the user's catalog: its import panel shows for those pedals
+  // GP-200 family effect names come from the effect list: its panel (built in, or import your own) shows for those pedals
   const gp200 = useDevice((s) => [attachedDevice(s), s.device].some((k) => k !== null && profileFor(k).family === "gp200"));
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);

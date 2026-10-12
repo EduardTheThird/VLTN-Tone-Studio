@@ -16,7 +16,6 @@ import { defaultParamsFor, modelsFor } from "@/state/preset-codec";
 import { applyBlock, recordBlock, snapshot } from "./edits";
 import type { BlockSnapshot } from "./history";
 import { ampCab, groupsOf, groupOf } from "./order";
-import { useNeedsCatalog } from "./Pedalboard";
 import { useRig } from "./rig-store";
 import { isUserSnapTone, slotToneName, snapToneIndex } from "./snaptone";
 
@@ -168,7 +167,6 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
   const tabs = useMemo(() => tabsFor(code, tiles, snapTone), [code, tiles, snapTone]);
   const holdsCaptures = tiles.some((t) => t.capture);
   const gp5 = isGp5Family(preset.device);
-  const needsCatalog = useNeedsCatalog();
   const [tab, setTab] = useState(() => initialTab ?? (code === "NS" ? (isUserSnapTone(snapToneIndex(block.fxid), snapTone) ? "user" : "factory") : "all"));
   const [query, setQuery] = useState("");
   const favsKey = favKey(preset.device);
@@ -408,25 +406,14 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
               </button>
             );
           })}
-          {needsCatalog ? (
-            <div className="col-span-full flex flex-col items-center gap-3 py-10 text-center">
-              <p className="max-w-[52ch] text-sm text-pretty text-silkscreen-2">
-                The {code} models come from the effect list in Valeton's GP-200 editor. Import it once and every block shows its models.
-              </p>
-              <Button size="sm" onClick={() => void revert().then(() => useNav.getState().go("device"))}>
-                Import on the Device screen
-              </Button>
-            </div>
-          ) : (
-            !visible.length && (
-              <p className="col-span-full py-10 text-center text-sm text-silkscreen-3">
-                {tab === "fav"
-                  ? "No favorites here yet. Select a model and press F, or use the star button below."
-                  : gp5
-                    ? "Nothing matches. Try the model or the gear it is based on."
-                    : "Nothing matches. Try another model name."}
-              </p>
-            )
+          {!visible.length && (
+            <p className="col-span-full py-10 text-center text-sm text-silkscreen-3">
+              {tab === "fav"
+                ? "No favorites here yet. Select a model and press F, or use the star button below."
+                : gp5
+                  ? "Nothing matches. Try the model or the gear it is based on."
+                  : "Nothing matches. Try another model name."}
+            </p>
           )}
         </div>
       </div>

@@ -2,7 +2,7 @@
 // Use it for unit tests, UI development and as a virtual MIDI device.
 // It models what the editor RE, captures and OSS hardware work show; unknown requests stay silent so host timeouts
 // get exercised. Every reply is produced by this toolkit's own encoder. The bank is generated: Valeton's factory
-// presets and catalog are never bundled (pass `images` or a `catalog` built from the user's algorithm.xml).
+// presets are never bundled (pass `images`, and a `catalog` for the generated patches' param defaults).
 
 import {
   ADDRESS,

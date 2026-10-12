@@ -1,7 +1,7 @@
-// GP-200 effect catalog: the model names and param ranges come from Valeton's GP-200 editor (its `algorithm.xml`),
-// which Tone Studio may not redistribute. The user's own copy is read (found in the editor's install or picked), the
-// renderer builds the catalog from it (gp200/lib/catalog.mjs) and the host keeps the result in the app's user-data
-// folder (browser build: this browser's storage). Nothing leaves the computer.
+// GP-200 effect catalog import: Tone Studio ships a catalog (renderer gp200/lib/catalog-data.mjs); the user may replace
+// it with one built from their own copy of the GP-200 editor's `algorithm.xml` (found in the editor's install or
+// picked). The renderer builds the catalog from it (gp200/lib/catalog.mjs) and the host keeps the result in the app's
+// user-data folder (browser build: this browser's storage). Nothing leaves the computer.
 // Owner: renderer/src/gp200/app/catalog-store.ts. Main process: src/main/ipc/gp200-catalog.ts.
 import { HostError } from "../ipc";
 

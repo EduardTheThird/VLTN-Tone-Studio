@@ -7,11 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { useDevice, usePedalName } from "@/state/device";
-import { isGp5Family } from "@/state/device-model";
 import type { BlockState, PresetState } from "@/state/device-types";
-import { useNav } from "@/state/nav";
 import { BlockMenu } from "./BlockMenu";
 import { editEnabled, editOrder, editParam } from "./edits";
 import { saveOnlyNote, useLiveMode } from "./live-edits";
@@ -149,30 +146,15 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   );
 }
 
-/** A GP-200 family pedal is connected and no effect list is imported, so its blocks show as unknown models. */
-export function useNeedsCatalog(): boolean {
-  const gp200 = useDevice((s) => s.status === "connected" && s.device !== null && !isGp5Family(s.device));
-  const status = useGp200Catalog((s) => s.status);
-  return gp200 && (status === "none" || status === "error");
-}
-
-const CATALOG_HINT = "Blocks show as unknown models until you import the effect list from Valeton's GP-200 editor.";
-
 export function BoardHead({ title, hint, keys }: { title: string; hint: string; keys?: boolean }) {
-  const needsCatalog = useNeedsCatalog();
-  const shown = needsCatalog ? CATALOG_HINT : hint;
   return (
     <div className="relative -mx-2.5 -mt-1.5 flex items-center gap-4 self-stretch rounded-lg bg-[rgb(10_10_12/0.66)] px-3.5 py-2">
       <h2 className="m-0 shrink-0 text-[15px] font-semibold">{title}</h2>
-      <span className="min-w-0 truncate text-sm text-silkscreen-3" title={shown}>
-        {shown}
+      <span className="min-w-0 truncate text-sm text-silkscreen-3" title={hint}>
+        {hint}
       </span>
       <span className="grow" />
-      {needsCatalog ? (
-        <Button size="sm" variant="secondary" className="-my-1 shrink-0" onClick={() => useNav.getState().go("device")}>
-          Import on the Device screen
-        </Button>
-      ) : keys && (
+      {keys && (
         <span className="flex shrink-0 items-center gap-1 text-sm whitespace-nowrap text-silkscreen-3 max-[1320px]:hidden">
           <Kbd>←</Kbd>
           <Kbd>→</Kbd> pedal <Kbd>Space</Kbd> on/off <Kbd>M</Kbd> change model
