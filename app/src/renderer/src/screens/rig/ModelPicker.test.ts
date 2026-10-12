@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { tilesFor } from "./ModelPicker";
 
 // Synthetic catalog in the editor's format (written for this test; not Valeton data): a drive and two SnapTone slots
@@ -12,7 +13,7 @@ const XML = `<GP-200>
   <Catalog Name = "CAB">${alg("Test Cab", "CAB", 167772161)}${alg("Slot", "CAB", 168820736)}</Catalog>
 </GP-200>`;
 
-afterAll(() => useGp200Catalog.setState({ catalog: null }));
+afterAll(() => useGp200Catalog.setState({ catalog: BUILT_IN_CATALOG }));
 
 describe("model picker tiles", () => {
   it("GP-200: SnapTones by slot name, empty by the pedal's flag; nothing under plain models; User IRs by fxid", () => {

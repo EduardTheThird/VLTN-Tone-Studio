@@ -7,7 +7,7 @@
 A desktop editor and librarian for Valeton multi-effects:<br>
 **GP-5 · GP-50 · GP-200 · GP-200LT · GP-200JR**
 
-Shape tones live, sort and back up every slot, and bring NAM captures and IRs from TONE3000 straight to the pedal.
+Shape tones live, sort and back up every slot, match a song's guitar tone, and bring NAM captures and IRs from TONE3000 straight to the pedal.
 
 <br>
 
@@ -16,6 +16,7 @@ Shape tones live, sort and back up every slot, and bring NAM captures and IRs fr
 <a href="https://github.com/grzmol/VLTN-Tone-Studio/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/grzmol/VLTN-Tone-Studio/release.yml?style=flat-square&label=build" alt="Release build status"></a>
 <a href="https://github.com/grzmol/VLTN-Tone-Studio/commits"><img src="https://img.shields.io/github/last-commit/grzmol/VLTN-Tone-Studio?style=flat-square&label=updated" alt="Last commit"></a>
 <img src="https://img.shields.io/badge/NAM-TONE3000-8a2be2?style=flat-square" alt="NAM captures from TONE3000">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License: GPL-3.0"></a>
 
 <br>
 
@@ -24,28 +25,28 @@ Shape tones live, sort and back up every slot, and bring NAM captures and IRs fr
 <br>
 <br>
 
-### Download v0.5.0
+### Download v0.6.0
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.5.0/vltn-tone-studio-0.5.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.5.0/vltn-tone-studio-0.5.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.5.0/vltn-tone-studio-0.5.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.6.0/vltn-tone-studio-0.6.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.6.0/vltn-tone-studio-0.6.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.6.0/vltn-tone-studio-0.6.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 <br>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.5.0/vltn-tone-studio-0.5.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.5.0/vltn-tone-studio-0.5.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.6.0/vltn-tone-studio-0.6.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.6.0/vltn-tone-studio-0.6.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
 
 <sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
 <br>
 
 **Like it?** A ⭐ on [GitHub](https://github.com/grzmol/VLTN-Tone-Studio) helps other Valeton players find Tone Studio.<br>
-Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studio/issues).
+Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studio/issues). For a pedal problem, attach the session log (*Device › Diagnostics › Save log*).
 
 <a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
 
 <br>
 <br>
 
-[Download](#download-v050) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Build](#build-it-yourself)
+[Download](#download-v060) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -160,7 +161,8 @@ Search presets, models, and every preset that uses a model, all from one box.
 ## Your pedal, looked after.
 
 Change the pedal's global settings, and the Global EQ on the GP-200 family. Back up every slot with one click, and restore any backup.<br>
-Diagnostics check each step of the connection to the pedal, and a live MIDI monitor shows and decodes every message.
+Diagnostics check each step of the connection: the USB device, the driver Windows gave it, the MIDI port, and whether Valeton Suite or the GP-200 editor holds the port.<br>
+A session log keeps every connection step, error and MIDI message, ready to attach to a bug report. A live MIDI monitor shows and decodes the messages as they go.
 
 <br>
 
@@ -229,7 +231,7 @@ Mute or solo any of them and export them as WAV.
 <br>
 <br>
 
-Tone Match listens to the guitar alone and proposes a preset for your GP-5 or GP-50 that you can play on the pedal right away.
+Tone Match listens to the guitar alone and proposes a preset for your GP-5, GP-50 or GP-200 (LT and JR too) that you can play on the pedal right away.
 
 <br>
 
@@ -239,7 +241,7 @@ Tone Match listens to the guitar alone and proposes a preset for your GP-5 or GP
 <br>
 
 It shows what it heard: gain, echo, reverb, level, and the guitar's spectrum against a typical guitar.<br>
-Record yourself through the pedal and it designs a cabinet IR that brings your tone closer to the song's.
+Record yourself through the pedal and it designs a cabinet IR that brings your tone closer to the song's. Write it to a User IR slot and pick it in the CAB block.
 
 <br>
 
@@ -274,11 +276,13 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | 🧠 **SnapTones** | 10 slots: 0–4 play in AMP, 5–9 in DST. CAB keeps playing after them. |
 | 🔊 **User IRs** | 20 slots of 1024 samples. |
 | 🎚️ **Global EQ** | On the Device screen, next to the pedal's settings. |
+| 📖 **Effect list** | Built in: all 305 models with their knobs, ready the moment the pedal connects. |
+| 🎸 **Tone Match** | Proposes a GP-200 preset from a song, with the same amps, delays and reverbs as on the GP-5. |
 
 <br>
 
-> [!IMPORTANT]
-> **Import the effect list once.** Effect names and knob ranges come from Valeton's own GP-200 editor, which Tone Studio isn't allowed to ship. *Device › GP-200 effect list* reads the editor's `algorithm.xml` (*Find automatically* in the desktop app, or *Choose file…*) and keeps it on your computer. Without it, effects show as numbers and their knobs can't be edited.
+> [!NOTE]
+> **The effect list comes with the app.** The GP-200's effect names and knob ranges are taken from [GP200 Studio](https://github.com/kabir0st/gp200-studio). For units, Auto CAB Match and exact menu values, *Device › GP-200 effect list* can read `algorithm.xml` from Valeton's GP-200 editor (*Find automatically* in the desktop app, or *Choose file…*) and keep it on your computer. *Use the built-in list* goes back.
 
 <br>
 
@@ -311,7 +315,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | SnapTones (NAM) over USB | ✅ 30 user slots | 🧪 30 user slots | 🧪 10 slots | ❔ | ❔ | ✖️ |
 | Cab IR inside a SnapTone | 🧪 | 🧪 | — | — | — | ✖️ |
 | User IRs over USB | ✅ 20 × 512 | 🧪 20 × 512 | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 | ✖️ |
-| Tone Match | ✅ | 🧪 | ✖️ | ✖️ | ✖️ | ✖️ |
+| Tone Match | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | ✖️ |
 | [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✅ | ✅ | ✖️ |
 | Tested on a real unit by this project | ✅ | not yet | not yet | not yet | not yet | — |
 
@@ -320,7 +324,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 <br>
 
 ¹ **GP-50 commands known only from Valeton Suite's code** sit behind **Settings › Experimental pedal commands** until they're tried on a GP-50: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
-² **GP-200 knobs need the [effect list](#the-gp-200-family).** Without it, effects show as numbers.<br>
+² **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
 ³ **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind the same *Experimental pedal commands* switch.
 
 <br>
@@ -359,6 +363,31 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 <br>
 
+## When the pedal doesn't connect.
+
+</div>
+
+<br>
+
+*Device › Diagnostics* checks each step and says what to fix. The usual causes:
+
+| | |
+|---|---|
+| **Another app has the port** | On Windows only one app can use the pedal at a time. Quit Valeton Suite or the GP-200 editor (also from the system tray), any DAW, and any browser with a MIDI page open: Chrome keeps running in the background after its last window closes. Then unplug and replug the pedal. |
+| **Windows 11 driver** | Windows 11 can give the pedal its "USB MIDI 2.0" driver, and Valeton's ASIO driver can take over its MIDI interface. The port then shows up but nothing answers. Diagnostics name the driver, and the guide under *If the pedal doesn't show up on Windows 11* switches it back to "USB Audio Device". Restart the computer if it still fails. |
+| **Linux permissions** | MIDI needs access to `/dev/snd/seq`. Join the group Diagnostics names (usually `audio`), then log in again. |
+| **Browser build** | Chrome or Edge on a desktop computer, from `https://` or `localhost`. Chromium 152 can't exchange SysEx with the pedal; use 153 or newer. |
+
+Still stuck? *Copy diagnostic report* gives a short summary without preset contents. *Save log* saves the session log: every connection step, error and MIDI message, with the bytes in hex, including the presets read from or written to the pedal. The desktop app keeps the newest 20 MB of it in the `logs` folder of its data folder (*Open folder*); the browser build keeps it while the tab is open. Attach both to an [issue](https://github.com/grzmol/VLTN-Tone-Studio/issues).
+
+<br>
+
+---
+
+<div align="center">
+
+<br>
+
 ## Under the hood.
 
 </div>
@@ -374,6 +403,8 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | **User IRs** | Prepared like Valeton Suite does it (first channel, 44.1 kHz, 24-bit), 512 or 1024 samples per model |
 | **Stems** | Demucs `htdemucs_6s` on your computer, with WebGPU when the graphics card can run it |
 | **Safety** | Backs up a slot automatically before it's overwritten |
+| **GP-200 effect list** | Generated from [GP200 Studio](https://github.com/kabir0st/gp200-studio)'s catalog at a pinned commit (`app/scripts/gp200-catalog-from-studio.mjs`); your own `algorithm.xml` replaces it |
+| **Diagnostics** | USB, driver and port checks per OS, and a rotating session log (4 MB files, newest 20 MB) in the app's data folder |
 | **Packages** | `.dmg`, NSIS installer, AppImage and `.deb` |
 
 <br>
@@ -404,6 +435,22 @@ No pedal? Add `?mock` to the browser address for a simulated GP-5 loaded with a 
 | `?mock` | `?mock=gp50` | `?mock=gp200` | `?mock=gp200lt` | `?mock=gp200jr` |
 
 The desktop app offers the same under *Device › Simulate*. All commands and the code layout are in [`app/README.md`](app/README.md); what changed in each version is in the [changelog](CHANGELOG.md).
+
+<br>
+
+---
+
+<div align="center">
+
+<br>
+
+## License.
+
+</div>
+
+<br>
+
+VLTN Tone Studio is free software under the [GNU General Public License v3.0](LICENSE). You may use, study, change and share it; a version you distribute must stay under the same license, with its source. The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0). Other open-source work it builds on is credited in `app/src/renderer/src/gp5/NOTICE.md` and `app/src/renderer/src/gp200/NOTICE.md`.
 
 <br>
 

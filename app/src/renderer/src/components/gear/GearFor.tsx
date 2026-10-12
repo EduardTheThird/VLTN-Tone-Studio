@@ -13,8 +13,7 @@ import { knobFromParam, type GearBaseProps, type GearKnob } from "./types";
  */
 function offEnd(block: BlockState, p: ParamInfo): GearKnob["off"] {
   if (!p.offAtMin) return undefined;
-  const catalog = useGp200Catalog.getState().catalog;
-  const knob = catalog ? modelByFxid(catalog, block.fxid, block.index)?.knobs.find((k) => k.id === p.index) : undefined;
+  const knob = modelByFxid(useGp200Catalog.getState().catalog, block.fxid, block.index)?.knobs.find((k) => k.id === p.index);
   return knob?.valueType === 2 ? "max" : "min";
 }
 

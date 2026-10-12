@@ -106,3 +106,28 @@ describe("auditionProposal on a simulated GP-50", () => {
     await expect(auditionProposal(proposePreset(analysisFixture(), "gp5"))).rejects.toThrow(/for the GP-5, but the GP-50 is connected/);
   });
 });
+
+describe("auditionProposal on a simulated GP-200", () => {
+  beforeAll(async () => {
+    await useDevice.getState().connect("mock", { mockDevice: "gp200" });
+  }, 30_000);
+  afterAll(async () => {
+    await useDevice.getState().disconnect();
+  });
+
+  it("plays a GP-200 proposal from the built-in list live and puts it back", async () => {
+    const proposal = proposePreset(analysisFixture(), "gp200");
+    const before = useDevice.getState().preset!.blocks.map(played);
+    const snapshots = await auditionProposal(proposal);
+    expect(snapshots).toHaveLength(11);
+    const live = await pedalBlocks();
+    for (const b of proposal.blocks.filter((x) => x.fxid !== null)) {
+      expect(live[b.index].fxid, b.code).toBe(b.fxid);
+      for (const s of b.settings) expect(played(live[b.index]).params[s.name], `${b.code} ${s.name}`).toBeCloseTo(s.value, 3);
+    }
+    expect(live[3].model?.name).toBe("Mess DualM");
+    expect(live[10]).toMatchObject({ fxid: before[10].fxid, enabled: before[10].enabled });
+    await restoreBlocks(snapshots);
+    expect((await pedalBlocks()).map(played)).toEqual(before);
+  }, 60_000);
+});

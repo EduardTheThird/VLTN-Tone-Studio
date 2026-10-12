@@ -4,6 +4,7 @@
 // before writing it, refuses the dangerous frames, and sends nothing at all once the pedal reports update mode.
 import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry } from "@/gp200/lib/session.mjs";
 import { MockGp200, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { GLOBAL_EQ_BANDS, PATCH_SETTING, type DecodedMessage } from "@/gp200/lib/protocol.mjs";
 import { buildPrst, imagesMatch, parsePatch } from "@/gp200/lib/prst.mjs";
 import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
@@ -106,7 +107,8 @@ export class Gp200Driver implements DeviceDriver {
     device: Gp200FamilyKey,
     opts: DriverOptions & { timing?: Partial<Gp200Timing>; mock?: Omit<MockGp200Options, "type"> },
   ): Promise<Gp200Driver> {
-    const mock = new MockGp200({ ...FAST_SIMULATOR.mock, ...opts.mock, type: device });
+    // The generated bank loads its models with the built-in catalog's defaults, like the editor would.
+    const mock = new MockGp200({ catalog: BUILT_IN_CATALOG, ...FAST_SIMULATOR.mock, ...opts.mock, type: device });
     return new Gp200Driver(mock.transport(), `${profileFor(device).name} (simulated)`, { ...opts, timing: { ...FAST_SIMULATOR.timing, ...opts.timing } }, mock);
   }
 

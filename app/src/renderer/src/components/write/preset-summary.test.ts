@@ -19,10 +19,10 @@ const initial = useGp200Catalog.getState();
 describe("summarize", () => {
   afterEach(() => useGp200Catalog.setState(initial, true));
 
-  it("names a GP-200 preset's models again once the effect catalog is imported", () => {
+  it("names a GP-200 preset's models from the built-in list, and again from an imported one", () => {
     const prst = buildPrst(encodePatchImage({ name: "Cached", blocks: { 3: { fxid: 117440513, enabled: true } } }));
-    expect(ampOrSnapTone(summarize(prst)!, null)).toBeNull();
-    useGp200Catalog.setState({ status: "ready", catalog: buildCatalogFromXml(XML) });
+    expect(ampOrSnapTone(summarize(prst)!, null)).toEqual({ kind: "amp", title: "Tweedy" });
+    useGp200Catalog.setState({ catalog: buildCatalogFromXml(XML) });
     expect(ampOrSnapTone(summarize(prst)!, null)).toEqual({ kind: "amp", title: "Test Amp" });
   });
 });

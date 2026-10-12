@@ -6,11 +6,8 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
-import { targetDevice, useToneMatch } from "@/song/tonematch/store";
-import { useDevice, usePedalNameOrBoth } from "@/state/device";
-import { isGp5Family, pedalName } from "@/state/device-model";
-import type { DeviceKey } from "@/state/device-types";
-import { familyKeys, listNames } from "@shared/devices";
+import { useToneMatch } from "@/song/tonematch/store";
+import { usePedalNameOrBoth } from "@/state/device";
 import { AnalysisCard } from "./AnalysisCard";
 import { IrMatchCard } from "./IrMatchCard";
 import { PANEL } from "./parts";
@@ -63,34 +60,12 @@ function NeedStems() {
   );
 }
 
-/** The proposal picks models from the GP-5 family's catalogs; the GP-200 family's aren't mapped to them yet. */
-function NotForThisPedal({ device }: { device: DeviceKey }) {
-  const pedal = pedalName(device);
-  return (
-    <div className="grid flex-1 place-items-center p-6">
-      <Empty className="max-w-md">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Guitar />
-          </EmptyMedia>
-          <EmptyTitle>Tone match isn't available for the {pedal} yet</EmptyTitle>
-          <EmptyDescription>
-            It proposes presets from the {listNames(familyKeys("gp5"), "and")} effect lists, and the {pedal}'s effects aren't matched to them yet. Splitting a song into stems works with any pedal.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    </div>
-  );
-}
-
 export function ToneMatchPanel() {
   const stems = useSong((s) => s.stems);
   const status = useToneMatch((s) => s.status);
   const analysis = useToneMatch((s) => s.analysis);
   const proposal = useToneMatch((s) => s.proposal);
-  const device = useDevice(targetDevice);
 
-  if (!isGp5Family(device)) return <NotForThisPedal device={device} />;
   if (!stems) return <NeedStems />;
 
   if (status.kind === "error")

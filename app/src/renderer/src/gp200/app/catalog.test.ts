@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { buildCatalogFromXml, defaultValue, modelByFxid, optionValues, tempoSyncBinding } from "@/gp200/lib/catalog.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
+import { BLOCKS, PARAM_COUNT } from "@/gp200/lib/protocol.mjs";
 import { host } from "@/host";
 import { GP200_BLOCK_TYPES, gp200ModelByFxid, gp200ModelsForBlock } from "./catalog-adapter";
 import { NOT_FOUND, useGp200Catalog } from "./catalog-store";
@@ -92,67 +94,86 @@ describe("GP-200 catalog adapters", () => {
   });
 });
 
+describe("built-in GP-200 catalog", () => {
+  it("has models for every block, and every control fits the pedal's params with a default it can hold", () => {
+    for (const block of BLOCKS) expect(gp200ModelsForBlock(BUILT_IN_CATALOG, block).length, block).toBeGreaterThan(0);
+    for (const m of BUILT_IN_CATALOG.modules.flatMap((x) => x.algs)) {
+      expect(new Set(m.knobs.map((k) => k.id)).size, m.name).toBe(m.knobs.length);
+      for (const k of m.knobs) {
+        expect(k.id >= 0 && k.id < PARAM_COUNT, `${m.name} ${k.name}`).toBe(true);
+        if (k.options) expect(optionValues(k), `${m.name} ${k.name}`).toContain(defaultValue(k));
+        else expect(k.default >= k.min! && k.default <= k.max!, `${m.name} ${k.name}`).toBe(true);
+      }
+    }
+  });
+
+  it("pairs tempo-sync switches with their knobs and lists the shared drives in PRE and DST", () => {
+    const delay = modelByFxid(BUILT_IN_CATALOG, 184549376, "DLY")!;
+    const time = delay.knobs.find((k) => k.name === "Time")!;
+    expect(tempoSyncBinding(delay, time)).toMatchObject({ target: time, sync: { name: "Sync", subType: "Power" } });
+    for (const block of ["PRE", "DST"]) expect(modelByFxid(BUILT_IN_CATALOG, 50331650, block)?.name, block).toBe("Yellow OD");
+  });
+});
+
 describe("useGp200Catalog", () => {
-  it("starts with no catalog; import builds, keeps and reports it; load() reads it back", async () => {
+  it("starts with the built-in list; import builds, keeps and reports it; load() reads it back", async () => {
     await useGp200Catalog.getState().load();
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "none", catalog: null, loaded: true, error: null });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, source: null, savedAt: null, loaded: true, loading: false, error: null });
 
     await useGp200Catalog.getState().importXml(XML, SOURCE);
     const s = useGp200Catalog.getState();
-    expect(s.status).toBe("ready");
     expect(s.source).toBe(SOURCE);
-    expect(s.catalog?.meta.source).toBe("algorithm.xml");
+    expect(s.catalog.meta.source).toBe("algorithm.xml");
     expect(s.counts).toEqual({ uniqueModels: 4, controls: 8, perBlock: { PRE: 2, DST: 2, AMP: 1 } });
     expect(typeof s.savedAt).toBe("string");
 
     useGp200Catalog.setState(initial, true);
     await useGp200Catalog.getState().load();
     const again = useGp200Catalog.getState();
-    expect(again.status).toBe("ready");
     expect(again.counts).toEqual(s.counts);
     expect(again.source).toBe(SOURCE);
-    expect(gp200ModelByFxid(again.catalog!, 117440513, "AMP")?.name).toBe("Test Amp");
+    expect(gp200ModelByFxid(again.catalog, 117440513, "AMP")?.name).toBe("Test Amp");
   });
 
-  it("a file that is no catalog fails plainly and keeps the previous catalog", async () => {
+  it("a file that is no catalog fails plainly and keeps the list in use", async () => {
     await expect(useGp200Catalog.getState().importXml("<Other><Thing/></Other>", "other.xml")).rejects.toThrow();
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "error", catalog: null, error: expect.stringMatching(/no GP-200 effect catalogs/) });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, loading: false, error: expect.stringMatching(/no GP-200 effect catalogs/) });
     await useGp200Catalog.getState().importXml(XML, SOURCE);
     await expect(useGp200Catalog.getState().importXml("<GP-200>", "broken.xml")).rejects.toThrow();
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "ready", source: SOURCE });
+    expect(useGp200Catalog.getState()).toMatchObject({ source: SOURCE });
     expect(useGp200Catalog.getState().error).not.toBeNull();
   });
 
   it("find automatically: imports the editor's file, or says nothing was found", async () => {
     const find = vi.spyOn(host.gp200Catalog, "findXml").mockResolvedValueOnce(null);
     expect(await useGp200Catalog.getState().findAutomatically()).toBe(false);
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "none", error: NOT_FOUND });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, error: NOT_FOUND });
     find.mockResolvedValueOnce({ path: SOURCE, text: XML });
     expect(await useGp200Catalog.getState().findAutomatically()).toBe(true);
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "ready", source: SOURCE, error: null });
+    expect(useGp200Catalog.getState()).toMatchObject({ source: SOURCE, error: null });
   });
 
   it("choose file: a cancelled picker changes nothing", async () => {
     const choose = vi.spyOn(host.gp200Catalog, "chooseXml").mockResolvedValueOnce(null);
     expect(await useGp200Catalog.getState().chooseFile()).toBe(false);
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "none", error: null });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, error: null });
     choose.mockResolvedValueOnce({ path: "algorithm.xml", text: XML });
     expect(await useGp200Catalog.getState().chooseFile()).toBe(true);
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "ready", source: "algorithm.xml" });
+    expect(useGp200Catalog.getState()).toMatchObject({ source: "algorithm.xml" });
   });
 
-  it("remove forgets the kept catalog", async () => {
+  it("remove forgets the import and goes back to the built-in list, also after a restart", async () => {
     await useGp200Catalog.getState().importXml(XML, SOURCE);
     await useGp200Catalog.getState().remove();
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "none", catalog: null, counts: null, source: null });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, source: null, savedAt: null });
     useGp200Catalog.setState(initial, true);
     await useGp200Catalog.getState().load();
-    expect(useGp200Catalog.getState().status).toBe("none");
+    expect(useGp200Catalog.getState().catalog).toBe(BUILT_IN_CATALOG);
   });
 
-  it("a damaged kept copy shows as an error", async () => {
+  it("a damaged kept copy says so and the built-in list stays", async () => {
     localStorage.setItem("gp200.catalog", JSON.stringify({ catalog: { modules: [] }, source: "x", savedAt: "y" }));
     await useGp200Catalog.getState().load();
-    expect(useGp200Catalog.getState()).toMatchObject({ status: "error", loaded: true, error: expect.stringMatching(/damaged/) });
+    expect(useGp200Catalog.getState()).toMatchObject({ catalog: BUILT_IN_CATALOG, loaded: true, error: expect.stringMatching(/damaged/) });
   });
 });

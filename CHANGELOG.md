@@ -2,6 +2,26 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.6.0] - 2026-10-12
+
+### Added
+- **Session log.** Tone Studio logs every connection step, connection and request error, change in what the host sees (USB, driver, interfaces, Valeton apps), long job, and every MIDI message with its decoded text and all bytes in hex. It doesn't depend on the MIDI monitor being on. The desktop app writes it to `logs/` in its data folder: 4 MB files, the newest 20 MB kept. The browser build keeps it in memory for the tab. *Device › Diagnostics › Session log* saves it as one file (*Save log*) or opens the folder. The diagnostic report says where it is. The log includes the presets read from and written to the pedal.
+- **Tone Match on the GP-200, GP-200LT and GP-200JR.** The proposal picks the same amps, drive, EQ, delays and reverbs from the GP-200 effect list, switches WAH off and leaves the VOL pedal alone; the audition plays it through live edits and the IR match records the pedal's USB audio, as on the GP-5 family. The cabinet comes from the amp's Auto CAB Match when an imported list has it, else from a matching GP-200 cab by name. Not tried on a real GP-200 yet.
+
+### Fixed
+- **GP-200 connection diagnostics on Windows.** The *Driver* row shows the driver Windows bound to the GP-200's MIDI interface (MI_03), or the USB MIDI 2.0 fault, instead of a false "No driver is bound". A driver other than *USB Audio Device* (such as Valeton's ASIO driver) is a warning. Models whose MIDI interface isn't measured (GP-200LT, GP-200JR) are found by USB class, and say "Couldn't tell" rather than warn when that fails.
+- **Valeton's GP-200 editor is detected.** When `GP-200.exe` (or `GP-200.app`) runs, the header, *Exclusive access* row and banners say it holds the port. Texts for a GP-200 never ask to close Valeton Suite.
+- A silent port on the USB MIDI 2.0 driver opens the driver guide. Otherwise the note lists what can hold the port on Windows, browsers with a MIDI page included; the browser build also points at `chrome://flags/#use-winrt-midi-api`.
+- The Windows 11 guide covers Valeton's ASIO driver and ends with a restart when the old driver sticks.
+
+### Changed
+- The diagnostic report lists the USB interfaces of Valeton devices (driver, name, MIDI class) and which Valeton apps run.
+- **The GP-200 effect list is built in.** Effect names and knob ranges for the GP-200, GP-200LT and GP-200JR come with the app, so blocks show their models and knobs as soon as the pedal connects. Importing `algorithm.xml` from Valeton's GP-200 editor is now optional: it adds units, Auto CAB Match and exact menu values, and *Use the built-in list* goes back. The simulator's generated presets use the list's models and defaults.
+- **Tone Studio is licensed under GPL-3.0.** The built-in list is generated from [kabir0st/gp200-studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0) by `app/scripts/gp200-catalog-from-studio.mjs`.
+
+### Known limitations
+- The built-in GP-200 list has no units, no Auto CAB Match and plain 0, 1, 2… menu values (the Empire OD *Mode* may need the imported list to send the right value). Drives and boosts are listed in both PRE and DST, and Auto Swell, Hold and Freeze in both PRE and MOD; Hammy only in PRE.
+
 ## [0.5.0] - 2026-10-11
 
 ### Added
@@ -79,6 +99,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.2.0...v0.3.0

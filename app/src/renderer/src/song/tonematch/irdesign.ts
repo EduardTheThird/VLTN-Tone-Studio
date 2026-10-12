@@ -11,7 +11,7 @@
 import { fft } from "./fft";
 import { bandMean, interpolateDb, type Ltas } from "./ltas";
 
-/** GP-5 / GP-50 user IRs are 44.1 kHz. */
+/** The IR is designed at 44.1 kHz; writing it to a User IR slot converts it for the pedal like any WAV. */
 export const IR_RATE = 44100;
 export const IR_TAPS = 1024;
 export const MAX_CORRECTION_DB = 15;

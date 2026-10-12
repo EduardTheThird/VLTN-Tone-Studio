@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { isChecksumValid } from "@/gp200/lib/prst.mjs";
 import { orderError, toPresetState } from "@/state/preset-codec";
 import { profileFor } from "@shared/devices";
@@ -92,7 +93,15 @@ describe("gp200InitPatch", () => {
     expect(p.blocks.map((b) => [b.model?.title, b.enabled, b.params[2]])).toEqual(blocks.map((b) => [`First ${b}`, false, 40]));
   });
 
-  it("needs the effect catalog: a GP-200 patch has a model in every block", () => {
-    expect(() => gp200InitPatch("gp200", null)).toThrow(/effect list/);
+  it("needs a model for every block: a GP-200 patch has one in each", () => {
+    const noVol = buildCatalogFromXml(xml.replace(/<Catalog Name = "VOL">[\s\S]*?<\/Catalog>/, ""));
+    expect(() => gp200InitPatch("gp200", noVol)).toThrow(/no VOL model/);
+  });
+
+  it("works with the built-in effect list on every GP-200 model", () => {
+    for (const device of ["gp200", "gp200lt", "gp200jr"] as const) {
+      const p = toPresetState(0, gp200InitPatch(device, BUILT_IN_CATALOG), device, BUILT_IN_CATALOG);
+      expect(p.blocks.every((b) => b.model !== undefined && !b.enabled)).toBe(true);
+    }
   });
 });

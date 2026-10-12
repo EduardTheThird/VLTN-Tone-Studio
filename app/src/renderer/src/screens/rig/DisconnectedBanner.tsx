@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDevice, usePedalName } from "@/state/device";
+import { vendorApps } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 
 /** Not dismissable, disappears on reconnect. The Rig below shows the last read, read-only. */
@@ -10,6 +11,7 @@ export function DisconnectedBanner() {
   const error = useDevice((s) => s.error);
   const pedal = usePedalName();
   const silent = error?.code === "busy" || error?.code === "timeout";
+  const editor = vendorApps(useDevice((s) => s.device)).editor;
   return (
     <Alert className="glass mx-7 mt-3 flex w-auto items-center gap-4 rounded-lg border-0 px-4 py-2.5">
       <PlugZapIcon className="size-5 text-led-warn" aria-hidden />
@@ -17,8 +19,8 @@ export function DisconnectedBanner() {
         <AlertTitle>{silent ? `Found the ${pedal}, but it doesn't answer` : `The ${pedal} isn't connected`}</AlertTitle>
         <AlertDescription className="text-silkscreen-2 [@media(max-height:820px)]:line-clamp-1">
           {silent
-            ? "Another app may be using it. Close Valeton Suite and try again."
-            : "Plug it in over USB. If Valeton Suite is open, close it first because it holds the port."}
+            ? `Another app may be using it. Close ${editor} and try again.`
+            : `Plug it in over USB. If ${editor} is open, close it first because it holds the port.`}
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5 [@media(max-height:820px)]:hidden">
             <span className="text-xs text-silkscreen-3">Works offline</span>
             <Badge variant="outline">Library and backups</Badge>

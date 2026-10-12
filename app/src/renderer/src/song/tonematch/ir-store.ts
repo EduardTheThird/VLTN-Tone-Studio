@@ -9,7 +9,7 @@ import { pedalName } from "@/state/device-model";
 import { profileFor, type DeviceKey } from "@shared/devices";
 import { IR_RATE, matchIr, type MatchedIr } from "./irdesign";
 import { ltas, LTAS_FRAME } from "./ltas";
-import { InputRecorder, isGp5Input, listInputs, type AudioInput, type Level } from "./recorder";
+import { InputRecorder, isPedalInput, listInputs, type AudioInput, type Level } from "./recorder";
 import { useToneMatch } from "./store";
 
 export const RECORD_S = 20;
@@ -130,7 +130,7 @@ export const useIrMatch = create<IrMatchState>((set, get) => {
         if (id !== attempt) return;
         if (inputs.length === 0) throw new Error(`No audio input found. Connect the ${pedalName(useDevice.getState().device)} with USB; it is also an audio interface.`);
         const keep = inputs.find((i) => i.deviceId === get().inputId);
-        const inputId = (keep ?? inputs.find((i) => isGp5Input(i.label)) ?? inputs[0]).deviceId;
+        const inputId = (keep ?? inputs.find((i) => isPedalInput(i.label)) ?? inputs[0]).deviceId;
         set({ inputs, inputId });
         if (await openInput(inputId, id)) set({ step: { kind: "ready" } });
       } catch (e) {

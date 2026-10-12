@@ -7,8 +7,8 @@ export interface AudioInput {
   label: string;
 }
 
-/** The GP-5 / GP-50 shows up as a USB audio device named after the pedal or Valeton. */
-export const isGp5Input = (label: string) => /gp-?5|valeton/i.test(label);
+/** The pedal shows up as a USB audio device named after it ("GP-5", "GP-50", "GP-200…") or after Valeton. */
+export const isPedalInput = (label: string) => /gp-?(5|200)|valeton/i.test(label);
 
 /** Audio inputs. Labels need the microphone permission, so this asks for it once when they're blank. */
 export async function listInputs(): Promise<AudioInput[]> {

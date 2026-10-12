@@ -4,8 +4,7 @@ import { ConfirmWriteDialog } from "@/components/write/ConfirmWriteDialog";
 import { conversionFor, conversionNote } from "@/components/write/conversion";
 import { describeSummary, summarize } from "@/components/write/preset-summary";
 import { describeError } from "@/components/write/write-helpers";
-import { notifyError, notifySuccess, notifyWriteDone, showToast } from "@/app/notify";
-import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import { notifyError, notifySuccess, notifyWriteDone } from "@/app/notify";
 import { requestPresetSwitch } from "@/app/preset-switch";
 import { host } from "@/host";
 import { useDevice } from "@/state/device";
@@ -279,15 +278,6 @@ export function LibraryActionsProvider({ children }: { children: ReactNode }) {
       clearSlots(slots) {
         // The GP-200 family has no empty slot to copy: every slot always holds a patch, so it gets an init patch.
         if (profileOrDefault(useDevice.getState().device).emptyName === null) {
-          if (!useGp200Catalog.getState().catalog) {
-            showToast({
-              tone: "fault",
-              title: "Import the effect list first",
-              body: `The init patch holds a model in every block, and the ${pedal()}'s models come from the effect list. Import it on the Device screen.`,
-              action: { label: "Open Device", run: () => useNav.getState().go("device") },
-            });
-            return;
-          }
           setBulk({
             title: `Reset ${slotList(slots)} to the init patch?`,
             description: `${slots.length === 1 ? "It becomes" : "Each becomes"} an init patch named ${INIT_NAME}, with every block off. Tone Studio writes ${slots.length === 1 ? "it" : "them"} and reads each one back to check it.`,
