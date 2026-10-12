@@ -6,7 +6,8 @@ import { host } from "@/host";
 import { profileFor, type DeviceProfile } from "@shared/devices";
 import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
-import { MidiLogDecoder, midiLog, pushMidiLog } from "./midi-log";
+import { DIR_LABEL, MidiLogDecoder, hex, midiLog, pushMidiLog } from "./midi-log";
+import { deviceLogEntries, sessionLog } from "./session-log";
 import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
@@ -138,11 +139,15 @@ export const useDevice = create<DeviceState>((set, get) => {
     (block, index) => get().preset?.blocks[block]?.model?.params.find((p) => p.index === index)?.name,
     () => driver?.device ?? get().device,
   );
-  /** Driver `log` hook: records frames only while the monitor is on; the UI re-reads at most every LOG_NOTIFY_MS. */
+  /**
+   * Driver `log` hook: every frame goes into the session log (decoded text plus all bytes in hex); the monitor records
+   * it only while it is on, and the UI re-reads at most every LOG_NOTIFY_MS.
+   */
   const onLog = (dir: string, bytes: Uint8Array, decoded?: unknown) => {
-    if (!get().monitor) return;
     const line = logDecoder.line(dir, bytes, decoded);
     if (!line) return;
+    sessionLog(DIR_LABEL[line.dir], `${line.text}${line.raw ? `  [${line.raw}]` : ""}${bytes.length ? `  ${hex(bytes)}` : ""}`, line.at);
+    if (!get().monitor) return;
     pushMidiLog(line);
     if (logNotifyTimer === undefined)
       logNotifyTimer = window.setTimeout(() => {
@@ -816,6 +821,10 @@ export const useDevice = create<DeviceState>((set, get) => {
       }
     },
   };
+});
+
+useDevice.subscribe((s, p) => {
+  for (const [kind, text] of deviceLogEntries(p, s)) sessionLog(kind, text);
 });
 
 /** "GP-5" / "GP-50" for the connected (or last connected) pedal; "pedal" before the first connection. */

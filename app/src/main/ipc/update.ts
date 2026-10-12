@@ -4,6 +4,7 @@ import { HostError } from "@shared/ipc";
 import { isNewer, latestReleaseVersion, RELEASE_REPO, type UpdateMode, type UpdateSnapshot, type UpdateState } from "@shared/host/update";
 import { handle } from "./handle";
 import { isJobRunning, loadSettings } from "./app";
+import { logMain } from "./log";
 
 // App updates (src/shared/host/update.ts). Nothing is downloaded or installed without the user asking:
 // checks only report (the renderer then asks "Download and install?"), download fetches the installer
@@ -92,6 +93,7 @@ async function check(): Promise<UpdateSnapshot> {
     setState(version ? { status: "available", version } : { status: "current", checkedAt: new Date().toISOString() });
   } catch (e) {
     console.error("[update] check failed", e);
+    logMain("Error", `Update check failed: ${describeFailure(e)}`);
     setState({ status: "error", message: e instanceof HostError ? e.message : describeFailure(e) });
   }
   return snapshot();
@@ -117,6 +119,7 @@ async function download(): Promise<void> {
   } catch (e) {
     // Reported through the state, like a failed check.
     console.error("[update] download failed", e);
+    logMain("Error", `Update download failed: ${describeFailure(e)}`);
     setState({ status: "error", message: describeFailure(e) });
   } finally {
     u.off("download-progress", onProgress);

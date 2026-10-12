@@ -148,10 +148,9 @@ const GP200_PRST: PrstFormat = {
   name: { offset: 0x30 + 4 + 16, length: 16 },
 };
 
-/** Shared by the GP-200 (R, X), GP-200LT and GP-200JR. */
+/** Shared by the GP-200 (R, X), GP-200LT and GP-200JR. `usbMidiInterface` is per model (measured on the GP-200 only). */
 const gp200Family = {
   family: "gp200",
-  usbMidiInterface: null,
   blocks: GP200_BLOCKS,
   captureBlock: (slot: number) => (slot < 5 ? "AMP" : "DST"),
   ctrls: 8,
@@ -190,9 +189,10 @@ export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freez
   },
   // Port names are matched case-sensitively, like Valeton's GP-200 editor does. The LT and JR stay read-only until a
   // unit has been tested: how they identify and what they take is known only from the editor's code.
-  gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], portPattern: /GP-200(?!LT|JR)/, footswitches: 8, writable: true },
-  gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], portPattern: /GP-200LT/, footswitches: 4, writable: false },
-  gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], portPattern: /GP-200JR/, footswitches: 3, writable: false },
+  // MIDI interface MI_03 on the GP-200 (Kaprrrr/gp200-tone-desk gp200-driver.ps1); not measured on the LT and JR.
+  gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], usbMidiInterface: 3, portPattern: /GP-200(?!LT|JR)/, footswitches: 8, writable: true },
+  gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], usbMidiInterface: null, portPattern: /GP-200LT/, footswitches: 4, writable: false },
+  gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], usbMidiInterface: null, portPattern: /GP-200JR/, footswitches: 3, writable: false },
 });
 
 export function isDeviceKey(v: unknown): v is DeviceKey {

@@ -29,7 +29,8 @@ export function pushMidiLog(line: MidiLogEntry): void {
   if (midiLog.length > MIDI_LOG_CAP) midiLog.shift();
 }
 
-const hex = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0").toUpperCase()).join(" ");
+/** "F0 0A 0B …" */
+export const hex = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0").toUpperCase()).join(" ");
 const u32 = (b: Uint8Array, o: number) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
 const i32 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
 const u16 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
@@ -373,7 +374,9 @@ export function formatLogTime(at: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
+/** Line direction as the monitor and the session log name it. */
+export const DIR_LABEL: Record<MidiLogEntry["dir"], string> = { out: "Out", in: "In", bad: "Bad", warn: "Warn" };
+
 export function formatLogLine(e: MidiLogEntry): string {
-  const dir = e.dir === "out" ? "Out" : e.dir === "in" ? "In" : e.dir === "bad" ? "Bad" : "Warn";
-  return `${formatLogTime(e.at)}  ${dir.padEnd(4)}  ${e.text}${e.raw ? `  [${e.raw}]` : ""}`;
+  return `${formatLogTime(e.at)}  ${DIR_LABEL[e.dir].padEnd(4)}  ${e.text}${e.raw ? `  [${e.raw}]` : ""}`;
 }

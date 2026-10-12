@@ -13,6 +13,7 @@ import { registerSnapToneIpc } from "./ipc/snaptone";
 import { registerSongIpc } from "./ipc/song";
 import { registerUpdateIpc } from "./ipc/update";
 import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
+import { registerLogIpc } from "./ipc/log";
 import type { AppEvent } from "@shared/ipc";
 
 // One app instance = one MIDI session (the pedal's port is exclusive on Windows).
@@ -178,6 +179,7 @@ app.whenReady().then(async () => {
     cb({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [DEV_CSP] } });
   });
 
+  registerLogIpc(getWindow);
   registerAppIpc(getWindow);
   registerFilesIpc(getWindow);
   registerTonesIpc(getWindow);

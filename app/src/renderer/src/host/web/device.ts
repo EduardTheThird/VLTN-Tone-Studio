@@ -14,7 +14,8 @@ export const webDevice: DeviceHostApi = {
       usb: null,
       driver: null,
       linuxSeq: null,
-      suiteRunning: null,
+      usbInterfaces: null,
+      vendorApps: null,
     };
   },
   saveReport: async (text, fileName) => {
