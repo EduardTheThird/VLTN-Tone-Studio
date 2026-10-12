@@ -298,32 +298,32 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 <br>
 
-| | GP-5 | GP-50 | GP-200 · 200R · 200X | GP-200LT | GP-200JR | GP-150 |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Recognised over USB | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪⁴ |
-| Live editing | ✅ | 🧪 | 🧪² | 🧪² | 🧪² | 🧪 |
-| Preset library | ✅ 100 slots | 🧪 100 slots | 🧪 256 slots | 🔒 256 slots | 🔒 255 slots | 🔒 200 slots |
-| Backups | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| Restore a backup | ✅ | 🧪 | 🧪 | 🔒 | 🔒 | 🔒 |
-| `.prst` export | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| `.prst` import | ✅ | 🧪 | 🧪 | 🔒 | 🔒 | 🔒 |
-| Pedal settings | ✅ | 🧪 | 🧪 | 🔒 | 🔒 | 🔒 |
-| Global EQ | — | — | 🧪³ | 🔒 | 🔒 | 🔒 |
-| Footswitches and chain order | ✅ FS1–2 | 🧪¹ | 🧪 CTRL 1–8 | 🔒 | 🔒 | 🔒 FS A–B |
-| Tempo and tap tempo | 🧪 | 🧪¹ | 🧪 | 🧪 | 🧪 | 🧪 |
-| Expression pedal and patch settings | — | 🧪¹ | 🧪 | 🔒 | 🔒 | ✖️ |
-| SnapTones (NAM) over USB | ✅ 30 user slots | 🧪 30 user slots | 🧪 10 slots | ❔ | ❔ | 🔒 50 user slots |
-| Cab IR inside a SnapTone | 🧪 | 🧪 | — | — | — | — |
-| User IRs over USB | ✅ 20 × 512 | 🧪 20 × 512 | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 | 🔒 20 slots |
-| Tone Match | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Tested on a real unit by this project | ✅ | not yet | not yet | not yet | not yet | not yet |
+| | GP-5 | GP-50 | GP-150 | GP-180 | GP-200 · 200R · 200X | GP-200LT | GP-200JR |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Recognised over USB | ✅ | ✅ | 🧪⁴ | ✖️ | 🧪 | 🧪 | 🧪 |
+| Live editing | ✅ | ✅ | 🧪 | ✖️ | 🧪² | 🧪² | 🧪² |
+| Preset library | ✅ 100 slots | ✅ 100 slots | 🔒 200 slots | ✖️ | 🧪 256 slots | 🔒 256 slots | 🔒 255 slots |
+| Backups | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
+| Restore a backup | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
+| `.prst` export | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
+| `.prst` import | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
+| Pedal settings | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
+| Global EQ | — | — | 🔒 | ✖️ | 🧪³ | 🔒 | 🔒 |
+| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–4 | 🔒 FS A–B | ✖️ | 🧪 CTRL 1–8 | 🔒 | 🔒 |
+| Tempo and tap tempo | ✅ | ✅¹ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
+| Expression pedal and patch settings | — | ✅¹ | ✖️ | ✖️ | 🧪 | 🔒 | 🔒 |
+| SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | 🔒 50 user slots | ✖️ | 🧪 10 slots | ❔ | ❔ |
+| Cab IR inside a SnapTone | ✅ | ✅ | — | ✖️ | — | — | — |
+| User IRs over USB | ✅ 20 × 512 | ✅ 20 × 512 | 🔒 20 slots | ✖️ | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 |
+| Tone Match | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
+| [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✖️ | ✅ | ✅ | ✅ |
+| Tested on a real unit by this project | ✅ | ✅ | not yet | — | not yet | not yet | not yet |
 
 <sub>✅ works &nbsp;·&nbsp; 🧪 works in the app, not yet tried on a real unit &nbsp;·&nbsp; 🔒 read-only on a real unit until one has been tested &nbsp;·&nbsp; ✖️ not in Tone Studio &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it or doesn't need it</sub>
 
 <br>
 
-¹ **GP-50 commands known only from Valeton Suite's code** sit behind **Settings › Experimental pedal commands** until they're tried on a GP-50: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
+¹ **Some GP-50 commands sit behind Settings › Experimental pedal commands**: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
 ² **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
 ³ **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind the same *Experimental pedal commands* switch.<br>
 ⁴ **The GP-150 is known from USB captures of a GP-180**, which speaks the same protocol and uses the same `.prst` file, published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Its USB product id isn't known, so Tone Studio finds it by its MIDI port name.
@@ -333,7 +333,8 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 **Which pedal is connected?** Tone Studio works it out by itself and names it everywhere.<br>
 **Presets across models.** A GP-5 preset goes onto a GP-50 unchanged. A GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing. The GP-200, LT and JR share one `.prst` file. Presets don't move between the GP-5 and GP-200 families.<br>
 **GP-200LT and GP-200JR.** They connect, read, back up and play live edits, but Tone Studio doesn't write to their memory until one has been tested.<br>
-**GP-150.** It connects, reads, backs up and plays live edits: all 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. Tone Studio doesn't write to its memory until one has been tested. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. Its `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only.
+**GP-150.** It connects, reads, backs up and plays live edits: all 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. Tone Studio doesn't write to its memory until one has been tested. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. Its `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only.<br>
+**GP-180.** Not supported yet. It uses the GP-150's protocol and `.prst` file, with a third footswitch.
 
 <br>
 
