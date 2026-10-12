@@ -73,7 +73,6 @@ export class Gp150Driver implements DeviceDriver {
     this.#session.addEventListener("message", (ev) => {
       for (const e of this.#toDriverEvents((ev as Event & { message: Gp150Event }).message)) this.#emit(e);
     });
-    this.#session.addEventListener("badframe", () => this.#emit({ type: "badframe" }));
   }
 
   /** Open the pedal's MIDI ports matching `port` (`access`: an already granted MIDIAccess). */

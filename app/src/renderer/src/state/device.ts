@@ -64,6 +64,8 @@ let connectAttempt = 0;
 let watchTimer: number | undefined;
 /** MIDI monitor lines (only filled while the monitor is on). */
 let logNotifyTimer: number | undefined;
+/** Frames the pedal sent; every driver logs each incoming frame, unreadable ones too. */
+let rxFrames = 0;
 
 /** Advanced access for diagnostics and tests (the open connection); not for screens' normal use. */
 export const getDriver = () => driver;
@@ -144,6 +146,7 @@ export const useDevice = create<DeviceState>((set, get) => {
    * it only while it is on, and the UI re-reads at most every LOG_NOTIFY_MS.
    */
   const onLog = (dir: string, bytes: Uint8Array, decoded?: unknown) => {
+    if (dir === "rx" || dir === "rx-bad") rxFrames++;
     const line = logDecoder.line(dir, bytes, decoded);
     if (!line) return;
     sessionLog(DIR_LABEL[line.dir], `${line.text}${line.raw ? `  [${line.raw}]` : ""}${bytes.length ? `  ${hex(bytes)}` : ""}`, line.at);
@@ -266,12 +269,11 @@ export const useDevice = create<DeviceState>((set, get) => {
   };
 
   const attach = async (d: DeviceDriver, mode: DeviceMode) => {
-    let gotBytes = false;
-    d.subscribe((e) => (e.type === "badframe" ? (gotBytes = true) : onDriverEvent(e)));
+    const rxBefore = rxFrames;
+    d.subscribe(onDriverEvent);
     driver = d;
     try {
       const snap = await d.sync();
-      gotBytes = true;
       setFeatures(d, mode);
       cacheNames(snap.device, snap.names);
       saveDevice(snap.device);
@@ -307,7 +309,8 @@ export const useDevice = create<DeviceState>((set, get) => {
       driver = null;
       setFeatures(null);
       await d.close().catch(() => {});
-      throw toConnectionError(e, gotBytes, d.device ?? get().device);
+      // Anything the pedal sent, even a reply the handshake didn't wait for, means the port isn't silent ("busy").
+      throw toConnectionError(e, rxFrames > rxBefore, d.device ?? get().device);
     }
   };
 

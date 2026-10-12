@@ -9,8 +9,9 @@
 //   the device sends 185. RX keeps the low nibble unmasked: the device sometimes puts a raw byte there.
 // Payload: TLV records [u16 type LE][u16 len LE][len bytes]. Patch-scoped messages start with the header record
 //   0x0000 {u16 a, u16 b}: a = 0 -> edit buffer of slot b (b = the CURRENT slot), a = 1 -> stored slot b.
-// Address frames (not TLV): `11 12 00 00 00` SOFTWARE_STATE query, reply `12 12 00 00 00 <state> [<type>]`;
-//   `12 12 00 20 00` SOFTWARE_JUMP reboots into the updater and must never be sent (see dangerOf).
+// Address frames (not TLV): `11 12 00 00 00` SOFTWARE_STATE query, answered `12 12 00 00 00 <state> [<type>]` only in
+//   update mode (USB captures: no reply in normal mode); `12 12 00 20 00` SOFTWARE_JUMP reboots into the updater and
+//   must never be sent (see dangerOf).
 
 export const SYSEX_ID = Object.freeze([0xf0, 0x21, 0x25, 0x7e, 0x47, 0x50, 0x2d, 0x32]);
 export const CMD = Object.freeze({ QUERY: 0x11, SET: 0x12, FLUSH: 0x03 });

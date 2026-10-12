@@ -93,7 +93,6 @@ export class Gp200Driver implements DeviceDriver {
       const e = this.#toDriverEvent((ev as Event & { message: Gp200Event }).message);
       if (e) this.#emit(e);
     });
-    this.#session.addEventListener("badframe", () => this.#emit({ type: "badframe" }));
   }
 
   /** Open the pedal's MIDI ports matching `port` (`access`: an already granted MIDIAccess). */
@@ -189,7 +188,10 @@ export class Gp200Driver implements DeviceDriver {
     return this.#session.device;
   }
 
-  /** Connect FSM (identity, SOFTWARE_STATE, globals). Update mode → Gp200UpdaterError, and nothing more is sent. */
+  /**
+   * Connect FSM: the 0x2001 reply identifies the pedal; SOFTWARE_STATE goes out after it but is answered only in update
+   * mode (USB captures). Then globals. Update mode → Gp200UpdaterError, and nothing more is sent.
+   */
   async identify(): Promise<DeviceKey> {
     if (!this.#session.device) {
       try {

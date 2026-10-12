@@ -13,6 +13,11 @@ import { StemMixer } from "./StemMixer";
 
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
 const MODEL_MB = Math.round(SEPARATION_MODEL.bytes / 1e6);
+const SPLIT_DETAIL = {
+  starting: "Starting the separation model",
+  webgpu: "Runs on this computer, on the graphics card.",
+  wasm: "Runs on this computer's processor (the graphics card can't run it): this can take several minutes.",
+} as const;
 
 /** The Stems tab: pick a song, follow the split, then play and export the stems. */
 export function StemsPanel({ onPick }: { onPick: () => void }) {
@@ -45,7 +50,7 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
     return (
       <Working
         title="Splitting into stems"
-        detail={status.fraction === 0 ? "Starting the separation model" : "Runs on this computer, on the graphics card when it can."}
+        detail={SPLIT_DETAIL[status.backend ?? "starting"]}
         fraction={status.fraction}
       />
     );

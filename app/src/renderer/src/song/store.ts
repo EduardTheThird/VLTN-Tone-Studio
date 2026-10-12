@@ -52,10 +52,10 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       const source = get().source;
       if (!source) return;
       const ctrl = begin();
-      set({ stems: null, lastSplit: null, status: { kind: "splitting", fraction: 0 } });
+      set({ stems: null, lastSplit: null, status: { kind: "splitting", fraction: 0, backend: null } });
       const onProgress = (p: SeparationProgress) => {
         if (ctrl.signal.aborted) return;
-        set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction } : { kind: "splitting", fraction: p.fraction } });
+        set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction } : { kind: "splitting", fraction: p.fraction, backend: p.backend } });
       };
       try {
         const res = await deps.separate(source.audio, onProgress, ctrl.signal);

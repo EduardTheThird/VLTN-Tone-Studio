@@ -103,7 +103,6 @@ export class Gp5Driver implements DeviceDriver {
     this.#session.addEventListener("message", (ev) => {
       for (const e of toDriverEvents((ev as Event & { message: DecodedMessage }).message, this.#session.device)) this.#emit(e);
     });
-    this.#session.addEventListener("badframe", () => this.#emit({ type: "badframe" }));
   }
 
   /** Open the pedal's MIDI ports matching `port` (`access`: an already granted MIDIAccess). */

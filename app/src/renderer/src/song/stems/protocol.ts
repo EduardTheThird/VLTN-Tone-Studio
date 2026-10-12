@@ -11,7 +11,8 @@ export type WorkerRequest =
   | { type: "cancel"; id: number };
 
 export type WorkerReply =
-  | { type: "loaded"; backend: Backend }
+  /** `threads`: the CPU path's thread count; `gpuError`: why WebGPU wasn't used (backend "wasm") */
+  | { type: "loaded"; backend: Backend; threads: number; gpuError?: string }
   | { type: "load-error"; message: string }
   | { type: "progress"; id: number; fraction: number }
   /** stems[source][channel], STEM_NAMES order */
