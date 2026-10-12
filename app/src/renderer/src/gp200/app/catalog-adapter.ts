@@ -1,6 +1,6 @@
-// The user's GP-200 catalog (gp200/lib/catalog.mjs, built from their algorithm.xml) in the app's ModelInfo/ParamInfo
-// shape, so GP-200 blocks render like the GP-5 family's. Param index = the XML control ID (0..14, the f32[15] slot
-// and the 0x0005 param byte); values are wire values (Combox TrueIDs included).
+// The GP-200 catalog in use (built in, or built from the user's algorithm.xml: gp200/lib/catalog.mjs) in the app's
+// ModelInfo/ParamInfo shape, so GP-200 blocks render like the GP-5 family's. Param index = the XML control ID (0..14,
+// the f32[15] slot and the 0x0005 param byte); values are wire values (Combox TrueIDs included).
 import type { BlockName } from "@/gp200/lib/protocol.mjs";
 import { defaultValue, modelByFxid, modelsForBlock, optionValues, tempoSyncBinding, type CatalogKnob, type CatalogModel, type Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import type { ModelInfo, ParamInfo } from "@/state/device-types";

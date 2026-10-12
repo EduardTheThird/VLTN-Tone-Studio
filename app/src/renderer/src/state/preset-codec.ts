@@ -1,11 +1,11 @@
 // The preset bytes of every family behind one seam: .prst → PresetState (toPresetState), app edits → new .prst
 // (editPrst), and the effect-catalog lookups that differ by family. GP-5 family: gp5/lib (prst.mjs, the built-in
-// catalog). GP-200 family: gp200/lib/prst.mjs and the user's own catalog (gp200/app), which is absent until imported:
-// blocks then have no `model` and show as "Unknown model".
+// catalog). GP-200 family: gp200/lib/prst.mjs and the catalog in use (gp200/app: built in, or the user's import); an
+// fxid missing from it leaves the block without a `model` ("Unknown model").
 import * as gp5 from "@/gp5/lib/prst.mjs";
 import { SYNC_ON_DIVISION, clampParam, defaultParams, displayedParam, modelByFxid, modelsForBlock } from "@/gp5/lib/catalog.mjs";
 import * as gp200 from "@/gp200/lib/prst.mjs";
-import { BLOCKS as GP200_BLOCKS, PARAM_COUNT as GP200_PARAM_COUNT } from "@/gp200/lib/protocol.mjs";
+import { BLOCKS as GP200_BLOCKS } from "@/gp200/lib/protocol.mjs";
 import { defaultParams as gp200DefaultParams, type Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import { gp200ModelByFxid, gp200ModelsForBlock } from "@/gp200/app/catalog-adapter";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
@@ -13,8 +13,8 @@ import { profileFor, type DeviceKey } from "@shared/devices";
 import { isGp5Family, presetDevice } from "./device-model";
 import type { BlockCode, BlockState, ExpSettings, Gp5FamilyKey, ModelInfo, ParamInfo, PresetEdits, PresetState } from "./device-types";
 
-/** The GP-200 catalog the app holds now (the user's import), or null. */
-const currentCatalog = (): Gp200Catalog | null => useGp200Catalog.getState().catalog;
+/** The GP-200 catalog the app holds now: the built-in one, or the user's import. */
+const currentCatalog = (): Gp200Catalog => useGp200Catalog.getState().catalog;
 
 const round = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -28,23 +28,23 @@ function gp5Model(fxid: number, device: Gp5FamilyKey, params?: readonly number[]
 /**
  * Catalog model of `fxid` in block `block` of a `device` preset, or undefined when the catalog has none. GP-5 family:
  * with the block's `params`, a synced Time/Rate param is described as the pedal shows it. GP-200 family: block-aware
- * (one fxid can sit in PRE and DST with different defaults); always undefined without an imported catalog.
+ * (one fxid can sit in PRE and DST with different defaults).
  */
 export function modelFor(device: DeviceKey, block: number, fxid: number, params?: readonly number[], catalog = currentCatalog()): ModelInfo | undefined {
   if (isGp5Family(device)) return gp5Model(fxid, device, params);
-  return catalog ? gp200ModelByFxid(catalog, fxid, block) : undefined;
+  return gp200ModelByFxid(catalog, fxid, block);
 }
 
-/** Every model block `block` of `device` can hold, in catalog order; empty on a GP-200 family pedal without a catalog. */
+/** Every model block `block` of `device` can hold, in catalog order. */
 export function modelsFor(device: DeviceKey, block: number, catalog = currentCatalog()): ModelInfo[] {
   if (isGp5Family(device)) return modelsForBlock(block, device) as ModelInfo[];
-  return catalog ? gp200ModelsForBlock(catalog, block) : [];
+  return gp200ModelsForBlock(catalog, block);
 }
 
 /** Param values the pedal loads with model `fxid` in block `block` (8 on the GP-5 family, 15 on the GP-200 family). */
 export function defaultParamsFor(device: DeviceKey, block: number, fxid: number, catalog = currentCatalog()): number[] {
   if (isGp5Family(device)) return defaultParams(fxid, device);
-  return catalog ? gp200DefaultParams(catalog, fxid, block) : new Array<number>(GP200_PARAM_COUNT).fill(0);
+  return gp200DefaultParams(catalog, fxid, block);
 }
 
 /** `value` as param `info` holds it: the nearest of its `values` (GP-200 menus with gaps), else within range on a step. */
@@ -106,14 +106,14 @@ function gp5State(slot: number, prst: Uint8Array): PresetState {
   };
 }
 
-function gp200State(slot: number, prst: Uint8Array, device: DeviceKey, catalog: Gp200Catalog | null): PresetState {
+function gp200State(slot: number, prst: Uint8Array, device: DeviceKey, catalog: Gp200Catalog): PresetState {
   const p = gp200.parsePrst(prst).patch;
   const byIndex = <T extends { index: number }>(list: readonly T[]) => [...list].sort((a, b) => a.index - b.index);
   return {
     device,
     slot,
     name: p.name,
-    blocks: blockStates(device, byIndex(p.blocks), (fxid, block) => (catalog ? gp200ModelByFxid(catalog, fxid, block) : undefined)),
+    blocks: blockStates(device, byIndex(p.blocks), (fxid, block) => gp200ModelByFxid(catalog, fxid, block)),
     order: p.chain.order,
     volume: p.volume,
     bpm: p.tempo,

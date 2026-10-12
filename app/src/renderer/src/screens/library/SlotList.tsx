@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FileSearchIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
+import { ArrowDownToLineIcon, ArrowUpDownIcon, CopyIcon, DownloadIcon, FolderPlusIcon, GripVerticalIcon, HardDriveDownloadIcon, InfoIcon, MoveIcon, PencilIcon, PlayIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UnplugIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -247,7 +247,6 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
     <section aria-label={`On ${listPedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
       {head}
       {status !== "connected" && names.length > 0 && <OfflineBanner />}
-      {connected && profile.family === "gp200" && <CatalogBanner />}
       <BulkBar visible={visible.map((r) => r.slot)} visibleSelected={visibleSelected} sheetMode={sheetMode} />
       <div
         ref={gridRef}
@@ -321,25 +320,6 @@ function OfflineBanner() {
         {busyPort
           ? `Close ${editor}, then reconnect. Showing the slots from the last connection.`
           : `Showing the slots as of the last connection.${status === "connecting" ? " Connecting…" : " Connect the pedal to write."}`}
-        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => useNav.getState().go("device")}>
-          Open Device
-        </Button>
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-/** GP-200 family without the imported effect list: blocks read as "Unknown model" until it is imported on Device. */
-function CatalogBanner() {
-  const missing = useGp200Catalog((s) => s.loaded && (s.status === "none" || s.status === "error"));
-  const pedal = usePedalName();
-  if (!missing) return null;
-  return (
-    <Alert className="mx-2 mt-2.5 w-auto">
-      <FileSearchIcon />
-      <AlertTitle>Effect names not imported</AlertTitle>
-      <AlertDescription className="flex flex-wrap items-center gap-x-2">
-        The {pedal}'s effect names come from Valeton's GP-200 editor on this computer. Until you import them, blocks show as Unknown model.
         <Button variant="link" size="sm" className="h-auto p-0" onClick={() => useNav.getState().go("device")}>
           Open Device
         </Button>

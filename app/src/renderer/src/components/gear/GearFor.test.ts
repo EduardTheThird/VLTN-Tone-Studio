@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { profileFor } from "@shared/devices";
 import { gp200ModelByFxid } from "@/gp200/app/catalog-adapter";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
@@ -41,7 +42,7 @@ const catalog = buildCatalogFromXml(XML);
 
 const blockOf = (code: BlockCode, index: number, model: ModelInfo, params: number[]): BlockState => ({ index, code, enabled: true, fxid: model.fxid, model, params });
 
-afterAll(() => useGp200Catalog.setState({ catalog: null }));
+afterAll(() => useGp200Catalog.setState({ catalog: BUILT_IN_CATALOG }));
 
 describe("knobsForBlock", () => {
   it("reads OFF at the minimum, or at the maximum for a knob that also has valueType 2", () => {

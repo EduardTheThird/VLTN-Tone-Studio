@@ -386,7 +386,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     });
   };
 
-  // GP-200 family models come from the user's catalog: describe the open preset again when it is imported or removed.
+  // GP-200 family models come from the catalog in use: describe the open preset again when an import replaces it.
   useGp200Catalog.subscribe((c, prev) => {
     const { preset, saved } = get();
     if (c.catalog === prev.catalog || !preset?.gp200) return;

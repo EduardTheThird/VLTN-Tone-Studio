@@ -15,6 +15,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Changed
 - The diagnostic report lists the USB interfaces of Valeton devices (driver, name, MIDI class) and which Valeton apps run.
+- **The GP-200 effect list is built in.** Effect names and knob ranges for the GP-200, GP-200LT and GP-200JR come with the app, so blocks show their models and knobs as soon as the pedal connects. Importing `algorithm.xml` from Valeton's GP-200 editor is now optional: it adds units, Auto CAB Match and exact menu values, and *Use the built-in list* goes back. The simulator's generated presets use the list's models and defaults.
+- **Tone Studio is licensed under GPL-3.0.** The built-in list is generated from [kabir0st/gp200-studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0) by `app/scripts/gp200-catalog-from-studio.mjs`.
+
+### Known limitations
+- The built-in GP-200 list has no units, no Auto CAB Match and plain 0, 1, 2… menu values (the Empire OD *Mode* may need the imported list to send the right value). Drives and boosts are listed in both PRE and DST, and Auto Swell, Hold and Freeze in both PRE and MOD; Hammy only in PRE.
 
 ## [0.5.0] - 2026-10-11
 

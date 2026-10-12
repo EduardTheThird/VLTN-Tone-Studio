@@ -1,6 +1,8 @@
-// The Rig's patch controls on GP-200 family presets without an effect catalog: tap tempo within the model's range, the
-// CTRLs a model shows, EXP / Quick Access targets, and patch-field edits that undo and count as unsaved changes.
+// The Rig's patch controls on GP-200 family presets whose models the effect catalog doesn't know: tap tempo within the
+// model's range, the CTRLs a model shows, EXP / Quick Access targets, and patch-field edits that undo and count as
+// unsaved changes.
 import { beforeEach, describe, expect, it } from "vitest";
+import type { Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import { buildPrst, encodePatchImage, type PatchInput } from "@/gp200/lib/prst.mjs";
 import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
@@ -11,7 +13,9 @@ import { useHistory } from "./history";
 import { paramOptions, retarget, styleOptions, targetOptions } from "./patch-fields";
 import { tap } from "./tempo";
 
-const patch = (device: DeviceKey, p: PatchInput = {}): PresetState => toPresetState(0, buildPrst(encodePatchImage({ name: "Test", ...p })), device);
+/** A catalog without models, so every block's model is unknown. */
+const NO_MODELS: Gp200Catalog = { meta: { device: "GP-200", source: "test", counts: { algEntries: 0, uniqueCodes: 0, perModule: {}, controls: 0 } }, modules: [] };
+const patch = (device: DeviceKey, p: PatchInput = {}): PresetState => toPresetState(0, buildPrst(encodePatchImage({ name: "Test", ...p })), device, NO_MODELS);
 
 describe("tap tempo", () => {
   it("clamps to the model's range", () => {
