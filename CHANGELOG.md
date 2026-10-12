@@ -2,7 +2,7 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
-## [Unreleased]
+## [0.7.1] - 2026-10-12
 
 ### Fixed
 - **A GP-200 connects.** Tone Studio waited for the pedal to answer *Read pedal mode* (SOFTWARE_STATE), which a GP-200 in normal mode never does, so every connection stopped after four tries with "GP-200 port found, but it doesn't answer". USB captures of Valeton's GP-200 editor ([phash/gp200editor](https://github.com/phash/gp200editor)) show the pedal names itself in its reply to the identity query. Tone Studio now takes the model from that reply, treats an answer to *Read pedal mode* only as firmware update mode, and resends both together when the pedal says nothing. The simulator no longer answers *Read pedal mode* in normal mode either.
@@ -122,7 +122,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
-[Unreleased]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...HEAD
+[0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0
