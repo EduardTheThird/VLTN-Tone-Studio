@@ -1,14 +1,14 @@
 // Device registry: one profile per pedal model the app knows. Pure data plus lookups, shared by main, preload and
 // renderer (no protocol code: each family's codec and session live in its own toolkit, gp5/, gp200/ and gp150/).
 // Facts: USB descriptors of the pedals, drewmerc302/valeton-gp50, static RE of Valeton Suite 2.1.0 and the GP-200 editor
-// 1.8.0, and the GP-180 captures of majabojarska/Valeton-GP180-Rev-Eng (the GP-150's protocol and preset file).
+// 1.8.0, and the GP-180 captures of majabojarska/Valeton-GP180-Rev-Eng (the GP-150 family's protocol and preset file).
 
-export type DeviceKey = "gp5" | "gp50" | "gp200" | "gp200lt" | "gp200jr" | "gp150";
-/** Protocol family: the GP-5 and GP-50 share one protocol, the GP-200 family (incl. R/X, LT, JR) another, the GP-150 a third. */
+export type DeviceKey = "gp5" | "gp50" | "gp200" | "gp200lt" | "gp200jr" | "gp150" | "gp180";
+/** Protocol family: the GP-5 and GP-50 share one protocol, the GP-200 family (incl. R/X, LT, JR) another, the GP-150 and GP-180 a third. */
 export type DeviceFamily = "gp5" | "gp200" | "gp150";
 
 /** Every known model, in display order. GP-200R and GP-200X report as the GP-200. */
-export const DEVICE_KEYS: readonly DeviceKey[] = ["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150"];
+export const DEVICE_KEYS: readonly DeviceKey[] = ["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150", "gp180"];
 
 /** Valeton/Hotone USB vendor id. */
 export const VALETON_VID = 0x84ef;
@@ -187,6 +187,32 @@ const GP150_PRST: PrstFormat = {
   name: { offset: 0x2c, length: 16 },
 };
 
+/**
+ * Shared by the GP-150 and GP-180: one protocol and preset file, the GP-180 has a third footswitch (C). Facts come from
+ * GP-180 captures; neither model has been tested by this project, so writes stay off. USB ids: the GP-180's 0x0188
+ * (USB captures and a user's driver log), the GP-150's 0x0186 from public Windows driver databases (not measured).
+ * SnapTone slot n is the pedal's list entry n + 1 (entry 0 is "None"); 0-49 factory, 50-99 user.
+ */
+const gp150Family = {
+  family: "gp150",
+  usbMidiInterface: null,
+  ...countedSlots(200),
+  blocks: GP150_BLOCKS,
+  captureBlock: () => "NS",
+  snapTone: { slots: 100, userRange: [50, 99], fxidBase: SNAPTONE_FXID },
+  // Suite sends the first 683 samples at 44.1 kHz (zero-filled to the 2048 the upload holds).
+  userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 683 },
+  tempo: { min: 40, max: 260 },
+  nameLength: 15,
+  emptyName: null,
+  prst: GP150_PRST,
+  globals: true,
+  simulator: true,
+  writable: false,
+  // Estimate: one 1136-byte reply per slot.
+  backupSeconds: 40,
+} as const;
+
 export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freeze({
   gp5: {
     ...gp5Family,
@@ -214,34 +240,9 @@ export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freez
   gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], usbMidiInterface: 3, portPattern: /GP-200(?!LT|JR)/, footswitches: 8, writable: true },
   gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], usbMidiInterface: null, portPattern: /GP-200LT/, footswitches: 4, writable: false },
   gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], usbMidiInterface: null, portPattern: /GP-200JR/, footswitches: 3, writable: false },
-  // Known from GP-180 captures (same protocol, same preset file, one footswitch more); no GP-150 has been tested, so
-  // writes stay off. Its USB product id is not known (the GP-180's is 0x0188): the port name identifies it.
-  // SnapTone slot n is the pedal's list entry n + 1 (entry 0 is "None"); 0-49 factory, 50-99 user.
-  gp150: {
-    key: "gp150",
-    name: "GP-150",
-    family: "gp150",
-    usbPids: [],
-    usbMidiInterface: null,
-    portPattern: /GP-150(?!\d)/,
-    ...countedSlots(200),
-    blocks: GP150_BLOCKS,
-    footswitches: 2,
-    captureBlock: () => "NS",
-    ctrls: 2,
-    snapTone: { slots: 100, userRange: [50, 99], fxidBase: SNAPTONE_FXID },
-    // Suite sends the first 683 samples at 44.1 kHz (zero-filled to the 2048 the upload holds).
-    userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 683 },
-    tempo: { min: 40, max: 260 },
-    nameLength: 15,
-    emptyName: null,
-    prst: GP150_PRST,
-    globals: true,
-    simulator: true,
-    writable: false,
-    // Estimate: one 1136-byte reply per slot.
-    backupSeconds: 40,
-  },
+  gp150: { ...gp150Family, key: "gp150", name: "GP-150", usbPids: [0x0186], portPattern: /GP-150(?!\d)/, footswitches: 2, ctrls: 2 },
+  // MIDI interface MI_03 (a user's driver log in cesardamien/hotone-family-firmware-fix)
+  gp180: { ...gp150Family, key: "gp180", name: "GP-180", usbPids: [0x0188], usbMidiInterface: 3, portPattern: /GP-180(?!\d)/, footswitches: 3, ctrls: 3 },
 });
 
 export function isDeviceKey(v: unknown): v is DeviceKey {
