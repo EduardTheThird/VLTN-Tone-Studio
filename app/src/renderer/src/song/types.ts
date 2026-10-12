@@ -1,4 +1,4 @@
-// Song: a user's audio file split into stems (Stem Splitter) and analysed for a GP-5 preset (Tone Match).
+// Song: a user's audio file split into stems (Stem Splitter) and analysed for a preset on the pedal (Tone Match).
 // The store (song/store.ts, `useSong`) owns the loaded song and its stems; Tone Match only reads them.
 
 /** Demucs htdemucs_6s sources, in the model's output order. */

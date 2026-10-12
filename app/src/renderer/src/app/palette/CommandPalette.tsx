@@ -214,8 +214,6 @@ function useGroups(close: () => void): Group[] {
         icon: Guitar,
         hint: `Match a song's guitar tone on the ${pedalName(lastDevice)}`,
         words: ["tone match", "match", "guitar", "song", "stems", "preset", "ir"],
-        // Proposals come from the GP-5 family's catalogs only (song/tonematch/store.ts)
-        blocked: catalog ? undefined : `Not for the ${pedalName(catalogDevice)} yet`,
         run: go("song", "tone"),
       }),
       actionEntry({ id: "split-song", label: "Split a song into stems", icon: AudioLines, words: ["stems", "song", "separate", "guitar", "vocals", "drums"], run: go("song", "stems") }),

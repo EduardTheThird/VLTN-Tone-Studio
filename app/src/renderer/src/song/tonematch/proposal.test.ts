@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { findModel } from "@/gp5/lib/catalog.mjs";
+import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import { buildCatalogFromXml, modelByFxid, modelsForBlock } from "@/gp200/lib/catalog.mjs";
+import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { ampGain, chooseAmp, proposePreset } from "./proposal";
 import { analysisFixture } from "./test-signals";
 
@@ -61,6 +64,54 @@ describe("proposePreset", () => {
         expect(b.params![param.index]).toBeLessThanOrEqual(param.max);
       }
     }
+  });
+});
+
+describe("proposePreset on the GP-200 family", () => {
+  const gp200Fxid = (name: string, block: string) => modelsForBlock(BUILT_IN_CATALOG, block).find((m) => m.name === name)?.code;
+  afterEach(() => useGp200Catalog.setState({ catalog: BUILT_IN_CATALOG }));
+
+  it.each(["gp200", "gp200lt", "gp200jr"] as const)("builds a %s preset from the built-in list, VOL left alone", (device) => {
+    const p = proposePreset(analysisFixture(), device);
+    const by = Object.fromEntries(p.blocks.map((b) => [b.code, b]));
+    expect(p.device).toBe(device);
+    expect(p.blocks.map((b) => b.code)).toEqual(["PRE", "WAH", "DST", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB"]);
+    expect(p.blocks.map((b) => b.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(by.AMP).toMatchObject({ fxid: gp200Fxid("Mess DualM", "AMP"), enabled: true });
+    expect(by.AMP.params).toHaveLength(15);
+    expect(by.AMP.settings.find((s) => s.name === "Presence")?.value).toBe(50 + (analysisFixture().tone.presenceDb / 2) * 4);
+    expect(by.CAB.fxid).toBe(gp200Fxid("Mess", "CAB"));
+    expect(by.DLY).toMatchObject({ enabled: true, fxid: gp200Fxid("Pure", "DLY") });
+    expect(by.DLY.settings).toEqual(expect.arrayContaining([{ name: "Time", value: 375 }, { name: "Feedback", value: 40 }]));
+    for (const code of ["PRE", "WAH", "MOD", "DST"]) expect(by[code]).toMatchObject({ enabled: false, fxid: null });
+  });
+
+  it("keeps every param inside the GP-200 list's ranges", () => {
+    const p = proposePreset(analysisFixture({ tone: { bassDb: 30, lowMidDb: -30, midDb: 30, trebleDb: -30, presenceDb: 30, confidence: 0.6 } }), "gp200");
+    for (const b of p.blocks.filter((x) => x.fxid !== null)) {
+      for (const k of modelByFxid(BUILT_IN_CATALOG, b.fxid!, b.code)!.knobs.filter((x) => x.min !== undefined)) {
+        expect(b.params![k.id], `${b.code} ${k.name}`).toBeGreaterThanOrEqual(k.min!);
+        expect(b.params![k.id], `${b.code} ${k.name}`).toBeLessThanOrEqual(k.max!);
+      }
+    }
+  });
+
+  it("takes the amp's own cabinet from an imported list (Auto CAB Match), and fails plainly when a model is missing", () => {
+    const xml = (cabCode: string) =>
+      [
+        "<GP-200>",
+        ...["PRE", "WAH", "DST", "NR", "MOD"].map((b, i) => `<Catalog Name = "${b}"><Alg Name="X${b}" Module="${b}" Code="${900 + i}" Index="0" /></Catalog>`),
+        `<Catalog Name = "AMP"><Alg Name="Mess DualM" Module="AMP" Code="117440600" Index="0" ${cabCode} /></Catalog>`,
+        '<Catalog Name = "CAB"><Alg Name="Mess" Module="CAB" Code="167772200" Index="0" /><Alg Name="Big Box" Module="CAB" Code="167772201" Index="1" /></Catalog>',
+        '<Catalog Name = "EQ"><Alg Name="Guitar EQ 1" Module="EQ" Code="16777269" Index="0" /></Catalog>',
+        '<Catalog Name = "DLY"><Alg Name="Pure" Module="DLY" Code="184549376" Index="0" /></Catalog>',
+        '<Catalog Name = "RVB"><Alg Name="Plate" Module="RVB" Code="201326595" Index="0" /></Catalog>',
+        "</GP-200>",
+      ].join("\n");
+    useGp200Catalog.setState({ catalog: buildCatalogFromXml(xml('CABCode="167772201"')) });
+    expect(proposePreset(analysisFixture(), "gp200").blocks.find((b) => b.code === "CAB")?.title).toBe("Big Box");
+    useGp200Catalog.setState({ catalog: buildCatalogFromXml(xml("").replace("Mess DualM", "Other Amp")) });
+    expect(() => proposePreset(analysisFixture(), "gp200")).toThrow(/no AMP model "Mess DualM"/);
   });
 });
 

@@ -229,7 +229,7 @@ Mute or solo any of them and export them as WAV.
 <br>
 <br>
 
-Tone Match listens to the guitar alone and proposes a preset for your GP-5 or GP-50 that you can play on the pedal right away.
+Tone Match listens to the guitar alone and proposes a preset for your GP-5, GP-50 or GP-200 (LT and JR too) that you can play on the pedal right away.
 
 <br>
 
@@ -311,7 +311,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | SnapTones (NAM) over USB | ✅ 30 user slots | 🧪 30 user slots | 🧪 10 slots | ❔ | ❔ | ✖️ |
 | Cab IR inside a SnapTone | 🧪 | 🧪 | — | — | — | ✖️ |
 | User IRs over USB | ✅ 20 × 512 | 🧪 20 × 512 | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 | ✖️ |
-| Tone Match | ✅ | 🧪 | ✖️ | ✖️ | ✖️ | ✖️ |
+| Tone Match | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | ✖️ |
 | [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✅ | ✅ | ✖️ |
 | Tested on a real unit by this project | ✅ | not yet | not yet | not yet | not yet | — |
 

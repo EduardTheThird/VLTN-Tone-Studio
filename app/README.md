@@ -20,7 +20,7 @@ The GP-200 (R, X), GP-200LT and GP-200JR share one protocol (`gp200/lib`), drive
 - Presets: 1224-byte `.prst` (1176 bytes before editor 1.4.0), the same file on all three models; 256 slots (JR 255) labelled `01-A`…`64-D`, 16-character names, no empty slots.
 - SnapTones: 10 slots, 0–4 in AMP and 5–9 in DST (`profile.captureBlock`). `Gp200Session.uploadSnapTone` sends record `0x1013` with the 8840-byte clone or a 4744-byte GP-200 blob; a GP-5 family upload file is refused. CAB keeps playing after a SnapTone, so no cab IR is baked in (`noCabIrReason`, `screens/tones/CabIrPicker.tsx`).
 - User IRs: 20 slots of 1024 samples (`Gp200Session.uploadUserIr`; a 512-sample GP-5 block is accepted too).
-- Tone Match isn't offered: it proposes from the GP-5 family's catalog.
+- Tone Match proposes from the catalog in use (built in or imported) and auditions through live edits, so it works on the LT and JR too; the GP-200 cabinet names it picks are a best guess unless an imported list names the amp's cab (Auto CAB Match).
 
 Electron is pinned to 43.x because Chromium 152 (Electron 44) breaks WebMIDI SysEx.
 
@@ -91,7 +91,7 @@ The Song screen (`screens/song/`, store `song/store.ts`) splits a song into six 
 - Stems export as 16- or 24-bit WAV (`song/wav.ts`, `host.song.saveFiles`).
 - Audio files dropped on the window open in Song. While Song is showing, a dropped `.wav` is also a song; elsewhere it goes to a User IR slot.
 
-Tone Match (`song/tonematch/`, `screens/song/tonematch/`, GP-5 and GP-50 only): analyses the guitar stem in a Web Worker (1/3-octave silence-gated LTAS, gain class, delay from onset autocorrelation, reverb from note-ending tails), proposes a preset for the connected pedal's catalog auditioned through the Rig's live edits (`screens/rig/edits.ts`, nothing is saved), and designs a 1024-tap minimum-phase cabinet IR (44.1 kHz) from a ~20 s recording of the pedal's USB audio with the CAB block off. "Write to a User IR slot…" sends it over USB (`LocalIrDialog`; the pedal keeps the first 512 taps).
+Tone Match (`song/tonematch/`, `screens/song/tonematch/`, every supported pedal): analyses the guitar stem in a Web Worker (1/3-octave silence-gated LTAS, gain class, delay from onset autocorrelation, reverb from note-ending tails), proposes a preset for the connected pedal's catalog auditioned through the Rig's live edits (`screens/rig/edits.ts`, nothing is saved), and designs a 1024-tap minimum-phase cabinet IR (44.1 kHz) from a ~20 s recording of the pedal's USB audio with the CAB block off. "Write to a User IR slot…" sends it over USB (`LocalIrDialog`; the GP-5 family keeps the first 512 taps, the GP-200 family all 1024).
 
 ## TONE3000
 Sign-in needs a TONE3000 app key (client_id). Enter it in Settings › TONE3000 account (saved as `clientId` in `userData/tone3000.json`; changing it signs out), or set `MAIN_VITE_T3K_CLIENT_ID` at build time, or `T3K_CLIENT_ID` at runtime. The Settings key wins. See `../design/tone3000.md`. Tokens are encrypted with Electron `safeStorage`. When the OS keychain is unavailable, for example KWallet not initialised, they are kept in memory only.
