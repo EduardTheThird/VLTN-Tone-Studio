@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LibraryStore, readPrstPaths } from "./files-store";
 import { IMPORTED_ID, REPLACED_ID } from "@shared/host/files";
+import { PRST_MODELS } from "@shared/devices";
 
 /** Minimal bytes with the model's header and a name at 0x19 (the store only reads those). */
 function fakePrst(name: string, device: "gp5" | "gp50" = "gp5"): Uint8Array {
@@ -182,7 +183,7 @@ describe("readPrstPaths", () => {
     const [a, b, c, d] = await readPrstPaths([ok, big, txt, join(root, "missing.prst")]);
     expect(a).toMatchObject({ fileName: "65-Puppy.prst", error: null });
     expect(a.bytes?.length).toBe(507);
-    expect(b.error).toBe("Not a GP-5, GP-50 or GP-200 preset.");
+    expect(b.error).toBe(`Not a ${PRST_MODELS} preset.`);
     expect(c.error).toBe("Not a .prst preset file.");
     expect(d.error).toMatch(/Couldn't read/);
   });

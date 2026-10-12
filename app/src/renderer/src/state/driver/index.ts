@@ -4,6 +4,7 @@ import { requestAccess } from "@/gp5/lib/transport-webmidi.mjs";
 import { deviceForPortName, familyKeys, listNames, profileFor, type DeviceFamily, type DeviceKey } from "@shared/devices";
 import type { Gp200FamilyKey } from "@/gp200/lib/session.mjs";
 import type { ConnectionError, Gp5FamilyKey } from "../device-types";
+import { Gp150Driver } from "./gp150-driver";
 import { Gp200Driver } from "./gp200-driver";
 import { Gp5Driver } from "./gp5-driver";
 import { DRIVER_FAMILIES, SUPPORTED_DEVICE_KEYS, hasDriver, type DeviceDriver, type DriverFamily, type DriverOptions } from "./types";
@@ -25,6 +26,10 @@ const FACTORIES: Record<DriverFamily, DriverFactory> = {
     open: (access, port, opts) => Gp200Driver.open(access, port, opts),
     // familyKeys("gp200") are exactly the Gp200FamilyKey models
     simulate: (device, opts) => Gp200Driver.simulate(device as Gp200FamilyKey, opts),
+  },
+  gp150: {
+    open: (access, port, opts) => Gp150Driver.open(access, port, opts),
+    simulate: (device, opts) => Gp150Driver.simulate(device, opts),
   },
 };
 

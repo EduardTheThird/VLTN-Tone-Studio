@@ -2,7 +2,8 @@ import { host } from "@/host";
 import { cloneToSnapToneFile } from "@/gp5/lib/snaptone.mjs";
 import { toGp200SnapTone } from "@/gp200/lib/snaptone.mjs";
 import { useDevice } from "@/state/device";
-import { DEFAULT_DEVICE, isGp5Family } from "@/state/device-model";
+import { DEFAULT_DEVICE } from "@/state/device-model";
+import { profileFor } from "@shared/devices";
 import type { DeviceKey } from "@/state/device-types";
 import type { ClonePhase } from "./pipeline";
 
@@ -71,11 +72,11 @@ export async function convertToClone(
 }
 
 /**
- * The SnapTone upload file `device` takes, cut from a clone: the GP-5 family's 2696-byte file (Suite's cut-down
- * clone), or the GP-200 family's 4744-byte one, which keeps 1024 impulse-response taps.
+ * The SnapTone upload file `device` takes, cut from a clone: the GP-5 family's (and GP-150's) 2696-byte file (Suite's
+ * cut-down clone), or the GP-200 family's 4744-byte one, which keeps 1024 impulse-response taps.
  */
 export function snapToneFile(clone: Uint8Array, device: DeviceKey): Uint8Array {
-  return isGp5Family(device) ? cloneToSnapToneFile(clone) : toGp200SnapTone(clone);
+  return profileFor(device).family === "gp200" ? toGp200SnapTone(clone) : cloneToSnapToneFile(clone);
 }
 
 /** convertToClone, then the upload file for the connected (or last connected) pedal. */

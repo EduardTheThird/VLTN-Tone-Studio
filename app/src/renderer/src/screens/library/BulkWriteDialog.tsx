@@ -21,7 +21,7 @@ import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { pedalName, presetDevice } from "@/state/device-model";
 import { profileFor } from "@shared/devices";
 import { readAndBackUp, readSlot, runNative } from "./native";
-import { gp200InitPatch, slotsToRead, type NativeOp, type Step } from "./plans";
+import { initPatch, slotsToRead, type NativeOp, type Step } from "./plans";
 import { emptyName, isEmptyName, useLibrary } from "./store";
 
 export interface BulkPlan {
@@ -43,11 +43,11 @@ const MAX_ROWS = 6;
 
 /**
  * An empty preset (named like the pedal's empty slots) to clear slots with: a known empty slot's body of the
- * connected model, else read one from the pedal. The GP-200 family has no empty slots: its slots get an init patch.
+ * connected model, else read one from the pedal. The GP-200 family and the GP-150 have no empty slots: their slots get an init patch.
  */
 async function blankPreset(): Promise<Uint8Array> {
   const { names, device } = useDevice.getState();
-  if (device && profileFor(device).emptyName === null) return gp200InitPatch(device);
+  if (device && profileFor(device).emptyName === null) return initPatch(device);
   const { bodies } = useLibrary.getState();
   const known = names.find((n) => isEmptyName(n.name) && bodies[n.slot] && presetDevice(bodies[n.slot].prst) === device);
   if (known) return bodies[known.slot].prst;

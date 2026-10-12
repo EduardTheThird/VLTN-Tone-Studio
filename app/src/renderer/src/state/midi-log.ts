@@ -1,6 +1,7 @@
 // MIDI monitor: a capped list of tx/rx lines fed by the sessions' `log` option, and the decoder that turns raw frames
 // into readable lines ("Select preset 63", "Acknowledged", "Pedal: DLY Mix 32"). GP-5 family frames are nibble frames;
-// GP-200 family frames start with their own header and decode with gp200/lib/protocol.mjs.
+// GP-200 family frames start with their own header and decode with gp200/lib/protocol.mjs; GP-150 frames start F0 7F
+// with a check byte and decode with gp150/lib/protocol.mjs.
 import { BLOCKS, CC, CMD, EXP_TARGETS, KIND, READ, Reassembler, decodeMessage, globalsFor, parseSysex, patchSettingByRecord } from "@/gp5/lib/protocol.mjs";
 import { modelByFxid } from "@/gp5/lib/catalog.mjs";
 import {
@@ -15,6 +16,23 @@ import {
   type DecodedMessage as Gp200Message,
   type DecodedRecord as Gp200Record,
 } from "@/gp200/lib/protocol.mjs";
+import {
+  BLOCKS as GP150_BLOCKS,
+  CHUNK as GP150_CHUNK,
+  CMD as GP150_CMD,
+  CONTROL as GP150_CONTROL,
+  EDIT_BUFFER as GP150_EDIT_BUFFER,
+  GLOBAL_RECORDS as GP150_GLOBAL_RECORDS,
+  P as GP150_P,
+  decodeBlockOn as decodeGp150BlockOn,
+  decodeFrame as decodeGp150Frame,
+  decodeModel as decodeGp150Model,
+  decodeParam as decodeGp150Param,
+  decodeSaved as decodeGp150Saved,
+  readU16 as gp150U16,
+  readU32 as gp150U32,
+  type Message as Gp150Message,
+} from "@/gp150/lib/protocol.mjs";
 import { profileFor } from "@shared/devices";
 import type { DeviceKey, GlobalSpec, MidiLogEntry } from "./device-types";
 import { GP200_GLOBAL_SPECS } from "./driver/gp200-globals";
@@ -292,6 +310,79 @@ function describeGp200Warning(w: { kind: "resend"; what: string; attempt: number
   return `Slot ${gp200SlotLabel(w.slot)} didn't read back the same after write ${w.attempt}`;
 }
 
+// ------------------------------------------------------------------------------------------- GP-150
+
+const gp150Block = (b: number) => GP150_BLOCKS[b] ?? `Block ${b}`;
+const gp150Slot = (slot: number) => profileFor("gp150").slotLabel(slot);
+const GP150_READS: Record<number, string> = {
+  [GP150_CMD.STATE]: "Read pedal state",
+  [GP150_CMD.DEVICE_ID]: "Read device id",
+  [GP150_CMD.PRESET_NAMES]: "Read preset names",
+  [GP150_CMD.IR_NAMES]: "Read user IR names",
+  [GP150_CMD.SNAPTONE_NAMES]: "Read SnapTone names",
+  [GP150_CMD.NAM_NAMES]: "Read NAM names",
+  [GP150_CMD.GLOBALS]: "Read pedal settings",
+};
+
+/** One GP-150 logical message (the session decodes both directions). */
+function describeGp150(m: Gp150Message, out: boolean, paramName?: ParamNamer): string {
+  const who = out ? "" : "Pedal: ";
+  const data = m.payload.subarray(4);
+  if (m.p === GP150_P.DONE) return "Pedal: upload stored";
+  if (m.p === GP150_P.EVENT && m.cmd === GP150_CMD.SAVED) return `Pedal: saved slot ${gp150Slot(decodeGp150Saved(m.payload).slot)}`;
+  if (m.p === GP150_P.UPLOAD) {
+    if (m.cmd === GP150_CMD.PATCH) return `Write slot ${gp150Slot(gp150U32(m.payload, 4))}`;
+    const slot = gp150U32(data, 0);
+    return m.cmd === GP150_CMD.IR_UPLOAD ? `Upload user IR ${slot + 1}` : m.cmd === GP150_CMD.SNAPTONE_UPLOAD ? `Upload SnapTone ${slot}` : "Upload";
+  }
+  switch (m.cmd) {
+    case GP150_CMD.PATCH: {
+      if (out && m.p === GP150_P.QUERY && data.length >= 3) {
+        const slot = gp150U16(data, 0);
+        if (slot === GP150_EDIT_BUFFER) return "Read active preset";
+        return data[2] === 0 ? `Select preset ${gp150Slot(slot)}` : `Read slot ${gp150Slot(slot)}`;
+      }
+      return `${who}preset ${gp150Slot(gp150U32(m.payload, 4))}`;
+    }
+    case GP150_CMD.PARAM: {
+      const p = decodeGp150Param(m.payload);
+      return `${who}${gp150Block(p.block)} ${paramName?.(p.block, p.param) ?? `param ${p.param}`} ${num(p.value)}`;
+    }
+    case GP150_CMD.BLOCK_ON: {
+      const b = decodeGp150BlockOn(m.payload);
+      return `${who}${gp150Block(b.block)} ${b.enabled ? "on" : "off"}`;
+    }
+    case GP150_CMD.MODEL: {
+      const x = decodeGp150Model(m.payload);
+      return `${who}${gp150Block(x.block)} model 0x${x.fxid.toString(16)}`;
+    }
+    case GP150_CMD.CHAIN:
+      return `${who}chain order ${[...data.subarray(0, GP150_BLOCKS.length)].map(gp150Block).join(" ")}`;
+    case GP150_CMD.PATCH_STATE:
+      return `${who}${gp150U32(data, 0) === 1 ? "preset edited" : "preset unchanged"}`;
+    case GP150_CMD.PATCH_SETTINGS:
+      return `${who}tempo ${gp150U16(data, 0)}, volume ${gp150U16(data, 2)}`;
+    case GP150_CMD.KNOBS:
+      return `${who}knob assignments`;
+    case GP150_CMD.EXP:
+      return `${who}EXP settings`;
+    case GP150_CMD.CTRL:
+      return `${who}footswitch assignments`;
+    case GP150_CMD.GLOBAL_EQ:
+      return `${who}Global EQ`;
+    case GP150_CMD.IR_RENAME:
+    case GP150_CMD.SNAPTONE_RENAME:
+      return `Rename ${m.cmd === GP150_CMD.IR_RENAME ? "user IR" : "SnapTone"} ${gp150U32(data, 0)}`;
+  }
+  if (out && m.p === GP150_P.QUERY) return GP150_READS[m.cmd] ?? `Read 0x${m.cmd.toString(16)}`;
+  if (GP150_GLOBAL_RECORDS.includes(m.cmd)) return out ? "Set pedal settings" : "Pedal: settings";
+  if (m.cmd === GP150_CMD.GLOBALS) return "Pedal: settings";
+  if (m.cmd === GP150_CMD.PRESET_NAMES) return "Pedal: preset names";
+  if (m.cmd === GP150_CMD.IR_NAMES) return "Pedal: user IR names";
+  if (m.cmd === GP150_CMD.SNAPTONE_NAMES) return "Pedal: SnapTone names";
+  return `${who}0x${m.cmd.toString(16)}`;
+}
+
 /** Describe a standard MIDI short message (CC, program change). `gp5`: name the GP-5 family's CC map. */
 export function describeShort(b: Uint8Array, dir: "out" | "in", gp5 = true): string {
   const status = b[0] & 0xf0;
@@ -337,6 +428,18 @@ export class MidiLogDecoder {
     if (bytes[0] !== 0xf0) {
       const device = this.device();
       return { id, at, dir: d, text: describeShort(bytes, d, !device || profileFor(device).family === "gp5"), raw: shortRaw(bytes), ack: false };
+    }
+    const gp150 = decodeGp150Frame(bytes);
+    if (gp150) {
+      const raw = `SysEx ${bytes.length} B`;
+      if (gp150.kind === "control") {
+        const text = gp150.type === GP150_CONTROL.ACK ? "Acknowledged" : gp150.type === GP150_CONTROL.HELLO ? "Connect" : gp150.type === GP150_CONTROL.HELLO_REPLY ? "Pedal: connected" : "Resend request";
+        return { id, at, dir: d, text, raw, ack: gp150.type === GP150_CONTROL.ACK };
+      }
+      const msg = decoded as Gp150Message | undefined;
+      const frames = Math.ceil(gp150.total / GP150_CHUNK);
+      if (!msg || msg.cmd === undefined) return { id, at, dir: d, text: `Frame ${Math.floor(gp150.offset / GP150_CHUNK) + 1} of ${frames}`, raw, ack: false };
+      return { id, at, dir: d, text: describeGp150(msg, d === "out", this.paramName) + (frames > 1 ? ` (${frames} frames)` : ""), raw, ack: false };
     }
     const gp200 = decodeGp200Frame(bytes);
     if (gp200) return { id, at, dir: d, text: this.#gp200(gp200, d, decoded), raw: `SysEx ${bytes.length} B`, ack: false };

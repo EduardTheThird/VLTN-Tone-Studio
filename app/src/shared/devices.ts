@@ -1,13 +1,14 @@
 // Device registry: one profile per pedal model the app knows. Pure data plus lookups, shared by main, preload and
-// renderer (no protocol code: each family's codec and session live in its own toolkit, gp5/ and gp200/).
-// Facts: USB descriptors of the pedals, drewmerc302/valeton-gp50 and static RE of Valeton Suite 2.1.0 and the GP-200 editor 1.8.0.
+// renderer (no protocol code: each family's codec and session live in its own toolkit, gp5/, gp200/ and gp150/).
+// Facts: USB descriptors of the pedals, drewmerc302/valeton-gp50, static RE of Valeton Suite 2.1.0 and the GP-200 editor
+// 1.8.0, and the GP-180 captures of majabojarska/Valeton-GP180-Rev-Eng (the GP-150 family's protocol and preset file).
 
-export type DeviceKey = "gp5" | "gp50" | "gp200" | "gp200lt" | "gp200jr";
-/** Protocol family: the GP-5 and GP-50 share one protocol, the GP-200 family (incl. R/X, LT, JR) another. */
-export type DeviceFamily = "gp5" | "gp200";
+export type DeviceKey = "gp5" | "gp50" | "gp200" | "gp200lt" | "gp200jr" | "gp150" | "gp180";
+/** Protocol family: the GP-5 and GP-50 share one protocol, the GP-200 family (incl. R/X, LT, JR) another, the GP-150 and GP-180 a third. */
+export type DeviceFamily = "gp5" | "gp200" | "gp150";
 
 /** Every known model, in display order. GP-200R and GP-200X report as the GP-200. */
-export const DEVICE_KEYS: readonly DeviceKey[] = ["gp5", "gp50", "gp200", "gp200lt", "gp200jr"];
+export const DEVICE_KEYS: readonly DeviceKey[] = ["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150", "gp180"];
 
 /** Valeton/Hotone USB vendor id. */
 export const VALETON_VID = 0x84ef;
@@ -48,7 +49,7 @@ export interface DeviceProfile {
   portPattern: RegExp;
   /** Preset slots, numbered 0..slotCount-1 */
   slotCount: number;
-  /** What the pedal shows for a slot: "07" (GP-5) or "12-C" (GP-200) */
+  /** What the pedal shows for a slot: "07" (GP-5), "12-C" (GP-200) or "042" (GP-150) */
   slotLabel(slot: number): string;
   /** Inverse of slotLabel; null when `label` is not a slot of this model */
   parseSlotLabel(label: string): number | null;
@@ -56,9 +57,9 @@ export interface DeviceProfile {
   blocks: readonly string[];
   /** Footswitches on the unit */
   footswitches: number;
-  /** Block a SnapTone in `slot` plays in: NS on the GP-5 family; AMP (slots 0-4) or DST (5-9) on the GP-200 family */
+  /** Block a SnapTone in `slot` plays in: NS on the GP-5 family and the GP-150; AMP (slots 0-4) or DST (5-9) on the GP-200 family */
   captureBlock(slot: number): string;
-  /** Per-preset switch assignments (GP-5 FS1/FS2, GP-200 CTRL 1–8) */
+  /** Per-preset switch assignments (GP-5 FS1/FS2, GP-200 CTRL 1–8, GP-150 footswitches A/B) */
   ctrls: number;
   snapTone: SlotTables;
   /** User IR slots; `samples` per IR as the pedal stores it */
@@ -106,8 +107,18 @@ const bankSlots = (count: number) => ({
   },
 });
 
+const pad3 = (n: number) => String(n).padStart(3, "0");
+/** GP-150: slots "001".."200" (the pedal counts from 1). */
+const countedSlots = (count: number) => ({
+  slotCount: count,
+  slotLabel: (slot: number) => pad3(slot + 1),
+  parseSlotLabel: (label: string) => (/^\d{3}$/.test(label) && Number(label) >= 1 && Number(label) <= count ? Number(label) - 1 : null),
+});
+
 const GP5_BLOCKS = ["NR", "PRE", "DST", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "NS"] as const;
 const GP200_BLOCKS = ["PRE", "WAH", "DST", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB", "VOL"] as const;
+/** GP-150 module order (the preset's blocks and the live commands): NS is the SnapTone / NAM module. */
+const GP150_BLOCKS = ["PRE", "WAH", "DST", "NS", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB", "VOL"] as const;
 
 const SNAPTONE_FXID = 0x0f000000;
 const USER_IR_FXID = 0x0a100000;
@@ -166,6 +177,42 @@ const gp200Family = {
   backupSeconds: 300,
 } as const;
 
+/** The 1128-byte `.prst` of the GP-150 (and GP-180): record 0x3011 at 0, record 0x3010 at 8; the name in record 0x3020. */
+const GP150_PRST: PrstFormat = {
+  sizes: [1128],
+  magic: [
+    { offset: 0, bytes: [0x11, 0x30, 0x64, 0x04] },
+    { offset: 8, bytes: [0x10, 0x30] },
+  ],
+  name: { offset: 0x2c, length: 16 },
+};
+
+/**
+ * Shared by the GP-150 and GP-180: one protocol and preset file, the GP-180 has a third footswitch (C). Facts come from
+ * GP-180 captures; neither model has been tested by this project, so writes stay off. USB ids: the GP-180's 0x0188
+ * (USB captures and a user's driver log), the GP-150's 0x0186 from public Windows driver databases (not measured).
+ * SnapTone slot n is the pedal's list entry n + 1 (entry 0 is "None"); 0-49 factory, 50-99 user.
+ */
+const gp150Family = {
+  family: "gp150",
+  usbMidiInterface: null,
+  ...countedSlots(200),
+  blocks: GP150_BLOCKS,
+  captureBlock: () => "NS",
+  snapTone: { slots: 100, userRange: [50, 99], fxidBase: SNAPTONE_FXID },
+  // Suite sends the first 683 samples at 44.1 kHz (zero-filled to the 2048 the upload holds).
+  userIr: { slots: 20, userRange: [0, 19], fxidBase: USER_IR_FXID, samples: 683 },
+  tempo: { min: 40, max: 260 },
+  nameLength: 15,
+  emptyName: null,
+  prst: GP150_PRST,
+  globals: true,
+  simulator: true,
+  writable: false,
+  // Estimate: one 1136-byte reply per slot.
+  backupSeconds: 40,
+} as const;
+
 export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freeze({
   gp5: {
     ...gp5Family,
@@ -193,6 +240,9 @@ export const PROFILES: Readonly<Record<DeviceKey, DeviceProfile>> = Object.freez
   gp200: { ...gp200Family, ...bankSlots(256), key: "gp200", name: "GP-200", usbPids: [0x002a], usbMidiInterface: 3, portPattern: /GP-200(?!LT|JR)/, footswitches: 8, writable: true },
   gp200lt: { ...gp200Family, ...bankSlots(256), key: "gp200lt", name: "GP-200LT", usbPids: [0x002c], usbMidiInterface: null, portPattern: /GP-200LT/, footswitches: 4, writable: false },
   gp200jr: { ...gp200Family, ...bankSlots(255), key: "gp200jr", name: "GP-200JR", usbPids: [0x0180], usbMidiInterface: null, portPattern: /GP-200JR/, footswitches: 3, writable: false },
+  gp150: { ...gp150Family, key: "gp150", name: "GP-150", usbPids: [0x0186], portPattern: /GP-150(?!\d)/, footswitches: 2, ctrls: 2 },
+  // MIDI interface MI_03 (a user's driver log in cesardamien/hotone-family-firmware-fix)
+  gp180: { ...gp150Family, key: "gp180", name: "GP-180", usbPids: [0x0188], usbMidiInterface: 3, portPattern: /GP-180(?!\d)/, footswitches: 3, ctrls: 3 },
 });
 
 export function isDeviceKey(v: unknown): v is DeviceKey {

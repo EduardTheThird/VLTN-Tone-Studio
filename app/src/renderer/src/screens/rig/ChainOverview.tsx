@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { profileFor } from "@shared/devices";
 import { useDevice, usePedalName } from "@/state/device";
-import { isGp5Family } from "@/state/device-model";
+import { isGp5Family, snapToneReplacesAmpCab } from "@/state/device-model";
 import type { PresetState } from "@/state/device-types";
 import { editOrder, editPatchFields, editVolume } from "./edits";
 import { saveOnlyNote } from "./live-edits";
@@ -27,7 +27,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
   const pedal = usePedalName();
   const groups = groupsOf(preset.device, preset.order);
   const ns = profileFor(preset.device).blocks.indexOf("NS");
-  const nsOn = ns >= 0 && preset.blocks[ns].enabled;
+  const nsOn = ns >= 0 && snapToneReplacesAmpCab(preset.device) && preset.blocks[ns].enabled;
   const [dropGroup, setDropGroup] = useState<GroupId | null>(null);
 
   const onDragOver = (g: GroupId) => (e: DragEvent) => {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyEdits, detectDevice, readName, rebuildPrst } from "@/gp5/lib/prst.mjs";
-import { profileFor } from "@shared/devices";
+import { PRST_MODELS, profileFor } from "@shared/devices";
 import { describeSlots, restoreEntries } from "./restore";
 
 const fixture = (name: string): Uint8Array => rebuildPrst(name.replace(/^\d+-|\.prst$/g, ""), new Uint8Array(466), "gp5");
@@ -43,7 +43,7 @@ describe("restoreEntries", () => {
     expect(entries).toHaveLength(1);
     expect(skipped).toEqual([
       "Puppy.prst: no slot number in the file name",
-      "07-Broken.prst: not a GP-5, GP-50 or GP-200 preset",
+      `07-Broken.prst: not a ${PRST_MODELS} preset`,
       "08-Gone.prst: too big",
       "65-Again.prst: slot 65 appears twice",
     ]);

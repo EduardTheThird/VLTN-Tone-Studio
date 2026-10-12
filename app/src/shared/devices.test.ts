@@ -27,10 +27,11 @@ const gp200File = (length: number) => file(length, [[0, ascii("TSRP")], [0x10, a
 
 describe("profiles", () => {
   it("has one profile per key, keyed by itself", () => {
-    expect(DEVICE_KEYS).toEqual(["gp5", "gp50", "gp200", "gp200lt", "gp200jr"]);
+    expect(DEVICE_KEYS).toEqual(["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150", "gp180"]);
     for (const k of DEVICE_KEYS) expect(PROFILES[k].key).toBe(k);
     expect(familyKeys("gp5")).toEqual(["gp5", "gp50"]);
     expect(familyKeys("gp200")).toEqual(["gp200", "gp200lt", "gp200jr"]);
+    expect(familyKeys("gp150")).toEqual(["gp150", "gp180"]);
     expect(isDeviceKey("gp200lt")).toBe(true);
     expect(isDeviceKey("gp500")).toBe(false);
     expect(isDeviceKey(null)).toBe(false);
@@ -67,8 +68,20 @@ describe("profiles", () => {
     expect(p.tempo).toEqual({ min: 40, max: 250 });
   });
 
-  it("keeps the untested LT and JR read-only", () => {
-    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr"]);
+  it("keeps the untested LT, JR, GP-150 and GP-180 read-only", () => {
+    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr", "gp150", "gp180"]);
+  });
+
+  it("gives the GP-180 the GP-150's slots and file, with a third footswitch", () => {
+    const [a, b] = [PROFILES.gp150, PROFILES.gp180];
+    expect([b.slotCount, b.prst, b.blocks, b.snapTone]).toEqual([a.slotCount, a.prst, a.blocks, a.snapTone]);
+    expect([a.ctrls, b.ctrls]).toEqual([2, 3]);
+  });
+
+  it("labels GP-150 slots 001 to 200, as the pedal counts", () => {
+    const p = PROFILES.gp150;
+    expect([p.slotLabel(0), p.slotLabel(41), p.slotLabel(199)]).toEqual(["001", "042", "200"]);
+    expect([p.parseSlotLabel("001"), p.parseSlotLabel("200"), p.parseSlotLabel("000"), p.parseSlotLabel("201"), p.parseSlotLabel("42")]).toEqual([0, 199, null, null, null]);
   });
 });
 
@@ -89,6 +102,9 @@ describe("USB product ids", () => {
     expect(pedalOnUsb(status(0x002b))).toBeNull();
     expect(updaterOnUsb(status(0x002b))).toBe(true);
     expect(updaterOnUsb(status(0x0185))).toBe(true);
+    expect(pedalOnUsb(status(0x0186))).toBe("gp150");
+    expect(pedalOnUsb(status(0x0188))).toBe("gp180");
+    expect(updaterOnUsb(status(0x0189))).toBe(true);
     expect(pedalOnUsb(status(0x018a))).toBe("gp50");
     expect(pedalOnUsb({ usb: [{ vendorId: 0x1234, productId: 0x0184, product: null }] } as unknown as DeviceHostStatus)).toBeNull();
   });
@@ -103,6 +119,9 @@ describe("MIDI port names", () => {
     expect(deviceForPortName("GP-200 MIDI 1")).toBe("gp200");
     expect(deviceForPortName("GP-200LT MIDI 1")).toBe("gp200lt");
     expect(deviceForPortName("GP-200JR")).toBe("gp200jr");
+    expect(deviceForPortName("GP-150 MIDI 1")).toBe("gp150");
+    expect(deviceForPortName("Valeton GP-180 MIDI")).toBe("gp180");
+    expect(deviceForPortName("GP-1500")).toBeNull();
     expect(deviceForPortName("GP-500")).toBeNull();
     expect(deviceForPortName("gp-200 midi 1")).toBeNull();
     expect(deviceForPortName("Midi Through Port-0")).toBeNull();
@@ -125,6 +144,14 @@ describe(".prst sniffing", () => {
     expect(sniffPrst(file(1224, [[0, ascii("TSRP")]]))).toBeNull();
   });
 
+  it("reads 1128-byte files with records 0x3011 and 0x3010 as GP-150 presets", () => {
+    const gp150File = (length: number) => file(length, [[0, [0x11, 0x30, 0x64, 0x04]], [8, [0x10, 0x30]]]);
+    expect(sniffPrst(gp150File(1128))).toBe("gp150");
+    expect(sniffPrst(gp150File(1224))).toBeNull();
+    expect(sniffPrst(file(1128, [[0, [0x11, 0x30, 0x64, 0x04]]]))).toBeNull();
+    expect(prstName(file(1128, [[0x2c, ascii("Foxy Clean")]]), "gp150")).toBe("Foxy Clean");
+  });
+
   it("reads the preset name of each layout", () => {
     expect(prstName(file(507, [[0x19, ascii("Blues Man")]]), "gp5")).toBe("Blues Man");
     expect(prstName(file(1224, [[0x44, ascii("Lead 12C")]]), "gp200")).toBe("Lead 12C");
@@ -132,7 +159,7 @@ describe(".prst sniffing", () => {
 
   it("caps file reads at the largest preset", () => {
     expect(MAX_PRST_BYTES).toBe(1224);
-    expect(PRST_MODELS).toBe("GP-5, GP-50 or GP-200");
+    expect(PRST_MODELS).toBe("GP-5, GP-50, GP-200 or GP-150");
     expect(listNames(["gp5", "gp50"], "and")).toBe("GP-5 and GP-50");
     expect(listNames(["gp5"])).toBe("GP-5");
   });

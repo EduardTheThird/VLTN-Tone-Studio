@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { convertPrst, readName } from "@/gp5/lib/prst.mjs";
 import { buildPrst, encodePatchImage } from "@/gp200/lib/prst.mjs";
+import { blankPrst } from "@/gp150/lib/prst.mjs";
 import capture from "@/gp5/fixtures/gp50_suite_write_slot0.json";
+import { PRST_MODELS } from "@shared/devices";
 import { checkPrst } from "./import";
 
 // A real GP-50 file ("US Lead", reconstructed from a Valeton Suite capture) and its GP-5 conversion.
@@ -18,7 +20,7 @@ describe("checkPrst", () => {
   });
 
   it("rejects files of unknown length and damaged presets with a reason", () => {
-    expect(checkPrst(new Uint8Array(100))).toEqual({ ok: false, reason: "Not a GP-5, GP-50 or GP-200 preset." });
+    expect(checkPrst(new Uint8Array(100))).toEqual({ ok: false, reason: `Not a ${PRST_MODELS} preset.` });
     const damaged = gp5.slice();
     damaged[0x14] ^= 0xff;
     expect(checkPrst(damaged)).toEqual({ ok: false, reason: "The file is damaged (its checksum doesn't match)." });
@@ -33,6 +35,14 @@ describe("checkPrst", () => {
     const headerOnly = new Uint8Array(1224);
     headerOnly.set([..."TSRP"].map((c) => c.charCodeAt(0)), 0);
     headerOnly.set([..."2-PG"].map((c) => c.charCodeAt(0)), 0x10);
-    expect(checkPrst(headerOnly)).toEqual({ ok: false, reason: "Not a GP-5, GP-50 or GP-200 preset." });
+    expect(checkPrst(headerOnly)).toEqual({ ok: false, reason: `Not a ${PRST_MODELS} preset.` });
+  });
+
+  it("accepts a GP-150 preset without a checksum check (its algorithm isn't known) but checks its chain", () => {
+    const gp150 = blankPrst(4, "Imported");
+    expect(checkPrst(gp150)).toEqual({ ok: true, name: "Imported", device: "gp150" });
+    const badChain = gp150.slice();
+    badChain[0x79] = badChain[0x78];
+    expect(checkPrst(badChain)).toEqual({ ok: false, reason: "The file is damaged (its chain order is invalid)." });
   });
 });

@@ -1,7 +1,8 @@
 // The preset bytes of every family behind one seam: .prst → PresetState (toPresetState), app edits → new .prst
 // (editPrst), and the effect-catalog lookups that differ by family. GP-5 family: gp5/lib (prst.mjs, the built-in
 // catalog). GP-200 family: gp200/lib/prst.mjs and the catalog in use (gp200/app: built in, or the user's import); an
-// fxid missing from it leaves the block without a `model` ("Unknown model").
+// fxid missing from it leaves the block without a `model` ("Unknown model"). GP-150: gp150/lib/prst.mjs and its
+// built-in catalog (gp150/app).
 import * as gp5 from "@/gp5/lib/prst.mjs";
 import { SYNC_ON_DIVISION, clampParam, defaultParams, displayedParam, modelByFxid, modelsForBlock } from "@/gp5/lib/catalog.mjs";
 import * as gp200 from "@/gp200/lib/prst.mjs";
@@ -9,9 +10,13 @@ import { BLOCKS as GP200_BLOCKS } from "@/gp200/lib/protocol.mjs";
 import { defaultParams as gp200DefaultParams, type Gp200Catalog } from "@/gp200/lib/catalog.mjs";
 import { gp200ModelByFxid, gp200ModelsForBlock } from "@/gp200/app/catalog-adapter";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
+import * as gp150 from "@/gp150/lib/prst.mjs";
+import { gp150DefaultParams, gp150ModelByFxid, gp150ModelsForBlock } from "@/gp150/app/catalog-adapter";
 import { profileFor, type DeviceKey } from "@shared/devices";
 import { isGp5Family, presetDevice } from "./device-model";
 import type { BlockCode, BlockState, ExpSettings, Gp5FamilyKey, ModelInfo, ParamInfo, PresetEdits, PresetState } from "./device-types";
+
+const isGp150 = (device: DeviceKey) => profileFor(device).family === "gp150";
 
 /** The GP-200 catalog the app holds now: the built-in one, or the user's import. */
 const currentCatalog = (): Gp200Catalog => useGp200Catalog.getState().catalog;
@@ -32,18 +37,21 @@ function gp5Model(fxid: number, device: Gp5FamilyKey, params?: readonly number[]
  */
 export function modelFor(device: DeviceKey, block: number, fxid: number, params?: readonly number[], catalog = currentCatalog()): ModelInfo | undefined {
   if (isGp5Family(device)) return gp5Model(fxid, device, params);
+  if (isGp150(device)) return gp150ModelByFxid(fxid, block);
   return gp200ModelByFxid(catalog, fxid, block);
 }
 
 /** Every model block `block` of `device` can hold, in catalog order. */
 export function modelsFor(device: DeviceKey, block: number, catalog = currentCatalog()): ModelInfo[] {
   if (isGp5Family(device)) return modelsForBlock(block, device) as ModelInfo[];
+  if (isGp150(device)) return gp150ModelsForBlock(block);
   return gp200ModelsForBlock(catalog, block);
 }
 
-/** Param values the pedal loads with model `fxid` in block `block` (8 on the GP-5 family, 15 on the GP-200 family). */
+/** Param values the pedal loads with model `fxid` in block `block` (8 on the GP-5 family, 15 on the GP-200 family and the GP-150). */
 export function defaultParamsFor(device: DeviceKey, block: number, fxid: number, catalog = currentCatalog()): number[] {
   if (isGp5Family(device)) return defaultParams(fxid, device);
+  if (isGp150(device)) return gp150DefaultParams(fxid, block);
   return gp200DefaultParams(catalog, fxid, block);
 }
 
@@ -67,7 +75,8 @@ export function syncParams(p: PresetState, block: number, toggle: ParamInfo, on:
 /** Why `order` can't be the chain of a `device` preset, or null. */
 export function orderError(device: DeviceKey, order: readonly number[]): string | null {
   if (isGp5Family(device)) return gp5.validateOrder(order);
-  return gp200.validateOrder(order) ? null : `The chain must hold each of the ${profileFor(device).blocks.length} blocks once`;
+  const valid = isGp150(device) ? gp150.validChain(order) : gp200.validateOrder(order);
+  return valid ? null : `The chain must hold each of the ${profileFor(device).blocks.length} blocks once`;
 }
 
 /** Block indices of a GP-200 CTRL mask (bits 0-10), and back. */
@@ -136,15 +145,35 @@ function gp200State(slot: number, prst: Uint8Array, device: DeviceKey, catalog: 
   };
 }
 
+function gp150State(slot: number, prst: Uint8Array, device: DeviceKey): PresetState {
+  const p = gp150.parsePrst(prst);
+  return {
+    device,
+    slot,
+    name: p.name,
+    blocks: blockStates(device, p.blocks, (fxid, block) => gp150ModelByFxid(fxid, block)),
+    order: p.chain,
+    volume: p.volume,
+    bpm: p.tempo,
+    // footswitches A and B, and C on the GP-180 (every file has room for three)
+    footswitches: p.footswitches.slice(0, profileFor(device).ctrls).map(gp150.blocksOfMask),
+    exp: null,
+    gp200: null,
+    prst,
+  };
+}
+
 /**
  * The preset in `prst` as the app shows it. `device`: the pedal the bytes came from; it names the model when the file
- * doesn't (a GP-200 family file reads as "gp200" whether it came from an LT or a JR), else the file decides.
- * Throws when the bytes are no known preset.
+ * doesn't (a GP-200 family file reads as "gp200" whether it came from an LT or a JR, a GP-150 family file as "gp150"
+ * whether it came from a GP-150 or a GP-180), else the file decides. Throws when the bytes are no known preset.
  */
 export function toPresetState(slot: number, prst: Uint8Array, device?: DeviceKey | null, catalog = currentCatalog()): PresetState {
   const sniffed = presetDevice(prst);
+  const same = device && profileFor(device).family === profileFor(sniffed).family ? device : sniffed;
   if (isGp5Family(sniffed)) return gp5State(slot, prst);
-  return gp200State(slot, prst, device && profileFor(device).family === "gp200" ? device : sniffed, catalog);
+  if (isGp150(sniffed)) return gp150State(slot, prst, same);
+  return gp200State(slot, prst, same, catalog);
 }
 
 /** The GP-200 family's terms for `edits` (gp200/lib/prst.mjs applyPatchEdits). */
@@ -171,6 +200,18 @@ export function editPrst(prst: Uint8Array, edits: PresetEdits): Uint8Array {
     if (g) throw new RangeError("GP-5 family presets have no GP-200 fields");
     return gp5.applyEdits(prst, footswitches ? { ...rest, footswitches: { fs1: footswitches[0], fs2: footswitches[1] } } : rest);
   }
-  if (edits.exp) throw new RangeError("GP-200 presets keep their EXP settings with the GP-200 fields");
+  if (edits.exp) throw new RangeError("GP-200 and GP-150 presets have no GP-50 EXP settings");
+  if (isGp150(presetDevice(prst))) {
+    const { name, volume, bpm, order, footswitches, blocks, gp200: g } = edits;
+    if (g) throw new RangeError("GP-150 presets have no GP-200 fields");
+    return gp150.applyPatchEdits(prst, {
+      name,
+      volume: volume === undefined ? undefined : Math.max(0, Math.min(100, Math.trunc(volume))),
+      tempo: bpm,
+      chain: order,
+      blocks,
+      footswitches,
+    });
+  }
   return gp200.applyEdits(prst, toPatchEdits(edits));
 }

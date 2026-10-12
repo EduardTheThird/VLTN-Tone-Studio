@@ -1,6 +1,7 @@
 import { DEVICE_KEYS, PROFILES, type SlotTables } from "@shared/devices";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { modelByFxid } from "@/gp200/lib/catalog.mjs";
+import { NONE_FXID } from "@/gp150/lib/protocol.mjs";
 import type { BlockState, ParamInfo } from "@/state/device-types";
 import { AmpHead, Cab } from "./Amp";
 import { Capture, EqPedal, eqControls } from "./EqPedal";
@@ -35,9 +36,12 @@ export const isUserIrFxid = (fxid: number) => DEVICE_KEYS.some((k) => inTable(fx
 
 export type GearArt = "pedal" | "eq" | "capture" | "amp" | "cab";
 
-/** The drawing a block gets: a SnapTone by its fxid, whichever block plays it; the rest by block. */
+/**
+ * The drawing a block gets: a SnapTone by its fxid, whichever block plays it; NS (also a GP-150 NAM slot) as a capture
+ * unless it is the GP-150's empty module; the rest by block.
+ */
 export function artFor(block: Pick<BlockState, "code" | "fxid">): GearArt {
-  if (block.code === "NS" || isCaptureFxid(block.fxid)) return "capture";
+  if ((block.code === "NS" && block.fxid >>> 0 !== NONE_FXID) || isCaptureFxid(block.fxid)) return "capture";
   return block.code === "EQ" ? "eq" : block.code === "AMP" ? "amp" : block.code === "CAB" ? "cab" : "pedal";
 }
 

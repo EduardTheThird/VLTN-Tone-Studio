@@ -5,7 +5,7 @@ import { host } from "@/host";
 import { isGp5Family } from "@/state/device-model";
 import type { DeviceKey } from "@/state/device-types";
 import { orderError, toPresetState } from "@/state/preset-codec";
-import { PRST_MODELS, sniffPrst } from "@shared/devices";
+import { PRST_MODELS, profileFor, sniffPrst } from "@shared/devices";
 import { IMPORTED_ID, type LocalPreset, type NewPreset, type PickedFile } from "@shared/host/files";
 
 export interface Rejected {
@@ -21,7 +21,9 @@ export function checkPrst(bytes: Uint8Array): { ok: true; name: string; device: 
   if (!device) return { ok: false, reason: NOT_A_PRESET };
   try {
     const p = toPresetState(0, bytes);
-    if (!(isGp5Family(device) ? isCrcValid(bytes) : isChecksumValid(bytes))) return { ok: false, reason: "The file is damaged (its checksum doesn't match)." };
+    // The GP-150's file checksum (offset 0x0E) is not known: its files are checked by layout and chain only.
+    const checksumOk = isGp5Family(device) ? isCrcValid(bytes) : profileFor(device).family === "gp200" ? isChecksumValid(bytes) : true;
+    if (!checksumOk) return { ok: false, reason: "The file is damaged (its checksum doesn't match)." };
     if (orderError(device, p.order)) return { ok: false, reason: "The file is damaged (its chain order is invalid)." };
     return { ok: true, name: p.name || "Untitled", device };
   } catch {

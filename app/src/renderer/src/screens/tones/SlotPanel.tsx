@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, FilePlus, RefreshCw } from "lucide-react";
 import { snapToneLabel } from "@shared/devices";
 import type { ToneRecord } from "@shared/host/tones";
 import { isEmptySlot, slotLinkOn } from "@shared/tone3000";
@@ -23,6 +23,7 @@ import { useDevice, usePedalName, useProfile } from "@/state/device";
 import { vendorApps } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
+import type { OpenFile } from "@/state/ui";
 import { requestPresetSwitch } from "@/app/preset-switch";
 import { notifyError, showToast } from "@/app/notify";
 import { irSlotLabel, openLinkChoice, openSheet, readSlots, unlink, useTones } from "./store";
@@ -47,8 +48,12 @@ function ago(at: number, now: number): string {
   return `Read at ${new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-/** "On your GP-5" (or GP-50): SnapTone and User IR slot maps, laid out from the pedal's profile. */
-export function SlotPanel() {
+/**
+ * "On your GP-5" (or GP-50): SnapTone and User IR slot maps, laid out from the pedal's profile. `onAddNam`: a .nam
+ * picked from disk, for the SnapTone dialog (LocalNamDialog).
+ */
+export function SlotPanel({ onAddNam }: { onAddNam: (file: OpenFile) => void }) {
+  const namInput = useRef<HTMLInputElement>(null);
   const status = useDevice((s) => s.status);
   const error = useDevice((s) => s.error);
   const busy = useDevice((s) => s.busy);
@@ -129,6 +134,24 @@ export function SlotPanel() {
           <TooltipContent>Read slots again (R)</TooltipContent>
         </Tooltip>
       </div>
+
+      <Button variant="outline" size="sm" className="self-start" onClick={() => namInput.current?.click()}>
+        <FilePlus data-icon="inline-start" />
+        Add NAM from disk…
+      </Button>
+      <input
+        ref={namInput}
+        type="file"
+        accept=".nam"
+        hidden
+        aria-hidden
+        tabIndex={-1}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) onAddNam({ name: file.name, path: null, file });
+        }}
+      />
 
       {notice && <p className="text-[12px] text-pretty text-silkscreen-2">{notice}</p>}
       {driverProblem && (

@@ -8,6 +8,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName } from "@/state/device";
+import { snapToneReplacesAmpCab } from "@/state/device-model";
 import type { BlockState, PresetState } from "@/state/device-types";
 import { BlockMenu } from "./BlockMenu";
 import { editEnabled, editOrder, editParam } from "./edits";
@@ -23,8 +24,8 @@ export const DRAG_MIME = "application/x-gp5-block";
  *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). */
 const GEAR_W = "w-[clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),186px)]";
 
-function stateLine(b: BlockState) {
-  if (b.code === "NS") return b.enabled ? "SnapTone on, replacing the amp and cab" : "SnapTone off";
+function stateLine(b: BlockState, device: DeviceKey) {
+  if (b.code === "NS") return b.enabled ? (snapToneReplacesAmpCab(device) ? "SnapTone on, replacing the amp and cab" : "SnapTone on") : "SnapTone off";
   const base = `${b.code} ${b.enabled ? "on" : "off"}`;
   const time = b.model?.params.find((p) => p.name === "Time");
   if (!b.enabled || b.code !== "DLY" || !time) return base;
@@ -44,9 +45,9 @@ interface BoardProps {
 export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const { device } = preset;
   const blocks = groupsOf(device, preset.order)[view];
-  // GP-5 family: an engaged NS (SnapTone) plays in place of the amp and cab; the GP-200 family has no NS block
+  // GP-5 family: an engaged NS (SnapTone) plays in place of the amp and cab; the GP-150's NS module is one more pedal
   const ns = profileFor(device).blocks.indexOf("NS");
-  const nsOn = ns >= 0 && preset.blocks[ns].enabled;
+  const nsOn = ns >= 0 && snapToneReplacesAmpCab(device) && preset.blocks[ns].enabled;
   const [drag, setDrag] = useState<number | null>(null);
   const [drop, setDrop] = useState<{ target: number; side: "before" | "after" } | null>(null);
   // The pedal whose More controls strip is open
@@ -315,7 +316,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
       >
         {dropSide && <span aria-hidden className={cn("absolute top-10 bottom-10 w-[3px] rounded-pill bg-silkscreen", dropSide === "before" ? "-left-[13px]" : "-right-[13px]")} />}
         <ModelButton block={block} label={label} selected={selected} disabled={readOnly} />
-        {block.code === "NS" ? (
+        {block.code === "NS" && snapToneReplacesAmpCab(device) ? (
           <Capture
             name={label}
             on={block.enabled}
@@ -336,7 +337,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
             className={cn(GEAR_W, "drop-shadow-[0_18px_24px_rgb(0_0_0/0.6)]", !block.enabled && "saturate-[.2] brightness-50")}
           />
         )}
-        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block)} more={more ? { count: more, open: moreOpen, toggle: onMore } : undefined} />
+        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block, device)} more={more ? { count: more, open: moreOpen, toggle: onMore } : undefined} />
       </div>
     </BlockMenu>
   );
@@ -393,7 +394,7 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
             </div>
           </div>
         </div>
-        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block)} />
+        <SlotFoot block={block} readOnly={readOnly} text={stateLine(block, device)} />
       </div>
     </BlockMenu>
   );

@@ -55,7 +55,7 @@ const categoryOf = (device: DeviceKey, code: BlockCode) => (!isGp5Family(device)
 const nounOf = (device: DeviceKey, code: BlockCode) => (!isGp5Family(device) && GP200_NOUN[code]) || NOUN[code];
 
 /** Favorites per family: the families' fxids overlap. */
-const favKey = (device: DeviceKey) => (isGp5Family(device) ? "gp5.favorites.v1" : "gp200.favorites.v1");
+const favKey = (device: DeviceKey) => `${profileFor(device).family}.favorites.v1`;
 const loadFavs = (key: string): number[] => {
   try {
     return JSON.parse(localStorage.getItem(key) ?? "[]") as number[];
