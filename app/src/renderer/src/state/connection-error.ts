@@ -1,7 +1,7 @@
 // Connection failures → the stable ConnectionError (a fixed code plus a plain message) the Device screen explains.
 import { profileFor, type DeviceKey } from "@shared/devices";
 import { pedalOnUsb, updaterOnUsb, type DeviceHostStatus } from "@shared/host/device";
-import { pedalNameOrBoth } from "./device-model";
+import { pedalNameOrBoth, vendorApps } from "./device-model";
 import { unsupportedModelError } from "./driver";
 import { hasDriver } from "./driver/types";
 import type { ConnectionError, ConnectionErrorCode } from "./device-types";
@@ -25,7 +25,7 @@ export function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceK
   if (err?.code === "timeout")
     return gotBytes
       ? { code: "timeout", message: `The pedal answered but not like a ${pedal}. Check the firmware or the device.` }
-      : { code: "busy", message: `The ${pedal} port is open but silent. Close Valeton Suite, then reconnect.` };
+      : { code: "busy", message: `The ${pedal} port is open but silent. Close ${vendorApps(device).editor}, then reconnect.` };
   if (err?.code === "length") return { code: "unknown", message: err.message ?? `Unexpected reply length (is this a ${pedal}?)` };
   return { code: "unknown", message: err?.message ?? String(e) };
 }

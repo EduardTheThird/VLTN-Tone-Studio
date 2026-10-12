@@ -8,6 +8,7 @@ import { webSnapTone } from "./snaptone";
 import { webSong } from "./song";
 import { webUpdate } from "./update";
 import { webGp200Catalog } from "./gp200-catalog";
+import { webLog } from "./log";
 
 export const webHost: HostApi = {
   kind: "web",
@@ -21,4 +22,5 @@ export const webHost: HostApi = {
   song: webSong,
   update: webUpdate,
   gp200Catalog: webGp200Catalog,
+  log: webLog,
 };

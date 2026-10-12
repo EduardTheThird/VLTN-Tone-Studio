@@ -1,16 +1,18 @@
 import { useCallback, useState, type Ref } from "react";
-import { ChevronDown, CircleCheck, CircleX, Copy, Download, ExternalLink, Info, LoaderCircle, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleX, Copy, Download, ExternalLink, FileText, FolderOpen, Info, LoaderCircle, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { notifyError, notifySuccess } from "@/app/notify";
-import { host } from "@/host";
+import { host, isElectron } from "@/host";
+import { SESSION_LOG_KEEP, SESSION_LOG_MAX_BYTES } from "@shared/host/log";
 import { cn } from "@/lib/utils";
 import { getMidiLog, useDevice } from "@/state/device";
 import { attachedDevice, pedalName } from "@/state/device-model";
 import { formatLogLine } from "@/state/midi-log";
+import { flushSessionLog } from "@/state/session-log";
 import { clock, diagnosticChecks, vendorApps, type Check, type CheckState } from "./guidance";
 import { buildReport } from "./report";
 import { MidiLog } from "./MidiLog";
@@ -61,6 +63,7 @@ export async function currentReport(checks: Check[]): Promise<string> {
     connectionError: d.error,
     lastError: d.lastError,
     monitor: d.monitor ? getMidiLog() : null,
+    logFolder: await host.log.folder().catch(() => null),
   });
 }
 
@@ -83,6 +86,31 @@ async function saveReport(checks: Check[]): Promise<void> {
     notifyError("Couldn't save the report", e);
   }
 }
+
+/** Save every kept session log file as one text file. */
+async function saveLog(): Promise<void> {
+  try {
+    await flushSessionLog();
+    const d = new Date();
+    const name = `tone-studio-log-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.txt`;
+    const path = await host.log.save(name);
+    if (path) notifySuccess("Session log saved", path);
+  } catch (e) {
+    notifyError("Couldn't save the log", e);
+  }
+}
+
+async function openLogFolder(): Promise<void> {
+  try {
+    await flushSessionLog();
+    const folder = await host.log.folder();
+    if (folder) await host.app.openPath(folder);
+  } catch (e) {
+    notifyError("Couldn't open the log folder", e);
+  }
+}
+
+const LOG_MB = (SESSION_LOG_MAX_BYTES * (SESSION_LOG_KEEP + 1)) / 2 ** 20;
 
 interface Props {
   guideOpen: boolean;
@@ -187,10 +215,12 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
           <ChevronDown className="ml-auto size-4 shrink-0 text-silkscreen-3 transition-transform group-data-[state=open]/guide:rotate-180 motion-reduce:transition-none" aria-hidden />
         </CollapsibleTrigger>
         <CollapsibleContent className="pr-3 pb-3 pl-[38px] text-sm text-silkscreen-2">
-          <p className="mb-2 text-pretty">The pedal is fine. Windows gave it the new "USB MIDI 2.0" driver, which Valeton software and this app can't use. Give it the "USB Audio Device" driver instead:</p>
+          <p className="mb-2 text-pretty">
+            The pedal is fine. Windows gave its MIDI interface a driver that Valeton software and this app can't use reliably (the new "USB MIDI 2.0" driver, or Valeton's ASIO driver). Give it the "USB Audio Device" driver instead:
+          </p>
           <ol className="mb-2.5 flex list-decimal flex-col gap-1 pl-[18px] marker:font-semibold marker:text-silkscreen-3">
             <li>
-              Plug the {pedal} in, switch it on and close {apps.editor}.
+              Plug the {pedal} in, switch it on and close {apps.editor} and any browser with a MIDI page open.
             </li>
             <li>
               Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find the {pedal}.
@@ -203,6 +233,7 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
               Untick <b className="font-semibold text-silkscreen">Show compatible hardware</b>, pick <b className="font-semibold text-silkscreen">USB Audio Device</b> and finish.
             </li>
             <li>Unplug the pedal, plug it back in, then press Check again.</li>
+            <li>Still silent? Restart the computer. Windows can keep using the old driver until then.</li>
           </ol>
           <p className="mb-2 text-pretty text-silkscreen-3">
             A firmware update puts the pedal in update mode, which Windows treats as a separate device. If an update in {apps.updater} stops at 0%, repeat these steps while the pedal shows its update screen.
@@ -221,6 +252,31 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
       </Collapsible>
 
       <Separator />
+
+      <div className="flex items-start gap-3">
+        <FileText className="mt-0.5 size-4 shrink-0 text-silkscreen-3" aria-hidden />
+        <div className="min-w-0">
+          <b className="block font-semibold">Session log</b>
+          <span className="block text-sm text-pretty text-silkscreen-3">
+            {isElectron
+              ? `Tone Studio logs connections, errors and every MIDI message on this computer, the newest ${LOG_MB} MB. Attach it to a bug report.`
+              : "Tone Studio logs connections, errors and every MIDI message while this tab is open. Attach it to a bug report."}{" "}
+            It includes the presets the app read from or wrote to the pedal.
+          </span>
+        </div>
+        <div className="ml-auto flex shrink-0 gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => void saveLog()}>
+            <Download aria-hidden />
+            Save log
+          </Button>
+          {isElectron && (
+            <Button variant="ghost" size="sm" onClick={() => void openLogFolder()}>
+              <FolderOpen aria-hidden />
+              Open folder
+            </Button>
+          )}
+        </div>
+      </div>
 
       <div className="flex items-start gap-3">
         <Switch id="mon-switch" checked={monitor} onCheckedChange={setMonitor} aria-labelledby="mon-lbl" className="mt-px" />

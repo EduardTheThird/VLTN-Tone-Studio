@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { usePedalName, useDevice, useProfile } from "@/state/device";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
-import { pedalName } from "@/state/device-model";
+import { pedalName, vendorApps } from "@/state/device-model";
 import type { DeviceProfile } from "@shared/devices";
 import { knownBody, useLibraryActions } from "./actions";
 import { endDrag, hasFiles, LOCAL_MIME, SLOTS_MIME, startDrag } from "./dnd";
@@ -312,13 +312,14 @@ function OfflineBanner() {
   const error = useDevice((s) => s.error);
   const busyPort = error?.code === "busy";
   const pedal = usePedalName();
+  const editor = vendorApps(useDevice((s) => s.device)).editor;
   return (
     <Alert className="mx-2 mt-2.5 w-auto">
       <UnplugIcon />
       <AlertTitle>{busyPort ? `Another app is using the ${pedal}` : `${pedal === "pedal" ? "Pedal" : pedal} not connected`}</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center gap-x-2">
         {busyPort
-          ? "Close Valeton Suite, then reconnect. Showing the slots from the last connection."
+          ? `Close ${editor}, then reconnect. Showing the slots from the last connection.`
           : `Showing the slots as of the last connection.${status === "connecting" ? " Connecting…" : " Connect the pedal to write."}`}
         <Button variant="link" size="sm" className="h-auto p-0" onClick={() => useNav.getState().go("device")}>
           Open Device

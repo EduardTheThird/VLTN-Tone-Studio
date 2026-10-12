@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { notifyError } from "@/app/notify";
 import { cn } from "@/lib/utils";
 import { DEVICE_KEYS, profileFor } from "@shared/devices";
-import { pedalOnUsb } from "@shared/host/device";
+import { pedalOnUsb, runningPortHolder } from "@shared/host/device";
 import { useDevice } from "@/state/device";
-import { pedalName, slotLabel } from "@/state/device-model";
+import { pedalName, slotLabel, vendorApps } from "@/state/device-model";
 import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led } from "./guidance";
 
 /** Models the Device screen offers to simulate (registry profiles with a simulator). */
@@ -84,10 +84,10 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
               Driver <b className="font-semibold text-silkscreen">{d.hostStatus.driver}</b>
             </span>
           )}
-          {connected && d.mode === "webmidi" && d.hostStatus?.suiteRunning === false && (
+          {connected && d.mode === "webmidi" && d.hostStatus?.vendorApps && runningPortHolder(d.hostStatus, d.device) === null && (
             <span className="flex items-center gap-1.5">
               <CircleCheck className="size-3.5" aria-hidden />
-              Valeton Suite is not running
+              {vendorApps(d.device).editor} is not running
             </span>
           )}
         </div>

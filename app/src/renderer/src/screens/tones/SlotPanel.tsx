@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { useDevice, usePedalName, useProfile } from "@/state/device";
+import { vendorApps } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import type { SlotName } from "@/state/device-types";
 import { requestPresetSwitch } from "@/app/preset-switch";
@@ -107,7 +108,7 @@ export function SlotPanel() {
   const sourceNote = usage ? `From ${usage.source}` : "Back up the pedal in Library to see which presets use each slot";
 
   let notice: string | null = null;
-  if (error?.code === "busy") notice = "Close Valeton Suite to reconnect.";
+  if (error?.code === "busy") notice = `Close ${vendorApps(device).editor} to reconnect.`;
   else if (!connected && snapTones) notice = `The ${pedal} isn't connected. Slots from ${readAt ? new Date(readAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "the last read"}.`;
   else if (!connected) notice = `Connect the ${pedal} to see its capture and IR slots.`;
   else if (slotsError) notice = `Couldn't read the slots: ${slotsError}`;

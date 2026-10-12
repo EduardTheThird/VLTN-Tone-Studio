@@ -1,11 +1,13 @@
 // Connection state → what the Device screen, the title-bar chip and the status bar say, and how to fix it.
 // Pure: every input comes from the device store and the host checks, so the mapping is unit-tested.
 import { VALETON_VID, listNames, profileFor } from "@shared/devices";
-import { pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
+import { GENERIC_DRIVER_RE, MIDI2_DRIVER_RE, pedalOnUsb, runningPortHolder, type DeviceHostStatus } from "@shared/host/device";
 import type { HostApi } from "@shared/host";
-import { attachedDevice, pedalName, pedalNameOrBoth } from "@/state/device-model";
+import { attachedDevice, pedalName, pedalNameOrBoth, vendorAppName, vendorApps } from "@/state/device-model";
 import type { ConnectionError, ConnectionStatus, DeviceKey, DeviceMode, RequestError } from "@/state/device-types";
 import { SUPPORTED_DEVICE_KEYS } from "@/state/driver/types";
+
+export { vendorApps } from "@/state/device-model";
 
 export type ViewKind =
   | "connected"
@@ -68,20 +70,12 @@ export interface GuidanceInput {
   portName?: string | null;
 }
 
-const MIDI2_RE = /midi\s*2|usbmidi2/i;
 /** "GP-5 or GP-50" */
 const SUPPORTED_EITHER = listNames(SUPPORTED_DEVICE_KEYS);
 
 /** Pedal model for the copy (attachedDevice); unknown = every supported model. */
 export function pedalModelName(input: Pick<GuidanceInput, "status" | "hostStatus" | "device" | "portName">): string {
   return pedalNameOrBoth(attachedDevice(input));
-}
-
-/** Valeton's apps for `device`: the editor that may hold its port, and the tool that updates its firmware. */
-export function vendorApps(device: DeviceKey | null): { editor: string; updater: string } {
-  return device && profileFor(device).family === "gp200"
-    ? { editor: "Valeton's GP-200 editor", updater: "Valeton's updater" }
-    : { editor: "Valeton Suite", updater: "Valeton Suite" };
 }
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -133,6 +127,21 @@ function base(kind: ViewKind, led: Led, chip: string, state: string, detail: str
     openGuide: false,
     ...rest,
   };
+}
+
+/** Windows has the pedal on USB but a driver the app can't talk through (or none): the Windows 11 driver guide. */
+function driverView(h: DeviceHostStatus | null, pedal: string, attached: DeviceKey | null): ConnectionView {
+  return base("driver", "fault", "Driver problem", "Driver problem", "Found on USB, but Windows shows no MIDI port for it", {
+    note:
+      h?.driver && MIDI2_DRIVER_RE.test(h.driver)
+        ? `Windows 11 attached its new MIDI 2.0 driver to the pedal, and neither this app nor ${vendorApps(attached).editor} can talk through it. Switching the pedal to the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.`
+        : 'Windows has no working MIDI driver on the pedal. Giving it the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.',
+    steps: win11Steps(pedal, vendorApps(attached).editor),
+    action: "show-fix",
+    actionLabel: "Show the fix",
+    statusText: `${pedal} found, but its driver hides the MIDI port`,
+    openGuide: true,
+  });
 }
 
 /** Map the store's connection state (plus host checks) to the header, chip, status bar and fix steps. */
@@ -231,18 +240,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
     case "not-found": {
       if (platform === "linux" && h?.linuxSeq && !h.linuxSeq.accessible) return linuxAccess(h);
       if (pedalOnUsb(h)) {
-        if (platform === "win32")
-          return base("driver", "fault", "Driver problem", "Driver problem", "Found on USB, but Windows shows no MIDI port for it", {
-            note:
-              h?.driver && MIDI2_RE.test(h.driver)
-                ? 'Windows 11 attached its new MIDI 2.0 driver to the pedal, and neither this app nor Valeton Suite can talk through it. Switching the pedal to the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.'
-                : 'Windows has no working MIDI driver on the pedal. Giving it the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.',
-            steps: win11Steps(pedal, vendorApps(attached).editor),
-            action: "show-fix",
-            actionLabel: "Show the fix",
-            statusText: `${pedal} found, but its driver hides the MIDI port`,
-            openGuide: true,
-          });
+        if (platform === "win32") return driverView(h, pedal, attached);
         return base("no-port", "warn", "No MIDI port", "No MIDI port", `Found on USB, but there is no ${pedal} MIDI port`, {
           note:
             platform === "linux"
@@ -258,23 +256,32 @@ export function connectionView(input: GuidanceInput): ConnectionView {
       });
     }
 
-    case "busy":
-      if (h?.suiteRunning)
-        return base("suite", "warn", "In use", "Valeton Suite is using the pedal", "Close it to connect", {
-          note: "On Windows only one app can use the pedal at a time. Quit Valeton Suite (also from the system tray), then press Check again.",
+    case "busy": {
+      if (platform === "win32" && pedalOnUsb(h) && h?.driver && MIDI2_DRIVER_RE.test(h.driver)) return driverView(h, pedal, attached);
+      const holder = runningPortHolder(h, attached);
+      if (holder) {
+        const app = vendorAppName(holder);
+        return base("suite", "warn", "In use", `${app} is using the pedal`, "Close it to connect", {
+          note: `On Windows only one app can use the pedal at a time. Quit ${app} (also from the system tray), then press Check again.`,
           action: "check",
           actionLabel: "Check again",
-          statusText: `Valeton Suite has the ${pedal} port`,
+          statusText: `${app} has the ${pedal} port`,
         });
+      }
+      const webOnWindows = platform === "web" && /Windows/i.test(h?.os ?? "");
+      const windowsNote = `Another app holds the port. Close ${vendorApps(attached).editor}, any DAW, and any other browser with a MIDI page open (Chrome can keep running in the background after its last window closes). Then unplug and replug the pedal. If it still fails, follow the Windows 11 steps under Diagnostics.`;
       return base("silent", "warn", "No answer", "The pedal doesn't answer", "Its MIDI port opened, but nothing came back", {
         note:
           platform === "win32"
-            ? "Another app may hold the port (Valeton Suite, a DAW), or Windows 11 attached its MIDI 2.0 driver. Close other MIDI apps and replug the pedal; if it still fails, follow the Windows 11 steps under Diagnostics."
-            : "Another app may hold the port, or the pedal is busy. Close other MIDI apps, switch the pedal off and on, then try again.",
+            ? windowsNote
+            : webOnWindows
+              ? `${windowsNote} If nothing else is running, check that chrome://flags/#use-winrt-midi-api matches a browser where the pedal works.`
+              : "Another app may hold the port, or the pedal is busy. Close other MIDI apps, switch the pedal off and on, then try again.",
         steps: [],
         statusText: `${pedal} port is silent`,
         openGuide: platform === "win32",
       });
+    }
 
     case "timeout":
       return base("wrong-device", "warn", "No answer", "Unexpected reply", `A device answered, but not like a ${pedal}`, {
@@ -365,8 +372,16 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
       detail: h.linuxSeq.exists ? `No access to ${h.linuxSeq.path}` : `${h.linuxSeq.path} is missing (ALSA sequencer not loaded)`,
       hint: h.linuxSeq.exists ? `Add your user to the "${h.linuxSeq.group ?? "audio"}" group, then log in again.` : "Load the snd-seq module: sudo modprobe snd-seq",
     };
-  else if (platform === "win32" && onUsb && h?.driver && MIDI2_RE.test(h.driver))
+  else if (platform === "win32" && onUsb && h?.driver && MIDI2_DRIVER_RE.test(h.driver))
     driver = { id: "driver", name: "Driver", state: "fault", detail: 'Windows uses "USB MIDI 2.0" for the pedal', hint: 'Switch it to "USB Audio Device". See the steps below.' };
+  else if (platform === "win32" && onUsb && h?.driver && !GENERIC_DRIVER_RE.test(h.driver))
+    driver = {
+      id: "driver",
+      name: "Driver",
+      state: "warn",
+      detail: `Windows uses a non-standard driver for the pedal (${h.driver})`,
+      hint: `If the connection drops or the pedal doesn't answer, switch it to "USB Audio Device". See the steps below.`,
+    };
   else if (h?.driver)
     driver = {
       id: "driver",
@@ -374,8 +389,13 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
       state: "ok",
       detail: platform === "linux" ? `Linux ALSA (${h.driver}). Nothing to install.` : platform === "darwin" ? "macOS CoreMIDI. Nothing to install." : `Windows (${h.driver})`,
     };
-  else if (onUsb) driver = { id: "driver", name: "Driver", state: "warn", detail: "No driver is bound to the pedal's MIDI interface" };
-  else driver = { id: "driver", name: "Driver", state: "idle", detail: `Checked once the ${pedal} is on USB` };
+  else if (onUsb) {
+    const { usbMidiInterface, usbPids } = profileFor(onUsb);
+    const midiKnown = usbMidiInterface !== null || !!h?.usbInterfaces?.some((i) => i.midi && usbPids.includes(i.productId));
+    driver = midiKnown
+      ? { id: "driver", name: "Driver", state: "warn", detail: "No driver is bound to the pedal's MIDI interface" }
+      : { id: "driver", name: "Driver", state: "idle", detail: `Couldn't tell which driver the ${pedalName(onUsb)}'s MIDI interface uses`, hint: "The diagnostic report lists its USB interfaces." };
+  } else driver = { id: "driver", name: "Driver", state: "idle", detail: `Checked once the ${pedal} is on USB` };
 
   const portLabel = input.portName ?? `the ${pedal} port`;
   const port: Check =
@@ -395,17 +415,23 @@ export function diagnosticChecks(input: GuidanceInput & { portName: string | nul
                 hint: error?.ports ? (error.ports.length ? `Visible ports: ${error.ports.join(", ")}` : "No MIDI ports are visible") : undefined,
               };
 
-  const shared = "On Windows only one app can use the pedal at a time. If Suite is open, the app asks you to close it before connecting.";
+  const attached = attachedDevice(input);
+  const apps = vendorApps(attached);
+  const holder = runningPortHolder(h, attached);
+  const shared =
+    attached && profileFor(attached).family === "gp200"
+      ? `On Windows only one app can use the pedal at a time. Close ${apps.editor} before connecting.`
+      : "On Windows only one app can use the pedal at a time. If Suite is open, the app asks you to close it before connecting.";
   const access: Check =
     view.kind === "bootloader"
-      ? { id: "access", name: "Exclusive access", state: "idle", detail: "Left to Valeton Suite", hint: "Suite owns the connection while it updates the firmware. Tone Studio waits." }
-      : h?.suiteRunning === true
+      ? { id: "access", name: "Exclusive access", state: "idle", detail: `Left to ${apps.updater}`, hint: `${apps.updater} owns the connection while it updates the firmware. Tone Studio waits.` }
+      : holder
         ? platform === "win32"
-          ? { id: "access", name: "Exclusive access", state: "warn", detail: "Valeton Suite is running", hint: "Close it to connect. On Windows only one app can use the pedal at a time." }
-          : { id: "access", name: "Exclusive access", state: "ok", detail: "Valeton Suite is running", hint: "On this system both apps can use the port, but changes in one don't show in the other." }
-        : h?.suiteRunning === false
-          ? { id: "access", name: "Exclusive access", state: "ok", detail: "Valeton Suite is not running", hint: shared }
-          : { id: "access", name: "Exclusive access", state: "idle", detail: mock ? "Not needed for the simulated pedal" : platform === "web" ? "The browser can't see other apps" : "Couldn't check for Valeton Suite", hint: shared };
+          ? { id: "access", name: "Exclusive access", state: "warn", detail: `${vendorAppName(holder)} is running`, hint: "Close it to connect. On Windows only one app can use the pedal at a time." }
+          : { id: "access", name: "Exclusive access", state: "ok", detail: `${vendorAppName(holder)} is running`, hint: "On this system both apps can use the port, but changes in one don't show in the other." }
+        : h?.vendorApps
+          ? { id: "access", name: "Exclusive access", state: "ok", detail: `${apps.editor} is not running`, hint: shared }
+          : { id: "access", name: "Exclusive access", state: "idle", detail: mock ? "Not needed for the simulated pedal" : platform === "web" ? "The browser can't see other apps" : `Couldn't check for ${apps.editor}`, hint: shared };
 
   return [usb, driver, port, access];
 }

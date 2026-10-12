@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceHostStatus } from "@shared/host/device";
 import type { ConnectionErrorCode } from "@/state/device-types";
-import { refineConnectionError } from "@/state/connection-error";
-import { connectionView, diagnosticChecks, formatWhen, requestErrorLine, type GuidanceInput } from "./guidance";
+import { refineConnectionError, toConnectionError } from "@/state/connection-error";
+import { connectionView, diagnosticChecks, formatWhen, requestErrorLine, type Check, type GuidanceInput } from "./guidance";
 
 const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
   checkedAt: 0,
@@ -11,7 +11,8 @@ const host = (over: Partial<DeviceHostStatus> = {}): DeviceHostStatus => ({
   usb: [],
   driver: null,
   linuxSeq: null,
-  suiteRunning: false,
+  usbInterfaces: null,
+  vendorApps: { suite: false, gp200Editor: false },
   ...over,
 });
 const gp5 = { vendorId: 0x84ef, productId: 0x0184, product: "GP-5" };
@@ -19,6 +20,7 @@ const gp50 = { vendorId: 0x84ef, productId: 0x018a, product: "GP-50" };
 const updater = { vendorId: 0x84ef, productId: 0x0185, product: "Valeton Upgrade" };
 const gp200 = { vendorId: 0x84ef, productId: 0x002a, product: "GP-200" };
 const gp200Updater = { vendorId: 0x84ef, productId: 0x002b, product: null };
+const gp200lt = { vendorId: 0x84ef, productId: 0x002c, product: "GP-200LT" };
 
 const err = (code: ConnectionErrorCode, input: Partial<GuidanceInput> = {}) =>
   connectionView({ status: "error", error: { code, message: code }, mode: "webmidi", hostStatus: null, platform: "linux", ...input });
@@ -121,13 +123,44 @@ describe("connectionView", () => {
   });
 
   it("silent port with Valeton Suite running = close Suite, Check again", () => {
-    const v = err("busy", { platform: "win32", hostStatus: host({ suiteRunning: true }) });
+    const v = err("busy", { platform: "win32", hostStatus: host({ vendorApps: { suite: true, gp200Editor: false } }) });
     expect(v).toMatchObject({ kind: "suite", action: "check", actionLabel: "Check again" });
     expect(v.state).toMatch(/Valeton Suite/);
   });
 
   it("silent port without Suite on Windows opens the driver guide", () => {
     expect(err("busy", { platform: "win32", hostStatus: host() })).toMatchObject({ kind: "silent", openGuide: true });
+  });
+
+  it("silent GP-200 on the Windows MIDI 2.0 driver = driver guide", () => {
+    const v = err("busy", { platform: "win32", hostStatus: host({ usb: [gp200], driver: "usbmidi2, USB MIDI 2.0 Device" }) });
+    expect(v).toMatchObject({ kind: "driver", action: "show-fix" });
+    expect(v.note).not.toMatch(/Valeton Suite/);
+  });
+
+  it("silent GP-200 with its editor running = close the GP-200 editor", () => {
+    const v = err("busy", { platform: "win32", hostStatus: host({ usb: [gp200], driver: "usbaudio, USB Audio Device", vendorApps: { suite: false, gp200Editor: true } }) });
+    expect(v.kind).toBe("suite");
+    expect(v.state).toMatch(/GP-200 editor/);
+    expect(v.note).not.toMatch(/Valeton Suite/);
+  });
+
+  it("a running editor of the other family doesn't hold a GP-5's port", () => {
+    const v = err("busy", { platform: "win32", hostStatus: host({ usb: [gp5], driver: "usbaudio", vendorApps: { suite: false, gp200Editor: true } }) });
+    expect(v.kind).toBe("silent");
+  });
+
+  it("silent GP-200 never tells its owner to close Valeton Suite", () => {
+    const v = err("busy", { platform: "win32", hostStatus: host({ usb: [gp200], driver: "usbaudio" }) });
+    expect(v.kind).toBe("silent");
+    expect(v.note).toMatch(/Valeton's GP-200 editor/);
+    expect(v.note).not.toMatch(/Valeton Suite/);
+  });
+
+  it("silent port in a browser on Windows points at the WinRT MIDI flag", () => {
+    const v = err("busy", { platform: "web", hostStatus: host({ os: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", vendorApps: null }) });
+    expect(v.note).toMatch(/use-winrt-midi-api/);
+    expect(err("busy", { platform: "web", hostStatus: host({ os: "Mozilla/5.0 (X11; Linux x86_64)", vendorApps: null }) }).note).not.toMatch(/winrt/);
   });
 
   it("bootloader: update mode, no action, app stays silent", () => {
@@ -182,6 +215,13 @@ describe("refineConnectionError", () => {
   });
 });
 
+describe("toConnectionError", () => {
+  it("a silent port names the editor of that model", () => {
+    expect(toConnectionError({ code: "timeout" }, false, "gp200").message).toMatch(/Close Valeton's GP-200 editor/);
+    expect(toConnectionError({ code: "timeout" }, false, "gp5").message).toMatch(/Close Valeton Suite/);
+  });
+});
+
 describe("diagnosticChecks", () => {
   const base = { portName: null, webmidi: true, chrome: "150" };
   it("all green when connected on Linux", () => {
@@ -201,9 +241,41 @@ describe("diagnosticChecks", () => {
   });
 
   it("Windows MIDI 2.0 driver is a fault; Suite running is a warning", () => {
-    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "win32", hostStatus: host({ usb: [gp5], driver: "usbmidi2", suiteRunning: true }) });
+    const checks = diagnosticChecks({ ...base, status: "error", error: { code: "not-found", message: "" }, mode: "webmidi", platform: "win32", hostStatus: host({ usb: [gp5], driver: "usbmidi2", vendorApps: { suite: true, gp200Editor: false } }) });
     expect(checks.find((c) => c.id === "driver")?.state).toBe("fault");
     expect(checks.find((c) => c.id === "access")?.state).toBe("warn");
+  });
+
+  const busy = { ...base, status: "error", error: { code: "busy", message: "" }, mode: "webmidi", platform: "win32" } as const;
+  const row = (checks: Check[], id: Check["id"]) => checks.find((c) => c.id === id);
+
+  it("GP-200 driver row: the standard driver is fine, another one is a warning", () => {
+    expect(row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: "usbaudio, USB Audio Device" }) }), "driver")).toMatchObject({ state: "ok", detail: "Windows (usbaudio, USB Audio Device)" });
+    const asio = row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: "ValetonAsio, Valeton GP-200 ASIO" }) }), "driver");
+    expect(asio).toMatchObject({ state: "warn" });
+    expect(asio?.detail).toContain("ValetonAsio, Valeton GP-200 ASIO");
+  });
+
+  it("GP-200 on the MIDI 2.0 driver is a fault, a GP-200 without a bound driver a warning", () => {
+    expect(row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: "usbmidi2, USB MIDI 2.0 Device" }) }), "driver")?.state).toBe("fault");
+    expect(row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: null }) }), "driver")?.state).toBe("warn");
+  });
+
+  it("GP-200LT without a known MIDI interface: driver unknown, not a warning", () => {
+    const unknown = row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200lt], driver: null, usbInterfaces: [{ productId: 0x002c, iface: 0, service: "usbaudio", name: null, midi: false }] }) }), "driver");
+    expect(unknown).toMatchObject({ state: "idle", detail: "Couldn't tell which driver the GP-200LT's MIDI interface uses" });
+    const known = row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200lt], driver: null, usbInterfaces: [{ productId: 0x002c, iface: 2, service: null, name: null, midi: true }] }) }), "driver");
+    expect(known?.state).toBe("warn");
+  });
+
+  it("exclusive access for a GP-200 is about its editor, not Valeton Suite", () => {
+    const running = row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: "usbaudio", vendorApps: { suite: false, gp200Editor: true } }) }), "access");
+    expect(running).toMatchObject({ state: "warn" });
+    expect(running?.detail).toMatch(/GP-200 editor/);
+    const idle = row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], driver: "usbaudio", vendorApps: { suite: true, gp200Editor: false } }) }), "access");
+    expect(idle).toMatchObject({ state: "ok", detail: "Valeton's GP-200 editor is not running" });
+    expect(`${idle?.detail} ${idle?.hint}`).not.toMatch(/Suite/);
+    expect(row(diagnosticChecks({ ...busy, hostStatus: host({ usb: [gp200], vendorApps: null }) }), "access")?.state).toBe("idle");
   });
 
   it("reports a GP-50 on USB with its product id", () => {

@@ -6,7 +6,7 @@ import { encode, expTargetBlock, globalsFor, packetize } from "@/gp5/lib/protoco
 import { encode as gp200Encode, encodeFrames } from "@/gp200/lib/protocol.mjs";
 import { imageOf, withEightCtrl } from "@/gp200/lib/prst.mjs";
 import { PRST_MODELS, deviceForPortName, profileFor, sniffPrst, type DeviceFamily, type DeviceKey, type DeviceProfile } from "@shared/devices";
-import { pedalOnUsb, type DeviceHostStatus } from "@shared/host/device";
+import { pedalOnUsb, type DeviceHostStatus, type VendorApp } from "@shared/host/device";
 import type { ConnectionStatus, DeviceFeature, DeviceMode, GlobalSpec, Globals, Gp5BlockCode, Gp5FamilyKey, ParamInfo, PresetState, SettingSpec } from "./device-types";
 import { gp200SpecsFor } from "./driver/gp200-globals";
 import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
@@ -87,6 +87,17 @@ export const SUPPORTED_PEDALS = SUPPORTED_DEVICE_KEYS.map((k) => profileFor(k).n
 /** The connected (or last connected) pedal's name, else every supported model's. */
 export function pedalNameOrBoth(device: DeviceKey | null): string {
   return device ? pedalName(device) : SUPPORTED_PEDALS;
+}
+
+/** Valeton's apps for `device`: the editor that may hold its port, and the tool that updates its firmware. */
+export function vendorApps(device: DeviceKey | null): { editor: string; updater: string } {
+  return device && profileFor(device).family === "gp200"
+    ? { editor: "Valeton's GP-200 editor", updater: "Valeton's updater" }
+    : { editor: "Valeton Suite", updater: "Valeton Suite" };
+}
+
+export function vendorAppName(app: VendorApp): string {
+  return app === "suite" ? "Valeton Suite" : "Valeton's GP-200 editor";
 }
 
 /**

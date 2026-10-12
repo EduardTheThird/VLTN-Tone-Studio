@@ -2,6 +2,7 @@
 import type { DeviceHostStatus } from "@shared/host/device";
 import type { ConnectionError, DeviceKey, MidiLogEntry, RequestError } from "@/state/device-types";
 import { pedalName } from "@/state/device-model";
+import { hostLines } from "@/state/host-lines";
 import { formatLogLine } from "@/state/midi-log";
 import type { Check } from "./guidance";
 
@@ -19,10 +20,11 @@ export interface ReportInput {
   lastError: RequestError | null;
   /** Monitor lines, only when the monitor is on */
   monitor: MidiLogEntry[] | null;
+  /** Folder of the session log files; null when the log lives in this browser tab */
+  logFolder: string | null;
   now?: number;
 }
 
-const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 const MARK = { ok: "OK  ", warn: "WARN", fault: "FAIL", idle: "--  ", pending: "... " } as const;
 
 export function buildReport(r: ReportInput): string {
@@ -42,10 +44,8 @@ export function buildReport(r: ReportInput): string {
     `Pedal model: ${r.device ? pedalName(r.device) : "unknown"}`,
     `MIDI port: ${r.portName ?? "none"}`,
     `Visible MIDI ports: ${r.connectionError?.ports ? r.connectionError.ports.join(", ") || "none" : "not listed"}`,
-    `USB (vendor 84EF): ${h?.usb ? h.usb.map((d) => `${hex4(d.vendorId)}:${hex4(d.productId)}${d.product ? ` ${d.product}` : ""}`).join(", ") || "none" : "not available"}`,
-    `Driver: ${h?.driver ?? "unknown"}`,
-    ...(h?.linuxSeq ? [`/dev/snd/seq: ${h.linuxSeq.exists ? (h.linuxSeq.accessible ? "accessible" : "no access") : "missing"}, group ${h.linuxSeq.group ?? "?"}, member ${h.linuxSeq.inGroup ? "yes" : "no"}`] : []),
-    `Valeton Suite running: ${h?.suiteRunning === null || !h ? "unknown" : h.suiteRunning ? "yes" : "no"}`,
+    ...hostLines(h),
+    `Session log: ${r.logFolder ? `${r.logFolder} (Save log in Diagnostics)` : "kept in this browser tab (Save log in Diagnostics)"}`,
     `Last connection error: ${r.connectionError ? `${r.connectionError.code}: ${r.connectionError.message}` : "none"}`,
     `Last request error: ${r.lastError ? `${r.lastError.code}: ${r.lastError.message} at ${new Date(r.lastError.at).toISOString()}` : "none"}`,
   ];

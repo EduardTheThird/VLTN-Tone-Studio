@@ -5,6 +5,20 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- **Session log.** Tone Studio logs every connection step, connection and request error, change in what the host sees (USB, driver, interfaces, Valeton apps), long job, and every MIDI message with its decoded text and all bytes in hex. It doesn't depend on the MIDI monitor being on. The desktop app writes it to `logs/` in its data folder: 4 MB files, the newest 20 MB kept. The browser build keeps it in memory for the tab. *Device › Diagnostics › Session log* saves it as one file (*Save log*) or opens the folder. The diagnostic report says where it is. The log includes the presets read from and written to the pedal.
+
+### Fixed
+- **GP-200 connection diagnostics on Windows.** The *Driver* row shows the driver Windows bound to the GP-200's MIDI interface (MI_03), or the USB MIDI 2.0 fault, instead of a false "No driver is bound". A driver other than *USB Audio Device* (such as Valeton's ASIO driver) is a warning. Models whose MIDI interface isn't measured (GP-200LT, GP-200JR) are found by USB class, and say "Couldn't tell" rather than warn when that fails.
+- **Valeton's GP-200 editor is detected.** When `GP-200.exe` (or `GP-200.app`) runs, the header, *Exclusive access* row and banners say it holds the port. Texts for a GP-200 never ask to close Valeton Suite.
+- A silent port on the USB MIDI 2.0 driver opens the driver guide. Otherwise the note lists what can hold the port on Windows, browsers with a MIDI page included; the browser build also points at `chrome://flags/#use-winrt-midi-api`.
+- The Windows 11 guide covers Valeton's ASIO driver and ends with a restart when the old driver sticks.
+
+### Changed
+- The diagnostic report lists the USB interfaces of Valeton devices (driver, name, MIDI class) and which Valeton apps run.
+
+## [0.5.0] - 2026-10-11
+
+### Added
 - **Valeton GP-50 support.** Tone Studio recognises the connected model by itself (from the size of the preset it reads) and works the same on a GP-50 as on a GP-5: live editing, the library, backups and restore, SnapTones and User IRs over USB. A GP-50 has 552-byte presets, sent in 29 frames.
 - **The GP-50's own effects.** On a GP-50 the model picker offers PRE AC Sim, PRE Cry Wah and the CAB AC (Dreadnought) cabinet, and delay and modulation pedals show their *Sync* switch. A GP-5 doesn't show them.
 - **Presets across models.** A GP-5 preset written to a GP-50 is converted without loss. A GP-50 preset written or restored to a GP-5 loses its GP-50-only models, and the confirmation lists them first. Restore accepts backups of either model.
@@ -79,6 +93,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.1.0...v0.2.0
