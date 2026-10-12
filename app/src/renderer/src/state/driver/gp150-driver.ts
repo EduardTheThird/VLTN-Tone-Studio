@@ -1,18 +1,19 @@
-// DeviceDriver for the GP-150: an adapter over Gp150Session, plus the simulator (MockGp150). Facts: the GP-180 captures
-// of majabojarska/Valeton-GP180-Rev-Eng (same protocol). Safety: the session serializes requests, waits for the pedal's
-// ACK of every message, verifies full writes by reading back, and never builds the factory reset; memory writes on a
-// real unit stay locked until a GP-150 has been tested (profile `writable`).
+// DeviceDriver for the GP-150 and GP-180: an adapter over Gp150Session, plus the simulator (MockGp150). Facts: the
+// GP-180 captures of majabojarska/Valeton-GP180-Rev-Eng (one protocol for both). Safety: the session serializes requests,
+// waits for the pedal's ACK of every message, verifies full writes by reading back, and never builds the factory reset;
+// memory writes on a real unit stay locked until one has been tested (profile `writable`).
 import { Gp150Session, type Gp150Event, type Gp150Timing, type Gp150Transport, type ListEntry } from "@/gp150/lib/session.mjs";
 import { MockGp150, type MockGp150Options } from "@/gp150/lib/mock-device.mjs";
 import { CMD, GLOBALS, GLOBAL_EQ } from "@/gp150/lib/protocol.mjs";
 import { applyPatchEdits, parsePrst } from "@/gp150/lib/prst.mjs";
 import { connectWebMidi } from "@/gp5/lib/transport-webmidi.mjs";
-import { profileFor, type DeviceKey } from "@shared/devices";
+import { deviceForPortName, profileFor, type DeviceKey } from "@shared/devices";
 import type { BackupEntry, DeviceFeature, GlobalEq, GlobalName, Globals, SlotName } from "../device-types";
 import { GP200_EQ_DEFAULTS, clampGp200Eq } from "./gp200-globals";
 import { appEqValues, clampGp150Global, gp150EqIndex, gp150GlobalRecords, gp150GlobalSpec, type Gp150GlobalName, type Gp150Globals } from "./gp150-globals";
 import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
 
+/** Slot tables and tempo range, the same on the GP-150 and GP-180. */
 const PROFILE = profileFor("gp150");
 /** The SnapTone upload file the GP-150 takes: the GP-5 family's 2696-byte VTSI file. */
 const SNAPTONE_FILE_BYTES = 2696;
@@ -55,6 +56,8 @@ export class Gp150Driver implements DeviceDriver {
   /** Counts the times another patch or model took over the edit buffer: a read from before is stale. */
   #buffer = 0;
   #device: DeviceKey | null = null;
+  /** The model on this port: the GP-150 and GP-180 answer alike, so their port names tell them apart. */
+  readonly #model: DeviceKey;
 
   private constructor(
     transport: Gp150Transport,
@@ -62,7 +65,10 @@ export class Gp150Driver implements DeviceDriver {
     opts: Pick<DriverOptions, "log"> & { timing?: Partial<Gp150Timing> },
     /** The simulator behind a mock connection (tests and diagnostics), else null */
     readonly mock: MockGp150 | null = null,
+    model?: DeviceKey,
   ) {
+    const named = deviceForPortName(portName);
+    this.#model = model ?? (named && profileFor(named).family === "gp150" ? named : "gp150");
     this.#session = new Gp150Session(transport, { log: opts.log, timing: opts.timing });
     this.#session.addEventListener("message", (ev) => {
       for (const e of this.#toDriverEvents((ev as Event & { message: Gp150Event }).message)) this.#emit(e);
@@ -76,10 +82,11 @@ export class Gp150Driver implements DeviceDriver {
     return new Gp150Driver(transport, transport.name, opts);
   }
 
-  /** Connect a simulated GP-150, paced like FAST_SIMULATOR unless `timing` / `mock` say otherwise. */
-  static async simulate(_device: DeviceKey, opts: DriverOptions & { timing?: Partial<Gp150Timing>; mock?: MockGp150Options }): Promise<Gp150Driver> {
-    const mock = new MockGp150({ ...FAST_SIMULATOR.mock, ...opts.mock });
-    return new Gp150Driver(mock.transport(), `${PROFILE.name} (simulated)`, { ...opts, timing: { ...FAST_SIMULATOR.timing, ...opts.timing } }, mock);
+  /** Connect a simulated GP-150 or GP-180, paced like FAST_SIMULATOR unless `timing` / `mock` say otherwise. */
+  static async simulate(device: DeviceKey, opts: DriverOptions & { timing?: Partial<Gp150Timing>; mock?: MockGp150Options }): Promise<Gp150Driver> {
+    const { name } = profileFor(device);
+    const mock = new MockGp150({ ...FAST_SIMULATOR.mock, ...opts.mock, name });
+    return new Gp150Driver(mock.transport(), `${name} (simulated)`, { ...opts, timing: { ...FAST_SIMULATOR.timing, ...opts.timing } }, mock, device);
   }
 
   #emit(e: DriverEvent) {
@@ -155,14 +162,14 @@ export class Gp150Driver implements DeviceDriver {
     return this.#device;
   }
 
-  /** Hello, state and settings; the GP-150 port is the only model of this family. */
+  /** Hello, state and settings; the model comes from the port name (GP-150 unless it names a GP-180). */
   async identify(): Promise<DeviceKey> {
     if (!this.#device) {
       const info = await this.#session.connect();
       this.#eq = info.eq;
-      this.#device = "gp150";
+      this.#device = this.#model;
     }
-    return "gp150";
+    return this.#model;
   }
 
   /** Hello, the name list, the edit buffer and the settings: four requests. */

@@ -5,7 +5,7 @@
 # VLTN Tone Studio
 
 A desktop editor and librarian for Valeton multi-effects:<br>
-**GP-5 · GP-50 · GP-200 · GP-200LT · GP-200JR · GP-150**
+**GP-5 · GP-50 · GP-150 · GP-180 · GP-200 · GP-200LT · GP-200JR**
 
 Shape tones live, sort and back up every slot, match a song's guitar tone, and bring NAM captures and IRs from TONE3000 straight to the pedal.
 
@@ -300,24 +300,24 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 | | GP-5 | GP-50 | GP-150 | GP-180 | GP-200 · 200R · 200X | GP-200LT | GP-200JR |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Recognised over USB | ✅ | ✅ | 🧪⁴ | ✖️ | 🧪 | 🧪 | 🧪 |
-| Live editing | ✅ | ✅ | 🧪 | ✖️ | 🧪² | 🧪² | 🧪² |
-| Preset library | ✅ 100 slots | ✅ 100 slots | 🔒 200 slots | ✖️ | 🧪 256 slots | 🔒 256 slots | 🔒 255 slots |
-| Backups | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
-| Restore a backup | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
-| `.prst` export | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
-| `.prst` import | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
-| Pedal settings | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
-| Global EQ | — | — | 🔒 | ✖️ | 🧪³ | 🔒 | 🔒 |
-| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–2 | 🔒 FS A–B | ✖️ | 🧪 CTRL 1–8 | 🔒 | 🔒 |
-| Tempo and tap tempo | ✅ | ✅¹ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
+| Recognised over USB | ✅ | ✅ | 🧪⁴ | 🧪⁴ | 🧪 | 🧪 | 🧪 |
+| Live editing | ✅ | ✅ | 🧪 | 🧪 | 🧪² | 🧪² | 🧪² |
+| Preset library | ✅ 100 slots | ✅ 100 slots | 🔒 200 slots | 🔒 200 slots | 🧪 256 slots | 🔒 256 slots | 🔒 255 slots |
+| Backups | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
+| Restore a backup | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
+| `.prst` export | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
+| `.prst` import | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
+| Pedal settings | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
+| Global EQ | — | — | 🔒 | 🔒 | 🧪³ | 🔒 | 🔒 |
+| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–2 | 🔒 FS A–B | 🔒 FS A–C | 🧪 CTRL 1–8 | 🔒 | 🔒 |
+| Tempo and tap tempo | ✅ | ✅¹ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
 | Expression pedal and patch settings | — | ✅¹ | ✖️ | ✖️ | 🧪 | 🔒 | 🔒 |
-| SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | 🔒 50 user slots | ✖️ | 🧪 10 slots | ❔ | ❔ |
-| Cab IR inside a SnapTone | ✅ | ✅ | — | ✖️ | — | — | — |
-| User IRs over USB | ✅ 20 × 512 | ✅ 20 × 512 | 🔒 20 slots | ✖️ | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 |
-| Tone Match | ✅ | ✅ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
-| [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✖️ | ✅ | ✅ | ✅ |
-| Tested on a real unit by this project | ✅ | ✅ | not yet | — | not yet | not yet | not yet |
+| SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | 🔒 50 user slots | 🔒 50 user slots | 🧪 10 slots | ❔ | ❔ |
+| Cab IR inside a SnapTone | ✅ | ✅ | — | — | — | — | — |
+| User IRs over USB | ✅ 20 × 512 | ✅ 20 × 512 | 🔒 20 slots | 🔒 20 slots | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 |
+| Tone Match | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
+| [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tested on a real unit by this project | ✅ | ✅ | not yet | not yet | not yet | not yet | not yet |
 
 <sub>✅ works &nbsp;·&nbsp; 🧪 works in the app, not yet tried on a real unit &nbsp;·&nbsp; 🔒 read-only on a real unit until one has been tested &nbsp;·&nbsp; ✖️ not in Tone Studio &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it or doesn't need it</sub>
 
@@ -326,7 +326,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 ¹ **Some GP-50 commands sit behind Settings › Experimental pedal commands**: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
 ² **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
 ³ **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind the same *Experimental pedal commands* switch.<br>
-⁴ **The GP-150 is known from USB captures of a GP-180**, which speaks the same protocol and uses the same `.prst` file, published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Its USB product id isn't known, so Tone Studio finds it by its MIDI port name.
+⁴ **The GP-150 and GP-180 are known from USB captures of a GP-180** published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0): both speak one protocol and use one `.prst` file. Tone Studio tells them apart by the MIDI port name. The GP-180's USB product id comes from those captures; the GP-150's (`0186`) from public Windows driver databases, not yet seen on a unit.
 
 <br>
 
@@ -334,7 +334,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 **Presets across models.** A GP-5 preset goes onto a GP-50 unchanged. A GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing. The GP-200, LT and JR share one `.prst` file. Presets don't move between the GP-5 and GP-200 families.<br>
 **GP-200LT and GP-200JR.** They connect, read, back up and play live edits, but Tone Studio doesn't write to their memory until one has been tested.<br>
 **GP-150.** It connects, reads, backs up and plays live edits: all 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. Tone Studio doesn't write to its memory until one has been tested. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. Its `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only.<br>
-**GP-180.** Not supported yet. It uses the GP-150's protocol and `.prst` file, with a third footswitch.
+**GP-180.** Everything above for the GP-150, with a third footswitch (FS C) in the footswitch assignments. Tone Studio doesn't write to its memory until one has been tested.
 
 <br>
 
@@ -432,9 +432,9 @@ npm run web        # in the browser at http://localhost:5790
 
 No pedal? Add `?mock` to the browser address for a simulated GP-5 loaded with a full 100-slot backup, or pick another model:
 
-| GP-5 | GP-50 | GP-200 | GP-200LT | GP-200JR | GP-150 |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| `?mock` | `?mock=gp50` | `?mock=gp200` | `?mock=gp200lt` | `?mock=gp200jr` | `?mock=gp150` |
+| GP-5 | GP-50 | GP-150 | GP-180 | GP-200 | GP-200LT | GP-200JR |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `?mock` | `?mock=gp50` | `?mock=gp150` | `?mock=gp180` | `?mock=gp200` | `?mock=gp200lt` | `?mock=gp200jr` |
 
 The desktop app offers the same under *Device › Simulate*. All commands and the code layout are in [`app/README.md`](app/README.md); what changed in each version is in the [changelog](CHANGELOG.md).
 

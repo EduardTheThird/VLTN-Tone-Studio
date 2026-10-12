@@ -76,6 +76,7 @@ export class MockGp150 {
   firmwareField;
   #catalog;
   #latencyMs;
+  #name;
   #rx = new Reassembler();
   #seq = 1;
   #listener = () => {};
@@ -85,6 +86,7 @@ export class MockGp150 {
   constructor(opts = {}) {
     this.#catalog = opts.catalog ?? GP150_CATALOG;
     this.#latencyMs = opts.latencyMs ?? 0;
+    this.#name = opts.name ?? "GP-150";
     const g = hexBytes(GLOBALS_HEX);
     this.firmwareField = g.slice(0, 8);
     this.records = splitRecords(g);
@@ -118,7 +120,7 @@ export class MockGp150 {
   /** The host side of the connection. */
   transport() {
     return {
-      name: "GP-150 (simulated)",
+      name: `${this.#name} (simulated)`,
       send: (bytes) => void this.#receive(toBytes(bytes)),
       onMessage: (cb) => {
         this.#listener = cb;

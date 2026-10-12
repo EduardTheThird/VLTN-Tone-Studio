@@ -27,11 +27,11 @@ const gp200File = (length: number) => file(length, [[0, ascii("TSRP")], [0x10, a
 
 describe("profiles", () => {
   it("has one profile per key, keyed by itself", () => {
-    expect(DEVICE_KEYS).toEqual(["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150"]);
+    expect(DEVICE_KEYS).toEqual(["gp5", "gp50", "gp200", "gp200lt", "gp200jr", "gp150", "gp180"]);
     for (const k of DEVICE_KEYS) expect(PROFILES[k].key).toBe(k);
     expect(familyKeys("gp5")).toEqual(["gp5", "gp50"]);
     expect(familyKeys("gp200")).toEqual(["gp200", "gp200lt", "gp200jr"]);
-    expect(familyKeys("gp150")).toEqual(["gp150"]);
+    expect(familyKeys("gp150")).toEqual(["gp150", "gp180"]);
     expect(isDeviceKey("gp200lt")).toBe(true);
     expect(isDeviceKey("gp500")).toBe(false);
     expect(isDeviceKey(null)).toBe(false);
@@ -68,8 +68,14 @@ describe("profiles", () => {
     expect(p.tempo).toEqual({ min: 40, max: 250 });
   });
 
-  it("keeps the untested LT, JR and GP-150 read-only", () => {
-    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr", "gp150"]);
+  it("keeps the untested LT, JR, GP-150 and GP-180 read-only", () => {
+    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr", "gp150", "gp180"]);
+  });
+
+  it("gives the GP-180 the GP-150's slots and file, with a third footswitch", () => {
+    const [a, b] = [PROFILES.gp150, PROFILES.gp180];
+    expect([b.slotCount, b.prst, b.blocks, b.snapTone]).toEqual([a.slotCount, a.prst, a.blocks, a.snapTone]);
+    expect([a.ctrls, b.ctrls]).toEqual([2, 3]);
   });
 
   it("labels GP-150 slots 001 to 200, as the pedal counts", () => {
@@ -96,6 +102,9 @@ describe("USB product ids", () => {
     expect(pedalOnUsb(status(0x002b))).toBeNull();
     expect(updaterOnUsb(status(0x002b))).toBe(true);
     expect(updaterOnUsb(status(0x0185))).toBe(true);
+    expect(pedalOnUsb(status(0x0186))).toBe("gp150");
+    expect(pedalOnUsb(status(0x0188))).toBe("gp180");
+    expect(updaterOnUsb(status(0x0189))).toBe(true);
     expect(pedalOnUsb(status(0x018a))).toBe("gp50");
     expect(pedalOnUsb({ usb: [{ vendorId: 0x1234, productId: 0x0184, product: null }] } as unknown as DeviceHostStatus)).toBeNull();
   });
@@ -111,6 +120,7 @@ describe("MIDI port names", () => {
     expect(deviceForPortName("GP-200LT MIDI 1")).toBe("gp200lt");
     expect(deviceForPortName("GP-200JR")).toBe("gp200jr");
     expect(deviceForPortName("GP-150 MIDI 1")).toBe("gp150");
+    expect(deviceForPortName("Valeton GP-180 MIDI")).toBe("gp180");
     expect(deviceForPortName("GP-1500")).toBeNull();
     expect(deviceForPortName("GP-500")).toBeNull();
     expect(deviceForPortName("gp-200 midi 1")).toBeNull();

@@ -7,6 +7,8 @@ export interface MockGp150Options {
   catalog?: Gp150Catalog;
   /** delay before each frame the simulator sends */
   latencyMs?: number;
+  /** model name of the port ("GP-150", "GP-180"); the protocol is the same */
+  name?: string;
 }
 
 export class MockGp150 {

@@ -155,7 +155,7 @@ function gp150State(slot: number, prst: Uint8Array, device: DeviceKey): PresetSt
     order: p.chain,
     volume: p.volume,
     bpm: p.tempo,
-    // footswitches A and B (the file has room for the GP-180's C)
+    // footswitches A and B, and C on the GP-180 (every file has room for three)
     footswitches: p.footswitches.slice(0, profileFor(device).ctrls).map(gp150.blocksOfMask),
     exp: null,
     gp200: null,
@@ -165,14 +165,15 @@ function gp150State(slot: number, prst: Uint8Array, device: DeviceKey): PresetSt
 
 /**
  * The preset in `prst` as the app shows it. `device`: the pedal the bytes came from; it names the model when the file
- * doesn't (a GP-200 family file reads as "gp200" whether it came from an LT or a JR), else the file decides.
- * Throws when the bytes are no known preset.
+ * doesn't (a GP-200 family file reads as "gp200" whether it came from an LT or a JR, a GP-150 family file as "gp150"
+ * whether it came from a GP-150 or a GP-180), else the file decides. Throws when the bytes are no known preset.
  */
 export function toPresetState(slot: number, prst: Uint8Array, device?: DeviceKey | null, catalog = currentCatalog()): PresetState {
   const sniffed = presetDevice(prst);
+  const same = device && profileFor(device).family === profileFor(sniffed).family ? device : sniffed;
   if (isGp5Family(sniffed)) return gp5State(slot, prst);
-  if (isGp150(sniffed)) return gp150State(slot, prst, sniffed);
-  return gp200State(slot, prst, device && profileFor(device).family === "gp200" ? device : sniffed, catalog);
+  if (isGp150(sniffed)) return gp150State(slot, prst, same);
+  return gp200State(slot, prst, same, catalog);
 }
 
 /** The GP-200 family's terms for `edits` (gp200/lib/prst.mjs applyPatchEdits). */

@@ -11,8 +11,8 @@ afterEach(async () => {
   open = [];
 });
 
-async function connected() {
-  const d = await Gp150Driver.simulate("gp150", { log: () => {}, onDisconnect: () => {} });
+async function connected(device: "gp150" | "gp180" = "gp150") {
+  const d = await Gp150Driver.simulate(device, { log: () => {}, onDisconnect: () => {} });
   open.push(d);
   const snap = await d.sync();
   return { d, dev: d.mock!, snap };
@@ -126,5 +126,11 @@ describe("Gp150Driver", () => {
     const patch = nextEvents(d, 1);
     await dev.selectOnPedal(17);
     expect(await patch).toEqual([{ type: "resync" }]);
+  });
+
+  it("connects a GP-180 as a GP-180 (the protocol is the GP-150's)", async () => {
+    const { d, snap } = await connected("gp180");
+    expect(snap.device).toBe("gp180");
+    expect(d.portName).toBe("GP-180 (simulated)");
   });
 });
