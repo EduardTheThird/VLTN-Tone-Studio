@@ -37,21 +37,27 @@ describe("song store", () => {
     expect(useSong.getState().source).toBeNull();
   });
 
-  it("walks model download → splitting → done and maps stems by name", async () => {
+  it("walks model download → model starting → splitting → done and maps stems by name", async () => {
     const statuses: string[] = [];
     const useSong = createSongStore({
       decode: async () => audio(),
       separate: async (_a, onProgress: (p: SeparationProgress) => void) => {
         onProgress({ stage: "model", fraction: 0.5 });
         statuses.push(JSON.stringify(useSong.getState().status));
-        onProgress({ stage: "split", fraction: 0.25 });
+        onProgress({ stage: "split", fraction: 0, backend: null });
+        statuses.push(JSON.stringify(useSong.getState().status));
+        onProgress({ stage: "split", fraction: 0.25, backend: "wasm" });
         statuses.push(JSON.stringify(useSong.getState().status));
         return stems();
       },
     });
     await useSong.getState().load(file("a.wav"));
     await useSong.getState().split();
-    expect(statuses).toEqual([JSON.stringify({ kind: "model", fraction: 0.5 }), JSON.stringify({ kind: "splitting", fraction: 0.25 })]);
+    expect(statuses).toEqual([
+      JSON.stringify({ kind: "model", fraction: 0.5 }),
+      JSON.stringify({ kind: "splitting", fraction: 0, backend: null }),
+      JSON.stringify({ kind: "splitting", fraction: 0.25, backend: "wasm" }),
+    ]);
     const s = useSong.getState();
     expect(s.status).toEqual({ kind: "done" });
     expect(s.stems?.guitar.channels[0][0]).toBe(4);

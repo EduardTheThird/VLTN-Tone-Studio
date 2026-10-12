@@ -1,5 +1,6 @@
 // Song: a user's audio file split into stems (Stem Splitter) and analysed for a preset on the pedal (Tone Match).
 // The store (song/store.ts, `useSong`) owns the loaded song and its stems; Tone Match only reads them.
+import type { Backend } from "./stems/protocol";
 
 /** Demucs htdemucs_6s sources, in the model's output order. */
 export const STEM_NAMES = ["drums", "bass", "other", "vocals", "guitar", "piano"] as const;
@@ -23,7 +24,8 @@ export type SplitStatus =
   | { kind: "decoding" }
   /** First use: the separation model is being downloaded and verified */
   | { kind: "model"; fraction: number }
-  | { kind: "splitting"; fraction: number }
+  /** `backend` null while the model starts; then where the chunks run (the CPU is several times slower) */
+  | { kind: "splitting"; fraction: number; backend: Backend | null }
   | { kind: "done" }
   | { kind: "error"; message: string };
 
