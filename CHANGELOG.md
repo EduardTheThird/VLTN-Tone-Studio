@@ -2,7 +2,7 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
-## [Unreleased]
+## [0.7.0] - 2026-10-12
 
 ### Added
 - **Valeton GP-150 and GP-180 support.** Tone Studio connects to a GP-150 or GP-180 (told apart by the MIDI port name; USB ids `0186` and `0188`) and runs every screen on it:
@@ -115,6 +115,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.3.0...v0.4.0
