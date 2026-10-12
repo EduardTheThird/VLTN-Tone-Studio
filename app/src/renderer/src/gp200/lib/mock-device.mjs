@@ -212,9 +212,13 @@ export class MockGp200 {
     }
   }
 
+  /**
+   * SOFTWARE_STATE ("enter editor mode"): USB captures of the editor and a GP-200 on firmware 1.8.0 (phash/gp200editor)
+   * show no reply in normal mode; the pedal is identified by its 0x2001 reply. Only update mode answers `{0, type}`.
+   */
   #softwareState() {
-    this.#emit(encodeFrames({ cmd: CMD.SET, address: ADDRESS.SOFTWARE_STATE, data: [this.state, this.type] })[0]);
-    if (this.state === 1 && this.push1007) this.#pushGlobals();
+    if (this.state !== 1) return this.#emit(encodeFrames({ cmd: CMD.SET, address: ADDRESS.SOFTWARE_STATE, data: [this.state, this.type] })[0]);
+    if (this.push1007) this.#pushGlobals();
   }
 
   #pushGlobals() {

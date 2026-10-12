@@ -60,6 +60,50 @@ test("connect: 0x2001, 100 ms, SOFTWARE_STATE, pushed 0x1007", async () => {
   await s.close();
 });
 
+/** Host frames as "identity" (0x2001 query), "softwareState" or "other". */
+const sentKinds = (sent) =>
+  sent.map(({ bytes }) => {
+    const f = decodeFrame(bytes);
+    if (f.kind === "address") return f.address;
+    return f.data[0] === 0x01 && f.data[1] === 0x20 ? "identity" : "other";
+  });
+
+test("connects when the pedal never answers SOFTWARE_STATE (captured behaviour)", async () => {
+  // USB captures of the editor and a GP-200 on firmware 1.8.0 (phash/gp200editor): 0x2001 is answered, SOFTWARE_STATE is not
+  const dev = new MockGp200({ deafMs: 20, firmware: "1.8.2" });
+  const t = dev.transport();
+  const received = [];
+  const watched = { ...t, onMessage: (cb) => t.onMessage((bytes) => (received.push(decodeFrame(bytes)), cb(bytes))) };
+  const { transport, sent } = recorder(watched);
+  const s = new Gp200Session(transport, { timing: fast });
+  const info = await s.connect();
+  assert.deepEqual({ device: info.device, deviceType: info.deviceType, firmware: info.firmware }, { device: "gp200", deviceType: 2, firmware: "1.8.2" });
+  assert.equal(received.filter((f) => f?.kind === "address").length, 0, "the pedal sent no SOFTWARE_STATE reply");
+  assert.deepEqual(sentKinds(sent), ["identity", "softwareState"], "nothing resent");
+  await s.close();
+});
+
+test("connect: a lost 0x2001 reply resends the identity query and SOFTWARE_STATE together", async () => {
+  const dev = new MockGp200({ deafMs: 20 });
+  const t = dev.transport();
+  let dropped = 0;
+  const lossy = {
+    ...t,
+    onMessage: (cb) =>
+      t.onMessage((bytes) => {
+        const f = decodeFrame(bytes);
+        if (!dropped && f?.kind === "data" && f.data[0] === 0x01 && f.data[1] === 0x20) return void dropped++; // first 0x2001 reply lost
+        cb(bytes);
+      }),
+  };
+  const { transport, sent } = recorder(lossy);
+  const s = new Gp200Session(transport, { timing: { ...fast, replyTimeoutMs: 100 } });
+  assert.equal((await s.connect()).device, "gp200");
+  assert.equal(dropped, 1);
+  assert.deepEqual(sentKinds(sent), ["identity", "softwareState", "identity", "softwareState"]);
+  await s.close();
+});
+
 test("connect falls back to 0x1006 when the pedal does not push 0x1007", async () => {
   const { s, sent } = await setup({ push1007: false });
   const info = await s.connect();

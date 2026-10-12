@@ -29,6 +29,10 @@ const CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://*.tone3000.com https://tone3000.com; connect-src 'self' ws://localhost:* https://*.tone3000.com https://tone3000.com";
 // Dev server only: @vitejs/plugin-react injects an inline React Refresh preamble into index.html.
 const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'");
+// Cross-origin isolation: the stem splitter's CPU path (onnxruntime-web wasm, song/stems/worker.ts) only gets threads
+// with SharedArrayBuffer; without it one 7.8 s chunk takes ~20 s on one core. credentialless (not require-corp) so
+// TONE3000 images, which send no Cross-Origin-Resource-Policy, still load (without cookies).
+const ISOLATION = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "credentialless" } as const;
 
 /** app://bundle/<path> → a file inside the renderer build; nothing outside it is reachable. */
 async function serveBundle(req: Request): Promise<Response> {
@@ -37,10 +41,13 @@ async function serveBundle(req: Request): Promise<Response> {
   const file = resolve(RENDERER_DIR, "." + decodeURIComponent(url.pathname));
   if (!file.startsWith(RENDERER_DIR + sep)) return new Response(null, { status: 403 });
   const res = await net.fetch(pathToFileURL(file).toString());
-  if (!file.endsWith(".html")) return res;
   const headers = new Headers(res.headers);
-  headers.set("Content-Security-Policy", CSP);
-  headers.set("Content-Type", "text/html; charset=utf-8");
+  // On every response: workers (the separation worker and onnxruntime's thread workers) take their own headers.
+  for (const [name, value] of Object.entries(ISOLATION)) headers.set(name, value);
+  if (file.endsWith(".html")) {
+    headers.set("Content-Security-Policy", CSP);
+    headers.set("Content-Type", "text/html; charset=utf-8");
+  }
   return new Response(res.body, { status: res.status, headers });
 }
 
@@ -173,10 +180,11 @@ app.whenReady().then(async () => {
     permission === "media" ? details.mediaType === "audio" : allowed.has(permission),
   );
   protocol.handle("app", serveBundle);
-  // Dev: the renderer comes from the electron-vite dev server; give it the same CSP.
+  // Dev: the renderer comes from the electron-vite dev server; give it the same CSP and isolation.
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
     if (!details.url.startsWith("http://localhost")) return cb({ responseHeaders: details.responseHeaders });
-    cb({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [DEV_CSP] } });
+    const isolation = Object.fromEntries(Object.entries(ISOLATION).map(([name, value]) => [name, [value]]));
+    cb({ responseHeaders: { ...details.responseHeaders, ...isolation, "Content-Security-Policy": [DEV_CSP] } });
   });
 
   registerLogIpc(getWindow);

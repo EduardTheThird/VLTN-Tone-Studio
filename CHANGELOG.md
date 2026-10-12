@@ -2,6 +2,13 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.7.1] - 2026-10-12
+
+### Fixed
+- **A GP-200 connects.** Tone Studio waited for the pedal to answer *Read pedal mode* (SOFTWARE_STATE), which a GP-200 in normal mode never does, so every connection stopped after four tries with "GP-200 port found, but it doesn't answer". USB captures of Valeton's GP-200 editor ([phash/gp200editor](https://github.com/phash/gp200editor)) show the pedal names itself in its reply to the identity query. Tone Studio now takes the model from that reply, treats an answer to *Read pedal mode* only as firmware update mode, and resends both together when the pedal says nothing. The simulator no longer answers *Read pedal mode* in normal mode either.
+- A connection that fails after the pedal sent anything at all, even a reply nobody waited for, is reported as "A port answered, but not like a GP-200" instead of a silent port held by another app.
+- **Splitting a song into stems (and Tone Match) no longer looks stuck when the graphics card can't run the model.** The processor fallback ran on a single thread, about 20 s per 7.8 s chunk, with the bar at 0 % until the first chunk was done; on a laptop a song took tens of minutes. The app window is now cross-origin isolated (COOP/COEP), so the fallback uses up to 8 threads: about 4× faster in our tests. The progress card says whether the model is still starting, or which of the graphics card or the processor runs the split. The session log records the backend, why WebGPU wasn't used, and how long the start and each split took.
+
 ## [0.7.0] - 2026-10-12
 
 ### Added
@@ -115,6 +122,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.4.0...v0.5.0

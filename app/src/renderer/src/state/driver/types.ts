@@ -35,9 +35,7 @@ export type DriverEvent =
   /** A pedal setting changed (menu on the pedal, or the echo of a host write) */
   | { type: "global"; name: GlobalName; value: number }
   /** The pedal reported Global EQ values, by index (`all`: the whole EQ, GP-200 0x1004) */
-  | { type: "globalEq"; values: Readonly<Record<number, number>>; all: boolean }
-  /** Bytes arrived that weren't a valid reply (something answers on the port) */
-  | { type: "badframe" };
+  | { type: "globalEq"; values: Readonly<Record<number, number>>; all: boolean };
 
 export interface GlobalsSnapshot {
   values: Globals;
