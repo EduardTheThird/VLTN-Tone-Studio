@@ -9,7 +9,7 @@ import { useToneMatch } from "./store";
 
 vi.mock("@/song/stems/engine", () => ({ separateStems: vi.fn() }));
 vi.mock("./run", () => ({ analyseStem: vi.fn() }));
-vi.mock("./proposal", () => ({ proposePreset: () => ({ blocks: [] }) }));
+vi.mock("./proposal", () => ({ proposePreset: (_a: unknown, device: string) => ({ device, blocks: [] }) }));
 
 const pcm = (): PcmAudio => ({ sampleRate: 44100, channels: [new Float32Array(4)] });
 const stems = () => ({ drums: pcm(), bass: pcm(), other: pcm(), vocals: pcm(), guitar: pcm(), piano: pcm() }) as Record<StemName, PcmAudio>;
@@ -42,14 +42,14 @@ describe("tone match store", () => {
     expect(analyseStem).toHaveBeenCalledOnce();
   });
 
-  it("waits with the analysis while a GP-200 is the pedal (no proposal can be made for it) and runs it for a GP-5", async () => {
+  it("analyses for a GP-200 too, and rebuilds the proposal from the next pedal's catalog", async () => {
     vi.mocked(analyseStem).mockResolvedValue(analysis);
     useDevice.setState({ device: "gp200" });
     useSong.setState({ stems: stems() });
-    expect(analyseStem).not.toHaveBeenCalled();
-    expect(useToneMatch.getState().status.kind).toBe("idle");
-    useDevice.setState({ device: "gp5" });
     await vi.waitFor(() => expect(useToneMatch.getState().status.kind).toBe("done"));
+    expect(useToneMatch.getState().proposal?.device).toBe("gp200");
+    useDevice.setState({ device: "gp5" });
+    expect(useToneMatch.getState().proposal?.device).toBe("gp5");
     expect(analyseStem).toHaveBeenCalledOnce();
   });
 
