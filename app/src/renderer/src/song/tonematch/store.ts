@@ -5,7 +5,8 @@ import type { BlockSnapshot } from "@/screens/rig/history";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { useSong } from "@/song/store";
 import { useDevice } from "@/state/device";
-import { DEFAULT_DEVICE, isGp5Family } from "@/state/device-model";
+import { DEFAULT_DEVICE } from "@/state/device-model";
+import { profileFor } from "@shared/devices";
 import type { DeviceKey, DeviceState } from "@/state/device-types";
 import type { GuitarAnalysis } from "./analyse";
 import { auditionProposal, restoreBlocks } from "./apply";
@@ -127,7 +128,7 @@ useDevice.subscribe((s, prev) => {
 // A GP-200 effect list imported or removed: the GP-200 family's proposal picks its models from the new one.
 useGp200Catalog.subscribe((c, prev) => {
   const device = useToneMatch.getState().proposal?.device;
-  if (c.catalog !== prev.catalog && device && !isGp5Family(device)) repropose(device);
+  if (c.catalog !== prev.catalog && device && profileFor(device).family === "gp200") repropose(device);
 });
 
 // Another song or a new split: the old analysis no longer applies. Fresh stems are analysed right away (in the

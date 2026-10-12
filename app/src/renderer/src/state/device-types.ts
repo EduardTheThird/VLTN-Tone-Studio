@@ -6,13 +6,14 @@ import type { DeviceHostStatus } from "@shared/host/device";
 import type { DeviceFamily, DeviceKey } from "@shared/devices";
 import type { ExpEdit, ExpSettings, GlobalName as Gp5GlobalName, GlobalSpec, Gp5FamilyKey } from "@/gp5/lib/session.mjs";
 import type { GlobalName as Gp200GlobalName } from "@/gp200/lib/protocol.mjs";
+import type { GlobalName as Gp150GlobalName } from "@/gp150/lib/protocol.mjs";
 import type { PatchExp, PatchQuickAccess } from "@/gp200/lib/prst.mjs";
 
-export type { DeviceFamily, DeviceKey, ExpEdit, ExpSettings, GlobalSpec, Gp5FamilyKey, Gp5GlobalName, Gp200GlobalName, PatchExp, PatchQuickAccess };
+export type { DeviceFamily, DeviceKey, ExpEdit, ExpSettings, GlobalSpec, Gp5FamilyKey, Gp5GlobalName, Gp200GlobalName, Gp150GlobalName, PatchExp, PatchQuickAccess };
 
 /** Block codes of the GP-5 family's presets (profileFor("gp5").blocks). */
 export type Gp5BlockCode = "NR" | "PRE" | "DST" | "AMP" | "CAB" | "EQ" | "MOD" | "DLY" | "RVB" | "NS";
-/** Block codes of every family: the GP-200 family adds WAH and VOL (profileFor(device).blocks). */
+/** Block codes of every family: the GP-200 family and the GP-150 add WAH and VOL (profileFor(device).blocks). */
 export type BlockCode = Gp5BlockCode | "WAH" | "VOL";
 
 export interface ParamInfo {
@@ -161,10 +162,13 @@ export interface MidiLogEntry {
   ack: boolean;
 }
 
-/** Pedal setting names of both families (GP-5 family: gp5/lib protocol.mjs globalsFor; GP-200 family: gp200-globals.ts). */
-export type GlobalName = Gp5GlobalName | Gp200GlobalName;
+/** Pedal setting names of every family (GP-5 family: gp5/lib protocol.mjs globalsFor; GP-200 family: gp200-globals.ts; GP-150: gp150-globals.ts). */
+export type GlobalName = Gp5GlobalName | Gp200GlobalName | Gp150GlobalName;
 
-/** One pedal setting as a settings screen shows it: GP-5 family specs carry their 0x10 record address, GP-200 ones their 0x1008 id. */
+/**
+ * One pedal setting as a settings screen shows it: GP-5 family specs carry their 0x10 record address, GP-200 ones their
+ * 0x1008 id, GP-150 ones their record and offset as id (record << 8 | offset).
+ */
 export type SettingSpec = Omit<GlobalSpec, "name" | "addr"> & { name: GlobalName; addr?: GlobalSpec["addr"]; id?: number };
 
 /** Pedal settings of the connected model; absent keys were not in the reply. */
