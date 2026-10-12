@@ -309,7 +309,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | `.prst` import | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
 | Pedal settings | ✅ | ✅ | 🔒 | ✖️ | 🧪 | 🔒 | 🔒 |
 | Global EQ | — | — | 🔒 | ✖️ | 🧪³ | 🔒 | 🔒 |
-| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–4 | 🔒 FS A–B | ✖️ | 🧪 CTRL 1–8 | 🔒 | 🔒 |
+| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–2 | 🔒 FS A–B | ✖️ | 🧪 CTRL 1–8 | 🔒 | 🔒 |
 | Tempo and tap tempo | ✅ | ✅¹ | 🧪 | ✖️ | 🧪 | 🧪 | 🧪 |
 | Expression pedal and patch settings | — | ✅¹ | ✖️ | ✖️ | 🧪 | 🔒 | 🔒 |
 | SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | 🔒 50 user slots | ✖️ | 🧪 10 slots | ❔ | ❔ |
