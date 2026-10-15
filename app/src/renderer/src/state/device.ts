@@ -309,8 +309,9 @@ export const useDevice = create<DeviceState>((set, get) => {
       driver = null;
       setFeatures(null);
       await d.close().catch(() => {});
-      // Anything the pedal sent, even a reply the handshake didn't wait for, means the port isn't silent ("busy").
-      throw toConnectionError(e, rxFrames > rxBefore, d.device ?? get().device);
+      // Anything the pedal sent, even a reply the handshake didn't wait for, means the port isn't silent ("busy"); a
+      // pedal that already identified itself and then stalls is no wrong device.
+      throw toConnectionError(e, rxFrames > rxBefore, d.device ?? get().device, d.device !== null);
     }
   };
 

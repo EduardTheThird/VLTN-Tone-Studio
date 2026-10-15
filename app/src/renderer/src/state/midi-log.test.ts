@@ -118,5 +118,6 @@ describe("MidiLogDecoder on the GP-200", () => {
     expect(rx(d, { cmd: CMD.SET, payload: rec.status(STATUS.DIRTY, 1) })).toBe("Pedal: Active preset edited");
     expect(d.line("warn", new Uint8Array(), { kind: "resend", what: "read slot 5", attempt: 1 })!.text).toBe("No reply to read slot 5: sending it again (try 2)");
     expect(d.line("warn", new Uint8Array(), { kind: "verify", slot: 5, attempt: 1, offset: 9 })!.text).toBe("Slot 02-B didn't read back the same after write 1");
+    expect(d.line("warn", new Uint8Array(), { kind: "skipped", what: "User IR names" })!.text).toBe("No reply to User IR names: Tone Studio goes on without it");
   });
 });

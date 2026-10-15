@@ -109,7 +109,9 @@ export function SlotPanel({ onAddNam }: { onAddNam: (file: OpenFile) => void }) 
   const snapFactory = snapTones?.filter((s) => s.slot < userFirst) ?? [];
   // The block each SnapTone plays in: NS on the GP-5 family, AMP (0-4) or DST (5-9) on the GP-200 family.
   const byBlock = [...new Set(snapUser.map((s) => profile.captureBlock(s.slot)))].map((block) => ({ block, slots: snapUser.filter((s) => profile.captureBlock(s.slot) === block) }));
-  const used = (list: SlotName[]) => list.filter((s) => !isEmptySlot(s)).length;
+  // A table the pedal didn't list (GP-200LT without 0x1009 replies) has no count: its slots may or may not be used.
+  const usedOf = (list: SlotName[], of: string) =>
+    list.some((s) => s.kind === "unknown") ? "Contents unknown: the pedal didn't list them" : `${list.filter((s) => !isEmptySlot(s)).length} of ${of} used`;
   const sourceNote = usage ? `From ${usage.source}` : "Back up the pedal in Library to see which presets use each slot";
 
   let notice: string | null = null;
@@ -162,7 +164,7 @@ export function SlotPanel({ onAddNam }: { onAddNam: (file: OpenFile) => void }) 
 
       {snapTones && (
         <section aria-label="SnapTone slots" className="flex flex-col gap-1.5">
-          <SlotsHead title="SnapTone captures" count={`${used(snapUser)} of ${userSlots} ${userFirst > 0 ? "user slots" : "slots"} used`} />
+          <SlotsHead title="SnapTone captures" count={usedOf(snapUser, `${userSlots} ${userFirst > 0 ? "user slots" : "slots"}`)} />
           {byBlock.length > 1 ? (
             byBlock.map(({ block, slots }) => (
               <div key={block} role="group" aria-label={`SnapTones in the ${block} block`} className="flex flex-col gap-1">
@@ -191,7 +193,7 @@ export function SlotPanel({ onAddNam }: { onAddNam: (file: OpenFile) => void }) 
 
       {userIRs && (
         <section aria-label="User IR slots" className="flex flex-col gap-1.5">
-          <SlotsHead title="User IRs" count={`${used(userIRs)} of ${profile.userIr.slots} slots used`} />
+          <SlotsHead title="User IRs" count={usedOf(userIRs, `${profile.userIr.slots} slots`)} />
           <SlotGrid kind="ir" slots={userIRs} index={index.ir} links={links.ir} targets={targets.ir} note={sourceNote} />
         </section>
       )}
@@ -277,6 +279,7 @@ function SlotCell({
     : empty
       ? "Empty"
       : [
+          slot.kind === "unknown" ? "The pedal didn't say what this slot holds; writing to it replaces whatever is there" : null,
           link ? `Linked to ${link.title} on TONE3000${stale ? ` (the pedal now calls it ${slot.name})` : ""}` : null,
           usedIn.length ? `Used in ${usedIn.map((p) => `${profile.slotLabel(p.slot)} ${p.name}`).join(", ")}` : "Not used by any preset",
           note,
