@@ -2,7 +2,7 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
-## [Unreleased]
+## [0.7.2] - 2026-10-15
 
 ### Fixed
 - **A GP-200LT that doesn't answer User IR name reads connects.** A GP-200LT on firmware 1.6.0 answered the identity query, the settings and the drum state, but never *Read User IR name 1*, so every connection stopped after four tries with "The pedal answered but not like a GP-200LT". Drum state, User IR names, drum style names and SnapTone names are now optional when connecting a GP-200: when the pedal doesn't answer the first entry of a list, Tone Studio stops asking for that list, notes it in the session log ("No reply to User IR names: Tone Studio goes on without it") and goes on reading the presets. The simulator can play such a pedal (`MockGp200` option `silentQueries`, virtual port `--silent 0x1009`).
@@ -130,7 +130,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
-[Unreleased]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...HEAD
+[0.7.2]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0
