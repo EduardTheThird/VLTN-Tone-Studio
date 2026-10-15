@@ -2,7 +2,7 @@
 // simulator (MockGp200). Safety (GP-200 editor 1.8.0 RE): selects go out as 0x1008 only (never CC/PC); the session paces
 // every frame, never waits for ACKs (there are none), verifies full writes by reading back, moves off the active slot
 // before writing it, refuses the dangerous frames, and sends nothing at all once the pedal reports update mode.
-import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry } from "@/gp200/lib/session.mjs";
+import { Gp200Error, Gp200Session, type Gp200Event, type Gp200FamilyKey, type Gp200Timing, type Gp200Transport, type NameEntry, type UploadResult } from "@/gp200/lib/session.mjs";
 import { MockGp200, type MockGp200Options } from "@/gp200/lib/mock-device.mjs";
 import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
 import { GLOBAL_EQ_BANDS, PATCH_SETTING, type DecodedMessage } from "@/gp200/lib/protocol.mjs";
@@ -50,6 +50,13 @@ function toGlobals(values: Gp200Globals, firmware: string | null): Gp200GlobalsS
 /** Name tables of the SnapTone and User IR slots: flag 1 = the slot holds data. */
 const toTable = (list: NameEntry[]): SlotName[] => list.map((e) => ({ slot: e.slot, name: e.name, kind: e.flag ? "user" : "empty" }));
 
+/** The GP-200's default slot names ("User IR 3", "SnapTone 3") for a table the pedal didn't list: contents unknown. */
+const unlistedTable = (kind: "irs" | "snapTones"): SlotName[] => {
+  const { userIr, snapTone } = profileFor("gp200");
+  const [count, prefix] = kind === "irs" ? [userIr.slots, "User IR"] : [snapTone.slots, "SnapTone"];
+  return Array.from({ length: count }, (_, slot) => ({ slot, name: `${prefix} ${slot + 1}`, kind: "unknown" }));
+};
+
 /** int32 LE sample block (the GP-5 family's User IR data layout, up to 1024 samples here) → samples. */
 function irSamples(data: Uint8Array): Int32Array {
   if (data.byteLength === 0 || data.byteLength % 4 !== 0 || data.byteLength > USER_IR_MAX_SAMPLES * 4)
@@ -74,6 +81,11 @@ export class Gp200Driver implements DeviceDriver {
   #buffer = 0;
   /** Echoes of our own selects and model changes still expected from the pedal: key → deadline (ms) */
   #echoes: readonly { key: string; until: number }[] = [];
+  /**
+   * Name tables the pedal didn't list (no reply at sync, or to the name read-back after an upload): default names,
+   * contents "unknown", plus the slots uploaded since. Read from here; the pedal isn't asked again.
+   */
+  #unlisted: { irs: readonly SlotName[] | null; snapTones: readonly SlotName[] | null } = { irs: null, snapTones: null };
 
   private constructor(
     transport: Gp200Transport,
@@ -205,11 +217,13 @@ export class Gp200Driver implements DeviceDriver {
 
   /**
    * The editor's sync: IR names, every slot (the GP-200 has no name table, so each is read: 256 reads, 255 on the
-   * JR), style names, edit buffer, SnapTone names. `onProgress` counts those steps.
+   * JR), style names, edit buffer, SnapTone names. `onProgress` counts those steps. A pedal that doesn't answer the
+   * IR or SnapTone names still connects (the session skips them); those tables then read as unlisted (unlistedTable).
    */
   async sync(opts: ProgressOptions = {}): Promise<SyncSnapshot> {
     const device = await this.identify();
     const snap = await this.#session.sync({ onProgress: opts.onProgress });
+    this.#unlisted = { irs: snap.irNames ? null : unlistedTable("irs"), snapTones: snap.snapToneNames ? null : unlistedTable("snapTones") };
     const image = snap.editBuffer.image;
     this.#fxids = parsePatch(image).blocks.map((b) => b.fxid);
     // The sync read the active slot too: an edit buffer that differs from it holds edits made before we connected.
@@ -349,13 +363,25 @@ export class Gp200Driver implements DeviceDriver {
     await this.#session.setGlobalEq(index, v);
   }
 
-  /** The 10 SnapTone slots: 0-4 AMP, 5-9 DST. */
+  /** The 10 SnapTone slots: 0-4 AMP, 5-9 DST. Unlisted by the pedal: default names, kind "unknown". */
   async readSnapTones(): Promise<SlotName[]> {
-    return toTable(await this.#session.readSnapToneNames());
+    return this.#unlisted.snapTones ? [...this.#unlisted.snapTones] : toTable(await this.#session.readSnapToneNames());
   }
 
+  /** Unlisted by the pedal: default names ("User IR 1"…), kind "unknown" (never offered as empty). */
   async readUserIRs(): Promise<SlotName[]> {
-    return toTable(await this.#session.readIrNames());
+    return this.#unlisted.irs ? [...this.#unlisted.irs] : toTable(await this.#session.readIrNames());
+  }
+
+  /**
+   * The pedal confirmed an upload (0x100B / 0x1014). Without a name read-back the table becomes unlisted (asking again
+   * would stall the same way); in an unlisted table the slot is now known to hold the upload. Returns the stored name.
+   */
+  #uploaded(table: "irs" | "snapTones", r: UploadResult): string {
+    const name = r.entry?.name ?? r.name;
+    const current = this.#unlisted[table] ?? (r.entry ? null : unlistedTable(table));
+    if (current) this.#unlisted = { ...this.#unlisted, [table]: current.map((s) => (s.slot === r.slot ? { slot: r.slot, name, kind: "user" } : s)) };
+    return name;
   }
 
   /**
@@ -365,12 +391,12 @@ export class Gp200Driver implements DeviceDriver {
   async uploadSnapTone(slot: number, name: string, file: Uint8Array, opts: ProgressOptions = {}): Promise<string> {
     if (file.byteLength === GP5_SNAPTONE_FILE_BYTES)
       throw new RangeError("This SnapTone was made for the GP-5 or GP-50. Convert the capture again for the GP-200.");
-    return (await this.#session.uploadSnapTone(slot, name, file, { confirm: true, onProgress: opts.onProgress })).entry.name;
+    return this.#uploaded("snapTones", await this.#session.uploadSnapTone(slot, name, file, { confirm: true, onProgress: opts.onProgress }));
   }
 
   /** `data`: 24-bit samples at 44.1 kHz as int32 LE, up to 1024 (4096 bytes); a 512-sample GP-5 block also works. */
   async uploadUserIr(slot: number, name: string, data: Uint8Array, opts: ProgressOptions = {}): Promise<string> {
-    return (await this.#session.uploadUserIr(slot, name, irSamples(data), { confirm: true, onProgress: opts.onProgress })).entry.name;
+    return this.#uploaded("irs", await this.#session.uploadUserIr(slot, name, irSamples(data), { confirm: true, onProgress: opts.onProgress }));
   }
 
   subscribe(listener: (event: DriverEvent) => void): () => void {

@@ -86,7 +86,8 @@ export class MockGp200 {
    *   at file offset 0x9F in stored reads after a write), loseWrites = 0 (next N full writes are lost),
    *   fragmentSysex = 0 (deliver frames in pieces of N bytes), flushAfter = 0 (emit CMD 0x03
    *   after N host frames), ackWaitMs = 200 (chunk gaps above this flag a host waiting for ACKs),
-   *   failUploads = false, emitKnobNotify = false, bankPolarity = "manual" | "inverted" }
+   *   failUploads = false, emitKnobNotify = false, bankPolarity = "manual" | "inverted",
+   *   silentQueries = [] (record types, e.g. REC.IR_NAME, whose queries get no reply: a pedal that doesn't answer them) }
    */
   constructor({
     type = "gp200",
@@ -106,6 +107,7 @@ export class MockGp200 {
     failUploads = false,
     emitKnobNotify = false,
     bankPolarity = "manual",
+    silentQueries = [],
   } = {}) {
     const dev = typeof type === "number" ? DEVICE_TYPES[type] : deviceByKey(type);
     if (!dev) throw new Error(`MockGp200: unknown type ${type}; use gp200, gp200lt or gp200jr`);
@@ -129,7 +131,7 @@ export class MockGp200 {
     this.exp1AB = 0;
     this.pendingMoves = [];
     Object.assign(this, { latencyMs, minGapMs, deafMs, push1007, verifyGlitch, loseWrites, fragmentSysex, flushAfter, ackWaitMs });
-    Object.assign(this, { failUploads, emitKnobNotify, bankPolarity });
+    Object.assign(this, { failUploads, emitKnobNotify, bankPolarity, silentQueries });
     this.log = []; // decoded host messages { cmd, records, header }, newest last
     this.violations = []; // { kind: "gap" | "deaf" | "danger" | "ackWait" | "hostBug", ... }
   }
@@ -228,6 +230,7 @@ export class MockGp200 {
   #handle({ cmd, payload }) {
     const m = decodeMessage({ cmd, payload });
     this.log.push({ cmd, header: m.header, records: m.records });
+    if (cmd === CMD.QUERY && walkTlv(payload).some((r) => this.silentQueries.includes(r.type))) return;
     if (m.header) return this.#patchScoped(cmd, m, payload);
     for (const r of walkTlv(payload)) {
       if (r.truncated) continue;

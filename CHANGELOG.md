@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.7.2] - 2026-10-15
+
+### Fixed
+- **A GP-200LT that doesn't answer User IR name reads connects.** A GP-200LT on firmware 1.6.0 answered the identity query, the settings and the drum state, but never *Read User IR name 1*, so every connection stopped after four tries with "The pedal answered but not like a GP-200LT". Drum state, User IR names, drum style names and SnapTone names are now optional when connecting a GP-200: when the pedal doesn't answer the first entry of a list, Tone Studio stops asking for that list, notes it in the session log ("No reply to User IR names: Tone Studio goes on without it") and goes on reading the presets. The simulator can play such a pedal (`MockGp200` option `silentQueries`, virtual port `--silent 0x1009`).
+- **Slots the pedal didn't list are never treated as empty.** User IR (or SnapTone) slots of such a pedal keep their default names ("User IR 1" …) but show *contents unknown* in the slot pickers and on Tones: Tones proposes none of them for a new file, and writing to one shows the same *Replace* warning as an occupied slot. A slot written since then shows the file's name.
+- **An upload the pedal confirmed no longer fails afterwards.** When the GP-200 confirms a User IR or SnapTone upload but doesn't answer the name read that follows, the write counts as done (the log notes the skipped read) instead of reporting a timeout. A refused upload still fails.
+- "Not like a GP-200" (or GP-5) is only said when no reply identified the pedal. A pedal that identified itself and then stops answering a preset read is reported as "The GP-200LT stopped answering while Tone Studio read it", with the step that failed.
+
 ## [0.7.1] - 2026-10-12
 
 ### Fixed
@@ -122,6 +130,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.7.2]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.5.0...v0.6.0

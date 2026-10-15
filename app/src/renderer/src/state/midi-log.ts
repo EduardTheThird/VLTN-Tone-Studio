@@ -304,9 +304,12 @@ function describeGp200(m: Gp200Message | Gp200Frame | undefined, out: boolean, p
   return who + (parts.join(", ") || "Empty message");
 }
 
-/** A GP-200 session warning: a resent request or a write that didn't read back the same. */
-function describeGp200Warning(w: { kind: "resend"; what: string; attempt: number } | { kind: "verify"; slot: number; attempt: number }): string {
+/** A GP-200 session warning: a resent request, an optional sync step the pedal didn't answer, or a write that didn't read back the same. */
+function describeGp200Warning(
+  w: { kind: "resend"; what: string; attempt: number } | { kind: "skipped"; what: string } | { kind: "verify"; slot: number; attempt: number },
+): string {
   if (w.kind === "resend") return `No reply to ${w.what}: sending it again (try ${w.attempt + 1})`;
+  if (w.kind === "skipped") return `No reply to ${w.what}: Tone Studio goes on without it`;
   return `Slot ${gp200SlotLabel(w.slot)} didn't read back the same after write ${w.attempt}`;
 }
 

@@ -226,6 +226,13 @@ describe("slot helpers", () => {
       { slot: 1, name: "SnapTone 2", kind: "empty" as const },
     ];
     expect(firstEmptySlot("snaptone", gp200, "gp200")).toBe(1);
+    // Contents the pedal didn't list ("User IR 1" is only the default label) are never proposed for overwriting
+    const unlisted = [
+      { slot: 0, name: "User IR 1", kind: "unknown" as const },
+      { slot: 1, name: "User IR 2", kind: "unknown" as const },
+    ];
+    expect(firstEmptySlot("ir", unlisted, "gp200lt")).toBeNull();
+    expect(firstEmptySlot("ir", [unlisted[0], { slot: 1, name: "User IR 2", kind: "empty" as const }], "gp200lt")).toBe(1);
   });
   it("scopes a slot link to the pedal model it was made on; old records are GP-5 links", () => {
     const old = { gp5: { verdict: "ready" as const, snaptoneSlot: 58, slotName: "5150-RED4" } };

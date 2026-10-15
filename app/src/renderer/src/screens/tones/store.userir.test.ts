@@ -146,6 +146,8 @@ describe("User IR UI helpers", () => {
     expect(irOccupant(table, 0)).toBe("CAB 0");
     expect(irOccupant(table, 1)).toBeNull();
     expect(irOccupant(null, 0)).toBeNull();
+    // A slot the pedal didn't list may hold an IR: writing to it warns like an occupied one
+    expect(irOccupant([{ slot: 0, name: "User IR 1", kind: "unknown" }], 0)).toBe("User IR 1");
   });
 
   it("says what part of the IR the pedal keeps", () => {

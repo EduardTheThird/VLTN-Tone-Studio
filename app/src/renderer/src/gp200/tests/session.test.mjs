@@ -172,6 +172,54 @@ test("sync: editor order, every slot, names; a lost reply is resent", async () =
   await s.close();
 });
 
+test("sync: a pedal that never answers User IR name reads still syncs; the names are skipped after one query", async () => {
+  // Field report: a GP-200LT (firmware 1.6.0) answered the identity, 0x1006 and 0x1000 but never 0x1009.
+  const dev = new MockGp200({ type: "gp200lt", deafMs: 20, silentQueries: [REC.IR_NAME] });
+  const warnings = [];
+  const s = new Gp200Session(dev.transport(), { timing: { ...fast, replyTimeoutMs: 100 }, log: (dir, _bytes, d) => dir === "warn" && warnings.push(d) });
+  await s.connect();
+  let progress = 0;
+  const snap = await s.sync({ onProgress: (done, total) => (progress = `${done}/${total}`) });
+  assert.equal(snap.irNames, null);
+  assert.equal(progress, "308/308");
+  assert.equal(snap.presets.length, 256);
+  assert.equal(snap.presets[5].name, parsePatch(dev.slots[5]).name);
+  assert.equal(snap.editBuffer.slot, 0);
+  assert.equal(snap.snapToneNames.length, 10);
+  assert.equal(snap.styles[0], "Rock");
+  assert.deepEqual(
+    dev.log.filter((m) => m.records[0]?.kind === "irName").map((m) => m.records[0].slot),
+    [0, 0, 0, 0],
+    "User IR name 1 tried 4 times, the other 19 never asked",
+  );
+  assert.deepEqual(warnings, [1, 2, 3].map((attempt) => ({ kind: "resend", what: "User IR name 1", attempt })).concat({ kind: "skipped", what: "User IR names" }));
+  assert.deepEqual(dataViolations(dev), []);
+  await s.close();
+});
+
+test("sync: drum state, drum style names and SnapTone names are optional too; slots and edit buffer are not", async () => {
+  const dev = new MockGp200({ deafMs: 20, silentQueries: [REC.DRUM_STATE, REC.STYLE_NAME, REC.SNAPTONE_NAME] });
+  const warnings = [];
+  const s = new Gp200Session(dev.transport(), { timing: { ...fast, replyTimeoutMs: 100 }, log: (dir, _bytes, d) => dir === "warn" && d.kind === "skipped" && warnings.push(d.what) });
+  await s.connect();
+  const snap = await s.sync();
+  assert.equal(snap.drum, null);
+  assert.equal(snap.snapToneNames, null);
+  assert.deepEqual(snap.styles, new Array(20).fill(null));
+  assert.equal(snap.irNames.length, 20);
+  assert.equal(snap.presets.length, 256);
+  assert.deepEqual(warnings, ["drum state", "drum style names", "SnapTone names"]);
+  const asked = (kind) => dev.log.filter((m) => m.records[0]?.kind === kind).length;
+  assert.deepEqual([asked("drumState"), asked("styleName"), asked("snapToneName")], [4, 4, 4], "each silent table is given up after its first entry");
+
+  const deaf = new MockGp200({ deafMs: 20, silentQueries: [REC.READ] });
+  const s2 = new Gp200Session(deaf.transport(), { timing: { ...fast, replyTimeoutMs: 50 } });
+  await s2.connect();
+  await assert.rejects(s2.sync(), { code: "timeout", message: /read slot 01-A/ });
+  await s.close();
+  await s2.close();
+});
+
 test("select + live edits: header {0, current}, edit buffer only, dirty notification", async () => {
   const { dev, s } = await setup();
   await s.connect();
@@ -332,6 +380,23 @@ test("User IR upload: 1024 x int32, byte sum, 0x100B result, name refresh", asyn
   dev.failUploads = true;
   await assert.rejects(s.uploadUserIr(0, "Bad", samples, { confirm: true }), { code: "verify" });
   await assert.rejects(s.uploadUserIr(20, "Range", samples, { confirm: true }), { code: "unsafe" });
+  await s.close();
+});
+
+test("uploads: a confirmed upload (0x100B / 0x1014) succeeds when the name read-back gets no reply; the result stays strict", async () => {
+  const dev = new MockGp200({ deafMs: 20, silentQueries: [REC.IR_NAME, REC.SNAPTONE_NAME] });
+  const warnings = [];
+  const s = new Gp200Session(dev.transport(), { timing: { ...fast, replyTimeoutMs: 50 }, log: (dir, _bytes, d) => dir === "warn" && d.kind === "skipped" && warnings.push(d.what) });
+  await s.connect();
+  const ir = await s.uploadUserIr(4, "Cab 5", new Array(1024).fill(1000), { confirm: true });
+  assert.deepEqual({ slot: ir.slot, name: ir.name, entry: ir.entry }, { slot: 4, name: "Cab 5", entry: null });
+  assert.equal(dev.userIr[4].name, "Cab 5");
+  const snap = await s.uploadSnapTone(5, "DST Snap", cloneBlob(), { confirm: true });
+  assert.deepEqual({ name: snap.name, entry: snap.entry }, { name: "DST Snap", entry: null });
+  assert.notEqual(dev.snapTone[5].data, null);
+  assert.deepEqual(warnings, ["User IR name 5", "SnapTone name 6"]);
+  dev.failUploads = true;
+  await assert.rejects(s.uploadUserIr(0, "Bad", new Array(1024).fill(1000), { confirm: true }), { code: "verify" });
   await s.close();
 });
 

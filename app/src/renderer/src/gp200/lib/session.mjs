@@ -409,7 +409,10 @@ export class Gp200Session extends EventTarget {
   readSnapToneNames() {
     return this.#readNames(SNAPTONE.SLOTS, encode.snapToneName, "snapToneName", "SnapTone name");
   }
-  /** Drum style-group names (20); entries the pedal does not answer are null (the query layout is inferred). */
+  /**
+   * Drum style-group names (20); entries the pedal does not answer are null (the query layout is inferred). No reply to
+   * the first one: the pedal doesn't answer the query, so the others aren't asked (all null, logged as skipped).
+   */
   readStyleNames() {
     return this.exclusive(async () => {
       const out = [];
@@ -418,6 +421,10 @@ export class Gp200Session extends EventTarget {
           if (e.code !== "timeout") throw e;
           return null;
         });
+        if (!m && i === 0) {
+          this.#log?.("warn", new Uint8Array(), { kind: "skipped", what: "drum style names" });
+          return new Array(STYLE_COUNT).fill(null);
+        }
         out.push(m ? recordOf(m, "styleName").name : null);
       }
       return out;
@@ -437,25 +444,40 @@ export class Gp200Session extends EventTarget {
       return { firmware: g.firmware, currentSlot: g.currentSlot, values: g.values };
     });
   }
+  /**
+   * An optional read (sync tables, the name read-back after an upload): no reply after the resends means this pedal
+   * doesn't answer that query (a GP-200LT on firmware 1.6.0 never answered 0x1009), so it yields null and a "skipped"
+   * warning instead of failing. A list stops at its first unanswered entry: a silent pedal costs one entry's tries, not 20 x 4 s.
+   */
+  async #optional(read, what) {
+    try {
+      return await read();
+    } catch (e) {
+      if (e.code !== "timeout") throw e;
+      this.#log?.("warn", new Uint8Array(), { kind: "skipped", what });
+      return null;
+    }
+  }
 
   /**
    * Full sync in the editor's order: 0x1000, IR names x 20, every slot, style names x 20, edit buffer,
-   * SnapTone names x 10 (308 steps on a GP-200). onProgress(done, total, step).
+   * SnapTone names x 10 (308 steps on a GP-200). onProgress(done, total, step). Drum state and the name tables are
+   * optional (null when the pedal doesn't answer them, styles all null); slots and the edit buffer are not.
    */
   async sync({ onProgress } = {}) {
     const total = 1 + USER_IR.SLOTS + this.slotCount + STYLE_COUNT + 1 + SNAPTONE.SLOTS;
     let done = 0;
     const step = (name, n = 1) => onProgress?.((done += n), total, name);
-    const drum = await this.readDrumState();
+    const drum = await this.#optional(() => this.readDrumState(), "drum state");
     step("drum");
-    const irNames = await this.readIrNames();
+    const irNames = await this.#optional(() => this.readIrNames(), "User IR names");
     step("irNames", USER_IR.SLOTS);
     const presets = await this.backupAll({ onProgress: () => step("presets") });
     const styles = await this.readStyleNames();
     step("styles", STYLE_COUNT);
     const editBuffer = await this.readEditBuffer();
     step("editBuffer");
-    const snapToneNames = await this.readSnapToneNames();
+    const snapToneNames = await this.#optional(() => this.readSnapToneNames(), "SnapTone names");
     step("snapToneNames", SNAPTONE.SLOTS);
     return { device: this.device, firmware: this.firmware, currentSlot: this.#current, globals: this.globals, drum, irNames, presets, styles, editBuffer, snapToneNames };
   }
@@ -626,21 +648,25 @@ export class Gp200Session extends EventTarget {
 
   /**
    * Upload a User IR into slot 0-19: `samples` = up to 1024 24-bit samples at 44.1 kHz (int32 values). Waits for the
-   * pedal's 0x100B result (status 1 = ok), then re-reads the slot's name. Result: { slot, name, frames, entry }.
+   * pedal's 0x100B result (status 1 = ok, strict), then re-reads the slot's name (optional: entry null when the pedal
+   * doesn't answer 0x1009, logged as skipped). Result: { slot, name, frames, entry }.
    */
   async uploadUserIr(slot, name, samples, { confirm, onProgress } = {}) {
     this.#guard(confirm, "uploadUserIr");
     if (!Number.isInteger(slot) || slot < 0 || slot >= USER_IR.SLOTS) throw new Gp200Error("unsafe", `User IR slot must be 0..${USER_IR.SLOTS - 1}, got ${slot}`);
     const label = sanitizeName(name) || `IR ${slot + 1}`;
     const frames = await this.#upload(encode.userIr(slot, label, samples), "irResult", slot, "User IR", onProgress);
-    const m = await this.exclusive(() => this.#query(encode.irName(slot), kindIs("irName", (r) => r.slot === slot), `User IR name ${slot + 1}`));
-    return { slot, name: label, frames, entry: recordOf(m, "irName") };
+    const what = `User IR name ${slot + 1}`;
+    const m = await this.#optional(() => this.exclusive(() => this.#query(encode.irName(slot), kindIs("irName", (r) => r.slot === slot), what)), what);
+    return { slot, name: label, frames, entry: m && recordOf(m, "irName") };
   }
 
   /**
    * Upload a SnapTone into slot 0-9 (0-4 AMP, 5-9 DST): `blob` = a 0x2288 clone (cut to the GP-200's 1024 taps here)
-   * or a 0x1288 GP-200 blob. Waits for 0x1014, then re-reads the name. Result: { slot, name, frames, entry }.
+   * or a 0x1288 GP-200 blob. Waits for 0x1014 (strict), then re-reads the name (optional, like uploadUserIr).
+   * Result: { slot, name, frames, entry }.
    */
+
   async uploadSnapTone(slot, name, blob, { confirm, onProgress } = {}) {
     this.#guard(confirm, "uploadSnapTone");
     if (!isSnapToneSlot(slot)) throw new Gp200Error("unsafe", `SnapTone slot must be 0..${SNAPTONE.SLOTS - 1}, got ${slot}`);
@@ -652,8 +678,9 @@ export class Gp200Session extends EventTarget {
     }
     const label = sanitizeName(name) || `SnapTone ${slot + 1}`;
     const frames = await this.#upload(encode.snapTone(slot, label, data), "snapToneResult", slot, "SnapTone", onProgress);
-    const m = await this.exclusive(() => this.#query(encode.snapToneName(slot), kindIs("snapToneName", (r) => r.slot === slot), `SnapTone name ${slot + 1}`));
-    return { slot, name: label, frames, entry: recordOf(m, "snapToneName") };
+    const what = `SnapTone name ${slot + 1}`;
+    const m = await this.#optional(() => this.exclusive(() => this.#query(encode.snapToneName(slot), kindIs("snapToneName", (r) => r.slot === slot), what)), what);
+    return { slot, name: label, frames, entry: m && recordOf(m, "snapToneName") };
   }
 
   #upload(msg, resultKind, slot, what, onProgress) {

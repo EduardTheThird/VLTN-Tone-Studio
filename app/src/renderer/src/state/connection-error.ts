@@ -17,11 +17,16 @@ const CONNECT_CODES: Record<string, ConnectionErrorCode> = {
   bootloader: "bootloader",
 };
 
-/** `device`: the pedal model for the copy; unknown → every supported model ("GP-5 / GP-50"). */
-export function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceKey | null): ConnectionError {
+/**
+ * `device`: the pedal model for the copy; unknown → every supported model ("GP-5 / GP-50"). `identified`: the pedal
+ * already told the driver its model, so a later timeout is a read that stalled, not another device on the port.
+ */
+export function toConnectionError(e: unknown, gotBytes: boolean, device: DeviceKey | null, identified = false): ConnectionError {
   const pedal = pedalNameOrBoth(device);
   const err = e as { code?: string; message?: string; visiblePorts?: string[] };
   if (err?.code && CONNECT_CODES[err.code]) return { code: CONNECT_CODES[err.code], message: err.message ?? String(e), ports: err.visiblePorts };
+  if (err?.code === "timeout" && identified)
+    return { code: "unknown", message: `The ${pedal} stopped answering while Tone Studio read it (${err.message ?? "timeout"}). Switch it off and on, then reconnect.` };
   if (err?.code === "timeout")
     return gotBytes
       ? { code: "timeout", message: `The pedal answered but not like a ${pedal}. Check the firmware or the device.` }
