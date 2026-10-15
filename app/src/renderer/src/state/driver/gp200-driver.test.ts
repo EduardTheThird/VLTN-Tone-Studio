@@ -6,6 +6,7 @@ import { CHUNK, CMD, GLOBAL_EQ_INDEX, REC, concat, encodeFrames, f32le, rec, tlv
 import { crc16Modbus } from "@/gp200/lib/snaptone.mjs";
 import { applyPatchEdits, buildPrst, isGp200Prst, parsePatch, parsePrst } from "@/gp200/lib/prst.mjs";
 import { profileFor } from "@shared/devices";
+import { firstEmptySlot } from "@shared/tone3000";
 import type { DriverEvent } from "./types";
 import { Gp200Driver, Gp200UpdaterError } from "./gp200-driver";
 import { GP200_EQ_DEFAULTS, GP200_GLOBAL_SPECS } from "./gp200-globals";
@@ -89,6 +90,34 @@ describe("Gp200Driver sync", () => {
     d.mock!.editBuffer = applyPatchEdits(d.mock!.editBuffer, { volume: 12 });
     expect((await d.sync()).modified).toBe(true);
     expect(await d.readModified()).toBe(false); // the pedal itself reported nothing yet
+  });
+
+  it("connects to a pedal that never answers User IR name reads: IR names unavailable, slots still read", async () => {
+    // Field report: a real GP-200LT (firmware 1.6.0) never answered 0x1009 and every connect failed.
+    const warnings: unknown[] = [];
+    const d = await Gp200Driver.simulate("gp200lt", {
+      log: (dir, _bytes, decoded) => void (dir === "warn" && warnings.push(decoded)),
+      onDisconnect: () => {},
+      timing: { replyTimeoutMs: 100 },
+      mock: { silentQueries: [REC.IR_NAME] },
+    });
+    open.push(d);
+    const snap = await d.sync();
+    expect(snap.device).toBe("gp200lt");
+    expect(snap.names).toHaveLength(256);
+    expect(snap.names[5].name).toBe(parsePatch(d.mock!.slots[5]).name);
+    expect(isGp200Prst(snap.prst)).toBe(true);
+    expect(d.mock!.log.filter((m) => m.records[0]?.kind === "irName")).toHaveLength(4);
+    expect(warnings).toContainEqual({ kind: "skipped", what: "User IR names" });
+    // Unlisted: the default names, contents "unknown" (never offered as empty), and no new 4-try wait
+    const asked = d.mock!.log.length;
+    const irs = await d.readUserIRs();
+    expect(irs).toHaveLength(20);
+    expect(irs[0]).toEqual({ slot: 0, name: "User IR 1", kind: "unknown" });
+    expect(irs[19]).toEqual({ slot: 19, name: "User IR 20", kind: "unknown" });
+    expect(firstEmptySlot("ir", irs, "gp200lt")).toBeNull();
+    expect(d.mock!.log).toHaveLength(asked);
+    expect((await d.readSnapTones())[0]).toMatchObject({ slot: 0, kind: "empty" }); // SnapTone names still read
   });
 });
 
@@ -324,6 +353,24 @@ describe("Gp200Driver uploads", () => {
     expect(table).toHaveLength(10);
     expect(table[5]).toMatchObject({ name: "DST Snap", kind: "user" });
     await expect(d.uploadSnapTone(6, "GP-5 file", new Uint8Array(2696))).rejects.toThrow(/GP-5 or GP-50/);
+  });
+
+  it("a User IR the pedal confirmed (0x100B) is written even when it doesn't answer the name read-back (0x1009)", async () => {
+    const d = await Gp200Driver.simulate("gp200lt", { log: () => {}, onDisconnect: () => {}, timing: { replyTimeoutMs: 50 }, mock: { silentQueries: [REC.IR_NAME] } });
+    open.push(d);
+    const dev = d.mock!;
+    await d.identify();
+    expect(await d.uploadUserIr(2, "Cab 3", new Uint8Array(4096))).toBe("Cab 3");
+    expect(dev.userIr[2].name).toBe("Cab 3");
+    // The table stays unlisted: the uploaded slot is known, the others' contents aren't (never "empty")
+    const irs = await d.readUserIRs();
+    expect(irs[2]).toEqual({ slot: 2, name: "Cab 3", kind: "user" });
+    expect(irs[0]).toEqual({ slot: 0, name: "User IR 1", kind: "unknown" });
+    expect(irs.filter((s) => s.kind === "unknown")).toHaveLength(19);
+    // The 0x100B confirmation stays strict
+    dev.failUploads = true;
+    await expect(d.uploadUserIr(3, "Refused", new Uint8Array(4096))).rejects.toThrow();
+    expect((await d.readUserIRs())[3].kind).toBe("unknown");
   });
 });
 

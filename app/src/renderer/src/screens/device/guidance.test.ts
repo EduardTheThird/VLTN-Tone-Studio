@@ -223,6 +223,13 @@ describe("toConnectionError", () => {
     expect(toConnectionError({ code: "timeout" }, false, "gp200").message).toMatch(/Close Valeton's GP-200 editor/);
     expect(toConnectionError({ code: "timeout" }, false, "gp5").message).toMatch(/Close Valeton Suite/);
   });
+
+  it("calls a reply that doesn't identify the pedal a wrong device, a later silence a stalled read", () => {
+    expect(toConnectionError({ code: "timeout" }, true, "gp200lt")).toMatchObject({ code: "timeout", message: expect.stringMatching(/not like a GP-200LT/) });
+    const stalled = toConnectionError({ code: "timeout", message: "read slot 01-A: no reply after 4 tries" }, true, "gp200lt", true);
+    expect(stalled.code).toBe("unknown");
+    expect(stalled.message).toBe("The GP-200LT stopped answering while Tone Studio read it (read slot 01-A: no reply after 4 tries). Switch it off and on, then reconnect.");
+  });
 });
 
 describe("diagnosticChecks", () => {

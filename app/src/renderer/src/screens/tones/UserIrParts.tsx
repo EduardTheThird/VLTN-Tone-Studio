@@ -1,4 +1,4 @@
-import { isEmptySlotName } from "@shared/tone3000";
+import { isEmptySlot } from "@shared/tone3000";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_IR } from "@/gp5/lib/userir.mjs";
 import { useDevice, usePedalName, useProfile } from "@/state/device";
@@ -6,11 +6,14 @@ import type { SlotName } from "@/state/device-types";
 import type { UserIrFile } from "@/userir/convert";
 import { irSlotLabel } from "./store";
 
-/** What the slot holds now, or null when it is empty (or the pedal's list isn't read). */
+/**
+ * What the slot holds now, or null when it is empty (or the pedal's list isn't read). A slot the pedal didn't list
+ * ("unknown") counts as occupied under its default name, so writing to it warns before replacing.
+ */
 export function irOccupant(userIRs: SlotName[] | null, slot: number | null): string | null {
   if (slot === null || !userIRs) return null;
   const s = userIRs.find((x) => x.slot === slot);
-  return s && s.kind !== "empty" && !isEmptySlotName(s.name) ? s.name : null;
+  return s && !isEmptySlot(s) ? s.name : null;
 }
 
 /** What the converter kept of the file: the pedal convolves its first samples at 44.1 kHz (512 = 11.6 ms on the GP-5 family, 1024 on the GP-200 family). */
@@ -48,8 +51,9 @@ export function UserIrSlotPicker({ value, onChange, disabled }: { value: number 
   if (!userIRs) return null;
   const irSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
+    const s = userIRs.find((x) => x.slot === slot);
     const name = irOccupant(userIRs, slot);
-    return `${irSlotLabel(slot)}${name ? `, ${name}` : ", empty"}`;
+    return `${irSlotLabel(slot)}${s?.kind === "unknown" ? ", contents unknown" : name ? `, ${name}` : ", empty"}`;
   };
   return (
     <Select value={value === null ? "" : String(value)} onValueChange={(v) => onChange(Number(v))} disabled={disabled}>

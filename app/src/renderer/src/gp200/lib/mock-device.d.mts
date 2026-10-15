@@ -25,6 +25,8 @@ export interface MockGp200Options {
   failUploads?: boolean;
   emitKnobNotify?: boolean;
   bankPolarity?: "manual" | "inverted";
+  /** Record types (e.g. REC.IR_NAME) whose queries get no reply: a pedal that doesn't answer them */
+  silentQueries?: number[];
 }
 export type MockViolation =
   | { kind: "gap"; gapMs: number }
@@ -63,6 +65,7 @@ export class MockGp200 {
   flushAfter: number;
   failUploads: boolean;
   emitKnobNotify: boolean;
+  silentQueries: number[];
   /** decoded host messages, newest last */
   log: { cmd: number; header: HeaderRecord | null; records: DecodedRecord[] }[];
   violations: MockViolation[];

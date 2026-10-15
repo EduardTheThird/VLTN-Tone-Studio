@@ -130,8 +130,8 @@ export interface PresetEdits {
 export interface SlotName {
   slot: number;
   name: string;
-  /** SnapTone / user IR tables only: what the pedal reports for the slot */
-  kind?: "user" | "factory" | "empty";
+  /** SnapTone / user IR tables only: what the pedal reports for the slot; "unknown" = not reported (treat as occupied) */
+  kind?: "user" | "factory" | "empty" | "unknown";
 }
 
 /** One record of the 0x10 globals reply ([a, b] address, byte length, decoded value). */

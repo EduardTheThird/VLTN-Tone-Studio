@@ -167,12 +167,18 @@ export function firstEmptySlot(kind: "snaptone" | "ir", slots: SlotEntry[] | nul
 /** Pedal slot tables mark empty slots by name: "Empty" (SnapTone) or "User IR n" (IR). */
 export const isEmptySlotName = (name: string) => name === "Empty" || name === "" || /^User IR \d+$/.test(name);
 
-/** A SnapTone or User IR slot as the pedal lists it; `kind` is what the pedal reports for it. */
+/**
+ * A SnapTone or User IR slot as the pedal lists it; `kind` is what the pedal reports for it. "unknown": the pedal
+ * didn't list its contents (a GP-200LT that never answers 0x1009); the name is only the default label ("User IR 3").
+ */
 export interface SlotEntry {
   slot: number;
   name: string;
-  kind?: "user" | "factory" | "empty";
+  kind?: "user" | "factory" | "empty" | "unknown";
 }
 
-/** The slot holds no capture or IR: the pedal reports it empty (GP-200 family empty slots keep a name, "SnapTone 3"), or its name says so. */
-export const isEmptySlot = (s: Pick<SlotEntry, "name" | "kind">) => s.kind === "empty" || isEmptySlotName(s.name);
+/**
+ * The slot holds no capture or IR: the pedal reports it empty (GP-200 family empty slots keep a name, "SnapTone 3"), or
+ * its name says so. A slot of unknown contents is never empty: it may hold the user's file.
+ */
+export const isEmptySlot = (s: Pick<SlotEntry, "name" | "kind">) => s.kind !== "unknown" && (s.kind === "empty" || isEmptySlotName(s.name));

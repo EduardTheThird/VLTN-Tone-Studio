@@ -9,10 +9,10 @@ export const snapToneIndex = (fxid: number) => fxid & 0xffffff;
 /** The slot is one a user can write (GP-5: 50–79, below are factory captures; GP-200: all ten). */
 export const isUserSnapTone = (slot: number, snapTone: SlotTables) => slot >= snapTone.userRange[0] && slot <= snapTone.userRange[1];
 
-/** The pedal's name for SnapTone slot `n`, when read; the GP-200 family's placeholder for an empty slot doesn't count. */
+/** The pedal's name for SnapTone slot `n`, when read; the GP-200 family's placeholder for an empty or unlisted slot doesn't count. */
 export function slotToneName(n: number, snapTones: SlotName[] | null, device: DeviceKey): string | undefined {
   const s = snapTones?.find((x) => x.slot === n);
-  return s && (isGp5Family(device) || s.kind !== "empty") ? s.name : undefined;
+  return s && (isGp5Family(device) || (s.kind !== "empty" && s.kind !== "unknown")) ? s.name : undefined;
 }
 
 /**

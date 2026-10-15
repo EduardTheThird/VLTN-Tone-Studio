@@ -58,12 +58,13 @@ export interface SyncSnapshot {
   firmware: string | null;
   currentSlot: number | null;
   globals: Gp200Globals | null;
-  drum: { playing: boolean; flag: number; exp1AB: number };
-  irNames: NameEntry[];
+  /** null: the pedal didn't answer (drum state and the name tables are optional sync steps) */
+  drum: { playing: boolean; flag: number; exp1AB: number } | null;
+  irNames: NameEntry[] | null;
   presets: PresetEntry[];
   styles: (string | null)[];
   editBuffer: { slot: number; image: Uint8Array };
-  snapToneNames: NameEntry[];
+  snapToneNames: NameEntry[] | null;
 }
 export interface WriteResult {
   frames: number;
@@ -75,8 +76,8 @@ export interface UploadResult {
   /** the name as sent (printable ASCII, <= 16 chars) */
   name: string;
   frames: number;
-  /** the slot's name entry re-read after the upload */
-  entry: NameEntry & { kind: "irName" | "snapToneName" };
+  /** the slot's name entry re-read after the upload; null when the pedal didn't answer the read-back (upload still confirmed) */
+  entry: (NameEntry & { kind: "irName" | "snapToneName" }) | null;
 }
 
 /** Unsolicited traffic: a decoded record plus the message header, or a patch reply nobody waited for. */

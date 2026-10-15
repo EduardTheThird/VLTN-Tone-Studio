@@ -167,8 +167,8 @@ export function SnapToneSlotPicker({ value, onChange, disabled }: { value: numbe
   if (!snapTones) return null;
   const userSlots = Array.from({ length: last - first + 1 }, (_, i) => first + i);
   const label = (slot: number) => {
-    const entry = snapTones.find((s) => s.slot === slot) ?? { name: "" };
-    return `${snapToneLabel(key, slot)}${isEmptySlot(entry) ? ", empty" : `, ${entry.name}`}`;
+    const entry = snapTones.find((s) => s.slot === slot) ?? { name: "", kind: undefined };
+    return `${snapToneLabel(key, slot)}${entry.kind === "unknown" ? ", contents unknown" : isEmptySlot(entry) ? ", empty" : `, ${entry.name}`}`;
   };
   return (
     <Select value={value === null ? "" : String(value)} onValueChange={(v) => onChange(Number(v))} disabled={disabled}>
