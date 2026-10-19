@@ -90,7 +90,7 @@ export function GearFor({ block, name = modelTitle(block), onParam, ...rest }: G
     case "capture":
       return <Capture {...common} block={block.code} />;
     case "eq":
-      return <EqPedal {...common} />;
+      return <EqPedal {...common} origin={block.model?.origin} />;
     case "amp":
       return <AmpHead {...common} type={block.model?.type} origin={block.model?.origin} />;
     case "cab":

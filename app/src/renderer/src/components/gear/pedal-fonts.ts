@@ -11,6 +11,11 @@ import "@fontsource/pacifico/400.css";
 import "@fontsource/josefin-sans/700.css";
 import "@fontsource/cormorant-garamond/700-italic.css";
 import "@fontsource/black-ops-one/400.css";
+import "@fontsource/bebas-neue/400.css";
+import "@fontsource/righteous/400.css";
+import "@fontsource/orbitron/700.css";
+import "@fontsource/anton/400.css";
+import "@fontsource/rye/400.css";
 
 export const PEDAL_FONT = {
   boss: "'Archivo Narrow', 'Arial Narrow', sans-serif",
@@ -25,4 +30,9 @@ export const PEDAL_FONT = {
   keeley: "'Cormorant Garamond', serif",
   stencil: "'Black Ops One', sans-serif",
   boutique: "'Josefin Sans', sans-serif",
+  bebas: "'Bebas Neue', 'Archivo Narrow', sans-serif",
+  retro: "'Righteous', sans-serif",
+  digital: "'Orbitron', sans-serif",
+  anton: "'Anton', 'Archivo Narrow', sans-serif",
+  western: "'Rye', serif",
 } as const;

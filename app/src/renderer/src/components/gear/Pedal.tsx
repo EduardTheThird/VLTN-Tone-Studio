@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import type { BlockCode } from "@/state/device-types";
-import { BLOCK_HEX, finishFor, fit, hash, lum, type Finish } from "./art";
+import { BLOCK_HEX, finishFor, fit, hash, lum, shade, type Finish } from "./art";
+import { PedalHead } from "./pedal-head";
 import { pedalStyle } from "./pedal-styles";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
 import { Jewel } from "./amp-parts";
-import { BlockTag, Defs, Enclosure, FootswitchArt, KnobArt, LightBar, Nameplate, Screw, SlideSwitch, T } from "./parts";
+import { Defs, Enclosure, FootswitchArt, KnobArt, LightBar, Screw, SlideSwitch, T } from "./parts";
 import { paramTitle, type GearBaseProps, type GearKnob } from "./types";
 
 export type PedalLayout = "row" | "hero" | "tri" | "grid" | "dense";
@@ -32,10 +33,10 @@ export function Pedal(props: PedalProps) {
   // knobs need room: a mini enclosure with many of them grows
   const nk = pedalControls(all).knobs.length;
   const W = Math.max(look.w, nk >= 4 ? 96 : nk === 3 ? 86 : 0);
-  const H = Math.max(look.h, nk >= 5 ? 160 : 0);
+  const H = Math.max(look.h, nk >= 5 ? 160 : 0) + (look.sub ? 6 : 0);
   const ox = (W - 100) / 2;
   const bd = H - 150;
-  const kd = bd * 0.35 + (look.treadle ?? 0);
+  const kd = bd * 0.35 + (look.treadle ?? 0) + (look.sub && !look.treadle ? 5 : 0);
   const style = scaled ? { ...baseStyle, width: `calc(var(--gw) * ${((W / 100) * Math.min(1, 150 / H)).toFixed(3)})` } : baseStyle;
   return (
     <GearFrame
@@ -52,20 +53,24 @@ export function Pedal(props: PedalProps) {
         const f = look.body ? { kind: look.finish ?? "matte", body: look.body, accent: look.accent ?? "#1c1c1e" } : finishFor(name, BLOCK_HEX[block], h, finish, color);
         const light = lum(f.body) > 0.6;
         const ink = look.ink ?? (light ? "#1c1c1e" : "#ffffff");
-        const ring = f.kind === "noir" ? f.accent : light ? "#1c1c1e" : "#ffffff";
-        const track = light ? "rgba(0,0,0,.16)" : "rgba(255,255,255,.18)";
-        const darkCaps = look.darkKnobs !== undefined ? !look.darkKnobs : f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
+        const panelDark = look.panel ? lum(look.panel.color) < 0.5 : null;
+        // labels and rings sit on the panel when the pedal has one
+        const lab = panelDark === null ? ink : panelDark ? "#f2f2f2" : "#1c1c1e";
+        const ring = look.panel ? (f.kind === "noir" ? f.accent : lab) : f.kind === "noir" ? f.accent : light ? "#1c1c1e" : "#ffffff";
+        const track = (panelDark === null ? light : !panelDark) ? "rgba(0,0,0,.16)" : "rgba(255,255,255,.18)";
+        const capFill = look.cap ? `url(#ktone${id})` : undefined;
+        const darkCaps = look.cap ? lum(look.cap) < 0.5 : look.darkKnobs !== undefined ? look.darkKnobs : f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
         const hasT = toggles.length > 0;
         const picked: PedalLayout =
           knobs.length > 4
             ? "dense"
-            : (want ?? (knobs.length <= 1 ? "hero" : knobs.length === 3 ? (["tri", "row"] as const)[(h >>> 4) % 2] : knobs.length === 4 ? "grid" : (["row", "hero"] as const)[(h >>> 4) % 2]));
+            : ((want ?? (look.layout === "row" && knobs.length > 3 ? undefined : look.layout)) ?? (knobs.length <= 1 ? "hero" : knobs.length === 3 ? (["tri", "row"] as const)[(h >>> 4) % 2] : knobs.length === 4 ? "grid" : (["row", "hero"] as const)[(h >>> 4) % 2]));
         // A big knob over small ones leaves no room for a switch row: their labels would sit under the knobs.
         const layout: PedalLayout = picked === "hero" && hasT && knobs.length > 1 ? "row" : picked;
         const focusId = active ?? focus;
         const parts: ReactNode[] = [];
 
-        const narrow = Math.min(1, (W - 26) / 74);
+        const narrow = Math.min(1.5, (W - 26) / 74);
         const K = (k: GearKnob, x0: number, y: number, r0: number) => {
           const x = 50 + (x0 - 50) * narrow;
           const r = r0 * Math.min(1, 0.55 + narrow * 0.45);
@@ -86,8 +91,8 @@ export function Pedal(props: PedalProps) {
           const ly = y + r + 10.2;
           parts.push(
             <g key={`k${k.id}`}>
-              <KnobArt id={id} cx={x} cy={y} r={r} value={k.value} min={k.min} max={k.max} dark={darkCaps} ring={ring} track={track} focus={foc} bipolar={isBipolar(k)} />
-              <T x={x} y={ly} fill={ink} size={look.labelFont ? 5 : 4.6} opacity={0.85} spacing={look.labelFont ? 0.3 : 0.45} weight={look.labelFont ? 700 : 650} family={look.labelFont}>
+              <KnobArt id={id} cx={x} cy={y} r={r} value={k.value} min={k.min} max={k.max} dark={darkCaps} ring={ring} track={track} focus={foc} bipolar={isBipolar(k)} capFill={capFill} />
+              <T x={x} y={ly} fill={lab} size={look.labelFont ? 5 : 4.6} opacity={0.85} spacing={look.labelFont ? 0.3 : 0.45} weight={look.labelFont ? 700 : 650} family={look.labelFont}>
                 {k.label.toUpperCase()}
               </T>
               {showValues && (
@@ -157,7 +162,7 @@ export function Pedal(props: PedalProps) {
             w: 22,
             h: 16,
           });
-          parts.push(<SlideSwitch key={`t${t.id}`} cx={cx} cy={ty} on={tOn} ink={ink} label={t.label} accent={f.kind === "matte" ? (light ? "#1c1c1e" : "rgba(255,255,255,.9)") : f.accent} />);
+          parts.push(<SlideSwitch key={`t${t.id}`} cx={cx} cy={ty} on={tOn} ink={lab} label={t.label} accent={f.kind === "matte" ? (light ? "#1c1c1e" : "rgba(255,255,255,.9)") : f.accent} />);
         });
         controls.push({ kind: "fs", id: "fs", label: `${name} ${block}`, on, onToggle: onToggleOn, x: 50 - fsR - 3, y: fsY - fsR - 3, w: 2 * fsR + 6, h: 2 * fsR + 6 });
 
@@ -166,7 +171,8 @@ export function Pedal(props: PedalProps) {
           c.y += c.kind === "fs" ? bd : kd;
         }
         const ex = (W - 100) / 2;
-        const lblW = 76;
+        // a hinged cover takes the lower third: the name sits on it, as on a Boss compact, the LED goes to the top
+        const coverName = !!look.cover && look.label !== "stamp";
         const art = (
           <>
             <Defs id={id} body={f.body} />
@@ -181,34 +187,47 @@ export function Pedal(props: PedalProps) {
               </>
             )}
             {f.kind === "frost" && <rect x="12" y="25" width={W - 24} height="1.2" rx=".6" fill={f.accent} />}
+            {look.cap && (
+              <defs>
+                <radialGradient id={`ktone${id}`} cx=".42" cy=".35" r=".75">
+                  <stop offset="0" stopColor={shade(look.cap, 0.4)} />
+                  <stop offset=".7" stopColor={look.cap} />
+                  <stop offset="1" stopColor={shade(look.cap, -0.3)} />
+                </radialGradient>
+              </defs>
+            )}
+            {look.bands?.length ? (
+              <g clipPath={`url(#encl${id})`}>
+                {look.bands.map(([y, bh, col], i) => (
+                  <rect key={i} x="4" y={y > 100 ? y + bd : y} width={W - 8} height={bh} fill={col} />
+                ))}
+              </g>
+            ) : null}
             <g transform={`translate(${ex} 0)`}>
               {look.treadle ? (
                 <g>
                   <rect x="14" y="26" width="72" height={look.treadle + kd * 0 + 38} rx="7" fill="#000" fillOpacity={0.4} transform="translate(0 1.4)" />
-                  <rect x="14" y="26" width="72" height={look.treadle + 38} rx="7" fill={f.kind === "frost" ? "#1d1d20" : "#0b0b0d"} stroke="#fff" strokeOpacity={0.14} strokeWidth={0.6} />
+                  <rect x="14" y="26" width="72" height={look.treadle + 38} rx="7" fill={look.treadleColor ?? (f.kind === "frost" ? "#1d1d20" : "#0b0b0d")} stroke="#fff" strokeOpacity={0.14} strokeWidth={0.6} />
                   {Array.from({ length: Math.floor((look.treadle + 28) / 4.4) }, (_, i) => (
                     <rect key={i} x="18" y={31 + i * 4.4} width="64" height="2" rx="1" fill="#fff" fillOpacity={0.2} />
                   ))}
                 </g>
               ) : null}
-              {look.label === "strip" ? (
-                <g>
-                  <rect x="12" y="11" width={lblW} height="13" rx="2" fill="#0d0d0f" stroke="#fff" strokeOpacity={0.18} strokeWidth={0.4} transform={`translate(${(76 - lblW) / 2 + 0} 0)`} />
-                  <T x={50} y={20.6} fill="#f4f4f4" size={Math.min(8.4, (lblW - 8) / (name.length * 0.62))} weight={look.fontWeight ?? 700} spacing={0.5} family={look.font}>
-                    {name.toUpperCase()}
-                  </T>
-                </g>
-              ) : look.label === "script" ? (
-                <T x={50} y={look.treadle ? 20 : 21} fill={ink} size={Math.min(look.font ? 11.5 : 10.5, 80 / (name.length * 0.52))} weight={look.fontWeight ?? 800} italic={!look.font} spacing={0.1} family={look.font}>
-                  {name}
-                </T>
-              ) : (
-                <Nameplate x={12} y={19} name={name} ink={ink} light={light} family={look.font} />
-              )}
-              {look.label === "stamp" && <BlockTag x={88} y={19} code={block} ink={ink} />}
+              <g transform={`translate(0 ${coverName ? fsY + bd - 41 : 0})`}>
+                <PedalHead look={look} name={name} block={block} ink={ink} light={light} treadle={!!look.treadle} subAbove={coverName} />
+              </g>
+              {coverName && look.jewel && <Jewel id={id} cx={50} cy={15} on={on} r={2.8} />}
               <Screw id={id} cx={12} cy={H - 9} turn={(h >>> 3) % 180} />
               <Screw id={id} cx={88} cy={H - 9} turn={(h >>> 11) % 180} />
-              <g transform={`translate(0 ${kd})`}>{parts}</g>
+              <g transform={`translate(0 ${kd})`}>
+                {look.panel && (
+                  <g>
+                    <rect x={9 - ex} y={(look.panel.y ?? 27) + 0.8} width={W - 18} height={look.panel.h ?? ty + 17 - 27} rx={Math.min(6, look.rx)} fill="#000" fillOpacity={0.3} />
+                    <rect x={9 - ex} y={look.panel.y ?? 27} width={W - 18} height={look.panel.h ?? ty + 17 - 27} rx={Math.min(6, look.rx)} fill={look.panel.color} stroke={look.panel.border ?? "#fff"} strokeOpacity={look.panel.border ? 0.85 : 0.14} strokeWidth={look.panel.border ? 0.7 : 0.5} />
+                  </g>
+                )}
+                {parts}
+              </g>
               <g transform={`translate(0 ${bd})`}>
                 {look.cover && (
                   <g>
@@ -219,7 +238,7 @@ export function Pedal(props: PedalProps) {
                     ))}
                   </g>
                 )}
-                {look.jewel ? <Jewel id={id} cx={50} cy={lbY - 5} on={on} r={2.8} /> : <LightBar cx={50} cy={lbY} on={on} color={f.kind === "matte" ? (light ? "#1c1c1e" : "#ffffff") : f.accent} />}
+                {look.jewel ? coverName ? null : <Jewel id={id} cx={50} cy={lbY - 5} on={on} r={2.8} /> : <LightBar cx={50} cy={lbY} on={on} color={f.kind === "matte" ? (light ? "#1c1c1e" : "#ffffff") : f.accent} />}
                 <FootswitchArt id={id} cx={50} cy={fsY} r={fsR} />
               </g>
             </g>
