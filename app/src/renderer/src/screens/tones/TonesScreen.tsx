@@ -111,7 +111,7 @@ export function TonesScreen() {
   useShortcuts();
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_448px] gap-6 px-6 pb-4">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_clamp(336px,34vw,448px)] gap-6 px-6 pb-4">
       <section aria-label="Your TONE3000 tones" className="@container flex min-h-0 min-w-0 flex-col gap-3.5">
         <Head />
         <ToneLists />
@@ -161,7 +161,7 @@ function Head() {
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
       <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Tones</h1>
       <p className="col-start-1 row-start-2 mt-1.5 text-[12px] text-pretty text-silkscreen-3 @max-[799px]:col-span-2">NAM captures and IRs from TONE3000, and what's on your {pedal}.</p>
-      <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3 @max-[799px]:row-span-1 @max-[799px]:self-center">
+      <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3 @max-[799px]:row-span-1 @max-[799px]:self-center @max-[619px]:col-span-2 @max-[619px]:col-start-1 @max-[619px]:row-start-3 @max-[619px]:mt-2.5 @max-[619px]:flex-wrap">
         <span className="text-[12px] font-extrabold tracking-[0.02em] whitespace-nowrap text-silkscreen" aria-label="TONE3000">
           TONE3000
         </span>
@@ -219,7 +219,7 @@ function ToneLists() {
   return (
     <Tabs value={tab} onValueChange={(v) => useTones.setState({ tab: v as TonesTab })} className="min-h-0 flex-1 gap-3.5">
       <div className="flex flex-wrap items-center gap-2.5 whitespace-nowrap">
-        <TabsList aria-label="TONE3000 lists">
+        <TabsList aria-label="TONE3000 lists" className="max-w-full [&_[role=tab]]:flex-none [&_[role=tab]]:px-3 @max-[860px]:[&_[role=tab]]:px-2.5 @max-[860px]:[&_[role=tab]>span]:hidden">
           {TAB_ORDER.map((kind) => {
             const list = lists[kind];
             const count = kind !== "trending" && kind !== "latest" && list?.loaded ? list.total : null;
