@@ -46,14 +46,14 @@ export function EqPedal({ name, origin, on = true, knobs = [], interactive, disa
         const { bands, vol } = eqControls(knobs);
         const n = bands.length || 5;
         const x0 = 22;
-        const x1 = vol ? 66 : 78;
+        const x1 = vol ? 61 : 78;
         const gap = (x1 - x0) / (n - 1 || 1);
         const focusId = active ?? focus;
         const faders: ReactNode[] = bands.map((b, i) => {
           const x = x0 + i * gap;
           const y = 63 - (Math.max(-50, Math.min(50, b.value)) / 50) * 26;
           const foc = b.id === focusId;
-          controls.push({ kind: "slider", id: b.id, label: `${name} ${b.label}`, value: b.value, spec: b, onChange: onKnobChange && ((v) => onKnobChange(b.id, v)), x: x - 5, y: 33, w: 10, h: 60 });
+          controls.push({ kind: "slider", fader: true, id: b.id, label: `${name} ${b.label}`, value: b.value, spec: b, onChange: onKnobChange && ((v) => onKnobChange(b.id, v)), x: x - 5, y: 33, w: 10, h: 60 });
           return (
             <g key={b.id}>
               <rect x={x - 0.8} y="35" width="1.6" height="56" rx=".8" fill={lab} fillOpacity={0.2} />
@@ -85,7 +85,7 @@ export function EqPedal({ name, origin, on = true, knobs = [], interactive, disa
             </g>
           );
         });
-        if (vol) controls.push({ kind: "slider", id: vol.id, label: `${name} ${paramTitle(vol.label)}`, value: vol.value, spec: vol, onChange: onKnobChange && ((v) => onKnobChange(vol.id, v)), x: 73, y: 54, w: 18, h: 18 });
+        if (vol) controls.push({ kind: "slider", id: vol.id, label: `${name} ${paramTitle(vol.label)}`, value: vol.value, spec: vol, onChange: onKnobChange && ((v) => onKnobChange(vol.id, v)), x: 69, y: 54, w: 18, h: 18 });
         controls.push({ kind: "fs", id: "fs", label: `${name} EQ`, on, onToggle: onToggleOn, x: 37.5, y: 119.5, w: 25, h: 25 });
         for (const c of controls) {
           c.x += ox;
@@ -117,12 +117,12 @@ export function EqPedal({ name, origin, on = true, knobs = [], interactive, disa
               <Screw id={id} cx={88} cy={H - 9} turn={110} />
               <g transform={`translate(0 ${kd})`}>
                 <rect x="12" y="28" width="76" height="70" rx="8" fill={well} stroke={look.panel?.border ?? "#fff"} strokeOpacity={look.panel?.border ? 0.85 : 0.08} strokeWidth={0.6} />
-                <line x1="16" x2={vol ? 74 : 84} y1="63" y2="63" stroke={lab} strokeOpacity={0.14} strokeDasharray="1.5 2" />
+                <line x1="16" x2={vol ? 70 : 84} y1="63" y2="63" stroke={lab} strokeOpacity={0.14} strokeDasharray="1.5 2" />
                 {faders}
                 {vol && (
                   <g>
-                    <KnobArt id={id} cx={82} cy={63} r={5} value={vol.value} min={vol.min} max={vol.max} dark={look.darkKnobs ?? true} ring={accent} track="rgba(255,255,255,.14)" focus={vol.id === focusId} />
-                    <T x={82} y={77} fill={lab} size={4} opacity={0.7} family={look.labelFont}>
+                    <KnobArt id={id} cx={78} cy={63} r={4.4} value={vol.value} min={vol.min} max={vol.max} dark={look.darkKnobs ?? true} ring={accent} track="rgba(255,255,255,.14)" focus={vol.id === focusId} />
+                    <T x={78} y={76} fill={lab} size={4} opacity={0.7} family={look.labelFont}>
                       VOL
                     </T>
                   </g>

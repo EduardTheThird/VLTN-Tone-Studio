@@ -15,7 +15,7 @@ export function PedalHead({ look, name, block, ink, light, treadle, subAbove }: 
           </T>
         </g>
       ) : look.label === "script" ? (
-        <T x={50} y={treadle ? 20 : 21} fill={ink} size={Math.min(look.font ? 11.5 : 10.5, 80 / (name.length * 0.52))} weight={look.fontWeight ?? 800} italic={!look.font} spacing={0.1} family={look.font}>
+        <T x={50} y={treadle ? 20 : 21} fill={ink} size={Math.min(look.font ? 11.5 : 10.5, (Math.min(80, look.w - 16)) / (name.length * 0.6))} weight={look.fontWeight ?? 800} italic={!look.font} spacing={0.1} family={look.font}>
           {name}
         </T>
       ) : (

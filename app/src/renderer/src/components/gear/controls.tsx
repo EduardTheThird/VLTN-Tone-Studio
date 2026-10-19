@@ -14,6 +14,8 @@ interface Rect {
 
 export interface SliderControl extends Rect {
   kind: "slider";
+  /** A fader moves its own drawing, so the loupe stays away from it */
+  fader?: boolean;
   id: string;
   /** Accessible name, e.g. "Plustortion Gain" */
   label: string;
@@ -272,7 +274,7 @@ export function GearFrame({ view, label, interactive, disabled, className, style
   const { art, controls } = render(id, active);
   const onActive = useRef((cid: string, a: boolean) => setActive((cur) => (a ? cid : cur === cid ? null : cur))).current;
   const onTurning = useRef((cid: string, t: boolean) => setTurning((cur) => (t ? cid : cur === cid ? null : cur))).current;
-  const lens = turning === null ? undefined : controls.find((c): c is SliderControl => c.kind === "slider" && c.id === turning);
+  const lens = turning === null ? undefined : controls.find((c): c is SliderControl => c.kind === "slider" && !c.fader && c.id === turning);
   return (
     <div ref={frame} className={cn("relative block leading-none", className)} style={style}>
       <svg viewBox={`0 0 ${view[0]} ${view[1]}`} role="img" aria-label={label} className="block h-auto w-full overflow-visible">

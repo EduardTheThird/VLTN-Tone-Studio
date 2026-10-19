@@ -33,10 +33,11 @@ export function Pedal(props: PedalProps) {
   // knobs need room: a mini enclosure with many of them grows
   const nk = pedalControls(all).knobs.length;
   const W = Math.max(look.w, nk >= 4 ? 96 : nk === 3 ? 86 : 0);
-  const H = Math.max(look.h, nk >= 5 ? 160 : 0) + (look.sub ? 6 : 0);
+  const nt = pedalControls(all).toggles.length;
+  // many knobs or a row of switches need a taller enclosure to stay clear of each other and of the LED
+  const H = Math.max(look.h, nk >= 7 ? 204 : nk >= 5 ? 176 : 0) + (nt && nk >= 2 ? 12 : 0) + (look.sub ? 6 : 0);
   const ox = (W - 100) / 2;
   const bd = H - 150;
-  const kd = bd * 0.35 + (look.treadle ?? 0) + (look.sub && !look.treadle ? 5 : 0);
   const style = scaled ? { ...baseStyle, width: `calc(var(--gw) * ${((W / 100) * Math.min(1, 150 / H)).toFixed(3)})` } : baseStyle;
   return (
     <GearFrame
@@ -71,6 +72,8 @@ export function Pedal(props: PedalProps) {
         const parts: ReactNode[] = [];
 
         const narrow = Math.min(1.5, (W - 26) / 74);
+        // vertical extent of the controls as laid out (before centring in the free space)
+        const ext = { top: 999, bot: -999 };
         const K = (k: GearKnob, x0: number, y: number, r0: number) => {
           const x = 50 + (x0 - 50) * narrow;
           const r = r0 * Math.min(1, 0.55 + narrow * 0.45);
@@ -89,6 +92,8 @@ export function Pedal(props: PedalProps) {
             h: 2 * r + 10,
           });
           const ly = y + r + 10.2;
+          ext.top = Math.min(ext.top, y - r - 6);
+          ext.bot = Math.max(ext.bot, ly + 2 + (showValues ? 6.4 : 0));
           parts.push(
             <g key={`k${k.id}`}>
               <KnobArt id={id} cx={x} cy={y} r={r} value={k.value} min={k.min} max={k.max} dark={darkCaps} ring={ring} track={track} focus={foc} bipolar={isBipolar(k)} capFill={capFill} />
@@ -130,12 +135,13 @@ export function Pedal(props: PedalProps) {
         } else if (layout === "dense") {
           // more than four knobs: three columns of small knobs
           const rows = Math.ceil(knobs.length / 3);
-          const dy = rows > 2 ? 24 : 30;
+          const grow = Math.max(0, bd - 10);
+          const dy = (rows > 2 ? 24 : 30) + grow * (rows > 2 ? 0.34 : 0.3);
           knobs.forEach((k, i) => {
             const row = Math.floor(i / 3);
             const inRow = Math.min(3, knobs.length - row * 3);
             const x = inRow === 1 ? 50 : 22 + (56 * (i % 3)) / (inRow - 1);
-            K(k, x, 34 + row * dy, rows > 2 ? 4.8 : 6.2);
+            K(k, x, 34 + row * dy, (rows > 2 ? 4.8 : 6.2) + Math.min(1.6, grow / 40));
           });
           ty = 34 + rows * dy + (rows > 2 ? 2 : 0);
         } else {
@@ -162,10 +168,17 @@ export function Pedal(props: PedalProps) {
             w: 22,
             h: 16,
           });
+          ext.top = Math.min(ext.top, ty - 6);
+          ext.bot = Math.max(ext.bot, ty + 13);
           parts.push(<SlideSwitch key={`t${t.id}`} cx={cx} cy={ty} on={tOn} ink={lab} label={t.label} accent={f.kind === "matte" ? (light ? "#1c1c1e" : "rgba(255,255,255,.9)") : f.accent} />);
         });
         controls.push({ kind: "fs", id: "fs", label: `${name} ${block}`, on, onToggle: onToggleOn, x: 50 - fsR - 3, y: fsY - fsR - 3, w: 2 * fsR + 6, h: 2 * fsR + 6 });
 
+        // centre the controls between the name and the LED/footswitch
+        const coverName0 = !!look.cover && look.label !== "stamp";
+        const regTop = look.treadle ? 26 + look.treadle + 40 : coverName0 ? 18 : 31 + (look.sub ? 5 : 0);
+        const regBot = coverName0 ? fsY + bd - 46 : lbY + bd - 10;
+        const kd = Math.max(regTop - 8 - ext.top, (regTop + regBot) / 2 - (ext.top + ext.bot) / 2);
         for (const c of controls) {
           c.x += ox;
           c.y += c.kind === "fs" ? bd : kd;
