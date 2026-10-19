@@ -3,7 +3,7 @@ import type { BlockCode } from "@/state/device-types";
 import { BLOCK_HEX, finishFor, fit, hash, lum, type Finish } from "./art";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
-import { Defs, Enclosure, FootswitchArt, KnobArt, LightBar, SlideSwitch, T } from "./parts";
+import { BlockTag, Defs, Enclosure, FootswitchArt, KnobArt, LightBar, Nameplate, Screw, SlideSwitch, T } from "./parts";
 import { paramTitle, type GearBaseProps, type GearKnob } from "./types";
 
 export type PedalLayout = "row" | "hero" | "tri" | "grid" | "dense";
@@ -148,7 +148,7 @@ export function Pedal(props: PedalProps) {
         const art = (
           <>
             <Defs id={id} body={f.body} />
-            <Enclosure id={id} light={light} />
+            <Enclosure id={id} light={light} kind={f.kind} />
             <path d="M18 3.6h64" stroke="#fff" strokeOpacity={light ? 0.9 : 0.32} strokeWidth={0.8} strokeLinecap="round" />
             {f.kind === "noir" && (
               <>
@@ -159,12 +159,10 @@ export function Pedal(props: PedalProps) {
               </>
             )}
             {f.kind === "frost" && <rect x="12" y="25" width="76" height="1.2" rx=".6" fill={f.accent} />}
-            <T x={12} y={19} fill={ink} size={fit(name, 58, 9.2)} weight={650} anchor="start" spacing={-0.15}>
-              {name}
-            </T>
-            <T x={88} y={18.6} fill={ink} size={5.2} anchor="end" opacity={0.5} spacing={0.4}>
-              {block}
-            </T>
+            <Nameplate x={12} y={19} name={name} ink={ink} light={light} />
+            <BlockTag x={88} y={19} code={block} ink={ink} />
+            <Screw id={id} cx={12} cy={141} turn={(h >>> 3) % 180} />
+            <Screw id={id} cx={88} cy={141} turn={(h >>> 11) % 180} />
             {parts}
             <LightBar cx={50} cy={lbY} on={on} color={f.kind === "matte" ? (light ? "#1c1c1e" : "#ffffff") : f.accent} />
             <FootswitchArt id={id} cx={50} cy={fsY} r={fsR} />

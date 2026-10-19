@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { BLOCK_HEX, fit } from "./art";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
-import { Defs, Enclosure, FootswitchArt, KnobArt, LightBar, T } from "./parts";
+import { BlockTag, Defs, Enclosure, FootswitchArt, KnobArt, LightBar, Nameplate, Screw, T } from "./parts";
 import { paramTitle, type GearBaseProps, type GearKnob } from "./types";
 
 /** The faders (up to 6 bands) and the volume knob an EQ drawing has room for. */
@@ -84,17 +84,15 @@ export function EqPedal({ name, on = true, knobs = [], interactive, disabled, sh
         const art = (
           <>
             <Defs id={id} body="#1a1a1d" />
-            <Enclosure id={id} />
+            <Enclosure id={id} kind="noir" />
             <clipPath id={`clip${id}`}>
               <rect x="4" y="3" width="92" height="144" rx="15" />
             </clipPath>
             <rect x="4" y="3" width="92" height="5" fill={accent} clipPath={`url(#clip${id})`} />
-            <T x={12} y={19} fill="#fff" size={fit(name, 58, 9.2)} weight={650} anchor="start">
-              {name}
-            </T>
-            <T x={88} y={18.6} fill="#fff" size={5.2} anchor="end" opacity={0.5}>
-              EQ
-            </T>
+            <Nameplate x={12} y={19} name={name} ink="#fff" light={false} />
+            <BlockTag x={88} y={19} code="EQ" ink="#fff" />
+            <Screw id={id} cx={12} cy={141} turn={20} />
+            <Screw id={id} cx={88} cy={141} turn={110} />
             <rect x="12" y="28" width="76" height="70" rx="8" fill="rgba(0,0,0,.4)" />
             <line x1="16" x2={vol ? 74 : 84} y1="63" y2="63" stroke="#fff" strokeOpacity={0.12} strokeDasharray="1.5 2" />
             {faders}
@@ -144,10 +142,10 @@ export function Capture({ name, on = true, image, caption = "SnapTone", block = 
             <clipPath id={`ci${id}`}>
               <rect x="12" y="24" width="76" height="62" rx="8" />
             </clipPath>
-            <Enclosure id={id} />
-            <T x={12} y={17} fill="#fff" size={fit(name, 60, 8.6)} weight={650} anchor="start">
-              {name}
-            </T>
+            <Enclosure id={id} kind="noir" />
+            <Nameplate x={12} y={17} name={name} ink="#fff" light={false} maxW={56} />
+            <Screw id={id} cx={12} cy={141} turn={20} />
+            <Screw id={id} cx={88} cy={141} turn={110} />
             <T x={88} y={16.6} fill="#fff" size={5.2} anchor="end" opacity={0.5}>
               {block}
             </T>
