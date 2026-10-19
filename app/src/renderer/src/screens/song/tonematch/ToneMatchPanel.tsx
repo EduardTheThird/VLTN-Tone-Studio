@@ -8,10 +8,12 @@ import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
 import { useToneMatch } from "@/song/tonematch/store";
 import { usePedalNameOrBoth } from "@/state/device";
+import { DEFAULT_MODEL_ID, findModel } from "@shared/host/song";
 import { AnalysisCard } from "./AnalysisCard";
 import { IrMatchCard } from "./IrMatchCard";
 import { PANEL } from "./parts";
 import { ProposalCard } from "./ProposalCard";
+import { SnapToneMatchCard } from "./SnapToneMatchCard";
 
 /** What the analysis can and can't tell, shown above the results. */
 function Limits() {
@@ -26,13 +28,20 @@ function Limits() {
   );
 }
 
-/** No stems yet: explain, and split (or send the user to the Stems tab to load a song). */
+/** No guitar stem yet (no split, or a four-stem one): explain, and split with a model that has one (or send the user to the Stems tab to load a song). */
 function NeedStems() {
   const source = useSong((s) => s.source);
   const status = useSong((s) => s.status);
+  const noGuitar = useSong((s) => s.stems !== null && !s.stems.guitar);
+  const splitWith = useSong((s) => findModel(s.lastSplit?.model ?? "")?.label);
+  const hasGuitar = useSong((s) => findModel(s.choice.model)?.stems.includes("guitar") ?? false);
   const working = status.kind === "decoding" || status.kind === "model" || status.kind === "splitting";
   // Before any pedal was connected the proposal can be for either model.
   const pedal = usePedalNameOrBoth();
+  const split = () => {
+    if (!hasGuitar) useSong.getState().setChoice({ model: DEFAULT_MODEL_ID });
+    void useSong.getState().split();
+  };
   return (
     <div className="grid flex-1 place-items-center p-6">
       <Empty className="max-w-md">
@@ -42,16 +51,18 @@ function NeedStems() {
           </EmptyMedia>
           <EmptyTitle>Tone match needs the guitar stem</EmptyTitle>
           <EmptyDescription>
-            {source
-              ? `Split the song into stems first. Tone Studio then listens to the guitar alone: its gain, echo, reverb and tone, and proposes a ${pedal} preset and a matching cabinet IR.`
-              : `Open a song in the Stems tab and split it. Tone Studio then listens to the guitar alone and proposes a ${pedal} preset and a matching cabinet IR.`}
+            {noGuitar
+              ? `This split${splitWith ? ` (${splitWith})` : ""} has no guitar stem. Split the song again with a 6-stem model (Standard or Best): Tone Studio then listens to the guitar alone and proposes a ${pedal} preset and a matching cabinet IR.`
+              : source
+                ? `Split the song into stems first. Tone Studio then listens to the guitar alone: its gain, echo, reverb and tone, and proposes a ${pedal} preset and a matching cabinet IR.`
+                : `Open a song in the Stems tab and split it. Tone Studio then listens to the guitar alone and proposes a ${pedal} preset and a matching cabinet IR.`}
           </EmptyDescription>
         </EmptyHeader>
         {source && (
           <EmptyContent className="flex-row justify-center gap-2">
-            <Button disabled={working} onClick={() => void useSong.getState().split()}>
+            <Button disabled={working} onClick={split}>
               {working ? <Spinner data-icon="inline-start" /> : <AudioLines data-icon="inline-start" />}
-              {working ? "Splitting…" : "Split into stems"}
+              {working ? "Splitting…" : hasGuitar ? "Split into stems" : `Split with ${findModel(DEFAULT_MODEL_ID)?.label}`}
             </Button>
           </EmptyContent>
         )}
@@ -66,7 +77,7 @@ export function ToneMatchPanel() {
   const analysis = useToneMatch((s) => s.analysis);
   const proposal = useToneMatch((s) => s.proposal);
 
-  if (!stems) return <NeedStems />;
+  if (!stems?.guitar) return <NeedStems />;
 
   if (status.kind === "error")
     return (
@@ -110,6 +121,7 @@ export function ToneMatchPanel() {
         <ProposalCard proposal={proposal} />
         <AnalysisCard analysis={analysis} />
         <IrMatchCard />
+        <SnapToneMatchCard analysis={analysis} />
       </div>
     </div>
   );

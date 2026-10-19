@@ -5,7 +5,7 @@ import { bandMean } from "@/song/tonematch/ltas";
 import { CurvePlot } from "./CurvePlot";
 import { Confidence, fmtDb, Section } from "./parts";
 
-const GAIN_TEXT = { clean: "Clean", crunch: "Crunch", high: "High gain" } as const;
+export const GAIN_TEXT = { clean: "Clean", crunch: "Crunch", high: "High gain" } as const;
 
 function Row({ label, value, detail, confidence }: { label: string; value: ReactNode; detail?: ReactNode; confidence: number }) {
   return (

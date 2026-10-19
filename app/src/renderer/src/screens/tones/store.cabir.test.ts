@@ -100,4 +100,21 @@ describe("SnapTone send with a cab IR", () => {
     startSendDraft(TONE, 1, "MESA", "ir", { cabIr: { kind: "tone", toneId: 99, name: "Mesa 4x12" } });
     expect(useTones.getState().send[TONE]?.cabIr).toBeNull();
   });
+
+  it("starts a SnapTone built elsewhere (Tone Match) at the write step, without converting again", () => {
+    const clone = new Uint8Array(8840);
+    const check = { version: "0.5.4", reshaped: false, arch: "A1" as const, size: "standard" };
+    const wav = new Uint8Array([7]);
+    expect(startSendDraft(TONE, 1, "PLEXI", "snaptone", { cabIr: { kind: "file", name: "Tone Match IR", wav }, built: { clone, check } })).toBe(true);
+    expect(useTones.getState().send[TONE]).toMatchObject({ phase: "ready", step: 4, file: clone, check, cabIr: { name: "Tone Match IR" } });
+    expect(convertToClone).not.toHaveBeenCalled();
+  });
+
+  it("doesn't replace a send that is running", async () => {
+    startSendDraft(TONE, 1, "JCM", "snaptone");
+    const running = runSend(TONE);
+    expect(startSendDraft(TONE, 1, "PLEXI", "snaptone", { built: { clone: new Uint8Array(8840), check: { version: "0.5.4", reshaped: false, arch: "A1", size: "standard" } } })).toBe(false);
+    await running;
+    expect(useTones.getState().send[TONE]?.name).toBe("JCM");
+  });
 });

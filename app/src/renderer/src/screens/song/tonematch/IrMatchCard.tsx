@@ -67,13 +67,16 @@ function InputPicker({ disabled }: { disabled: boolean }) {
   );
 }
 
-/** The correction and the IR's response; the IR is peak-normalised in time, so it is levelled at its 200 Hz–4 kHz mean. */
-function resultSeries(result: MatchedIr): CurveSeries[] {
+/**
+ * The correction and the IR's response; the IR is peak-normalised in time, so it is levelled at its 200 Hz–4 kHz mean.
+ * `against` names what the song was compared with.
+ */
+export function resultSeries(result: MatchedIr, against = "your recording"): CurveSeries[] {
   const response = PLOT_POINTS.map((f): [number, number] => [f, responseDb(result.ir, f, IR_RATE)]);
   const mid = response.filter(([f]) => f >= 200 && f <= 4000);
   const offset = mid.reduce((a, [, db]) => a + db, 0) / mid.length;
   return [
-    { label: "Correction measured (song − your recording)", points: result.curve.centers.map((f, i): [number, number] => [f, result.curve.db[i]]), className: "stroke-silkscreen-3", dashed: true },
+    { label: `Correction measured (song − ${against})`, points: result.curve.centers.map((f, i): [number, number] => [f, result.curve.db[i]]), className: "stroke-silkscreen-3", dashed: true },
     { label: "Matched IR", points: response.map(([f, db]): [number, number] => [f, db - offset]), className: "stroke-block-cab" },
   ];
 }

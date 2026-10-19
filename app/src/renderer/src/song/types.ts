@@ -1,10 +1,11 @@
 // Song: a user's audio file split into stems (Stem Splitter) and analysed for a preset on the pedal (Tone Match).
 // The store (song/store.ts, `useSong`) owns the loaded song and its stems; Tone Match only reads them.
+import type { SeparationModelId, StemName } from "@shared/host/song";
+import type { QualityId, SplitChoice } from "./stems/options";
 import type { Backend } from "./stems/protocol";
 
-/** Demucs htdemucs_6s sources, in the model's output order. */
-export const STEM_NAMES = ["drums", "bass", "other", "vocals", "guitar", "piano"] as const;
-export type StemName = (typeof STEM_NAMES)[number];
+// The stem names belong to the model registry, shared with the hosts; the song code reads them from here.
+export { STEM_NAMES, type StemName } from "@shared/host/song";
 
 /** Planar PCM: one Float32Array per channel, all the same length. */
 export interface PcmAudio {
@@ -19,25 +20,43 @@ export interface SongSource {
   audio: PcmAudio;
 }
 
+/** A split's stems: the model's subset of STEM_NAMES (four-stem models have no guitar or piano). */
+export type Stems = Partial<Record<StemName, PcmAudio>>;
+
 export type SplitStatus =
   | { kind: "idle" }
   | { kind: "decoding" }
-  /** First use: the separation model is being downloaded and verified */
-  | { kind: "model"; fraction: number }
-  /** `backend` null while the model starts; then where the chunks run (the CPU is several times slower) */
-  | { kind: "splitting"; fraction: number; backend: Backend | null }
+  /** The chosen model's files are being downloaded and verified (`bytes` in all) */
+  | { kind: "model"; fraction: number; bytes: number }
+  /**
+   * `backend` null while a pass's model starts; then where its chunks run (the CPU is several times slower).
+   * `pass` of `passes`: the model file running now (a bag of models runs one after another).
+   */
+  | { kind: "splitting"; fraction: number; backend: Backend | null; pass: number; passes: number }
   | { kind: "done" }
   | { kind: "error"; message: string };
+
+/** How the current stems were made (shown under the mixer) */
+export interface SplitInfo {
+  model: SeparationModelId;
+  quality: QualityId;
+  /** Where the passes ran */
+  backends: Backend[];
+  seconds: number;
+}
 
 export interface SongState {
   source: SongSource | null;
   /** Present once a split finished for `source`; cleared when another song loads */
-  stems: Record<StemName, PcmAudio> | null;
+  stems: Stems | null;
   status: SplitStatus;
+  /** Model and quality the next split uses (remembered across launches) */
+  choice: SplitChoice;
   /** Decode a file (wav, mp3, flac, m4a/aac, ogg) into `source`; clears stems */
   load(file: File): Promise<void>;
-  /** Split `source` into stems (downloads the model on first use); cancels a running split when called again */
+  /** Split `source` with `choice` (downloads the model on first use); cancels a running split when called again */
   split(): Promise<void>;
+  setChoice(patch: Partial<SplitChoice>): void;
   cancel(): void;
   reset(): void;
 }

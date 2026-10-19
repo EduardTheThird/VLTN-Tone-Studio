@@ -20,6 +20,7 @@ export const tonesApi: TonesApi = {
   readLocalIr: (path) => invoke("tones:readLocalIr", path),
   readLocalNam: (path) => invoke("tones:readLocalNam", path),
   readIr: (toneId) => invoke("tones:readIr", toneId),
+  readNam: (toneId, modelId) => invoke("tones:readNam", toneId, modelId),
   link: (toneId, link) => invoke("tones:link", toneId, link),
   local: () => invoke("tones:local"),
   onEvent: (cb) => {

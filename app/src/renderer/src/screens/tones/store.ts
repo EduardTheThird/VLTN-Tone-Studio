@@ -198,13 +198,27 @@ export function requestImage(url: string): void {
 
 // ---------------------------------------------------------------------------------- sign-in / Select flow
 
-/** "Browse TONE3000": splash first (once), then the Select flow (A1 and A2 tones both become SnapTones). */
-export async function browse(req: FlowRequest = { prompt: "select_tone" }): Promise<void> {
+/** Who takes the tone the next Select flow returns; null = open its sheet. */
+let pickHandler: ((toneId: number) => void) | null = null;
+
+/**
+ * "Browse TONE3000": splash first (once), then the Select flow (A1 and A2 tones both become SnapTones). `onTone` takes
+ * the picked tone instead of the sheet (Tone Match adds it to its captures).
+ */
+export async function browse(req: FlowRequest = { prompt: "select_tone" }, onTone?: (toneId: number) => void): Promise<void> {
+  pickHandler = onTone ?? null;
   if (!get().account) await loadAccount();
   const account = get().account;
   set({ flow: req });
   if (!account?.splashSeen) set({ splashOpen: true });
   else set({ flowOpen: true });
+}
+
+/** The Select flow returned `toneId`: to whoever asked for it (browse's `onTone`), else its sheet. */
+export function takePickedTone(toneId: number): void {
+  const handler = pickHandler ?? openSheet;
+  pickHandler = null;
+  handler(toneId);
 }
 
 /** Plain sign-in: authorize without a prompt, so TONE3000 returns right after login instead of asking for a tone. */
@@ -305,13 +319,22 @@ function linkDevice(): DeviceKey {
 }
 
 /**
- * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
- * it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
+ * Create (or replace an idle, unwritten or finished) send draft; false while a send of this tone runs. `opts.text` is an edited
+ * .nam from the capture editor: it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
+ * `opts.built` is a SnapTone already converted from the downloaded model (with `cabIr` in it, Tone Match): the draft
+ * starts at the write step, which waits for the user's Write like any other.
  */
-export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string; cabIr?: CabIrChoice | null } = {}): void {
+export function startSendDraft(
+  toneId: number,
+  modelId: number,
+  name: string,
+  kind: "snaptone" | "ir",
+  opts: { text?: string; cabIr?: CabIrChoice | null; built?: { clone: Uint8Array; check: NamCheck } } = {},
+): boolean {
   const cur = get().send[toneId];
-  if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked") return;
+  if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked" && cur.phase !== "ready") return false;
   const d = useDevice.getState();
+  const built = kind === "snaptone" ? opts.built : undefined;
   set((s) => ({
     send: {
       ...s.send,
@@ -320,14 +343,14 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
         modelId,
         name,
         kind,
-        phase: "idle",
-        step: 1,
+        phase: built ? "ready" : "idle",
+        step: built ? 4 : 1,
         received: 0,
         total: null,
         progress: 0,
         error: null,
-        check: null,
-        file: null,
+        check: built?.check ?? null,
+        file: built?.clone ?? null,
         ir: null,
         proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs, d.device),
         linkedSlot: null,
@@ -336,6 +359,7 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
       },
     },
   }));
+  return true;
 }
 
 /** A different cab IR makes the converted file stale, so the draft goes back to step 1. */

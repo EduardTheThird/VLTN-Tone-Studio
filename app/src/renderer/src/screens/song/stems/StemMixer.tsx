@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, Guitar, Pause, Play } from "lucide-react";
+import { ChevronDown, Download, Guitar, Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { Toggle } from "@/components/ui/toggle";
 import { host } from "@/host";
@@ -11,9 +12,12 @@ import { useNav } from "@/state/nav";
 import { useStatusHints } from "@/state/ui";
 import { useSong } from "@/song/store";
 import { defaultMix, formatTime, peaks, type Mix, type StemMix } from "@/song/stems/mix";
+import { findQuality } from "@/song/stems/options";
 import { StemPlayer } from "@/song/stems/player";
 import { encodeWav } from "@/song/wav";
-import { STEM_NAMES, type PcmAudio, type StemName } from "@/song/types";
+import { STEM_NAMES, type StemName, type Stems, type SplitInfo } from "@/song/types";
+import { findModel } from "@shared/host/song";
+import { SplitOptions } from "./SplitOptions";
 
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
 const WAVE_BUCKETS = 800;
@@ -28,6 +32,7 @@ const STEM_COLOR: Record<StemName, string> = {
   piano: "var(--block-dly)",
 };
 const BACKEND_LABEL = { webgpu: "on the graphics card (WebGPU)", wasm: "on the processor (WebAssembly)" } as const;
+const COUNT_WORD = ["No", "One", "Two", "Three", "Four", "Five", "Six"];
 
 const isEditable = (el: Element | null) =>
   !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el as HTMLElement).isContentEditable);
@@ -35,9 +40,9 @@ const isEditable = (el: Element | null) =>
 /** File name without its extension, for "<song> - guitar.wav". */
 const baseName = (name: string) => name.replace(/\.[^.]+$/, "") || "Song";
 
-async function exportStems(songName: string, stems: Record<StemName, PcmAudio>, bits: 16 | 24) {
+async function exportStems(songName: string, stems: Stems, names: StemName[], bits: 16 | 24) {
   try {
-    const files = STEM_NAMES.map((n) => ({ name: `${baseName(songName)} - ${n}.wav`, bytes: encodeWav(stems[n], bits) }));
+    const files = names.map((n) => ({ name: `${baseName(songName)} - ${n}.wav`, bytes: encodeWav(stems[n]!, bits) }));
     const where = await host.song.saveFiles(files, "Export stems");
     if (where) notifySuccess("Stems exported", where);
   } catch (e) {
@@ -45,17 +50,25 @@ async function exportStems(songName: string, stems: Record<StemName, PcmAudio>, 
   }
 }
 
-/** Transport, one row per stem (mute, solo, volume, waveform, level) and the export. */
-export function StemMixer({ stems, songName }: { stems: Record<StemName, PcmAudio>; songName: string }) {
+/** "Split with Best, Balanced in 312.4 s on the processor (WebAssembly)." */
+function splitSummary({ model, quality, seconds, backends }: SplitInfo): string {
+  const where = backends.length === 1 ? BACKEND_LABEL[backends[0]] : "on the graphics card and the processor";
+  return `Split with ${findModel(model)?.label ?? model}, ${findQuality(quality)?.label ?? quality} in ${seconds.toFixed(1)} s ${where}.`;
+}
+
+/** Transport, one row per stem (mute, solo, volume, waveform, level), the export and splitting again. */
+export function StemMixer({ stems, songName }: { stems: Stems; songName: string }) {
   const lastSplit = useSong((s) => s.lastSplit);
   // Created in an effect so StrictMode's mount/unmount/mount gets a live AudioContext.
   const [player, setPlayer] = useState<StemPlayer | null>(null);
-  const duration = stems.drums.channels[0].length / stems.drums.sampleRate;
+  const names = useMemo(() => STEM_NAMES.filter((n) => stems[n]), [stems]);
+  const first = stems[names[0]]!;
+  const duration = first.channels[0].length / first.sampleRate;
   const [mix, setMix] = useState<Mix>(defaultMix);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
-  const [levels, setLevels] = useState<Record<StemName, number> | null>(null);
-  const waves = useMemo(() => Object.fromEntries(STEM_NAMES.map((n) => [n, peaks(stems[n].channels, WAVE_BUCKETS)])) as Record<StemName, Float32Array>, [stems]);
+  const [levels, setLevels] = useState<Partial<Record<StemName, number>> | null>(null);
+  const waves = useMemo(() => Object.fromEntries(names.map((n) => [n, peaks(stems[n]!.channels, WAVE_BUCKETS)])) as Partial<Record<StemName, Float32Array>>, [stems, names]);
   useStatusHints(HINTS);
 
   useEffect(() => {
@@ -155,19 +168,19 @@ export function StemMixer({ stems, songName }: { stems: Record<StemName, PcmAudi
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Six WAV files, 44.1 kHz stereo</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, 16)}>WAV 16-bit</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, 24)}>WAV 24-bit</DropdownMenuItem>
+            <DropdownMenuLabel>{COUNT_WORD[names.length]} WAV files, 44.1 kHz stereo</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, names, 16)}>WAV 16-bit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, names, 24)}>WAV 24-bit</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
       <div role="list" aria-label="Stems" className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
-        {STEM_NAMES.map((name) => (
+        {names.map((name) => (
           <StemRow
             key={name}
             name={name}
             mix={mix[name]}
-            wave={waves[name]}
+            wave={waves[name]!}
             progress={progress}
             level={levels?.[name] ?? 0}
             onChange={(patch) => update(name, patch)}
@@ -177,12 +190,29 @@ export function StemMixer({ stems, songName }: { stems: Record<StemName, PcmAudi
       </div>
       <div className="flex min-w-0 items-center gap-3">
         <p className="min-w-0 flex-1 text-[11px] text-pretty text-silkscreen-3">
-          {lastSplit && `Split in ${lastSplit.seconds.toFixed(1)} s ${BACKEND_LABEL[lastSplit.backend]}. `}Solo a stem to hear it alone.
+          {lastSplit && `${splitSummary(lastSplit)} `}Solo a stem to hear it alone.
         </p>
-        <Button onClick={() => useNav.getState().go("song", "tone")}>
-          <Guitar data-icon="inline-start" />
-          Match the guitar tone
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline">
+              <RotateCcw data-icon="inline-start" />
+              Split again…
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" side="top" className="flex w-[440px] flex-col gap-3 bg-surface-solid-raised!">
+            <span className="text-sm font-[550] text-silkscreen-2">Split again with another model or quality</span>
+            <SplitOptions />
+            <Button className="self-end" onClick={() => void useSong.getState().split()}>
+              Split again
+            </Button>
+          </PopoverContent>
+        </Popover>
+        {stems.guitar && (
+          <Button onClick={() => useNav.getState().go("song", "tone")}>
+            <Guitar data-icon="inline-start" />
+            Match the guitar tone
+          </Button>
+        )}
       </div>
     </section>
   );

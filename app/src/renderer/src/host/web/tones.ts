@@ -25,6 +25,7 @@ export const webTones: TonesApi = {
   readLocalIr: desktopOnly("Opening files by path"),
   readLocalNam: desktopOnly("Opening files by path"),
   readIr: desktopOnly("Reading downloaded impulse responses"),
+  readNam: desktopOnly("Reading downloaded captures"),
   link: desktopOnly("Linking slots to TONE3000 tones"),
   local: async () => [],
   onEvent: () => () => {},

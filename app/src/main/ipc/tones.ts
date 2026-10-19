@@ -279,6 +279,21 @@ async function readIr(toneId: number): Promise<Uint8Array> {
   throw new HostError("not-found", `${rec.title} isn't downloaded anymore. Send it once from Tones to download it again.`);
 }
 
+/** A downloaded NAM model's text, as stored, for Tone Match's capture ranking. No download, no record change. */
+async function readNam(toneId: unknown, modelId: unknown): Promise<string> {
+  if (!Number.isSafeInteger(toneId) || !Number.isSafeInteger(modelId)) throw new HostError("invalid", "Not a tone or model id");
+  const rec = await readRecord(tonesDir(), toneId as number);
+  if (!rec || rec.format !== "nam") throw new HostError("not-found", "This capture hasn't been downloaded yet");
+  const model = rec.models.find((m) => m.id === modelId);
+  if (!model) throw new HostError("not-found", `${rec.title} has no downloaded model ${String(modelId)}`);
+  if (basename(model.file) !== model.file || extname(model.file).toLowerCase() !== ".nam") throw new HostError("invalid", `${rec.title} lists an invalid model file`);
+  const path = join(tonesDir(), String(toneId), model.file);
+  const size = (await stat(path).catch(() => null))?.size;
+  if (size === undefined) throw new HostError("not-found", `${rec.title} isn't downloaded anymore. Send it once from Tones to download it again.`);
+  if (size > MAX_LOCAL_NAM) throw new HostError("invalid", `${rec.title} is too large to be a NAM capture`);
+  return readFile(path, "utf8");
+}
+
 export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
   handle("tones:account", () => account());
   handle("tones:markSplashSeen", () => patchState({ splashSeen: true }));
@@ -318,6 +333,7 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
     return readFile(path, "utf8");
   });
   handle("tones:readIr", (_e, toneId: number) => readIr(toneId));
+  handle("tones:readNam", (_e, toneId: unknown, modelId: unknown) => readNam(toneId, modelId));
   handle("tones:link", (_e, toneId: number, link: SlotLink | null) => updateRecord(toneId, (r) => linkRecord(r, link, new Date())));
   handle("tones:local", () => listRecords(tonesDir()));
 }

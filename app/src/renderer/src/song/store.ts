@@ -1,20 +1,24 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
+import { findModel } from "@shared/host/song";
 import { decodeSong } from "./decode";
-import { separateStems, type Separation, type SeparationProgress } from "./stems/engine";
-import type { Backend } from "./stems/protocol";
-import { STEM_NAMES, type PcmAudio, type SongState, type StemName } from "./types";
+import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
+import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
+import type { PcmAudio, SongState, SplitInfo, Stems } from "./types";
 
 // The loaded song and its stems (contract: types.ts). One job at a time: loading another song or splitting
 // again aborts the running split; results of a superseded job are dropped.
 
 export interface SongDeps {
   decode(file: File): Promise<PcmAudio>;
-  separate(audio: PcmAudio, onProgress: (p: SeparationProgress) => void, signal: AbortSignal): Promise<Separation>;
+  separate(audio: PcmAudio, settings: SplitSettings, onProgress: (p: SeparationProgress) => void, signal: AbortSignal): Promise<Separation>;
+  /** The model and quality chosen last time, and where a new choice is kept */
+  loadChoice(): SplitChoice;
+  saveChoice(choice: SplitChoice): void;
 }
 
 export interface SongStore extends SongState {
-  /** How the last split ran (shown under the player) */
-  lastSplit: { backend: Backend; seconds: number } | null;
+  /** How the current stems were made (shown under the player) */
+  lastSplit: SplitInfo | null;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -32,6 +36,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     source: null,
     stems: null,
     status: { kind: "idle" },
+    choice: deps.loadChoice(),
     lastSplit: null,
 
     async load(file) {
@@ -49,24 +54,37 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     },
 
     async split() {
-      const source = get().source;
-      if (!source) return;
+      const { source, choice } = get();
+      const model = findModel(choice.model);
+      const quality = findQuality(choice.quality);
+      if (!source || !model || !quality) return;
       const ctrl = begin();
-      set({ stems: null, lastSplit: null, status: { kind: "splitting", fraction: 0, backend: null } });
+      set({ stems: null, lastSplit: null, status: { kind: "splitting", fraction: 0, backend: null, pass: 1, passes: model.passes.length } });
       const onProgress = (p: SeparationProgress) => {
         if (ctrl.signal.aborted) return;
-        set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction } : { kind: "splitting", fraction: p.fraction, backend: p.backend } });
+        set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction, bytes: p.bytes } : { kind: "splitting", fraction: p.fraction, backend: p.backend, pass: p.pass, passes: p.passes } });
       };
       try {
-        const res = await deps.separate(source.audio, onProgress, ctrl.signal);
+        const res = await deps.separate(source.audio, { model, quality }, onProgress, ctrl.signal);
         if (ctrl.signal.aborted || get().source !== source) return;
-        const stems = Object.fromEntries(STEM_NAMES.map((name, i) => [name, { sampleRate: source.audio.sampleRate, channels: res.stems[i] }])) as Record<StemName, PcmAudio>;
-        set({ stems, lastSplit: { backend: res.backend, seconds: res.seconds }, status: { kind: "done" } });
+        const stems: Stems = {};
+        for (const name of model.stems) {
+          const channels = res.stems[name];
+          if (!channels) throw new Error(`The split returned no ${name} stem.`);
+          stems[name] = { sampleRate: source.audio.sampleRate, channels };
+        }
+        set({ stems, lastSplit: { model: model.id, quality: quality.id, backends: res.backends, seconds: res.seconds }, status: { kind: "done" } });
       } catch (e) {
         if (!ctrl.signal.aborted && !isAbort(e)) set({ status: { kind: "error", message: message(e) } });
       } finally {
         if (job === ctrl) job = null;
       }
+    },
+
+    setChoice(patch) {
+      const choice = { ...get().choice, ...patch };
+      deps.saveChoice(choice);
+      set({ choice });
     },
 
     cancel() {
@@ -84,4 +102,4 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
   }));
 }
 
-export const useSong = createSongStore({ decode: decodeSong, separate: separateStems });
+export const useSong = createSongStore({ decode: decodeSong, separate: separateStems, loadChoice: loadSplitChoice, saveChoice: saveSplitChoice });
