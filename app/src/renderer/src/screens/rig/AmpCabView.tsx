@@ -20,8 +20,9 @@ import { snapToneName } from "./snaptone";
 
 /** Stands the gear on the stage floor: bottom-aligned in the space above the strip, with a contact shadow. */
 function Floor({ children }: { children: ReactNode }) {
+  // a size container: the gear inside is sized from the room that is really left (cqw/cqh), not from the window
   return (
-    <div className="relative flex min-h-0 w-full flex-1 items-end justify-center pb-3">
+    <div className="relative flex min-h-0 w-full flex-1 items-end justify-center pb-3 [container-type:size]">
       <span aria-hidden className="absolute bottom-1.5 left-1/2 h-5 w-[78%] max-w-[520px] -translate-x-1/2 rounded-[50%] bg-black/75 blur-md" />
       {children}
     </div>
@@ -56,7 +57,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
   const voicing = voicingOf(amp.model?.type);
   const { nsOn } = nsOf(preset);
   const cabArt = (
-    <Cab name={modelTitle(cab)} ir={isIR} origin={cab.model?.origin} match={{ name: ampName, origin: amp.model?.origin, type: amp.model?.type }} className={cn("relative w-[clamp(200px,min(calc((100vh-470px)*1.05),20vw),520px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !cab.enabled && "saturate-[.2] brightness-50")} />
+    <Cab name={modelTitle(cab)} ir={isIR} origin={cab.model?.origin} match={{ name: ampName, origin: amp.model?.origin, type: amp.model?.type }} className={cn("relative", cabMore.length ? "w-[min(calc(100cqw-170px),calc(100cqh*1.05),520px)]" : "w-[min(100cqw,calc(100cqh*1.05),520px)]", "drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !cab.enabled && "saturate-[.2] brightness-50")} />
   );
   return (
     <section
@@ -92,7 +93,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
               interactive
               disabled={readOnly}
               onToggleOn={(on) => editEnabled(a, on)}
-              className={cn("relative w-[clamp(110px,min(calc((100vh-470px)*0.6),8vw),210px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
+              className={cn("relative w-[min(60cqw,calc(100cqh*0.62),210px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
             />
           ) : (
             <AmpHead
@@ -104,7 +105,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
               interactive
               disabled={readOnly}
               onKnobChange={(id, v) => editParam(a, Number(id), v)}
-              className={cn("relative w-[clamp(300px,min(calc((100vh-470px)*1.9),34vw),820px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
+              className={cn("relative w-[min(100cqw,calc(100cqh*2.05),820px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
             />
           )}
           </Floor>
@@ -122,9 +123,9 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
           </div>
           <Floor>
           {cabMore.length ? (
-            <div className="flex items-center gap-5">
+            <div className="flex items-end gap-3">
               {cabArt}
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5 pb-1">
                 {cabMore.map((k) => (
                   <Dial
                     key={k.id}
@@ -132,7 +133,8 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
                     ariaLabel={`${modelTitle(cab)} ${paramTitle(k.label)}`}
                     value={k.value}
                     spec={k}
-                    size={34}
+                    size={32}
+                    layout="row"
                     color="var(--block-cab)"
                     disabled={readOnly}
                     onChange={(v) => editParam(c, Number(k.id), v)}

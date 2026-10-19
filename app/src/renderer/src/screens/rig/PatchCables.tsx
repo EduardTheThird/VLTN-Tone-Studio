@@ -42,7 +42,9 @@ export function PatchCables({ rowRef, codes }: { rowRef: RefObject<HTMLElement |
         if (a && b && code) next.push({ x1: a.r, x2: b.l, y: (a.y + b.y) / 2, color: shade(BLOCK_HEX[code] ?? "#8e8e93", -0.3) });
       });
       setCables(next);
-      setSize([row.scrollWidth, row.scrollHeight]);
+      // from the columns, not from row.scrollWidth: this layer is part of the row's scrollable area and would keep itself big
+      const cols = [...row.querySelectorAll<HTMLElement>(":scope > [role=listitem]")].map((el) => el.getBoundingClientRect());
+      setSize([Math.max(0, ...cols.map((c) => c.right - ox)), Math.max(0, ...cols.map((c) => c.bottom - oy))]);
     };
     measure();
     const ro = new ResizeObserver(measure);

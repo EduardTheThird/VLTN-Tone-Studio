@@ -1,7 +1,7 @@
-// Zoom of the pedal board (the +/- bar beside it), remembered between launches (localStorage; every access survives missing storage).
+// Zoom of the pedal board on top of the automatic fit (100% = every pedal of the group fits; the +/- bar beside it), remembered between launches (localStorage; every access survives missing storage).
 import { create } from "zustand";
 
-const KEY = "gp5.rigZoom.v1";
+const KEY = "gp5.rigZoom.v2";
 export const ZOOM_MIN = 0.7;
 export const ZOOM_MAX = 2;
 export const ZOOM_STEP = 0.1;

@@ -1,7 +1,7 @@
 import { PatchCables } from "./PatchCables";
 import { ZoomBar } from "./ZoomBar";
 import { useBoardZoom, ZOOM_STEP } from "./zoom";
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.webp";
@@ -23,11 +23,64 @@ import { useMediaQuery } from "./use-media-query";
 
 export const DRAG_MIME = "application/x-gp5-block";
 
-/** Pedal art width: scales with the window height left for the board (2:3 gear), so a 1280×800 window still shows
- *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). Never wider than what makes all pedals
- *  of the row (--n, on the container) fit side by side, down to 132px; a longer GP-200 board scrolls from there. */
-const GEAR_W =
-  "[--gw:calc(min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),236px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))*var(--z,1))] w-(--gw)";
+/** Pedal art width: --fit (set by useBoardFit from what is measured: the free box of the board and the real proportions
+ *  of every pedal in the open group, so all of them show at once when that is possible) times the user's zoom --z. */
+const GEAR_W = "[--gw:calc(var(--fit,132px)*var(--z,1))] w-(--gw)";
+
+const GAP = 36; // between pedals, closer on a tight board (the cables still need ~20px)
+const GAP_TIGHT = 22;
+const FIT_MAX = 236;
+const FIT_MIN = 84; // smaller than this the pedals stop being readable: the row crops and scrolls instead
+
+/** Sets --fit on the row: the pedal width at which every column of the group fits the row box (width and height). */
+function useBoardFit(rowRef: RefObject<HTMLDivElement | null>, key: string) {
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const fit = () => {
+      const all = [...row.querySelectorAll<HTMLElement>(":scope > [role=listitem]")];
+      // a fixed-size column (the SnapTone card) keeps its width; only the pedals are fitted
+      const cols = all.filter((c) => !c.hasAttribute("data-fixed"));
+      const fixedW = all.length === cols.length ? 0 : all.filter((c) => c.hasAttribute("data-fixed")).reduce((n, c) => n + c.offsetWidth, 0);
+      if (!cols.length) return;
+      let wRel = 0;
+      let hRel = 0;
+      let chrome = 0;
+      for (const col of cols) {
+        const svg = col.querySelector<SVGSVGElement>('svg[role="img"]');
+        if (!svg) continue;
+        const { width: w, height: h } = svg.viewBox.baseVal;
+        // a Pedal draws itself at width gw * (w/100) * min(1, 150/h), so its height is gw * min(h/100, 1.5)
+        wRel += (w / 100) * Math.min(1, 150 / h);
+        hRel = Math.max(hRel, Math.min(h / 100, 1.5));
+        chrome = Math.max(chrome, col.offsetHeight - svg.getBoundingClientRect().height);
+      }
+      const roomed = (gap: number) => (row.clientWidth - fixedW - (all.length - 1) * gap) / (wRel || 1);
+      const gap = Math.min(roomed(GAP), hRel ? (row.clientHeight - chrome - 14) / hRel : Infinity) < 120 ? GAP_TIGHT : GAP;
+      row.style.setProperty("--gap", `${gap}px`);
+      const boxW = row.clientWidth - fixedW - (all.length - 1) * gap;
+      const boxH = row.clientHeight - chrome - 14;
+      const byW = boxW / (wRel || 1);
+      const byH = boxH / (hRel || 1.5);
+      let size = Math.round(Math.max(FIT_MIN, Math.min(FIT_MAX, byW, byH)));
+      row.style.setProperty("--fit", `${size}px`);
+      // a column is never narrower than its model button and on/off pill: shrink until the real columns fit the row
+      for (let i = 0; i < 4 && size > FIT_MIN; i++) {
+        const used = cols.reduce((sum, c) => sum + c.offsetWidth, 0);
+        const room = row.clientWidth - fixedW - (all.length - 1) * gap;
+        if (used <= room + 1) break;
+        const next = Math.max(FIT_MIN, Math.floor(size * (room / used)));
+        if (next >= size) break;
+        size = next;
+        row.style.setProperty("--fit", `${size}px`);
+      }
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [rowRef, key]);
+}
 
 function stateLine(b: BlockState, device: DeviceKey) {
   if (b.code === "NS") return b.enabled ? (snapToneReplacesAmpCab(device) ? "SnapTone on, replacing the amp and cab" : "SnapTone on") : "SnapTone off";
@@ -59,6 +112,7 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const [moreFor, setMoreFor] = useState<number | null>(null);
   const selected = useRig((s) => s.selected);
   const rowRef = useRef<HTMLDivElement>(null);
+  useBoardFit(rowRef, blocks.map((b) => preset.blocks[b].fxid).join());
   // The row scrolls only when even the smallest pedals don't fit: then its ends fade out and the wheel scrolls it sideways
   const [scrolls, setScrolls] = useState(false);
   useEffect(() => {
@@ -143,7 +197,7 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
         style={{ "--n": blocks.length, "--z": zoom } as CSSProperties}
         role="list"
         aria-label="Pedals in signal order"
-        className={cn("relative flex min-h-0 flex-1 items-center-safe justify-center-safe gap-9 overflow-auto [container-type:inline-size] board-scroll", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
+        className={cn("relative flex min-h-0 flex-1 items-center-safe justify-center-safe gap-(--gap,36px) overflow-auto [container-type:inline-size] board-scroll", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
       >
         <PatchCables rowRef={rowRef} codes={blocks.map((b) => preset.blocks[b].code)} />
         {blocks.map((b) =>
@@ -390,8 +444,9 @@ function NsColumn({ block, readOnly, name, device }: { block: BlockState; readOn
         aria-label={`NS ${name}, on`}
         aria-current={selected || undefined}
         data-block={block.index}
+        data-fixed
         onPointerDownCapture={() => useRig.getState().select(block.index)}
-        className="relative flex w-[clamp(420px,36vw,520px)] flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2"
+        className="relative flex w-[clamp(340px,30vw,480px)] flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2"
       >
         <ModelButton block={block} label={name} selected={selected} disabled={readOnly} />
         <div className="flex w-full items-start gap-[22px]">
