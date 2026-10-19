@@ -298,7 +298,7 @@ function SlotCell({
               aria-label={`${label}, ${empty ? (target ? "proposed" : "empty") : slot.name}`}
               className={cn(
                 "relative flex h-[26px] min-w-0 items-center gap-1 rounded-sm px-[5px] text-left text-[11.5px] tracking-[-0.01em] shadow-[inset_0_0_0_1px_var(--seam)] before:absolute before:inset-x-0 before:-inset-y-[3px] hover:bg-accent",
-                empty ? "bg-transparent" : "bg-faceplate-raised",
+                empty ? "bg-transparent shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--seam)_40%,transparent)]" : "bg-faceplate-raised",
                 target && "shadow-[inset_0_0_0_1px_var(--lamp)]",
               )}
             >

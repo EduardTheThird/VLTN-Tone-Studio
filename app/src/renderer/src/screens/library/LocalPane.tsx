@@ -216,7 +216,7 @@ function PresetList() {
   if (!current) {
     return (
       <div className="flex min-h-0 flex-1 flex-col border-t border-border pt-3">
-        <Empty className="flex-1">
+        <Empty className="flex-1 justify-start pt-10 md:pt-10">
           <EmptyHeader>
             <EmptyTitle>Nothing on this computer yet</EmptyTitle>
             <EmptyDescription>Back up the {pedal}, or import .prst files you downloaded.</EmptyDescription>

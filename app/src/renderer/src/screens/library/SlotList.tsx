@@ -483,7 +483,14 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
               </>
             )}
             {/* A read GP-200 body without the effect catalog has no amp name */}
-            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">{row.summary ? "Unknown model" : "Not read yet"}</span>}
+            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">{row.summary ? (
+              "Unknown model"
+            ) : (
+              <span title="Not read yet">
+                <span aria-hidden>–</span>
+                <span className="sr-only">Not read yet</span>
+              </span>
+            )}</span>}
           </span>
           <span
             role="gridcell"
