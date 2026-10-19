@@ -25,14 +25,14 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 <br>
 <br>
 
-### Download v0.7.2
+### Download v0.8.0
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 <br>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
 
 <sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
@@ -46,7 +46,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studi
 <br>
 <br>
 
-[Download](#download-v072) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v080) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -60,8 +60,9 @@ Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studi
 
 ## Every knob. Live.
 
-Turn a knob on screen and you hear it on the pedal right away.<br>
-Nothing is saved until you say so. Compare with the saved preset, undo, and drag pedals into a new order.
+Turn a knob on screen and you hear it on the pedal right away, with a loupe that shows the knob you are turning.<br>
+Nothing is saved until you say so. Compare with the saved preset, undo, and drag pedals into a new order.<br>
+Every effect is drawn after the real pedal it models, with its own colour, size and lettering, and patch cables join them. The board fits itself to the window, and a zoom bar beside it takes you closer.
 
 <br>
 
@@ -101,7 +102,7 @@ Use the arrow keys to move through them and hear each one on the pedal. Press <k
 ## The amp, then the cab.
 
 Pick an amp and a cabinet, or load one of your 20 User IR slots.<br>
-The amp's controls stay in the strip at the bottom of the screen.
+Each amp head is dressed like the real one (Marshall, Orange, Mesa, Peavey, Diezel, Vox, Fender and more) and stands on a 4x12 stack. The amp's controls stay in the strip at the bottom of the screen.
 
 <br>
 
@@ -181,11 +182,17 @@ A session log keeps every connection step, error and MIDI message, ready to atta
 
 ## Tones from TONE3000.
 
-Browse and download NAM captures and IRs from TONE3000, and see which slots on your pedal already hold them.
+Browse, search and download NAM captures and IRs from TONE3000, and see which slots on your pedal already hold them.<br>
+The Search tab finds an amp, pedal or artist and narrows it down by gear, NAM architecture and sort order.
 
 <br>
 
 <img src="assets/tones.png" alt="Tones screen with trending TONE3000 captures and the GP-5's SnapTone and User IR slots" width="100%">
+
+<br>
+<br>
+
+<img src="assets/tones-search.png" alt="Searching TONE3000 for a dual rectifier, with gear, NAM architecture and sort filters" width="100%">
 
 <br>
 <br>
@@ -222,7 +229,14 @@ Compare its sizes, match levels, and shape it before it goes to the pedal.
 ## From a song to a tone.
 
 Drop a song and split it into drums, bass, guitar, piano, vocals and the rest, on your own computer.<br>
-Mute or solo any of them and export them as WAV.
+Choose the separation model (Standard, Best or Fine-tuned) and the quality (Fast, Balanced or Max) before you split. Mute or solo any stem and export them as WAV.
+
+<br>
+
+<img src="assets/song-model-picker.png" alt="Choosing a separation model and quality before the first split" width="100%">
+
+<br>
+<br>
 
 <br>
 
@@ -242,6 +256,15 @@ Tone Match listens to the guitar alone and proposes a preset for your GP-5, GP-5
 
 It shows what it heard: gain, echo, reverb, level, and the guitar's spectrum against a typical guitar.<br>
 Record yourself through the pedal and it designs a cabinet IR that brings your tone closer to the song's. Write it to a User IR slot and pick it in the CAB block.
+
+<br>
+
+<img src="assets/song-snaptone.png" alt="NAM captures ranked against the song's guitar, ready to be built into a SnapTone" width="100%">
+
+<br>
+<br>
+
+The NAM captures you downloaded from TONE3000 are ranked against the song's guitar. Pick one and Tone Studio builds a SnapTone from it, with a cab IR designed for the song. Nothing goes to the pedal until you press Write.
 
 <br>
 
@@ -300,41 +323,37 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 | | GP-5 | GP-50 | GP-150 | GP-180 | GP-200 · 200R · 200X | GP-200LT | GP-200JR |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Recognised over USB | ✅ | ✅ | 🧪⁴ | 🧪⁴ | 🧪 | 🧪 | 🧪 |
-| Live editing | ✅ | ✅ | 🧪 | 🧪 | 🧪² | 🧪² | 🧪² |
-| Preset library | ✅ 100 slots | ✅ 100 slots | 🔒 200 slots | 🔒 200 slots | 🧪 256 slots | 🔒 256 slots | 🔒 255 slots |
-| Backups | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| Restore a backup | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
-| `.prst` export | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| `.prst` import | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
-| Pedal settings | ✅ | ✅ | 🔒 | 🔒 | 🧪 | 🔒 | 🔒 |
-| Global EQ | — | — | 🔒 | 🔒 | 🧪³ | 🔒 | 🔒 |
-| Footswitches and chain order | ✅ FS1–2 | ✅¹ FS1–2 | 🔒 FS A–B | 🔒 FS A–C | 🧪 CTRL 1–8 | 🔒 | 🔒 |
-| Tempo and tap tempo | ✅ | ✅¹ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
-| Expression pedal and patch settings | — | ✅¹ | ✖️ | ✖️ | 🧪 | 🔒 | 🔒 |
-| SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | 🔒 50 user slots | 🔒 50 user slots | 🧪 10 slots | ❔ | ❔ |
+| Recognised over USB | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Live editing | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅¹ | ✅¹ |
+| Preset library | ✅ 100 slots | ✅ 100 slots | ✅ 200 slots | ✅ 200 slots | ✅ 256 slots | ✅ 256 slots | ✅ 255 slots |
+| Backups | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Restore a backup | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `.prst` export | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `.prst` import | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Pedal settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Global EQ | — | — | ✅ | ✅ | ✅² | ✅² | ✅² |
+| Footswitches and chain order | ✅ FS1–2 | ✅³ FS1–2 | ✅ FS A–B | ✅ FS A–C | ✅ CTRL 1–8 | ✅ | ✅ |
+| Tempo and tap tempo | ✅ | ✅³ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Expression pedal and patch settings | — | ✅³ | ✖️ | ✖️ | ✅ | ✅ | ✅ |
+| SnapTones (NAM) over USB | ✅ 30 user slots | ✅ 30 user slots | ✅ 50 user slots | ✅ 50 user slots | ✅ 10 slots | ❔ | ❔ |
 | Cab IR inside a SnapTone | ✅ | ✅ | — | — | — | — | — |
-| User IRs over USB | ✅ 20 × 512 | ✅ 20 × 512 | 🔒 20 slots | 🔒 20 slots | 🧪 20 × 1024 | 🔒 20 × 1024 | 🔒 20 × 1024 |
-| Tone Match | ✅ | ✅ | 🧪 | 🧪 | 🧪 | 🧪 | 🧪 |
+| User IRs over USB | ✅ 20 × 512 | ✅ 20 × 512 | ✅ 20 slots | ✅ 20 slots | ✅ 20 × 1024 | ✅ 20 × 1024 | ✅ 20 × 1024 |
+| Tone Match | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Simulated pedal](#build-it-yourself) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Tested on a real unit by this project | ✅ | ✅ | not yet | not yet | not yet | not yet | not yet |
 
-<sub>✅ works &nbsp;·&nbsp; 🧪 works in the app, not yet tried on a real unit &nbsp;·&nbsp; 🔒 read-only on a real unit until one has been tested &nbsp;·&nbsp; ✖️ not in Tone Studio &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it or doesn't need it</sub>
+<sub>✅ works &nbsp;·&nbsp; ✖️ not in Tone Studio &nbsp;·&nbsp; ❔ not known yet whether the pedal has it &nbsp;·&nbsp; — the pedal doesn't have it or doesn't need it</sub>
 
 <br>
 
-¹ **Some GP-50 commands sit behind Settings › Experimental pedal commands**: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.<br>
-² **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
-³ **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind the same *Experimental pedal commands* switch.<br>
-⁴ **The GP-150 and GP-180 are known from USB captures of a GP-180** published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0): both speak one protocol and use one `.prst` file. Tone Studio tells them apart by the MIDI port name. The GP-180's USB product id comes from those captures; the GP-150's (`0186`) from public Windows driver databases, not yet seen on a unit.
+¹ **GP-200 knobs come from the built-in [effect list](#the-gp-200-family)**, or from Valeton's editor if you import its list.<br>
+² **The Global EQ write** is known only from Valeton's GP-200 editor, so it's behind *Settings › Experimental pedal commands*.<br>
+³ **Some GP-50 commands sit behind Settings › Experimental pedal commands**: live footswitch, order and tempo changes, expression pedal settings, reading a slot without selecting it, and the pedal's own delete, copy and move. With the switch off, footswitches, order and tempo reach the pedal when you save. The simulator always has them.
 
 <br>
 
 **Which pedal is connected?** Tone Studio works it out by itself and names it everywhere.<br>
 **Presets across models.** A GP-5 preset goes onto a GP-50 unchanged. A GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing. The GP-200, LT and JR share one `.prst` file. Presets don't move between the GP-5 and GP-200 families.<br>
-**GP-200LT and GP-200JR.** They connect, read, back up and play live edits, but Tone Studio doesn't write to their memory until one has been tested.<br>
-**GP-150.** It connects, reads, backs up and plays live edits: all 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. Tone Studio doesn't write to its memory until one has been tested. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. Its `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only.<br>
-**GP-180.** Everything above for the GP-150, with a third footswitch (FS C) in the footswitch assignments. Tone Studio doesn't write to its memory until one has been tested.
+**GP-150 and GP-180.** Both speak one protocol and use one `.prst` file, known from USB captures of a GP-180 published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tone Studio tells them apart by the MIDI port name. All 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. The `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only. The GP-180 has a third footswitch (FS C) in the footswitch assignments.
 
 <br>
 
@@ -403,7 +422,7 @@ Still stuck? *Copy diagnostic report* gives a short summary without preset conte
 | **Presets** | Reads and writes `.prst` files byte for byte: 507 bytes (GP-5), 552 (GP-50), 1224 (GP-200 family) |
 | **SnapTones** | Converts NAM A1 and A2 captures the way Valeton Suite does, in a Web Worker, then uploads them over USB |
 | **User IRs** | Prepared like Valeton Suite does it (first channel, 44.1 kHz, 24-bit), 512 or 1024 samples per model |
-| **Stems** | Demucs `htdemucs_6s` on your computer, with WebGPU when the graphics card can run it |
+| **Stems** | Demucs on your computer: Standard (`htdemucs_6s`), Fine-tuned (`htdemucs_ft`) or Best (both); WebGPU when the graphics card can run it |
 | **Safety** | Backs up a slot automatically before it's overwritten |
 | **GP-200 effect list** | Generated from [GP200 Studio](https://github.com/kabir0st/gp200-studio)'s catalog at a pinned commit (`app/scripts/gp200-catalog-from-studio.mjs`); your own `algorithm.xml` replaces it |
 | **Diagnostics** | USB, driver and port checks per OS, and a rotating session log (4 MB files, newest 20 MB) in the app's data folder |
