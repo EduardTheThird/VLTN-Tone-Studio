@@ -33,7 +33,7 @@ export function DeviceChip() {
           type="button"
           onClick={() => go("device")}
           aria-label={`${chipName}: ${view.chip}. Open Device`}
-          className="no-drag glass-float flex h-8 items-center gap-2 rounded-pill px-3 text-xs text-silkscreen-2 shadow-[var(--glass-shine),0_0_0_1px_var(--glass-edge),0_4px_16px_rgb(0_0_0/0.3)] transition-colors hover:text-silkscreen"
+          className="no-drag glass-float flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-pill px-3 text-xs text-silkscreen-2 shadow-[var(--glass-shine),0_0_0_1px_var(--glass-edge),0_4px_16px_rgb(0_0_0/0.3)] transition-colors hover:text-silkscreen"
         >
           <span className={cn("size-[7px] shrink-0 rounded-full", LED[view.led])} aria-hidden />
           <b className="font-semibold text-silkscreen">{chipName}</b>
