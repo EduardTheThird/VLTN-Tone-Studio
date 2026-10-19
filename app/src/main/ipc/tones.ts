@@ -4,10 +4,10 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { HostError } from "@shared/ipc";
-import type { AccountState, FlowRequest, FlowResult, SendRequest, SlotLink, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
+import type { AccountState, FlowRequest, FlowResult, SendRequest, SlotLink, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, ToneSearchParams, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
 import { assertWav, NamCheckError, prepareNam } from "@shared/nam";
 import { handle } from "./handle";
-import { postToken, T3kClient } from "../tone3000/api";
+import { normalizeSearch, postToken, T3kClient } from "../tone3000/api";
 import { TokenManager, type TokenSet, type TokenStore } from "../tone3000/tokens";
 import { cancelFlow, runFlow, setFlowBounds } from "../tone3000/oauth";
 import { buildRecord, linkRecord, listRecords, readRecord, writeRecord } from "../tone3000/records";
@@ -96,6 +96,13 @@ const tokens = new TokenManager(tokenStore, async (refreshToken) => {
 const client = new T3kClient(tokens, fetchFn);
 
 const listCache = new Map<string, TonePage>();
+const CACHE_MAX = 200;
+const MAX_PAGE = 200;
+const clampPage = (page: unknown) => Math.min(MAX_PAGE, Math.max(1, Math.trunc(Number(page)) || 1));
+function cacheSet(key: string, value: TonePage): void {
+  if (listCache.size >= CACHE_MAX) listCache.delete(listCache.keys().next().value!);
+  listCache.set(key, value);
+}
 
 async function fetchUser(): Promise<T3kUser | null> {
   try {
@@ -156,13 +163,25 @@ async function beginFlow(win: BrowserWindow, req: FlowRequest, bounds: ViewBound
   }
 }
 
-async function list(kind: ToneListKind, page: number, refresh = false): Promise<TonePage> {
+async function list(kind: ToneListKind, rawPage: number, refresh = false): Promise<TonePage> {
+  const page = clampPage(rawPage);
   const key = `${kind}:${page}`;
   const hit = listCache.get(key);
   if (hit && !refresh && Date.now() - hit.fetchedAt < LIST_TTL) return hit;
   const res = await client.list(kind, page);
   const out: TonePage = { ...res, fetchedAt: Date.now() };
-  listCache.set(key, out);
+  cacheSet(key, out);
+  return out;
+}
+
+async function search(raw: unknown, page: number, refresh = false): Promise<TonePage> {
+  const params: ToneSearchParams = normalizeSearch(raw);
+  const p = clampPage(page);
+  const key = `search:${JSON.stringify(params)}:${p}`;
+  const hit = listCache.get(key);
+  if (hit && !refresh && Date.now() - hit.fetchedAt < LIST_TTL) return hit;
+  const out: TonePage = { ...(await client.search(params, p)), fetchedAt: Date.now() };
+  cacheSet(key, out);
   return out;
 }
 
@@ -307,6 +326,7 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
   handle("tones:signOut", () => dropSession());
   handle("tones:setAppKey", (_e, appKey: unknown) => setAppKey(appKey));
   handle("tones:list", (_e, kind: ToneListKind, page: number, refresh?: boolean) => list(kind, page, refresh));
+  handle("tones:search", (_e, params: unknown, page: number, refresh?: boolean) => search(params, page, refresh));
   handle("tones:tone", (_e, id: number): Promise<T3kTone> => client.tone(id));
   handle("tones:models", (_e, toneId: number): Promise<T3kModel[]> => client.models(toneId));
   handle("tones:image", (_e, url: string) => image(url));

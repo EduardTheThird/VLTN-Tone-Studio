@@ -11,6 +11,7 @@ export const tonesApi: TonesApi = {
   signOut: () => invoke("tones:signOut"),
   setAppKey: (appKey) => invoke("tones:setAppKey", appKey),
   list: (kind, page, refresh) => invoke("tones:list", kind, page, refresh),
+  search: (params, page, refresh) => invoke("tones:search", params, page, refresh),
   tone: (id) => invoke("tones:tone", id),
   models: (toneId) => invoke("tones:models", toneId),
   image: (url) => invoke("tones:image", url),

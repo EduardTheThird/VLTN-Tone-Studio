@@ -16,6 +16,7 @@ export const webTones: TonesApi = {
   signOut: async () => {},
   setAppKey: desktopOnly("The TONE3000 app key"),
   list: desktopOnly("TONE3000"),
+  search: desktopOnly("TONE3000"),
   tone: desktopOnly("TONE3000"),
   models: desktopOnly("TONE3000"),
   image: async () => null,
