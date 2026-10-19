@@ -38,7 +38,7 @@ export function SettingsView() {
     <div className="h-full overflow-auto">
       <div className="flex max-w-[920px] flex-col gap-6 px-7 pt-[22px] pb-8">
         <div>
-          <h1 className="text-[44px] leading-none font-bold tracking-[-0.02em] text-balance">Settings</h1>
+          <h1 className="text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Settings</h1>
           <p className="mt-2 text-pretty text-silkscreen-3">
             How Tone Studio behaves on this computer. Settings stored on the pedal itself are on the{" "}
             <button type="button" className="text-silkscreen-2 underline underline-offset-2 hover:text-silkscreen" onClick={() => go("device")}>

@@ -159,14 +159,14 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
 
   return (
     <section aria-labelledby="dg-title" className="flex min-w-0 flex-col gap-4 rounded-lg bg-card px-5 pt-4 pb-5 shadow-[0_0_0_1px_var(--seam)]">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <div className="min-w-0 flex-[1_1_220px]">
           <h2 id="dg-title" className="text-[15px] font-[650] text-balance">
             Diagnostics
           </h2>
           <p className="mt-0.5 text-sm text-pretty text-silkscreen-3">{lastChecked}</p>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
           <Button variant="ghost" size="sm" onClick={() => void checkAgain()} disabled={checking || status === "connecting"}>
             <RefreshCw className={cn(checking && "animate-spin motion-reduce:animate-none")} aria-hidden />
             Check again

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { AudioLines, FileUp, RotateCcw, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,20 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
   const model = findModel(useSong((s) => s.choice.model));
   const { downloaded } = useDownloadedFiles();
   const missing = model && downloaded ? megabytes(missingBytes(model, downloaded)) : 0;
+  // The split button follows the options in a roomy window and moves to a bar under them when the options have to scroll.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [source, stems, status.kind]);
+  const splitButton = <Button onClick={() => void useSong.getState().split()}>{missing ? `Download ${missing} MB and split` : "Split into stems"}</Button>;
 
   if (stems && source) return <StemMixer key={source.name} stems={stems} songName={source.name} />;
 
@@ -80,20 +95,25 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
 
   if (source)
     return (
-      <div className="grid flex-1 place-items-center overflow-y-auto p-6">
-        <Empty className="max-w-xl">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <AudioLines />
-            </EmptyMedia>
-            <EmptyTitle>{source.name}</EmptyTitle>
-            <EmptyDescription>Split it into {stemList(model)}.</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent className="max-w-xl gap-4">
-            <SplitOptions className="w-full" />
-            <Button onClick={() => void useSong.getState().split()}>{missing ? `Download ${missing} MB and split` : "Split into stems"}</Button>
-          </EmptyContent>
-        </Empty>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex min-h-full flex-col items-center justify-center gap-4 py-4">
+            <Empty className="max-w-xl flex-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon" className="[@media(max-height:760px)]:hidden">
+                  <AudioLines />
+                </EmptyMedia>
+                <EmptyTitle>{source.name}</EmptyTitle>
+                <EmptyDescription>Split it into {stemList(model)}.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="max-w-xl gap-4">
+                <SplitOptions className="w-full" />
+              </EmptyContent>
+            </Empty>
+            <div className={cn("flex justify-center", over && "invisible")}>{splitButton}</div>
+          </div>
+        </div>
+        {over && <div className="flex shrink-0 justify-center border-t border-seam py-3">{splitButton}</div>}
       </div>
     );
 

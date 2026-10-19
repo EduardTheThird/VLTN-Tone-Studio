@@ -49,8 +49,8 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
     // The actions wrap under the title when both don't fit on one line (five simulators, a long state line).
     <header className="flex flex-wrap items-end gap-x-6 gap-y-4 px-7 pt-[22px] pb-1.5">
       <div className="min-w-0 flex-[1_1_440px]">
-        <h1 className="text-[44px] leading-none font-bold tracking-[-0.02em] text-balance">Valeton {pedalModelName(d)}</h1>
-        <div className="mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm text-silkscreen-3">
+        <h1 className="text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Valeton {pedalModelName(d)}</h1>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-sm text-silkscreen-3">
           <span className="flex items-center gap-1.5">
             {view.kind === "connecting" ? (
               <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
