@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { LayersIcon, PowerIcon } from "lucide-react";
 import { profileFor } from "@shared/devices";
-import stageUrl from "@/assets/backdrops/stage.svg";
+import stageUrl from "@/assets/backdrops/stage.webp";
 import floorUrl from "@/assets/textures/floor.webp";
 import { AmpHead, AmpPanel, Cab, Capture, Dial, artFor, isUserIrFxid, knobsForBlock, modelTitle, paramTitle, voicingOf } from "@/components/gear";
 import { Badge } from "@/components/ui/badge";

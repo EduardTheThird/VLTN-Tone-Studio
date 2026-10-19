@@ -1,11 +1,13 @@
 // SVG parts of the amplifier drawings: tolex covering, grille cloth, brushed faceplate, strap handle, corner caps,
 // jewel lamp, toggle and the scaled amp knob. Like parts.tsx, coordinates are viewBox units of the drawing using them.
 import type { ReactNode } from "react";
-import quiltUrl from "@/assets/textures/quilt.webp";
-import treadUrl from "@/assets/textures/tread.webp";
-import tolexHiUrl from "@/assets/textures/tolex-hi.webp";
-import tolexLoUrl from "@/assets/textures/tolex-lo.webp";
-import weaveUrl from "@/assets/textures/weave.webp";
+// Overlays are pre-rendered RGBA (bright speckle white, dark speckle black) so no mix-blend-mode is needed at runtime.
+import quiltUrl from "@/assets/textures/ov-quilt.webp";
+import treadUrl from "@/assets/textures/ov-tread.webp";
+import tolexHiUrl from "@/assets/textures/ov-tolex-hi.webp";
+import tolexLoUrl from "@/assets/textures/ov-tolex-lo.webp";
+import weaveUrl from "@/assets/textures/ov-weave.webp";
+import brushUrl from "@/assets/textures/ov-brush.webp";
 import { clamp01, lum, type AmpFinish } from "./art";
 
 /** A photographic (CC0, ambientCG) texture as a tiling pattern, `size` viewBox units to a side. */
@@ -37,21 +39,7 @@ export function AmpDefs({ id, f }: { id: string; f: AmpFinish }) {
       <Tex id={`weave${id}`} url={weaveUrl} size={26} />
       <Tex id={`quilt${id}`} url={quiltUrl} size={64} />
       <Tex id={`tread${id}`} url={treadUrl} size={120} />
-      <filter id={`tolex${id}`} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="5" result="n" />
-        <feDiffuseLighting in="n" lightingColor="#fff" surfaceScale="1.8">
-          <feDistantLight azimuth="225" elevation="55" />
-        </feDiffuseLighting>
-        <feComponentTransfer>
-          <feFuncR type="linear" slope="2.6" intercept="-1.5" />
-          <feFuncG type="linear" slope="2.6" intercept="-1.5" />
-          <feFuncB type="linear" slope="2.6" intercept="-1.5" />
-        </feComponentTransfer>
-      </filter>
-      <filter id={`brush${id}`} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="0.006 0.85" numOctaves="2" seed="2" />
-        <feColorMatrix type="saturate" values="0" />
-      </filter>
+      <Tex id={`brush${id}`} url={brushUrl} size={40} />
       <linearGradient id={`plate${id}`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor={a} />
         <stop offset=".5" stopColor={b} />
@@ -138,9 +126,9 @@ export function TolexBody({ id, k, x, y, w, h, rx, f, pipeInset = 0.7 }: { id: s
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={f.tolex} />
       <g clipPath={`url(#tc${id}${k})`}>
         {light ? (
-          <rect x={x} y={y} width={w} height={h} fill={`url(#tolexlo${id})`} opacity={0.85} style={{ mixBlendMode: "multiply" }} />
+          <rect x={x} y={y} width={w} height={h} fill={`url(#tolexlo${id})`} />
         ) : (
-          <rect x={x} y={y} width={w} height={h} fill={`url(#tolexhi${id})`} opacity={0.34} style={{ mixBlendMode: "screen" }} />
+          <rect x={x} y={y} width={w} height={h} fill={`url(#tolexhi${id})`} />
         )}
         {f.tolexKind === "tweed" && <rect x={x} y={y} width={w} height={h} fill={`url(#tweed${id})`} />}
         <rect x={x} y={y} width={w} height={h} fill={`url(#tshade${id})`} />
@@ -158,8 +146,8 @@ export function Cloth({ id, x, y, w, h, rx = 3, veil = 1, kind }: { id: string; 
     <g>
       <rect x={x - 1.4} y={y - 1.4} width={w + 2.8} height={h + 2.8} rx={rx + 1} fill="#000" fillOpacity={0.55} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#cloth${id})`} fillOpacity={veil} />
-      {kind === "basket" && <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#weave${id})`} opacity={0.75 * veil} style={{ mixBlendMode: "soft-light" }} />}
-      {kind === "diamond" && <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#quilt${id})`} opacity={0.9 * veil} style={{ mixBlendMode: "multiply" }} />}
+      {kind === "basket" && <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#weave${id})`} opacity={veil} />}
+      {kind === "diamond" && <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#quilt${id})`} opacity={veil} />}
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#cshade${id})`} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill="none" stroke="#fff" strokeOpacity={0.1} strokeWidth={0.5} />
     </g>
@@ -176,7 +164,7 @@ export function Plate({ id, k, x, y, w, h, rx = 3, f }: { id: string; k: string;
       </clipPath>
       <rect x={x} y={y + 0.7} width={w} height={h} rx={rx} fill="#000" fillOpacity={0.45} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#plate${id})`} />
-      <rect x={x} y={y} width={w} height={h} filter={`url(#brush${id})`} opacity={dark ? 0.22 : 0.4} style={{ mixBlendMode: "soft-light" }} clipPath={`url(#pc${id}${k})`} />
+      <rect x={x} y={y} width={w} height={h} fill={`url(#brush${id})`} opacity={dark ? 0.5 : 0.8} clipPath={`url(#pc${id}${k})`} />
       <rect x={x + 0.4} y={y + 0.4} width={w - 0.8} height={h - 0.8} rx={rx} fill="none" stroke="#fff" strokeOpacity={dark ? 0.12 : 0.65} strokeWidth={0.6} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill="none" stroke="#000" strokeOpacity={0.5} strokeWidth={0.5} />
       {[
@@ -347,7 +335,7 @@ export function DiamondPlate({ id, x, y, w, h, rx = 3 }: { id: string; x: number
       <rect x={x} y={y + 0.8} width={w} height={h} rx={rx} fill="#000" fillOpacity={0.5} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#plate${id})`} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#dia${id})`} />
-      <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#tread${id})`} opacity={0.4} style={{ mixBlendMode: "overlay" }} />
+      <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#tread${id})`} />
       <rect x={x} y={y} width={w} height={h} rx={rx} fill={`url(#tshade${id})`} opacity={0.6} />
       <rect x={x + 0.4} y={y + 0.4} width={w - 0.8} height={h - 0.8} rx={rx} fill="none" stroke="#fff" strokeOpacity={0.6} strokeWidth={0.6} />
     </g>

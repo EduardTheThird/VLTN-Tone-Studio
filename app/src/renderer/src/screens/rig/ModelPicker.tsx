@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CheckIcon, ExternalLinkIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
 import { profileFor, snapToneLabel, type SlotTables } from "@shared/devices";
 import { notifyError } from "@/app/notify";
@@ -143,6 +143,15 @@ const thumbBlock = (b: BlockState, m: ModelInfo, device: DeviceKey): BlockState 
 });
 
 const THUMB_W: Partial<Record<GearArt, string>> = { amp: "w-[104px]", cab: "w-[88px]" };
+
+/**
+ * One model's drawing. Memoised on its (stable) inputs so auditioning or moving the focus re-renders two tiles, not the
+ * whole grid of SVGs. No CSS drop-shadow here: a filter per thumbnail is repainted on every scroll frame.
+ */
+const Thumb = memo(function Thumb({ code, block, model, device, name, title }: { code: BlockCode; block: BlockState; model: ModelInfo; device: DeviceKey; name?: string; title: string }) {
+  if (code === "NS") return <Capture name={title.replace(/^\d+ /, "")} className="mb-1 w-[62px]" />;
+  return <GearFor block={thumbBlock(block, model, device)} name={name} className={cn(THUMB_W[artFor({ code, fxid: model.fxid })] ?? "w-[62px]", "mb-1")} />;
+});
 
 /** Visual model browser over the board: arrows audition on the pedal, Enter keeps, Esc reverts. */
 export function ModelPicker() {
@@ -383,7 +392,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
                 onClick={() => audition(t.model.fxid)}
                 onDoubleClick={() => connected && void keep()}
                 className={cn(
-                  "relative flex flex-col items-center gap-1 rounded-lg px-2 pt-6 pb-2.5 text-center hover:bg-accent",
+                  "relative flex flex-col items-center gap-1 rounded-lg px-2 pt-6 pb-2.5 text-center [contain-intrinsic-size:auto_170px] [content-visibility:auto] hover:bg-accent",
                   current && "bg-white/8 shadow-[inset_0_0_0_1.5px_rgb(255_255_255/0.9)]",
                   live && "bg-faceplate-raised shadow-[inset_0_0_0_1.5px_var(--led-on)]",
                   t.empty && "opacity-60",
@@ -392,15 +401,7 @@ function PickerPanel({ blockIndex, highlight, initialTab }: { blockIndex: number
                 {live && <em className="absolute top-2 left-2 text-xs font-bold tracking-wide text-led-on uppercase not-italic">Playing now</em>}
                 {current && <CheckIcon className="absolute top-2 right-2 size-3.5" aria-label="Current model" />}
                 {!current && favs.includes(t.model.fxid) && <StarIcon className="absolute top-2 right-2 size-3 fill-current text-silkscreen-3" aria-label="Favorite" />}
-                {code === "NS" ? (
-                  <Capture name={t.title.replace(/^\d+ /, "")} className="mb-1 w-[62px] drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]" />
-                ) : (
-                  <GearFor
-                    block={thumbBlock(block, t.model, preset.device)}
-                    name={t.capture ? t.title.replace(/^\d+ /, "") : undefined}
-                    className={cn(THUMB_W[artFor({ code, fxid: t.model.fxid })] ?? "w-[62px]", "mb-1 drop-shadow-[0_8px_10px_rgb(0_0_0/0.6)]")}
-                  />
-                )}
+                <Thumb code={code} block={block} model={t.model} device={preset.device} name={t.capture ? t.title.replace(/^\d+ /, "") : undefined} title={t.title} />
                 <b className="text-sm font-semibold">{t.title}</b>
                 <span className="text-xs leading-tight text-silkscreen-3">{t.sub}</span>
               </button>

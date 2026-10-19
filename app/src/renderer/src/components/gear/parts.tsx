@@ -1,6 +1,9 @@
 // Shared SVG parts of the gear drawings: gradients, machined knob with LED value ring, slide switch, light pipe,
 // steel footswitch, perforated grille. Coordinates are viewBox units of the drawing that uses them.
 import type { ReactNode, SVGProps } from "react";
+import grainMatte from "@/assets/textures/ov-grain-matte.webp";
+import grainNoir from "@/assets/textures/ov-grain-noir.webp";
+import brush from "@/assets/textures/ov-brush.webp";
 import { FONT, clamp01, shade as shadeStop, type Finish } from "./art";
 
 interface TextProps {
@@ -64,10 +67,12 @@ export interface KnobArtProps {
   track?: string;
   focus?: boolean;
   bipolar?: boolean;
+  /** Paint of the cap instead of the stock aluminium or black */
+  capFill?: string;
 }
 
 /** Machined knob: aluminium or anodized black cap, LED value ring around it (270° sweep). */
-export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "#fff", track = "rgba(255,255,255,.16)", focus = false, bipolar = false }: KnobArtProps) {
+export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "#fff", track = "rgba(255,255,255,.16)", focus = false, bipolar = false, capFill }: KnobArtProps) {
   const t = clamp01(value, min, max);
   const a0 = -225;
   const sweep = 270;
@@ -88,7 +93,7 @@ export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "
       {val && <path d={val} fill="none" stroke={ring} strokeWidth={1.8} strokeLinecap="round" />}
       <circle cx={cx} cy={cy + r * 0.14} r={r + 0.9} fill="#000" fillOpacity={0.4} />
       <circle cx={cx} cy={cy} r={r + 0.9} fill="none" stroke="#000" strokeOpacity={0.35} strokeWidth={0.5} />
-      <circle cx={cx} cy={cy} r={r} fill={`url(#${dark ? "capd" : "cap"}${id})`} />
+      <circle cx={cx} cy={cy} r={r} fill={capFill ?? `url(#${dark ? "capd" : "cap"}${id})`} />
       <circle cx={cx} cy={cy} r={r - 0.5} fill="none" stroke="#fff" strokeOpacity={dark ? 0.12 : 0.6} strokeWidth={0.6} />
       {/* knurled rim and the dished top of a machined cap */}
       <circle cx={cx} cy={cy} r={r - 1.1} fill="none" stroke="#000" strokeOpacity={dark ? 0.5 : 0.2} strokeWidth={Math.min(1, r * 0.1)} strokeDasharray="0.45 0.6" />
@@ -156,10 +161,12 @@ export function Grille({ id, x, y, w, h, r }: { id: string; x: number; y: number
   );
 }
 
-const GRAIN: Record<Finish, { freq: string; octaves: number; opacity: number }> = {
-  matte: { freq: "1.25", octaves: 2, opacity: 0.55 }, // powder-coat grain
-  noir: { freq: "0.8", octaves: 3, opacity: 0.22 }, // fine textured black
-  frost: { freq: "0.012 0.9", octaves: 2, opacity: 0.6 }, // brushed aluminium streaks
+// Surface grain: pre-rendered RGBA overlays (assets/textures/ov-*.webp), not SVG filters or blend modes, which the
+// browser re-rasterises on every scroll, zoom and repaint of each of the hundreds of thumbnails in the model picker.
+const GRAIN: Record<Finish, { url: string; opacity: number; tile: number }> = {
+  matte: { url: grainMatte, opacity: 0.9, tile: 40 }, // powder-coat grain
+  noir: { url: grainNoir, opacity: 0.7, tile: 40 }, // fine textured black
+  frost: { url: brush, opacity: 0.9, tile: 40 }, // brushed aluminium streaks
 };
 
 /** Enclosure shared by pedal, EQ and capture drawings (100×150 viewBox by default): lit body, surface texture, bevelled rim, side jacks. */
@@ -171,10 +178,9 @@ export function Enclosure({ id, light = false, kind = "matte", w = 100, h = 150,
   return (
     <g {...rest}>
       <defs>
-        <filter id={`grain${id}`} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency={g.freq} numOctaves={g.octaves} seed={7} result="n" />
-          <feColorMatrix in="n" type="saturate" values="0" />
-        </filter>
+        <pattern id={`grain${id}`} patternUnits="userSpaceOnUse" width={g.tile} height={g.tile}>
+          <image href={g.url} width={g.tile} height={g.tile} preserveAspectRatio="none" />
+        </pattern>
         <linearGradient id={`sheen${id}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fff" stopOpacity={kind === "frost" ? 0.4 : 0.16} />
           <stop offset=".45" stopColor="#fff" stopOpacity={0} />
@@ -186,7 +192,7 @@ export function Enclosure({ id, light = false, kind = "matte", w = 100, h = 150,
       </defs>
       <rect x="4" y="3" width={bw} height={bh} rx={rx} fill={`url(#body${id})`} />
       <g clipPath={`url(#encl${id})`}>
-        <rect x="4" y="3" width={bw} height={bh} filter={`url(#grain${id})`} opacity={g.opacity * (light ? 0.7 : 1)} style={{ mixBlendMode: "soft-light" }} />
+        <rect x="4" y="3" width={bw} height={bh} fill={`url(#grain${id})`} opacity={g.opacity * (light ? 0.7 : 1)} />
         <rect x="4" y="3" width={bw} height={bh} fill={`url(#sheen${id})`} />
         <rect x="4" y={h - 11} width={bw} height="8" fill="#000" opacity={light ? 0.1 : 0.22} />
       </g>

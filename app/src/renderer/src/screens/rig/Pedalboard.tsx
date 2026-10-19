@@ -4,7 +4,7 @@ import { useBoardZoom, ZOOM_STEP } from "./zoom";
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
-import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
+import pedalboardUrl from "@/assets/backdrops/pedalboard.webp";
 import { Capture, Dial, GearFor, artFor, knobsForBlock, modelTitle, moreControls, paramTitle } from "@/components/gear";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
