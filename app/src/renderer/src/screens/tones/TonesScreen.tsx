@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ExternalLink, Heart, LogOut, RefreshCw, UserRound } from "lucide-react";
+import { ChevronDown, ExternalLink, Heart, LogOut, RefreshCw, Search, UserRound } from "lucide-react";
 import type { ToneListKind } from "@shared/host/tones";
 import { toneVerdict } from "@shared/tone3000";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -22,6 +22,8 @@ import {
   loadAccount,
   loadAllCounts,
   loadList,
+  loadTab,
+  type TonesTab,
   loadRecords,
   loadUsage,
   onSendProgress,
@@ -33,6 +35,7 @@ import {
   useTones,
 } from "./store";
 import { CreatorAvatar, DiscoverCard, ToneCard, ToneCardSkeleton } from "./ToneCard";
+import { SearchBar } from "./SearchBar";
 import { SlotPanel } from "./SlotPanel";
 import { ToneSheet } from "./ToneSheet";
 import { FlowDialog, LinkDialog, LocalIrDialog, SplashDialog } from "./T3kDialogs";
@@ -46,6 +49,7 @@ const EMPTY_COPY: Record<ToneListKind, { text: string; browse: boolean }> = {
   trending: { text: "Nothing is trending right now.", browse: true },
   latest: { text: "No new tones right now.", browse: true },
 };
+const SEARCH_EMPTY = "No tones match this search.";
 const HINTS = [
   { keys: ["B"], label: "browse TONE3000" },
   { keys: ["Enter"], label: "open tone" },
@@ -88,7 +92,7 @@ export function TonesScreen() {
 
   useEffect(() => {
     if (!signedIn) return;
-    void loadList(tab);
+    if (tab !== "search") void loadList(tab); // the search tab loads from its own bar
     loadAllCounts();
   }, [signedIn, tab]);
 
@@ -130,9 +134,9 @@ function useShortcuts() {
       if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
       const s = useTones.getState();
       if (s.sheet || s.splashOpen || s.flowOpen || s.linkChoice || useUi.getState().paletteOpen) return;
-      if (modKey(e) && !e.altKey && !e.shiftKey && /^[1-5]$/.test(e.key)) {
+      if (modKey(e) && !e.altKey && !e.shiftKey && /^[1-6]$/.test(e.key)) {
         e.preventDefault();
-        useTones.setState({ tab: TAB_ORDER[Number(e.key) - 1] });
+        useTones.setState({ tab: [...TAB_ORDER, "search" as const][Number(e.key) - 1] });
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -213,7 +217,7 @@ function ToneLists() {
   const model = usePedalNameOrBoth();
 
   return (
-    <Tabs value={tab} onValueChange={(v) => useTones.setState({ tab: v as ToneListKind })} className="min-h-0 flex-1 gap-3.5">
+    <Tabs value={tab} onValueChange={(v) => useTones.setState({ tab: v as TonesTab })} className="min-h-0 flex-1 gap-3.5">
       <div className="flex flex-wrap items-center gap-2.5 whitespace-nowrap">
         <TabsList aria-label="TONE3000 lists">
           {TAB_ORDER.map((kind) => {
@@ -230,6 +234,11 @@ function ToneLists() {
               </span>
             );
           })}
+          <span aria-hidden className="mx-1 h-3.5 w-px self-center bg-seam-strong" />
+          <TabsTrigger value="search">
+            <Search />
+            Search
+          </TabsTrigger>
         </TabsList>
         <ToggleGroup type="single" spacing={1.5} value={format} onValueChange={(v) => v && useTones.setState({ format: v as "all" | "nam" | "ir" })} aria-label="Format">
           <ToggleGroupItem value="all">All</ToggleGroupItem>
@@ -250,7 +259,10 @@ function ToneLists() {
         {account === null ? (
           <SkeletonGrid />
         ) : signedIn ? (
-          <ToneGrid kind={tab} />
+          <>
+            {tab === "search" && <SearchBar />}
+            <ToneGrid kind={tab} />
+          </>
         ) : (
           <SignedOut desktopOnly={!isElectron} />
         )}
@@ -301,8 +313,8 @@ function SkeletonGrid() {
   );
 }
 
-function ToneGrid({ kind }: { kind: ToneListKind }) {
-  const list = useTones((s) => s.lists[kind]);
+function ToneGrid({ kind }: { kind: TonesTab }) {
+  const list = useTones((s) => (kind === "search" ? s.found : s.lists[kind]));
   const records = useTones((s) => s.records);
   const format = useTones((s) => s.format);
   const compatOnly = useTones((s) => s.compatOnly);
@@ -322,8 +334,8 @@ function ToneGrid({ kind }: { kind: ToneListKind }) {
   // Infinite scroll: 20 per page.
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || !list || list.page >= list.totalPages) return;
-    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && void loadList(kind, { more: true }), { root: gridRef.current, rootMargin: "200px" });
+    if (!el || !list || list.error || list.page >= list.totalPages) return; // after an error only Retry loads again
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && void loadTab(kind, { more: true }), { root: gridRef.current, rootMargin: "200px" });
     io.observe(el);
     return () => io.disconnect();
   }, [kind, list]);
@@ -356,7 +368,13 @@ function ToneGrid({ kind }: { kind: ToneListKind }) {
           <AlertDescription className="grow">
             {rateLimited ? list.error : stale ? `Can't reach TONE3000. Showing tones from ${fetchedAt}.` : list.error}
           </AlertDescription>
-          <RetryButton onRetry={() => loadList(kind, { refresh: true })} />
+          {kind === "search" && (
+            <Button variant="outline" size="sm" onClick={browseOrLinkOut}>
+              <ExternalLink data-icon="inline-start" />
+              Browse TONE3000
+            </Button>
+          )}
+          <RetryButton onRetry={() => loadTab(kind, { refresh: true })} />
         </Alert>
       )}
       {!list?.loaded && list?.loading !== false ? (
@@ -372,14 +390,14 @@ function ToneGrid({ kind }: { kind: ToneListKind }) {
           ))}
           {list?.loaded && tones.length === 0 && (list?.tones.length ?? 0) === 0 && (
             <div className="col-span-full flex items-center gap-3 py-2 text-[13px] text-silkscreen-2">
-              <span>{EMPTY_COPY[kind].text}</span>
+              <span>{kind === "search" ? SEARCH_EMPTY : EMPTY_COPY[kind].text}</span>
             </div>
           )}
           {list?.loaded && tones.length === 0 && (list?.tones.length ?? 0) > 0 && (
             <p className="col-span-full py-2 text-[13px] text-silkscreen-2">No tones in this list match the filters.</p>
           )}
           {list?.loading && list.loaded && Array.from({ length: 4 }, (_, i) => <ToneCardSkeleton key={`s${i}`} />)}
-          {(!list || list.page >= list.totalPages) && (EMPTY_COPY[kind].browse || tones.length > 0) && <DiscoverCard onBrowse={browseOrLinkOut} />}
+          {kind !== "search" && (!list || list.page >= list.totalPages) && (EMPTY_COPY[kind].browse || tones.length > 0) && <DiscoverCard onBrowse={browseOrLinkOut} />}
           <div ref={sentinelRef} className="col-span-full h-px" aria-hidden />
         </div>
       )}

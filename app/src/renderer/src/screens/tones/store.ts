@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AccountState, FlowRequest, NamCheck, SendStep, T3kTone, ToneListKind, ToneRecord } from "@shared/host/tones";
+import type { AccountState, FlowRequest, NamCheck, SendStep, T3kGear, T3kTone, T3kArchitecture, ToneListKind, ToneRecord, ToneSort } from "@shared/host/tones";
 import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
@@ -69,14 +69,27 @@ export interface UsageInfo {
   source: string;
 }
 
+/** The five account/discovery lists plus the search tab. */
+export type TonesTab = ToneListKind | "search";
+
+/** Search filters; the format comes from the shared format toggle. */
+export interface SearchFilters {
+  query: string;
+  sort: ToneSort;
+  gears: T3kGear[];
+  architecture: T3kArchitecture | null;
+}
+
 export const TAB_ORDER: ToneListKind[] = ["favorited", "created", "downloaded", "trending", "latest"];
 
 interface TonesState {
   account: AccountState | null;
-  tab: ToneListKind;
+  tab: TonesTab;
   format: "all" | "nam" | "ir";
   compatOnly: boolean;
   lists: Partial<Record<ToneListKind, ListState>>;
+  found: ListState;
+  search: SearchFilters;
   records: Record<number, ToneRecord>;
   images: Record<string, string | null>;
   sheet: { toneId: number; tone: T3kTone | null } | null;
@@ -100,6 +113,8 @@ export const useTones = create<TonesState>(() => ({
   format: "all",
   compatOnly: false,
   lists: {},
+  found: empty(),
+  search: { query: "", sort: "trending", gears: [], architecture: null },
   records: {},
   images: {},
   sheet: null,
@@ -139,7 +154,8 @@ export async function loadAccount(): Promise<void> {
   try {
     const account = await host.tones.account();
     set({ account });
-    if (account.status !== "signed-in") set({ lists: {} });
+    if (account.status !== "signed-in") searchSeq++; // drop a search still in flight
+    set({ lists: {}, found: empty() });
   } catch (e) {
     set({ account: { status: "signed-out", user: null, configured: false, appKey: null, splashSeen: true } });
     console.warn("TONE3000 account", e);
@@ -164,7 +180,7 @@ function storeRecord(r: ToneRecord) {
 export async function loadList(kind: ToneListKind, opts: { more?: boolean; refresh?: boolean } = {}): Promise<void> {
   const cur = get().lists[kind] ?? empty();
   if (cur.loading) return;
-  if (opts.more && cur.page >= cur.totalPages) return;
+  if (opts.more && (cur.error || cur.page >= cur.totalPages)) return;
   const page = opts.more ? cur.page + 1 : 1;
   patchList(kind, { loading: true, error: null });
   try {
@@ -180,6 +196,37 @@ export async function loadList(kind: ToneListKind, opts: { more?: boolean; refre
     patchList(kind, { loading: false, error: message(e) });
   }
 }
+
+function patchFound(patch: Partial<ListState>) {
+  set((s) => ({ found: { ...s.found, ...patch } }));
+}
+
+/** Search tab: page 1 (or the next with `more`) for the current filters and format toggle. A newer search wins over an older one. */
+let searchSeq = 0;
+export async function loadSearch(opts: { more?: boolean; refresh?: boolean } = {}): Promise<void> {
+  const cur = get().found;
+  if (opts.more && (cur.loading || cur.error || cur.page >= cur.totalPages)) return;
+  const seq = ++searchSeq;
+  const page = opts.more ? cur.page + 1 : 1;
+  const { search, format } = get();
+  patchFound(opts.more ? { loading: true, error: null } : { loading: true, error: null, ...(opts.refresh ? {} : { loaded: false, tones: [], page: 0 }) });
+  try {
+    const res = await host.tones.search({ ...search, format: format === "all" ? null : format }, page, opts.refresh);
+    if (seq !== searchSeq) return;
+    const seen = new Set(opts.more ? cur.tones.map((t) => t.id) : []);
+    const tones = opts.more ? [...cur.tones, ...res.tones.filter((t) => !seen.has(t.id))] : res.tones;
+    patchFound({ tones, page: res.page, totalPages: res.totalPages, total: res.total, fetchedAt: res.fetchedAt, loading: false, loaded: true });
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    if (onUnauthorized(e)) {
+      patchFound({ loading: false });
+      return;
+    }
+    patchFound({ loading: false, error: message(e) });
+  }
+}
+
+export const loadTab = (tab: TonesTab, opts: { more?: boolean; refresh?: boolean } = {}) => (tab === "search" ? loadSearch(opts) : loadList(tab, opts));
 
 /** Tab counts come from each list's first page. */
 export function loadAllCounts(): void {
