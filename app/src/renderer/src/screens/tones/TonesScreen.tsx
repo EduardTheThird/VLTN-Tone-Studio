@@ -159,7 +159,7 @@ function Head() {
   const pedal = usePedalName();
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
-      <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-semibold tracking-[-0.01em] text-balance">Tones</h1>
+      <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Tones</h1>
       <p className="col-start-1 row-start-2 mt-1.5 text-[12px] text-pretty text-silkscreen-3 @max-[799px]:col-span-2">NAM captures and IRs from TONE3000, and what's on your {pedal}.</p>
       <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3 @max-[799px]:row-span-1 @max-[799px]:self-center">
         <span className="text-[12px] font-extrabold tracking-[0.02em] whitespace-nowrap text-silkscreen" aria-label="TONE3000">
