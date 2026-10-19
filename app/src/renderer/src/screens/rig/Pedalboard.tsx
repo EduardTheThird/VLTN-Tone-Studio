@@ -1,5 +1,7 @@
 import { PatchCables } from "./PatchCables";
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type WheelEvent } from "react";
+import { ZoomBar } from "./ZoomBar";
+import { useBoardZoom, ZOOM_STEP } from "./zoom";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
@@ -25,7 +27,7 @@ export const DRAG_MIME = "application/x-gp5-block";
  *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). Never wider than what makes all pedals
  *  of the row (--n, on the container) fit side by side, down to 132px; a longer GP-200 board scrolls from there. */
 const GEAR_W =
-  "w-[min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),186px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))]";
+  "w-[calc(min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),236px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))*var(--z,1))]";
 
 function stateLine(b: BlockState, device: DeviceKey) {
   if (b.code === "NS") return b.enabled ? (snapToneReplacesAmpCab(device) ? "SnapTone on, replacing the amp and cab" : "SnapTone on") : "SnapTone off";
@@ -68,10 +70,20 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
     ro.observe(row);
     return () => ro.disconnect();
   }, [blocks.length, view]);
-  const onWheel = (e: WheelEvent<HTMLDivElement>) => {
-    const row = e.currentTarget;
-    if (scrolls && Math.abs(e.deltaY) > Math.abs(e.deltaX)) row.scrollLeft += e.deltaY;
-  };
+  const zoom = useBoardZoom((s) => s.zoom);
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const onWheel = (e: globalThis.WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const { zoom: z, setZoom } = useBoardZoom.getState();
+        setZoom(z + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+      } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && row.scrollWidth > row.clientWidth && row.scrollHeight <= row.clientHeight) row.scrollLeft += e.deltaY;
+    };
+    row.addEventListener("wheel", onWheel, { passive: false });
+    return () => row.removeEventListener("wheel", onWheel);
+  }, []);
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
   const nsSlot = ns >= 0 ? snapToneName(preset.blocks[ns], snapTones, device) : "";
@@ -121,17 +133,17 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   return (
     <section
       aria-label={view === "before" ? "Before the amp" : "After the amp"}
-      className="relative mx-7 my-3.5 flex min-h-0 flex-1 flex-col gap-3.5 overflow-hidden rounded-xl bg-[#070708] bg-cover bg-center bg-no-repeat px-6 pt-[18px] pb-5 shadow-[inset_0_0_0_1px_var(--glass-edge),inset_0_1px_0_rgb(255_255_255/0.07)] [@media(max-height:820px)]:my-2.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:py-3"
+      className="relative mx-7 my-3.5 flex min-h-0 flex-1 flex-col gap-3.5 overflow-hidden rounded-xl bg-[#070708] bg-cover bg-center bg-no-repeat pr-14 pl-6 pt-[18px] pb-5 shadow-[inset_0_0_0_1px_var(--glass-edge),inset_0_1px_0_rgb(255_255_255/0.07)] [@media(max-height:820px)]:my-2.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:py-3"
       style={{ backgroundImage: `url(${pedalboardUrl})` }}
     >
       <BoardHead title={view === "before" ? "Before the amp" : "After the amp"} hint={hint} keys />
+      <ZoomBar className="absolute top-16 right-2 z-10" />
       <div
         ref={rowRef}
-        style={{ "--n": blocks.length } as CSSProperties}
-        onWheel={onWheel}
+        style={{ "--n": blocks.length, "--z": zoom } as CSSProperties}
         role="list"
         aria-label="Pedals in signal order"
-        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-9 overflow-x-auto overflow-y-hidden [container-type:inline-size] [scrollbar-width:thin]", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
+        className={cn("relative flex min-h-0 flex-1 items-center-safe justify-center-safe gap-9 overflow-auto [container-type:inline-size] [scrollbar-width:thin]", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
       >
         <PatchCables rowRef={rowRef} codes={blocks.map((b) => preset.blocks[b].code)} />
         {blocks.map((b) =>

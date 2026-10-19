@@ -2,6 +2,7 @@
 // controls positioned from the drawing's own coordinates. The art stays role="img".
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Loupe } from "./Loupe";
 import { dragValue, formatValue, keyValue, parseTyped, valueText, wheelValue, type ValueSpec } from "./knob-math";
 
 interface Rect {
@@ -39,6 +40,8 @@ interface KnobHitProps {
   disabled?: boolean;
   /** Called with true while focused or dragged (the drawing shows the halo and value bubble) */
   onActive?: (active: boolean) => void;
+  /** Called with true while the knob is being turned (dragged, or just scrolled or stepped): the loupe */
+  onTurning?: (turning: boolean) => void;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
@@ -48,14 +51,25 @@ interface KnobHitProps {
  * role="slider" button: arrows ±1 step, PageUp/PageDown ±10, Home/End, drag vertically or scroll to turn
  * (Shift fine), double-click to type a value.
  */
-export function KnobHit({ label, value, spec, onChange, disabled, onActive, className, style, children }: KnobHitProps) {
+export function KnobHit({ label, value, spec, onChange, disabled, onActive, onTurning, className, style, children }: KnobHitProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const drag = useRef<{ y: number; start: number; last: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const latest = useRef({ value, spec, onChange, disabled, onActive });
-  latest.current = { value, spec, onChange, disabled, onActive };
+  // a scroll or key step keeps the loupe up for a moment
+  const [nudged, setNudged] = useState(false);
+  const nudgeTimer = useRef<number>(undefined);
+  const nudge = () => {
+    setNudged(true);
+    window.clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = window.setTimeout(() => setNudged(false), 900);
+  };
+  useEffect(() => () => window.clearTimeout(nudgeTimer.current), []);
+  const latest = useRef({ value, spec, onChange, disabled, onActive, onTurning, nudge });
+  latest.current = { value, spec, onChange, disabled, onActive, onTurning, nudge };
+  const turning = dragging || nudged;
+  useEffect(() => latest.current.onTurning?.(turning), [turning]);
 
   const isActive = focused || dragging || editing;
   useEffect(() => latest.current.onActive?.(isActive), [isActive]);
@@ -69,14 +83,20 @@ export function KnobHit({ label, value, spec, onChange, disabled, onActive, clas
       if (off || !change) return;
       e.preventDefault();
       const next = wheelValue(v, e.deltaY, s, e.shiftKey);
-      if (next !== v) change(next);
+      if (next !== v) {
+        change(next);
+        latest.current.nudge();
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   const set = (next: number) => {
-    if (next !== value) onChange?.(next);
+    if (next !== value) {
+      onChange?.(next);
+      nudge();
+    }
   };
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (disabled || !onChange) return;
@@ -191,7 +211,7 @@ function ValueEditor({ label, initial, style, onDone }: { label: string; initial
 const pct = (v: number, d: number) => `${((v / d) * 100).toFixed(3)}%`;
 
 /** Transparent controls over a drawing with viewBox W×H. */
-function ControlLayer({ view, controls, disabled, onActive }: { view: [number, number]; controls: Control[]; disabled?: boolean; onActive: (id: string, active: boolean) => void }) {
+function ControlLayer({ view, controls, disabled, onActive, onTurning }: { view: [number, number]; controls: Control[]; disabled?: boolean; onActive: (id: string, active: boolean) => void; onTurning: (id: string, turning: boolean) => void }) {
   const [W, H] = view;
   return controls.map((c) => {
     const style: CSSProperties = { left: pct(c.x, W), top: pct(c.y, H), width: pct(c.w, W), height: pct(c.h, H) };
@@ -205,6 +225,7 @@ function ControlLayer({ view, controls, disabled, onActive }: { view: [number, n
           onChange={c.onChange}
           disabled={disabled}
           onActive={(a) => onActive(c.id, a)}
+          onTurning={(t) => onTurning(c.id, t)}
           className="absolute rounded-full bg-transparent p-0"
           style={style}
         />
@@ -246,14 +267,19 @@ interface GearFrameProps {
 export function GearFrame({ view, label, interactive, disabled, className, style, render }: GearFrameProps) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [active, setActive] = useState<string | null>(null);
+  const [turning, setTurning] = useState<string | null>(null);
+  const frame = useRef<HTMLDivElement>(null);
   const { art, controls } = render(id, active);
   const onActive = useRef((cid: string, a: boolean) => setActive((cur) => (a ? cid : cur === cid ? null : cur))).current;
+  const onTurning = useRef((cid: string, t: boolean) => setTurning((cur) => (t ? cid : cur === cid ? null : cur))).current;
+  const lens = turning === null ? undefined : controls.find((c): c is SliderControl => c.kind === "slider" && c.id === turning);
   return (
-    <div className={cn("relative block leading-none", className)} style={style}>
+    <div ref={frame} className={cn("relative block leading-none", className)} style={style}>
       <svg viewBox={`0 0 ${view[0]} ${view[1]}`} role="img" aria-label={label} className="block h-auto w-full overflow-visible">
         {art}
       </svg>
-      {interactive && <ControlLayer view={view} controls={controls} disabled={disabled} onActive={onActive} />}
+      {interactive && <ControlLayer view={view} controls={controls} disabled={disabled} onActive={onActive} onTurning={onTurning} />}
+      {lens && frame.current && <Loupe art={art} view={view} control={lens} frame={frame.current} />}
     </div>
   );
 }
