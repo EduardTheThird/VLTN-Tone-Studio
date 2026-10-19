@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AudioWaveform, Download, Globe, ListOrdered, RotateCcw, Send, Wand2, X } from "lucide-react";
+import { AudioWaveform, Download, Globe, ListOrdered, RotateCcw, Send, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { ARCH_LABEL, gearLabel } from "@shared/tone3000";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,8 @@ import type { GuitarAnalysis } from "@/song/tonematch/analyse";
 import type { CaptureFit } from "@/song/tonematch/capture-match";
 import { matchedIrWav, rankedCaptures, useCaptureMatch, type Capture, type CaptureResult } from "@/song/tonematch/capture-store";
 import { useSong } from "@/song/store";
-import { targetDevice } from "@/song/tonematch/store";
+import { EQ_CENTERS_HZ } from "@/song/tonematch/refine-offline";
+import { targetDevice, useToneMatch } from "@/song/tonematch/store";
 import { useDevice } from "@/state/device";
 import { isGp5Family, pedalName } from "@/state/device-model";
 import { useNav } from "@/state/nav";
@@ -169,9 +170,67 @@ function Build({ capture, fit }: { capture: Capture; fit: CaptureFit }) {
   );
 }
 
+const bandLabel = (hz: number) => (hz >= 1000 ? `${hz / 1000} kHz` : `${hz} Hz`);
+
+/** Search the drive and EQ that bring a ranked capture closer to the song; the EQ can go into the proposal, the drive is only shown. */
+function Refine({ capture }: { capture: Capture }) {
+  const r = useCaptureMatch((s) => s.refined[capture.key]);
+  const busy = useCaptureMatch((s) => s.status.kind === "running" || Object.values(s.refined).some((x) => x.kind === "running"));
+  const hasProposal = useToneMatch((s) => s.proposal !== null);
+  const useEq = () => {
+    if (useCaptureMatch.getState().applyRefinedEq(capture.key)) notifySuccess("EQ set in the proposal", "The Guitar EQ of the proposal now has the refined bands.");
+  };
+  return (
+    <div className="flex flex-col gap-2 border-t border-seam pt-3">
+      <p className="text-[12px] text-pretty text-silkscreen-3">
+        Refine: tries input drive and a five-band EQ on this capture and keeps what brings its sound closest to the song's guitar. It plays the test signal through the
+        capture many times, so it takes minutes.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" disabled={busy} onClick={() => void useCaptureMatch.getState().refine(capture.key)}>
+          {r?.kind === "running" ? <Spinner data-icon="inline-start" /> : <SlidersHorizontal data-icon="inline-start" />}
+          {r?.kind === "done" ? "Refine again" : "Refine against the song"}
+        </Button>
+        {r?.kind === "running" && (
+          <>
+            <Progress value={r.fraction * 100} className="w-48" aria-label="Refinement progress" />
+            <Button size="sm" variant="ghost" onClick={() => useCaptureMatch.getState().cancel()}>
+              <X data-icon="inline-start" />
+              Cancel
+            </Button>
+          </>
+        )}
+      </div>
+      {r?.kind === "failed" && (
+        <p role="alert" className="text-[12px] text-pretty text-led-fault">
+          {r.message}
+        </p>
+      )}
+      {r?.kind === "done" && (
+        <div className="flex flex-col gap-2 text-[12px] text-silkscreen-2">
+          <p className="text-pretty">
+            Distance from the song {r.refined.initial.toFixed(1)} → {r.refined.distance.toFixed(1)}.{" "}
+            <span className="tabular-nums">EQ {EQ_CENTERS_HZ.map((hz, i) => `${bandLabel(hz)} ${fmtDb(r.refined.settings.eqDb[i])}`).join(" · ")}.</span>
+          </p>
+          <p className="text-pretty text-silkscreen-3">
+            Drive {fmtDb(r.refined.settings.driveDb)}: how much harder the capture sounded closest to the song when pushed. For information only; the SnapTone and the proposal
+            don't use it.
+          </p>
+          <div>
+            <Button variant="outline" size="sm" disabled={!hasProposal} onClick={useEq}>
+              Use the EQ in the proposal
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RankControls({ total }: { total: number }) {
   const status = useCaptureMatch((s) => s.status);
   const unranked = useCaptureMatch((s) => (s.captures ?? []).filter((c) => s.results[c.key]?.kind !== "done").length);
+  const refining = useCaptureMatch((s) => Object.values(s.refined).some((x) => x.kind === "running"));
   const rank = () => void useCaptureMatch.getState().rank();
   if (status.kind === "running")
     return (
@@ -196,7 +255,7 @@ function RankControls({ total }: { total: number }) {
       <TestSignalNotice />
       {unranked > 0 && (
         <div>
-          <Button onClick={rank}>
+          <Button disabled={refining} onClick={rank}>
             {status.kind === "idle" ? <ListOrdered data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
             {status.kind === "error" ? "Try again" : unranked === total ? `Rank ${total} capture${total === 1 ? "" : "s"}` : `Rank the remaining ${unranked}`}
           </Button>
@@ -266,6 +325,7 @@ export function SnapToneMatchCard({ analysis }: { analysis: GuitarAnalysis }) {
           <RankControls total={captures.length} />
           <CaptureList captures={captures} song={analysis} disabled={building} />
           {capture && result?.kind === "done" && <Build capture={capture} fit={result.fit} />}
+          {capture && result?.kind === "done" && <Refine capture={capture} />}
         </>
       )}
       <SplashDialog />

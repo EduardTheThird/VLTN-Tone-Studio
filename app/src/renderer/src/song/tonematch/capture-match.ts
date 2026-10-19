@@ -26,6 +26,8 @@ import { estimateTone, type ToneEstimate } from "./analyse";
 import { estimateGain, type GainEstimate } from "./gain";
 import { IR_RATE, matchIr, type MatchedIr } from "./irdesign";
 import { bandMean, ltas, type Ltas } from "./ltas";
+import type { Texture } from "./loss";
+import { refineOffline, type Refined } from "./refine-offline";
 
 /** The guitar DI part of Valeton's test signal, seconds */
 export const EXCITATION_FROM_S = 50;
@@ -43,6 +45,8 @@ export interface StemTarget {
   ltas: Ltas;
   gainScore: number;
   tone: ToneEstimate;
+  /** For the offline refinement (refineCapture) */
+  texture: Texture;
 }
 
 /** How a capture's output compares with the stem. */
@@ -150,4 +154,32 @@ export function excitationCache(signal: Int16Array): (rate: number) => Float32Ar
     }
     return x;
   };
+}
+
+/** Seconds of the excitation the refinement renders (each of its renders is a NAM pass, so shorter than the ranking's 20). */
+export const REFINE_SECONDS = 10;
+export const REFINE_BUDGET = 60;
+
+/**
+ * Find the input drive and the 5-band EQ (refine-offline.ts) that bring a capture's output closest to the stem's
+ * texture. `ir` is the cab IR designed for a cab-less capture in its ranking (CaptureFit.ir): it stays as it was
+ * designed while the search moves drive and EQ.
+ */
+export async function refineCapture(
+  namText: string,
+  ir: Float32Array | null,
+  excitationAt: (rate: number) => Float32Array,
+  kernel: KernelSource,
+  target: StemTarget,
+  onProgress?: (fraction: number) => void,
+  budget = REFINE_BUDGET,
+): Promise<Refined> {
+  const model = parseNamModel(namText);
+  const source = excitationAt(model.rate).subarray(0, Math.round(REFINE_SECONDS * model.rate));
+  const cabIr = ir ? (model.rate === IR_RATE ? ir : convertSampleRate(ir, IR_RATE, model.rate)) : null;
+  const amp = async (input: Float32Array) => {
+    const out = await renderNam(model, input, kernel);
+    return cabIr ? applyCabIr(out, cabIr) : out;
+  };
+  return refineOffline({ target: target.texture, source, rate: model.rate, amp, budget, onProgress });
 }

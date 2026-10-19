@@ -2,6 +2,7 @@
 // worker boundary). Each estimate carries a confidence 0..1.
 import { estimateDelay, type DelayEstimate } from "./delay";
 import { estimateGain, type GainEstimate } from "./gain";
+import { describeTexture, type Texture } from "./loss";
 import { bandMean, frameLevels, gateFrames, ltas, LTAS_FRAME, type Ltas } from "./ltas";
 import { estimateReverb, type ReverbEstimate } from "./reverb";
 
@@ -36,6 +37,8 @@ export interface GuitarAnalysis {
   delay: DelayEstimate;
   reverb: ReverbEstimate;
   tone: ToneEstimate;
+  /** Texture statistics the offline refinement compares renders with (loss.ts) */
+  texture: Texture;
 }
 
 /** Below this share of playing time, the stem is mostly bleed: every estimate is downweighted. */
@@ -102,6 +105,7 @@ export function analyseGuitar(x: Float32Array, sampleRate: number, onProgress?: 
   const delay = estimateDelay(x, sampleRate);
   onProgress?.(0.85);
   const reverb = estimateReverb(x, sampleRate);
+  const texture = describeTexture(x, sampleRate);
   onProgress?.(1);
   const k = level.activeShare < SPARSE_SHARE ? Math.max(0.2, level.activeShare / SPARSE_SHARE) : 1;
   return {
@@ -112,5 +116,6 @@ export function analyseGuitar(x: Float32Array, sampleRate: number, onProgress?: 
     delay: scaleConfidence(delay, k),
     reverb: scaleConfidence(reverb, k),
     tone: scaleConfidence(estimateTone(spectrum), k),
+    texture,
   };
 }

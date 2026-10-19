@@ -3,7 +3,7 @@ import { findModel } from "@/gp5/lib/catalog.mjs";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml, modelByFxid, modelsForBlock } from "@/gp200/lib/catalog.mjs";
 import { BUILT_IN_CATALOG } from "@/gp200/lib/catalog-data.mjs";
-import { ampGain, chooseAmp, proposePreset } from "./proposal";
+import { ampGain, chooseAmp, proposePreset, withRefinedEq } from "./proposal";
 import { analysisFixture } from "./test-signals";
 
 const fxid = (name: string, block: string) => findModel(name, block, "gp5")?.fxid;
@@ -129,5 +129,26 @@ describe("chooseAmp", () => {
     expect(ampGain("clean", 0)).toBe(15);
     expect(ampGain("crunch", 0.65)).toBe(65);
     expect(ampGain("high", 1)).toBe(85);
+  });
+});
+
+describe("withRefinedEq", () => {
+  const base = proposePreset(analysisFixture({ tone: { ...neutral, confidence: 0.6 } }), "gp5");
+  const eq = (p: ReturnType<typeof proposePreset>) => p.blocks.find((b) => b.code === "EQ")!;
+
+  it("sets the five Guitar EQ bands from the refined gains (4 steps per dB) and turns the EQ on", () => {
+    expect(eq(base).enabled).toBe(false);
+    const p = withRefinedEq(base, [3, -2.5, 0, 6, -12], "Some Capture");
+    const b = eq(p);
+    expect(b.enabled).toBe(true);
+    const band = (n: string) => b.settings.find((s) => s.name === n)?.value;
+    expect(["125Hz", "400Hz", "800Hz", "1.6kHz", "4kHz"].map(band)).toEqual([12, -10, 0, 24, -48]);
+    expect(b.why).toContain("Some Capture");
+  });
+
+  it("leaves the EQ off when no band moves by 1.5 dB, and every other block as it was", () => {
+    const p = withRefinedEq(base, [0.5, -1, 0, 1, 0.2], "x");
+    expect(eq(p).enabled).toBe(false);
+    expect(p.blocks.filter((b) => b.code !== "EQ")).toEqual(base.blocks.filter((b) => b.code !== "EQ"));
   });
 });

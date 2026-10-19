@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { estimateTone } from "./analyse";
-import { captureIncludesCab, evaluateCapture, evaluateRender, excitationSegment, matchDistance, spectralResidualDb, type StemTarget } from "./capture-match";
+import { captureIncludesCab, evaluateCapture, evaluateRender, refineCapture, excitationSegment, matchDistance, spectralResidualDb, type StemTarget } from "./capture-match";
 import { estimateGain } from "./gain";
+import { describeTexture } from "./loss";
 import { IR_RATE, responseDb } from "./irdesign";
 import { ltas, type Ltas } from "./ltas";
 import { biquad, hardClip, lowPass, plucks } from "./test-signals";
@@ -19,7 +20,7 @@ const amp = (drive: number) => hardClip(DI, drive, 0.5);
 
 function target(stem: Float32Array): StemTarget {
   const spectrum = ltas(stem, RATE);
-  return { ltas: spectrum, gainScore: estimateGain(stem, RATE).score, tone: estimateTone(spectrum) };
+  return { ltas: spectrum, gainScore: estimateGain(stem, RATE).score, tone: estimateTone(spectrum), texture: describeTexture(stem, RATE) };
 }
 
 const shifted = (l: Ltas, db: number): Ltas => ({ ...l, db: l.db.map((v) => v + db) });
@@ -117,4 +118,17 @@ describe("evaluateCapture", () => {
     expect(fit.score).toBeGreaterThanOrEqual(0);
     expect(fit.score).toBeLessThanOrEqual(100);
   }, 60_000);
+
+  it("refines a real NAM A1 capture: drive and EQ that don't make it worse, through the cab IR of its ranking", async () => {
+    const nam = readFileSync(join(dir, "fixtures/wavenet_a1_standard.nam"), "utf8");
+    const t = target(cab(amp(20)));
+    const at = (rate: number) => plucks({ seconds: 12, sampleRate: rate, seed: 3, gap: 0.12, decay: 0.6, harmonics: 8, amplitude: 0.3 });
+    const fit = await evaluateCapture(nam, "amp", at, kernels, t);
+    const progress: number[] = [];
+    const r = await refineCapture(nam, fit.ir?.ir ?? null, at, kernels, t, (f) => progress.push(f), 12);
+    expect(Number.isFinite(r.initial)).toBe(true);
+    expect(r.distance).toBeLessThanOrEqual(r.initial);
+    expect(r.settings.eqDb).toHaveLength(5);
+    expect(progress.at(-1)).toBeGreaterThan(0.5);
+  }, 120_000);
 });

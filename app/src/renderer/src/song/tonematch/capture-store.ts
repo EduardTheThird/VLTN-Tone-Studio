@@ -14,6 +14,8 @@ import { isGp5Family } from "@/state/device-model";
 import type { CaptureFit } from "./capture-match";
 import { CaptureRanker } from "./capture-run";
 import { IR_RATE, type MatchedIr } from "./irdesign";
+import type { Refined } from "./refine-offline";
+import { withRefinedEq } from "./proposal";
 import { targetDevice, useToneMatch } from "./store";
 
 /** TONE3000 gear Tone Match ranks: amps (with or without their cab) and drive pedals. Cabs, rooms and the rest aren't a guitar tone on their own. */
@@ -38,6 +40,9 @@ export interface Capture {
 
 export type CaptureResult = { kind: "running"; fraction: number } | { kind: "done"; fit: CaptureFit } | { kind: "failed"; message: string };
 
+/** The offline drive + EQ refinement of one capture (refine-offline.ts) */
+export type RefineResult = { kind: "running"; fraction: number } | { kind: "done"; refined: Refined } | { kind: "failed"; message: string };
+
 export type RankStatus =
   | { kind: "idle" }
   | { kind: "running"; done: number; total: number }
@@ -59,6 +64,8 @@ export interface CaptureMatchState {
   /** Null until the local tone records were read */
   captures: Capture[] | null;
   results: Record<string, CaptureResult>;
+  /** Refinements by capture key; only captures with a result can be refined */
+  refined: Record<string, RefineResult>;
   status: RankStatus;
   selected: string | null;
   build: BuildStatus;
@@ -68,6 +75,10 @@ export interface CaptureMatchState {
   /** Rank every capture without a result yet (all of them the first time) */
   rank(): Promise<void>;
   cancel(): void;
+  /** Refine the drive and EQ of a ranked capture against the stem (minutes of NAM renders; one at a time) */
+  refine(key: string): Promise<void>;
+  /** Put a finished refinement's EQ into the proposal's Guitar EQ (the drive is only shown); false when there is nothing to apply */
+  applyRefinedEq(key: string): boolean;
   select(key: string): void;
   /** Convert the selected capture (+ its matched IR) into a SnapTone and start its Tones send draft */
   buildSnapTone(): Promise<void>;
@@ -110,6 +121,7 @@ export const matchedIrWav = (ir: MatchedIr) => encodeWav({ sampleRate: IR_RATE, 
 
 let run: { ctrl: AbortController; ranker: CaptureRanker | null } | null = null;
 let building: AbortController | null = null;
+let refining: { ctrl: AbortController; ranker: CaptureRanker | null } | null = null;
 
 export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
   const patchResult = (key: string, result: CaptureResult | null) =>
@@ -140,6 +152,7 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
   return {
     captures: null,
     results: {},
+    refined: {},
     status: { kind: "idle" },
     selected: null,
     build: { kind: "idle" },
@@ -152,7 +165,7 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
 
     async rank() {
       const analysis = useToneMatch.getState().analysis;
-      if (!analysis || run) return;
+      if (!analysis || run || refining) return;
       const ctrl = new AbortController();
       const current = { ctrl, ranker: null as CaptureRanker | null };
       run = current;
@@ -164,7 +177,7 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
         const signalWav = await host.snaptone.signal().catch(() => null);
         if (ctrl.signal.aborted) return;
         if (!signalWav) return set({ status: { kind: "error", message: "Ranking captures needs Valeton's test signal (nam_input_wav.wav).", needsSignal: true } });
-        const ranker = new CaptureRanker(signalWav, { ltas: analysis.ltas, gainScore: analysis.gain.score, tone: analysis.tone });
+        const ranker = new CaptureRanker(signalWav, { ltas: analysis.ltas, gainScore: analysis.gain.score, tone: analysis.tone, texture: analysis.texture });
         current.ranker = ranker;
         for (const [i, c] of todo.entries()) {
           if (ctrl.signal.aborted) return;
@@ -190,6 +203,12 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
     },
 
     cancel() {
+      if (refining) {
+        refining.ctrl.abort();
+        refining.ranker?.close();
+        refining = null;
+        set((s) => ({ refined: Object.fromEntries(Object.entries(s.refined).filter(([, r]) => r.kind !== "running")) }));
+      }
       const current = run;
       if (!current) return;
       run = null;
@@ -199,6 +218,42 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
         status: { kind: "cancelled" },
         results: Object.fromEntries(Object.entries(s.results).filter(([, r]) => r.kind !== "running")),
       }));
+    },
+
+    async refine(key) {
+      const analysis = useToneMatch.getState().analysis;
+      const capture = get().captures?.find((c) => c.key === key);
+      const result = get().results[key];
+      if (!analysis || !capture || result?.kind !== "done" || Object.values(get().refined).some((r) => r.kind === "running")) return;
+      const set1 = (r: RefineResult) => set((s) => ({ refined: { ...s.refined, [key]: r } }));
+      const ctrl = new AbortController();
+      set1({ kind: "running", fraction: 0 });
+      let ranker: CaptureRanker | null = null;
+      refining = { ctrl, ranker: null };
+      try {
+        const signalWav = await host.snaptone.signal().catch(() => null);
+        if (!signalWav) throw new Error("Refining needs Valeton's test signal (nam_input_wav.wav).");
+        const namText = await host.tones.readNam(capture.toneId, capture.modelId);
+        if (ctrl.signal.aborted) return;
+        ranker = new CaptureRanker(signalWav, { ltas: analysis.ltas, gainScore: analysis.gain.score, tone: analysis.tone, texture: analysis.texture });
+        refining = { ctrl, ranker };
+        const refined = await ranker.refine(namText, result.fit.ir?.ir ?? null, (fraction) => !ctrl.signal.aborted && set1({ kind: "running", fraction }));
+        if (!ctrl.signal.aborted) set1({ kind: "done", refined });
+      } catch (e) {
+        if (!ctrl.signal.aborted) set1({ kind: "failed", message: message(e) });
+      } finally {
+        ranker?.close();
+        if (refining?.ctrl === ctrl) refining = null;
+      }
+    },
+
+    applyRefinedEq(key) {
+      const r = get().refined[key];
+      const capture = get().captures?.find((c) => c.key === key);
+      const proposal = useToneMatch.getState().proposal;
+      if (r?.kind !== "done" || !capture || !proposal) return false;
+      useToneMatch.setState({ proposal: withRefinedEq(proposal, r.refined.settings.eqDb, capture.title) });
+      return true;
     },
 
     select(key) {
@@ -247,7 +302,7 @@ export const useCaptureMatch = create<CaptureMatchState>((set, get) => {
     reset() {
       get().cancel();
       get().cancelBuild();
-      set({ results: {}, status: { kind: "idle" }, selected: null, build: { kind: "idle" }, pick: { kind: "idle" } });
+      set({ results: {}, refined: {}, status: { kind: "idle" }, selected: null, build: { kind: "idle" }, pick: { kind: "idle" } });
     },
   };
 });
