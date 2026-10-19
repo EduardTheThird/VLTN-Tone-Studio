@@ -63,15 +63,19 @@ export function Pedal(props: PedalProps) {
         const darkCaps = look.cap ? lum(look.cap) < 0.5 : look.darkKnobs !== undefined ? look.darkKnobs : f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
         const hasT = toggles.length > 0;
         const picked: PedalLayout =
-          knobs.length > 4
-            ? "dense"
+          knobs.length <= 1
+            ? "hero"
+            : knobs.length > 4
+              ? "dense"
             : ((want ?? (look.layout === "row" && knobs.length > 3 ? undefined : look.layout)) ?? (knobs.length <= 1 ? "hero" : knobs.length === 3 ? (["tri", "row"] as const)[(h >>> 4) % 2] : knobs.length === 4 ? "grid" : (["row", "hero"] as const)[(h >>> 4) % 2]));
         // A big knob over small ones leaves no room for a switch row: their labels would sit under the knobs.
         const layout: PedalLayout = picked === "hero" && hasT && knobs.length > 1 ? "row" : picked;
         const focusId = active ?? focus;
         const parts: ReactNode[] = [];
 
-        const narrow = Math.min(1.5, (W - 26) / 74);
+        // knobs spread with the width of the pedal, but their rings stay inside the panel or the body
+        const exW = (W - 100) / 2;
+        const narrow = Math.min(1.5, (W - 26) / 74, ((look.panel ? 41 : 44) + exW - 14) / 30);
         // vertical extent of the controls as laid out (before centring in the free space)
         const ext = { top: 999, bot: -999 };
         const K = (k: GearKnob, x0: number, y: number, r0: number) => {
@@ -235,8 +239,8 @@ export function Pedal(props: PedalProps) {
               <g transform={`translate(0 ${kd})`}>
                 {look.panel && (
                   <g>
-                    <rect x={9 - ex} y={(look.panel.y ?? 27) + 0.8} width={W - 18} height={look.panel.h ?? ty + 17 - 27} rx={Math.min(6, look.rx)} fill="#000" fillOpacity={0.3} />
-                    <rect x={9 - ex} y={look.panel.y ?? 27} width={W - 18} height={look.panel.h ?? ty + 17 - 27} rx={Math.min(6, look.rx)} fill={look.panel.color} stroke={look.panel.border ?? "#fff"} strokeOpacity={look.panel.border ? 0.85 : 0.14} strokeWidth={look.panel.border ? 0.7 : 0.5} />
+                    <rect x={9 - ex} y={ext.top - 4.2} width={W - 18} height={ext.bot - ext.top + 8.4} rx={Math.min(6, look.rx)} fill="#000" fillOpacity={0.3} />
+                    <rect x={9 - ex} y={ext.top - 5} width={W - 18} height={ext.bot - ext.top + 9} rx={Math.min(6, look.rx)} fill={look.panel.color} stroke={look.panel.border ?? "#fff"} strokeOpacity={look.panel.border ? 0.85 : 0.14} strokeWidth={look.panel.border ? 0.7 : 0.5} />
                   </g>
                 )}
                 {parts}
