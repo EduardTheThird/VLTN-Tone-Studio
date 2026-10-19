@@ -143,7 +143,7 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
         style={{ "--n": blocks.length, "--z": zoom } as CSSProperties}
         role="list"
         aria-label="Pedals in signal order"
-        className={cn("relative flex min-h-0 flex-1 items-center-safe justify-center-safe gap-9 overflow-auto [container-type:inline-size] [scrollbar-width:thin]", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
+        className={cn("relative flex min-h-0 flex-1 items-center-safe justify-center-safe gap-9 overflow-auto [container-type:inline-size] board-scroll", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
       >
         <PatchCables rowRef={rowRef} codes={blocks.map((b) => preset.blocks[b].code)} />
         {blocks.map((b) =>

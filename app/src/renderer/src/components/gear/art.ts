@@ -83,3 +83,23 @@ export function finishFor(name: string, base: string, h: number, want?: Finish, 
   if (pick === "frost") return { kind: "frost", body: "#dcdde1", accent: hue };
   return { kind: "matte", body: shade(hue, [0, -0.12, 0.08][(h >>> 3) % 3]), accent: lum(hue) > 0.62 ? "#1c1c1e" : "#ffffff" };
 }
+
+/** How an amp is dressed: tolex covering, grille cloth, faceplate and knobs, by catalog amp type (the voicing). */
+export interface AmpFinish {
+  tolex: string;
+  cloth: string;
+  plate: "silver" | "gold" | "black";
+  /** Printing on the faceplate */
+  ink: string;
+  /** Knobs: black bakelite (true) or cream/chrome (false) */
+  darkKnobs: boolean;
+}
+
+const AMP_FINISH: Record<string, AmpFinish> = {
+  Clean: { tolex: "#cdc2a2", cloth: "#4a4f58", plate: "silver", ink: "#1b1b1d", darkKnobs: false },
+  Drive: { tolex: "#1d1c1b", cloth: "#3b2e18", plate: "gold", ink: "#1c1508", darkKnobs: true },
+  "Hi Gain": { tolex: "#151517", cloth: "#121214", plate: "black", ink: "#f1f1f3", darkKnobs: true },
+  Bass: { tolex: "#1c1e23", cloth: "#0f1013", plate: "silver", ink: "#16171b", darkKnobs: true },
+  Acoustic: { tolex: "#5c3d24", cloth: "#2e2218", plate: "silver", ink: "#2b1e11", darkKnobs: true },
+};
+export const ampFinish = (type?: string): AmpFinish => (type && Object.hasOwn(AMP_FINISH, type) ? AMP_FINISH[type] : AMP_FINISH["Hi Gain"]);
