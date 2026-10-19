@@ -54,7 +54,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
   return (
     <section
       aria-label="Global EQ"
-      className="relative grid grid-cols-[220px_minmax(0,1fr)] items-start gap-y-4 overflow-hidden rounded-xl bg-faceplate px-7 py-6 shadow-[inset_0_0_0_1px_var(--seam)] min-[1360px]:grid-cols-[280px_minmax(0,1fr)_236px]"
+      className="relative grid grid-cols-1 min-[1100px]:grid-cols-[220px_minmax(0,1fr)] items-start gap-y-4 overflow-hidden rounded-xl bg-faceplate px-7 py-6 shadow-[inset_0_0_0_1px_var(--seam)] min-[1360px]:grid-cols-[280px_minmax(0,1fr)_236px]"
     >
       <div className="flex min-w-0 flex-col gap-3">
         <div>
@@ -72,7 +72,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
         </div>
       </div>
 
-      <div className={cn("flex min-w-0 flex-wrap justify-around gap-x-4 gap-y-5 border-l px-4 min-[1360px]:border-r", offline && "opacity-45")}>
+      <div className={cn("flex min-w-0 flex-wrap justify-around gap-x-4 gap-y-5 px-0 min-[1100px]:border-l min-[1100px]:px-4 min-[1360px]:border-r", offline && "opacity-45")}>
         {GP200_EQ_BANDS.map((b) => (
           <div key={b.label} role="group" aria-label={b.label} className="flex w-[84px] flex-col items-center gap-2.5">
             <h3 className="text-sm font-[550] whitespace-nowrap text-silkscreen-2">{b.label}</h3>

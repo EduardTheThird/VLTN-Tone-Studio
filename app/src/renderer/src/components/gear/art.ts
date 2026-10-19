@@ -83,3 +83,93 @@ export function finishFor(name: string, base: string, h: number, want?: Finish, 
   if (pick === "frost") return { kind: "frost", body: "#dcdde1", accent: hue };
   return { kind: "matte", body: shade(hue, [0, -0.12, 0.08][(h >>> 3) % 3]), accent: lum(hue) > 0.62 ? "#1c1c1e" : "#ffffff" };
 }
+
+/** How an amp is dressed: covering, grille cloth, faceplate and knobs. Chosen by `ampStyle` from the model. */
+export type ClothKind = "basket" | "diamond" | "sparkle" | "mesh" | "grid";
+export type PlateKind = "silver" | "gold" | "black" | "cream" | "blue" | "chrome" | "white";
+/** Front layout of a head: a generic one, or after the Marshall, Orange, Mesa or chrome-fronted amps */
+export type HeadTemplate = "classic" | "marshall" | "orange" | "mesa" | "chrome" | "peavey" | "diezel";
+export interface AmpFinish {
+  tolex: string;
+  /** "tweed": lacquered cloth with dark stripes instead of leatherette */
+  tolexKind: "tolex" | "tweed";
+  /** Contrasting piping round the front edge */
+  piping: string | null;
+  cloth: string;
+  clothKind: ClothKind;
+  plate: PlateKind;
+  /** Printing on the faceplate */
+  ink: string;
+  /** Knobs: black bakelite (true) or cream/chrome (false) */
+  darkKnobs: boolean;
+  /** Colour of the insert in a dark knob's cap */
+  knobInsert: string | null;
+  /** Control plate above the grille ("top") or below it */
+  layout: "top" | "bottom";
+  handle: "strap" | "chrome" | "none";
+  /** Model badge: left, centre or right of the grille */
+  badge: "left" | "center" | "right";
+  template: HeadTemplate;
+}
+
+const BASE: AmpFinish = { tolex: "#151517", tolexKind: "tolex", piping: null, cloth: "#121214", clothKind: "basket", plate: "black", ink: "#f1f1f3", darkKnobs: true, knobInsert: null, layout: "bottom", handle: "strap", badge: "left", template: "classic" };
+
+/** Starting point by voicing (the catalog's amp type). */
+const BY_TYPE: Record<string, Partial<AmpFinish>> = {
+  Clean: { tolex: "#cdc2a2", cloth: "#4a4f58", clothKind: "sparkle", plate: "silver", ink: "#1b1b1d", darkKnobs: false },
+  Drive: { tolex: "#1d1c1b", cloth: "#3b2e18", plate: "gold", ink: "#1c1508", knobInsert: "#d7b25a" },
+  "Hi Gain": {},
+  Bass: { tolex: "#1c1e23", cloth: "#0f1013", clothKind: "grid", plate: "silver", ink: "#16171b", handle: "chrome" },
+  Acoustic: { tolex: "#5c3d24", cloth: "#2e2218", plate: "cream", ink: "#2b1e11" },
+};
+
+const GOLD = "#d7b25a";
+
+/** Looks of real amps, recognised in "model name + the gear it models". */
+const RULES: [RegExp, Partial<AmpFinish>][] = [
+  [/tweed|5e3|5f6|bassman|baseman|\blux\b/i, { tolex: "#caa862", tolexKind: "tweed", cloth: "#6e5233", plate: "cream", ink: "#2a1d10", darkKnobs: false, layout: "top", handle: "chrome", clothKind: "basket" }],
+  [/twin|blackface|reverb|roland|jc-?120|jazz/i, { tolex: "#111113", cloth: "#9aa1ab", clothKind: "sparkle", plate: "chrome", ink: "#151517", darkKnobs: false, layout: "top", piping: "#cfd3d9", handle: "strap", badge: "center" }],
+  [/vox|ac-?30|ac-?100/i, { tolex: "#b9a47c", cloth: "#2b2216", clothKind: "diamond", plate: "chrome", ink: "#141414", darkKnobs: true, knobInsert: "#d9dce1", layout: "top", handle: "chrome", badge: "center" }],
+  [/marshel+|marshall|jcm|jtm|jmp|plexi|brit/i, { tolex: "#111112", cloth: "#1c1812", clothKind: "basket", plate: "gold", ink: "#1b1407", knobInsert: GOLD, layout: "top", piping: "#e6d9a8", handle: "strap", badge: "right", template: "marshall" }],
+  [/mesa|boogie|rector|rectifier|messe|lone star|superstar/i, { tolex: "#121214", cloth: "#16171a", clothKind: "mesh", plate: "chrome", ink: "#141416", darkKnobs: false, knobInsert: null, handle: "none", badge: "center", template: "mesa" }],
+  [/orange|tangerine|rockerverb/i, { tolex: "#dc7418", cloth: "#3a281a", clothKind: "basket", plate: "white", ink: "#141414", darkKnobs: true, knobInsert: null, layout: "top", handle: "none", badge: "center", template: "orange" }],
+  [/diezel|dizzle|vh4/i, { tolex: "#0d0d0f", cloth: "#17181b", clothKind: "mesh", plate: "black", ink: "#dfe8f6", knobInsert: "#cfd5de", handle: "chrome", badge: "center", template: "diezel" }],
+  [/engl|engle|powerball|savage|powerengle/i, { tolex: "#0f0f10", cloth: "#18181b", clothKind: "mesh", plate: "black", ink: "#e9ecef", knobInsert: "#c0392b", handle: "chrome", badge: "right", template: "chrome" }],
+  [/peavey|5150|eddie|evh/i, { tolex: "#0e0e0f", cloth: "#1a1a1d", clothKind: "mesh", plate: "black", ink: "#f4f4f4", knobInsert: "#f4f4f4", handle: "none", badge: "left", template: "peavey" }],
+  [/soldano|soloist|slo/i, { tolex: "#17171a", cloth: "#2a2e36", clothKind: "basket", plate: "silver", ink: "#14161a", handle: "strap", badge: "center", template: "marshall" }],
+  [/bogner|boger|xtc/i, { tolex: "#0f1722", cloth: "#2a2118", clothKind: "basket", plate: "chrome", ink: "#10151c", handle: "strap", badge: "right", template: "chrome" }],
+  [/friedman|fryman|be-?100/i, { tolex: "#121212", cloth: "#1d1d20", clothKind: "mesh", plate: "black", ink: "#f4f4f4", knobInsert: "#e8e8e8", piping: "#f4f4f4", handle: "chrome", badge: "center", template: "mesa" }],
+  [/matchless|emperor|chieftain/i, { tolex: "#3a2a22", cloth: "#7c6a4a", clothKind: "basket", plate: "chrome", ink: "#17120e", darkKnobs: true, knobInsert: "#d9dce1", handle: "chrome", badge: "center" }],
+  [/supro|superb/i, { tolex: "#1c3a55", cloth: "#cfc6a6", clothKind: "basket", plate: "cream", ink: "#17212b", handle: "strap", layout: "top", badge: "left" }],
+  [/ampeg|svt|ampage/i, { tolex: "#15161a", cloth: "#2a2c31", clothKind: "grid", plate: "silver", ink: "#13141a", knobInsert: "#d9dce1", handle: "chrome", badge: "center" }],
+];
+
+/** Boutique looks for models nothing recognises: picked by a hash of the name, so a model always looks the same. */
+const BOUTIQUE: Partial<AmpFinish>[] = [
+  { tolex: "#1b2638", cloth: "#8a7a52", clothKind: "basket", plate: "chrome", ink: "#10151f", layout: "top", handle: "chrome", badge: "center", template: "classic" },
+  { tolex: "#4a1c1d", cloth: "#1e1713", clothKind: "diamond", plate: "gold", ink: "#1b1007", knobInsert: GOLD, handle: "strap", badge: "left", template: "marshall" },
+  { tolex: "#1c3427", cloth: "#9ba39a", clothKind: "sparkle", plate: "cream", ink: "#14231b", darkKnobs: false, layout: "top", handle: "strap", badge: "right", template: "classic" },
+  { tolex: "#101012", cloth: "#17181c", clothKind: "mesh", plate: "blue", ink: "#f1f4f9", knobInsert: "#cfd5de", handle: "chrome", badge: "center", template: "chrome" },
+  { tolex: "#d5cba9", cloth: "#3b2f20", clothKind: "basket", plate: "black", ink: "#f3ecd6", darkKnobs: false, handle: "strap", badge: "left", template: "classic" },
+  { tolex: "#33363d", cloth: "#1a1b1f", clothKind: "grid", plate: "chrome", ink: "#131418", layout: "top", handle: "chrome", badge: "right", template: "mesa" },
+  { tolex: "#6b2a1a", cloth: "#d2c49a", clothKind: "diamond", plate: "silver", ink: "#1d0f0a", darkKnobs: false, handle: "strap", badge: "center", template: "classic" },
+  { tolex: "#14161a", cloth: "#2e3138", clothKind: "mesh", plate: "gold", ink: "#17120a", knobInsert: GOLD, layout: "top", handle: "chrome", badge: "left", template: "chrome" },
+];
+
+const strHash = (s: string) => {
+  let h = 2166136261;
+  for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return h >>> 0;
+};
+
+/** The look of an amp: by voicing, then by the real amp its name or origin recognises, else a boutique look picked from the name. */
+export function ampStyle(name: string, origin = "", type?: string): AmpFinish {
+  const typed = { ...BASE, ...(type && Object.hasOwn(BY_TYPE, type) ? BY_TYPE[type] : {}) };
+  const rule = RULES.find(([re]) => re.test(`${name} ${origin}`));
+  if (rule) return { ...typed, ...rule[1] };
+  if (type === "Acoustic" || type === "Bass") return typed;
+  return { ...typed, ...BOUTIQUE[strHash(name) % BOUTIQUE.length] };
+}
+
+/** Look of the default voicing only (kept for drawings that have no model to recognise). */
+export const ampFinish = (type?: string): AmpFinish => ampStyle("", "", type);

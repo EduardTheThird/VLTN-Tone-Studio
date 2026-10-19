@@ -1,7 +1,10 @@
 // Shared SVG parts of the gear drawings: gradients, machined knob with LED value ring, slide switch, light pipe,
 // steel footswitch, perforated grille. Coordinates are viewBox units of the drawing that uses them.
 import type { ReactNode, SVGProps } from "react";
-import { FONT, clamp01, shade as shadeStop } from "./art";
+import grainMatte from "@/assets/textures/ov-grain-matte.webp";
+import grainNoir from "@/assets/textures/ov-grain-noir.webp";
+import brush from "@/assets/textures/ov-brush.webp";
+import { FONT, clamp01, shade as shadeStop, type Finish } from "./art";
 
 interface TextProps {
   x: number;
@@ -12,12 +15,14 @@ interface TextProps {
   anchor?: "start" | "middle" | "end";
   opacity?: number;
   spacing?: number;
+  italic?: boolean;
+  family?: string;
   children: ReactNode;
 }
 
-export function T({ x, y, fill, size, weight = 600, anchor = "middle", opacity, spacing, children }: TextProps) {
+export function T({ x, y, fill, size, weight = 600, anchor = "middle", opacity, spacing, italic, family, children }: TextProps) {
   return (
-    <text x={x} y={y} textAnchor={anchor} fontSize={size} fontWeight={weight} fill={fill} fontFamily={FONT} fillOpacity={opacity} letterSpacing={spacing}>
+    <text x={x} y={y} textAnchor={anchor} fontSize={size} fontWeight={weight} fill={fill} fontFamily={family ?? FONT} fontStyle={italic ? "italic" : undefined} fillOpacity={opacity} letterSpacing={spacing}>
       {children}
     </text>
   );
@@ -62,10 +67,12 @@ export interface KnobArtProps {
   track?: string;
   focus?: boolean;
   bipolar?: boolean;
+  /** Paint of the cap instead of the stock aluminium or black */
+  capFill?: string;
 }
 
 /** Machined knob: aluminium or anodized black cap, LED value ring around it (270° sweep). */
-export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "#fff", track = "rgba(255,255,255,.16)", focus = false, bipolar = false }: KnobArtProps) {
+export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "#fff", track = "rgba(255,255,255,.16)", focus = false, bipolar = false, capFill }: KnobArtProps) {
   const t = clamp01(value, min, max);
   const a0 = -225;
   const sweep = 270;
@@ -84,10 +91,20 @@ export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "
     <g>
       <path d={arc(a0, a0 + sweep)} fill="none" stroke={track} strokeWidth={1.6} strokeLinecap="round" />
       {val && <path d={val} fill="none" stroke={ring} strokeWidth={1.8} strokeLinecap="round" />}
-      <circle cx={cx} cy={cy + r * 0.14} r={r} fill="#000" fillOpacity={0.38} />
-      <circle cx={cx} cy={cy} r={r} fill={`url(#${dark ? "capd" : "cap"}${id})`} />
+      <circle cx={cx} cy={cy + r * 0.14} r={r + 0.9} fill="#000" fillOpacity={0.4} />
+      <circle cx={cx} cy={cy} r={r + 0.9} fill="none" stroke="#000" strokeOpacity={0.35} strokeWidth={0.5} />
+      <circle cx={cx} cy={cy} r={r} fill={capFill ?? `url(#${dark ? "capd" : "cap"}${id})`} />
       <circle cx={cx} cy={cy} r={r - 0.5} fill="none" stroke="#fff" strokeOpacity={dark ? 0.12 : 0.6} strokeWidth={0.6} />
-      <circle cx={dx.toFixed(2)} cy={dy.toFixed(2)} r={Math.max(1, r * 0.13)} fill={dark ? "#fff" : "#1c1c1e"} />
+      {/* knurled rim and the dished top of a machined cap */}
+      <circle cx={cx} cy={cy} r={r - 1.1} fill="none" stroke="#000" strokeOpacity={dark ? 0.5 : 0.2} strokeWidth={Math.min(1, r * 0.1)} strokeDasharray="0.45 0.6" />
+      <circle cx={cx} cy={cy} r={r * 0.56} fill="none" stroke="#000" strokeOpacity={dark ? 0.45 : 0.14} strokeWidth={0.5} />
+      <circle cx={cx} cy={cy + 0.35} r={r * 0.56} fill="none" stroke="#fff" strokeOpacity={dark ? 0.1 : 0.55} strokeWidth={0.4} />
+      <path
+        d={`M${P(end, r * 0.3)[0].toFixed(2)} ${P(end, r * 0.3)[1].toFixed(2)}L${dx.toFixed(2)} ${dy.toFixed(2)}`}
+        stroke={dark ? "#fff" : "#1c1c1e"}
+        strokeWidth={Math.max(1, r * 0.17)}
+        strokeLinecap="round"
+      />
       {focus && <circle cx={cx} cy={cy} r={R + 3.2} fill="none" stroke="#fff" strokeWidth={1} strokeOpacity={0.9} />}
     </g>
   );
@@ -121,8 +138,11 @@ export function FootswitchArt({ id, cx, cy, r = 11 }: { id: string; cx: number; 
   return (
     <g>
       <ellipse cx={cx} cy={cy + r * 0.55} rx={r * 1.05} ry={r * 0.42} fill="#000" fillOpacity={0.35} />
+      <circle cx={cx} cy={cy} r={r * 1.14} fill="#17171a" />
+      <circle cx={cx} cy={cy} r={r * 1.14} fill="none" stroke="#fff" strokeOpacity={0.18} strokeWidth={0.5} strokeDasharray="1.1 0.9" />
       <circle cx={cx} cy={cy} r={r} fill={`url(#steel${id})`} />
       <circle cx={cx} cy={cy} r={r * 0.72} fill="none" stroke="#000" strokeOpacity={0.14} />
+      <circle cx={cx} cy={cy} r={r * 0.42} fill="none" stroke="#fff" strokeOpacity={0.45} strokeWidth={0.5} />
       <circle cx={cx} cy={cy} r={r - 0.4} fill="none" stroke="#fff" strokeOpacity={0.7} strokeWidth={0.6} />
     </g>
   );
@@ -141,12 +161,93 @@ export function Grille({ id, x, y, w, h, r }: { id: string; x: number; y: number
   );
 }
 
-/** Enclosure shared by pedal, EQ and capture drawings (100×150 viewBox). */
-export function Enclosure({ id, light = false, ...rest }: { id: string; light?: boolean } & SVGProps<SVGGElement>) {
+// Surface grain: pre-rendered RGBA overlays (assets/textures/ov-*.webp), not SVG filters or blend modes, which the
+// browser re-rasterises on every scroll, zoom and repaint of each of the hundreds of thumbnails in the model picker.
+const GRAIN: Record<Finish, { url: string; opacity: number; tile: number }> = {
+  matte: { url: grainMatte, opacity: 0.9, tile: 40 }, // powder-coat grain
+  noir: { url: grainNoir, opacity: 0.7, tile: 40 }, // fine textured black
+  frost: { url: brush, opacity: 0.9, tile: 40 }, // brushed aluminium streaks
+};
+
+/** Enclosure shared by pedal, EQ and capture drawings (100×150 viewBox by default): lit body, surface texture, bevelled rim, side jacks. */
+export function Enclosure({ id, light = false, kind = "matte", w = 100, h = 150, rx = 15, ...rest }: { id: string; light?: boolean; kind?: Finish; w?: number; h?: number; rx?: number } & SVGProps<SVGGElement>) {
+  const g = GRAIN[kind];
+  const bw = w - 8;
+  const bh = h - 6;
+  const jy = h * 0.4667;
   return (
     <g {...rest}>
-      <rect x="4" y="3" width="92" height="144" rx="15" fill={`url(#body${id})`} />
-      <rect x="4.4" y="3.4" width="91.2" height="143.2" rx="14.6" fill="none" stroke="#fff" strokeOpacity={light ? 0.75 : 0.16} strokeWidth={0.8} />
+      <defs>
+        <pattern id={`grain${id}`} patternUnits="userSpaceOnUse" width={g.tile} height={g.tile}>
+          <image href={g.url} width={g.tile} height={g.tile} preserveAspectRatio="none" />
+        </pattern>
+        <linearGradient id={`sheen${id}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity={kind === "frost" ? 0.4 : 0.16} />
+          <stop offset=".45" stopColor="#fff" stopOpacity={0} />
+          <stop offset="1" stopColor="#000" stopOpacity={0.2} />
+        </linearGradient>
+        <clipPath id={`encl${id}`}>
+          <rect x="4" y="3" width={bw} height={bh} rx={rx} />
+        </clipPath>
+      </defs>
+      <rect x="4" y="3" width={bw} height={bh} rx={rx} fill={`url(#body${id})`} />
+      <g clipPath={`url(#encl${id})`}>
+        <rect x="4" y="3" width={bw} height={bh} fill={`url(#grain${id})`} opacity={g.opacity * (light ? 0.7 : 1)} />
+        <rect x="4" y="3" width={bw} height={bh} fill={`url(#sheen${id})`} />
+        <rect x="4" y={h - 11} width={bw} height="8" fill="#000" opacity={light ? 0.1 : 0.22} />
+      </g>
+      <rect x="4.4" y="3.4" width={bw - 0.8} height={bh - 0.8} rx={rx - 0.4} fill="none" stroke="#fff" strokeOpacity={light ? 0.75 : 0.16} strokeWidth={0.8} />
+      {/* input and output jacks, one on each side: the patch cables plug in here (screens/rig/PatchCables.tsx) */}
+      {[1.6, w - 5.6].map((x) => (
+        <g key={x}>
+          <rect x={x} y={jy - 3.8} width={4} height={7.6} rx={1.2} fill={`url(#steel${id})`} />
+          <rect x={x} y={jy - 3.8} width={4} height={7.6} rx={1.2} fill="none" stroke="#000" strokeOpacity={0.35} strokeWidth={0.4} />
+          <circle cx={x === 1.6 ? 4.6 : w - 4.6} cy={jy} r={1.5} fill="#0a0a0b" />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+/** Slotted pan-head screw; `turn` rotates the slot so no two look alike. */
+export function Screw({ id, cx, cy, turn = 0 }: { id: string; cx: number; cy: number; turn?: number }) {
+  return (
+    <g>
+      <circle cx={cx} cy={cy + 0.4} r={2.5} fill="#000" fillOpacity={0.35} />
+      <circle cx={cx} cy={cy} r={2.3} fill={`url(#steel${id})`} />
+      <path d="M-1.5 0H1.5" stroke="#000" strokeOpacity={0.55} strokeWidth={0.55} strokeLinecap="round" transform={`translate(${cx} ${cy}) rotate(${turn})`} />
+      <circle cx={cx} cy={cy} r={2.2} fill="none" stroke="#fff" strokeOpacity={0.6} strokeWidth={0.3} />
+    </g>
+  );
+}
+
+/** Model name as the silkscreen/stamp on the enclosure: caps, slanted, with a pressed edge. */
+export function Nameplate({ x, y, name, ink, light, maxW = 52, size = 8.6, family }: { x: number; y: number; name: string; ink: string; light: boolean; maxW?: number; size?: number; family?: string }) {
+  const text = name.toUpperCase();
+  // bold slanted caps run about 0.72 em wide per letter, plus the 0.35 letter-spacing
+  const s = Math.min(size, (maxW - 0.35 * text.length) / (0.72 * text.length));
+  const props = { size: s, weight: 800, anchor: "start" as const, spacing: 0.35, italic: true, family };
+  return (
+    <g>
+      <T x={x} y={y + 0.55} fill={light ? "#fff" : "#000"} opacity={light ? 0.7 : 0.5} {...props}>
+        {text}
+      </T>
+      <T x={x} y={y} fill={ink} {...props}>
+        {text}
+      </T>
+    </g>
+  );
+}
+
+/** Block code in a printed outline tag. */
+export function BlockTag({ x, y, code, ink }: { x: number; y: number; code: string; ink: string }) {
+  const w = code.length * 3.2 + 6;
+  return (
+    <g>
+      <rect x={x - w} y={y - 6.4} width={w} height={8.2} rx={4.1} fill="none" stroke={ink} strokeOpacity={0.4} strokeWidth={0.5} />
+      <T x={x - w / 2} y={y - 0.6} fill={ink} size={4.6} weight={700} opacity={0.75} spacing={0.5}>
+        {code}
+      </T>
     </g>
   );
 }

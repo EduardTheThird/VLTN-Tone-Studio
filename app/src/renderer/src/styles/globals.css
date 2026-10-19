@@ -124,3 +124,22 @@
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
   [data-slot="button"]:active { transform: none !important; }
 }
+
+/* The pedal board's scrollbars: a recessed groove with a brushed-metal slider, in place of the system bar.
+   Chromium ignores ::-webkit-scrollbar while scrollbar-width / scrollbar-color are set, hence "auto" here. */
+.board-scroll { scrollbar-width: auto; scrollbar-color: auto; }
+.board-scroll::-webkit-scrollbar { width: 16px; height: 16px; }
+.board-scroll::-webkit-scrollbar-track {
+  margin: 4px 20px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.75), 0 1px 0 rgb(255 255 255 / 0.07);
+}
+.board-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-image: linear-gradient(#eceef1, #9a9da5 55%, #6b6e76);
+}
+.board-scroll::-webkit-scrollbar-thumb:hover { background-image: linear-gradient(#fff, #b6b9c0 55%, #82858d); }
+.board-scroll::-webkit-scrollbar-corner { background: transparent; }

@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [Unreleased]
+
+### Added
+- **Choose the stem separation model and quality.** The Stem Splitter used to run only Demucs `htdemucs_6s`. It now offers three models: *Standard* (htdemucs_6s, six stems, 285 MB, the default; on the graphics card when it can run it), *Fine-tuned* (the htdemucs_ft bag, four stems with the cleanest vocals, drums and bass, no guitar, 662 MB) and *Best* (htdemucs_ft's drums, bass and vocals with htdemucs_6s's guitar, piano and other, six stems, 782 MB). The fine-tuned files run on the processor only: their export has an op the WebGPU runtime can't place. Splits with them take several minutes. A fine-tuned split has no guitar, so Tone match asks you to split again with a six-stem model. There are three quality presets: *Fast*, *Balanced* (half-overlapping chunks, two averaged shifts, about 3× the time) and *Max* (four shifts, about 6×). Pick them before the split or from *Split again…* on the mixer. The choice is remembered, and the mixer says which model and quality made the stems. The picker shows which models are downloaded, downloads a model's missing files (an interrupted download picks up where it stopped) and deletes a model's files to free disk space.
+- **Tone Match builds a SnapTone from your captures.** A new card under Tone match ranks the amp and pedal NAM captures you have downloaded from TONE3000 (or pick one there from the card) against the song's guitar. Each capture plays the guitar part of Valeton's test signal; one without a cab goes through a cab IR designed for this song from its own output, so no recording is needed. The card ranks them by how well their gain and tone match the song's guitar, and says why. *Build the SnapTone* converts the one you choose with that IR inside (GP-5 family). On the GP-200 family it converts the capture alone and offers the IR for a User IR slot. It then waits at the Tones Write step: nothing goes to the pedal until you press Write. The IR can also be saved as a WAV. The ranking is an estimate: the song's mix and the test signal's level move the gain reading, and each capture is heard at the one setting it was captured at.
+
+### Fixed
+- **A WebGPU device loss in the middle of a split no longer fails the split.** The chunk that failed runs again on WebAssembly and the rest of the split goes on the processor; the session log records it.
+
 ## [0.7.2] - 2026-10-15
 
 ### Fixed

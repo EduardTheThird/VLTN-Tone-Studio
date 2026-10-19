@@ -213,6 +213,8 @@ export interface UiState {
   setPaletteOpen(open: boolean): void;
   aboutOpen: boolean;
   setAboutOpen(open: boolean): void;
+  whatsNewOpen: boolean;
+  setWhatsNewOpen(open: boolean): void;
   /** Target slot of a preset switch waiting for the unsaved-changes dialog */
   switchTarget: number | null;
   setSwitchTarget(slot: number | null): void;
@@ -231,6 +233,8 @@ export const useUi = create<UiState>((set, get) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   aboutOpen: false,
   setAboutOpen: (aboutOpen) => set({ aboutOpen }),
+  whatsNewOpen: false,
+  setWhatsNewOpen: (whatsNewOpen) => set({ whatsNewOpen }),
   switchTarget: null,
   setSwitchTarget: (switchTarget) => set({ switchTarget }),
   rigFocus: null,

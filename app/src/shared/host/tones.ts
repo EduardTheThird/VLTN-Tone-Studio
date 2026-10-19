@@ -56,6 +56,17 @@ export interface T3kModel {
 
 export type ToneListKind = "favorited" | "created" | "downloaded" | "trending" | "latest";
 
+export type ToneSort = "best-match" | "newest" | "oldest" | "trending" | "downloads-all-time";
+
+/** `GET /tones/search` filters (`TonesApi.search`). Empty `query` browses by `sort` alone. */
+export interface ToneSearchParams {
+  query: string;
+  sort: ToneSort;
+  gears: T3kGear[];
+  format: "nam" | "ir" | null;
+  architecture: T3kArchitecture | null;
+}
+
 export interface TonePage {
   tones: T3kTone[];
   page: number;
@@ -194,6 +205,11 @@ export interface TonesApi {
 
   /** Bounded list (cached 10 minutes unless `refresh`). Pages are 20 tones; trending/latest have one page. */
   list(kind: ToneListKind, page: number, refresh?: boolean): Promise<TonePage>;
+  /**
+   * Search TONE3000 (25 per page, cached 10 minutes unless `refresh`). Heavily rate-limited upstream and possibly
+   * not allowed for the app's key: rejects with `unsupported` (403) or `network` (429); the UI then offers the Select flow.
+   */
+  search(params: ToneSearchParams, page: number, refresh?: boolean): Promise<TonePage>;
   tone(id: number): Promise<T3kTone>;
   /** All models of a tone, A1 + A2 + custom */
   models(toneId: number): Promise<T3kModel[]>;
@@ -212,6 +228,8 @@ export interface TonesApi {
   readLocalNam(path: string): Promise<string>;
   /** Bytes of a downloaded IR tone's WAV (no download, no record change); not-found when nothing is on disk. */
   readIr(toneId: number): Promise<Uint8Array>;
+  /** Text of a downloaded NAM model as stored (no download, no record change, not reshaped); not-found when it isn't on disk. */
+  readNam(toneId: number, modelId: number): Promise<string>;
   /** Link a tone to a pedal slot (null unlinks). Local metadata only; nothing is written to the pedal. */
   link(toneId: number, link: SlotLink | null): Promise<ToneRecord>;
   /** Every local tone record */

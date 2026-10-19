@@ -3,18 +3,30 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { MODEL_CHECKSUM_ERROR, modelDownloadError, SEPARATION_MODEL, type ModelProgress } from "@shared/host/song";
+import {
+  findModel,
+  MODEL_CHECKSUM_ERROR,
+  MODEL_FILES,
+  MODEL_MISSING_ERROR,
+  modelDownloadError,
+  modelFiles,
+  UNKNOWN_MODEL_ERROR,
+  type ModelFile,
+  type ModelProgress,
+  type SeparationModel,
+} from "@shared/host/song";
 import { sanitizeFileName } from "@shared/files-naming";
 import { HostError } from "@shared/ipc";
 import { handle, showOpenDialog, showSaveDialog } from "./handle";
 
-// The Song screen's separation model (src/shared/host/song.ts): downloaded on first use into userData/models,
-// resumed from a `.part` file after an interrupted download, checked against the pinned SHA-256 and only then
-// renamed to its final name. Saving exported stems: one Save dialog, or a folder for several files.
+// The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
+// userData/models, resumed from a `.part` file after an interrupted download, checked against its pinned SHA-256
+// and only then renamed to its final name. Only registry files are touched, never a path from the renderer.
+// Saving exported stems: one Save dialog, or a folder for several files.
 
 const modelsDir = () => join(app.getPath("userData"), "models");
-const modelPath = () => join(modelsDir(), SEPARATION_MODEL.file);
-const partPath = () => `${modelPath()}.part`;
+const filePath = (f: ModelFile) => join(modelsDir(), f.file);
+const partPath = (f: ModelFile) => `${filePath(f)}.part`;
 const PROGRESS_EVERY_BYTES = 1 << 20;
 
 async function fileSize(path: string): Promise<number | null> {
@@ -27,29 +39,36 @@ async function sha256File(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-/** Append the rest of the model to `.part` (HTTP Range when part of it is there already). */
-async function downloadPart(onProgress: (p: ModelProgress) => void): Promise<void> {
-  const total = SEPARATION_MODEL.bytes;
-  let have = (await fileSize(partPath())) ?? 0;
-  if (have > total) {
-    await rm(partPath());
+const isDownloaded = async (f: ModelFile) => (await fileSize(filePath(f))) === f.bytes;
+
+function modelOrThrow(id: string): SeparationModel {
+  const model = findModel(id);
+  if (!model) throw new HostError("invalid", UNKNOWN_MODEL_ERROR);
+  return model;
+}
+
+/** Append the rest of `f` to its `.part` (HTTP Range when part of it is there already); `onBytes` gets the bytes in `.part`. */
+async function downloadPart(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
+  let have = (await fileSize(partPath(f))) ?? 0;
+  if (have > f.bytes) {
+    await rm(partPath(f));
     have = 0;
   }
-  if (have === total) return;
+  if (have === f.bytes) return;
   let res: Response;
   try {
-    res = await net.fetch(SEPARATION_MODEL.url, { headers: have ? { Range: `bytes=${have}-` } : {} });
+    res = await net.fetch(f.url, { headers: have ? { Range: `bytes=${have}-` } : {} });
   } catch {
     throw new HostError("network", modelDownloadError(null));
   }
   if (res.status !== 200 && res.status !== 206) throw new HostError("network", modelDownloadError(res.status));
   // A server that ignores Range sends the whole file again: start over.
   if (res.status === 200) have = 0;
-  const file = await open(partPath(), have ? "a" : "w");
+  const file = await open(partPath(f), have ? "a" : "w");
   try {
     let received = have;
     let reported = 0;
-    onProgress({ received, total });
+    onBytes(received);
     const reader = res.body!.getReader();
     for (;;) {
       const chunk = await reader.read().catch(() => {
@@ -60,38 +79,73 @@ async function downloadPart(onProgress: (p: ModelProgress) => void): Promise<voi
       received += chunk.value.byteLength;
       if (received - reported >= PROGRESS_EVERY_BYTES) {
         reported = received;
-        onProgress({ received, total });
+        onBytes(received);
       }
     }
-    onProgress({ received, total });
+    onBytes(received);
   } finally {
     await file.close();
   }
 }
 
-async function ensureModel(onProgress: (p: ModelProgress) => void): Promise<void> {
-  if ((await fileSize(modelPath())) === SEPARATION_MODEL.bytes) return;
+async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
+  if (await isDownloaded(f)) return;
   await mkdir(modelsDir(), { recursive: true });
-  await downloadPart(onProgress);
-  if ((await fileSize(partPath())) !== SEPARATION_MODEL.bytes || (await sha256File(partPath())) !== SEPARATION_MODEL.sha256) {
-    await rm(partPath(), { force: true });
+  await downloadPart(f, onBytes);
+  if ((await fileSize(partPath(f))) !== f.bytes || (await sha256File(partPath(f))) !== f.sha256) {
+    await rm(partPath(f), { force: true });
     throw new HostError("invalid", MODEL_CHECKSUM_ERROR);
   }
-  await rename(partPath(), modelPath());
+  await rename(partPath(f), filePath(f));
 }
 
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
-  // One download at a time; a second request (retry, second split) joins it.
-  let pending: Promise<void> | null = null;
+  // One download per file at a time; a second request (retry, another model sharing the file) joins it.
+  const pending = new Map<string, Promise<void>>();
   const progress = (p: ModelProgress) => getWindow()?.webContents.send("song:modelProgress", p);
 
-  handle("song:hasModel", async () => (await fileSize(modelPath())) === SEPARATION_MODEL.bytes);
-  handle("song:model", async () => {
-    pending ??= ensureModel(progress).finally(() => {
-      pending = null;
-    });
-    await pending;
-    return new Uint8Array(await readFile(modelPath()));
+  function fileOnce(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
+    let job = pending.get(f.file);
+    if (!job) {
+      job = ensureFile(f, onBytes).finally(() => pending.delete(f.file));
+      pending.set(f.file, job);
+    }
+    return job;
+  }
+
+  handle("song:downloadedFiles", async () => {
+    const files = [...MODEL_FILES.values()];
+    const have = await Promise.all(files.map(isDownloaded));
+    return files.filter((_, i) => have[i]).map((f) => f.file);
+  });
+
+  handle("song:downloadModel", async (_e, id: string) => {
+    const model = modelOrThrow(id);
+    const missing: ModelFile[] = [];
+    for (const f of modelFiles(model)) if (!(await isDownloaded(f))) missing.push(f);
+    const total = missing.reduce((sum, f) => sum + f.bytes, 0);
+    let done = 0;
+    for (const f of missing) {
+      await fileOnce(f, (received) => progress({ received: done + received, total }));
+      done += f.bytes;
+    }
+  });
+
+  handle("song:modelFile", async (_e, name: string) => {
+    const f = MODEL_FILES.get(name);
+    if (!f) throw new HostError("invalid", UNKNOWN_MODEL_ERROR);
+    if (!(await isDownloaded(f))) throw new HostError("not-found", MODEL_MISSING_ERROR);
+    return new Uint8Array(await readFile(filePath(f)));
+  });
+
+  handle("song:deleteModel", async (_e, id: string) => {
+    const files = modelFiles(modelOrThrow(id));
+    // A download in flight would recreate the file; wait for it (or its failure) first.
+    await Promise.allSettled(files.map((f) => pending.get(f.file)));
+    for (const f of files) {
+      await rm(filePath(f), { force: true });
+      await rm(partPath(f), { force: true });
+    }
   });
 
   // Saving is two steps so each IPC message carries one file: pick the target, then write the files into it.

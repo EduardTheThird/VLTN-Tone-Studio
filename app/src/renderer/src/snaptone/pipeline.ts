@@ -12,9 +12,9 @@
 import { SIGNAL_RATE } from "@shared/host/snaptone";
 import { DEFAULT_MODEL_RATE, prepareNam } from "@shared/nam";
 import { fft } from "@/song/tonematch/fft";
-import { parseA2, renderA2 } from "./a2";
+import { parseA2, renderA2, type A2Model } from "./a2";
 import { cloneSnapTone, convertSampleRate } from "./htkpa";
-import { parseA1, renderA1 } from "./wavenet";
+import { parseA1, renderA1, type A1Model } from "./wavenet";
 
 /** getNamOutput's fixed output gain (0.31f at 0x19fc28). */
 const NAM_OUTPUT_GAIN = Math.fround(0.31);
@@ -105,6 +105,28 @@ function cabIrAt(cabIr: { samples: Float32Array; rate: number }, rate: number): 
   return ir.subarray(0, Math.round(CAB_IR_MAX_SECONDS * rate));
 }
 
+/** A NAM A1 or A2 model parsed for the wasm kernels, with the rate it renders at. */
+export type NamModel = ({ arch: "A1"; a1: A1Model } | { arch: "A2"; a2: A2Model }) & { rate: number };
+
+/** Check (shared/nam.ts prepareNam) and parse a NAM A1 or A2 model; rate = its `sample_rate`, DEFAULT_MODEL_RATE when missing. */
+export function parseNamModel(namText: string): NamModel {
+  const { json, check } = prepareNam(namText);
+  if (check.arch === "A2") {
+    const a2 = parseA2(json);
+    return { arch: "A2", a2, rate: a2.sampleRate ?? DEFAULT_MODEL_RATE };
+  }
+  const a1 = parseA1(json);
+  return { arch: "A1", a1, rate: a1.sampleRate ?? DEFAULT_MODEL_RATE };
+}
+
+/** `input` (at the model's rate) through the model the way getNamOutput renders it: prewarmed, fast tanh, times 0.31. */
+export async function renderNam(model: NamModel, input: Float32Array, kernel: KernelSource, onProgress?: (fraction: number) => void): Promise<Float32Array> {
+  const wasm = await kernel(model.arch);
+  const rendered = model.arch === "A2" ? await renderA2(wasm, model.a2, input, onProgress) : await renderA1(wasm, model.a1, input, onProgress);
+  for (let i = 0; i < rendered.length; i++) rendered[i] = Math.fround(rendered[i] * NAM_OUTPUT_GAIN);
+  return rendered;
+}
+
 /**
  * Run the whole conversion. `namText` is a NAM A1 or A2 model (checked and, for A1 0.7.x, reshaped by
  * shared/nam.ts prepareNam), `excitation` channel 0 of nam_input_wav.wav (shared/host/snaptone.ts readSignalWav),
@@ -117,17 +139,13 @@ export async function namToCloneBlob(
   onProgress: (phase: ClonePhase, fraction: number) => void = () => {},
   cabIr?: { samples: Float32Array; rate: number },
 ): Promise<Uint8Array> {
-  const { json, check } = prepareNam(namText);
-  const model = check.arch === "A2" ? { arch: "A2" as const, a2: parseA2(json) } : { arch: "A1" as const, a1: parseA1(json) };
-  const rate = (model.arch === "A2" ? model.a2.sampleRate : model.a1.sampleRate) ?? DEFAULT_MODEL_RATE;
+  const model = parseNamModel(namText);
+  const { rate } = model;
   const ir = cabIr && cabIrAt(cabIr, rate);
   onProgress("excitation", 0);
   const source = Float32Array.from(excitation, (v) => v / 32768);
   const input = pcmRoundTrip(rate === SIGNAL_RATE ? source : convertSampleRate(source, SIGNAL_RATE, rate), 24);
-  const wasm = await kernel(model.arch);
-  const progress = (f: number) => onProgress("render", f);
-  const rendered = model.arch === "A2" ? await renderA2(wasm, model.a2, input, progress) : await renderA1(wasm, model.a1, input, progress);
-  for (let i = 0; i < rendered.length; i++) rendered[i] = Math.fround(rendered[i] * NAM_OUTPUT_GAIN);
+  const rendered = await renderNam(model, input, kernel, (f) => onProgress("render", f));
   const output = ir ? applyCabIr(rendered, ir) : rendered;
   onProgress("clone", 0);
   return cloneSnapTone(input, pcmRoundTrip(output, 16), rate);

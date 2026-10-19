@@ -133,7 +133,10 @@ export function RigHeader({ preset, connected }: Props) {
               {compare && <span className="font-normal text-silkscreen-3">· playing the saved version</span>}
             </span>
           ) : (
-            <span>No unsaved changes</span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-silkscreen-4" aria-hidden />
+              No unsaved changes
+            </span>
           )}
           <TempoControl bpm={preset.bpm} range={profile.tempo} disabled={!editable} />
           <FootswitchControl preset={preset} disabled={!editable} />

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AccountState, FlowRequest, NamCheck, SendStep, T3kTone, ToneListKind, ToneRecord } from "@shared/host/tones";
+import type { AccountState, FlowRequest, NamCheck, SendStep, T3kGear, T3kTone, T3kArchitecture, ToneListKind, ToneRecord, ToneSort } from "@shared/host/tones";
 import { HostError } from "@shared/ipc";
 import { firstEmptySlot } from "@shared/tone3000";
 import { host } from "@/host";
@@ -69,14 +69,27 @@ export interface UsageInfo {
   source: string;
 }
 
+/** The five account/discovery lists plus the search tab. */
+export type TonesTab = ToneListKind | "search";
+
+/** Search filters; the format comes from the shared format toggle. */
+export interface SearchFilters {
+  query: string;
+  sort: ToneSort;
+  gears: T3kGear[];
+  architecture: T3kArchitecture | null;
+}
+
 export const TAB_ORDER: ToneListKind[] = ["favorited", "created", "downloaded", "trending", "latest"];
 
 interface TonesState {
   account: AccountState | null;
-  tab: ToneListKind;
+  tab: TonesTab;
   format: "all" | "nam" | "ir";
   compatOnly: boolean;
   lists: Partial<Record<ToneListKind, ListState>>;
+  found: ListState;
+  search: SearchFilters;
   records: Record<number, ToneRecord>;
   images: Record<string, string | null>;
   sheet: { toneId: number; tone: T3kTone | null } | null;
@@ -100,6 +113,8 @@ export const useTones = create<TonesState>(() => ({
   format: "all",
   compatOnly: false,
   lists: {},
+  found: empty(),
+  search: { query: "", sort: "trending", gears: [], architecture: null },
   records: {},
   images: {},
   sheet: null,
@@ -139,7 +154,8 @@ export async function loadAccount(): Promise<void> {
   try {
     const account = await host.tones.account();
     set({ account });
-    if (account.status !== "signed-in") set({ lists: {} });
+    if (account.status !== "signed-in") searchSeq++; // drop a search still in flight
+    set({ lists: {}, found: empty() });
   } catch (e) {
     set({ account: { status: "signed-out", user: null, configured: false, appKey: null, splashSeen: true } });
     console.warn("TONE3000 account", e);
@@ -164,7 +180,7 @@ function storeRecord(r: ToneRecord) {
 export async function loadList(kind: ToneListKind, opts: { more?: boolean; refresh?: boolean } = {}): Promise<void> {
   const cur = get().lists[kind] ?? empty();
   if (cur.loading) return;
-  if (opts.more && cur.page >= cur.totalPages) return;
+  if (opts.more && (cur.error || cur.page >= cur.totalPages)) return;
   const page = opts.more ? cur.page + 1 : 1;
   patchList(kind, { loading: true, error: null });
   try {
@@ -180,6 +196,37 @@ export async function loadList(kind: ToneListKind, opts: { more?: boolean; refre
     patchList(kind, { loading: false, error: message(e) });
   }
 }
+
+function patchFound(patch: Partial<ListState>) {
+  set((s) => ({ found: { ...s.found, ...patch } }));
+}
+
+/** Search tab: page 1 (or the next with `more`) for the current filters and format toggle. A newer search wins over an older one. */
+let searchSeq = 0;
+export async function loadSearch(opts: { more?: boolean; refresh?: boolean } = {}): Promise<void> {
+  const cur = get().found;
+  if (opts.more && (cur.loading || cur.error || cur.page >= cur.totalPages)) return;
+  const seq = ++searchSeq;
+  const page = opts.more ? cur.page + 1 : 1;
+  const { search, format } = get();
+  patchFound(opts.more ? { loading: true, error: null } : { loading: true, error: null, ...(opts.refresh ? {} : { loaded: false, tones: [], page: 0 }) });
+  try {
+    const res = await host.tones.search({ ...search, format: format === "all" ? null : format }, page, opts.refresh);
+    if (seq !== searchSeq) return;
+    const seen = new Set(opts.more ? cur.tones.map((t) => t.id) : []);
+    const tones = opts.more ? [...cur.tones, ...res.tones.filter((t) => !seen.has(t.id))] : res.tones;
+    patchFound({ tones, page: res.page, totalPages: res.totalPages, total: res.total, fetchedAt: res.fetchedAt, loading: false, loaded: true });
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    if (onUnauthorized(e)) {
+      patchFound({ loading: false });
+      return;
+    }
+    patchFound({ loading: false, error: message(e) });
+  }
+}
+
+export const loadTab = (tab: TonesTab, opts: { more?: boolean; refresh?: boolean } = {}) => (tab === "search" ? loadSearch(opts) : loadList(tab, opts));
 
 /** Tab counts come from each list's first page. */
 export function loadAllCounts(): void {
@@ -198,13 +245,27 @@ export function requestImage(url: string): void {
 
 // ---------------------------------------------------------------------------------- sign-in / Select flow
 
-/** "Browse TONE3000": splash first (once), then the Select flow (A1 and A2 tones both become SnapTones). */
-export async function browse(req: FlowRequest = { prompt: "select_tone" }): Promise<void> {
+/** Who takes the tone the next Select flow returns; null = open its sheet. */
+let pickHandler: ((toneId: number) => void) | null = null;
+
+/**
+ * "Browse TONE3000": splash first (once), then the Select flow (A1 and A2 tones both become SnapTones). `onTone` takes
+ * the picked tone instead of the sheet (Tone Match adds it to its captures).
+ */
+export async function browse(req: FlowRequest = { prompt: "select_tone" }, onTone?: (toneId: number) => void): Promise<void> {
+  pickHandler = onTone ?? null;
   if (!get().account) await loadAccount();
   const account = get().account;
   set({ flow: req });
   if (!account?.splashSeen) set({ splashOpen: true });
   else set({ flowOpen: true });
+}
+
+/** The Select flow returned `toneId`: to whoever asked for it (browse's `onTone`), else its sheet. */
+export function takePickedTone(toneId: number): void {
+  const handler = pickHandler ?? openSheet;
+  pickHandler = null;
+  handler(toneId);
 }
 
 /** Plain sign-in: authorize without a prompt, so TONE3000 returns right after login instead of asking for a tone. */
@@ -305,13 +366,22 @@ function linkDevice(): DeviceKey {
 }
 
 /**
- * Create (or replace an idle/finished) send draft. `opts.text` is an edited .nam from the capture editor:
- * it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
+ * Create (or replace an idle, unwritten or finished) send draft; false while a send of this tone runs. `opts.text` is an edited
+ * .nam from the capture editor: it is sent instead of the TONE3000 download. `opts.cabIr` is baked into the SnapTone.
+ * `opts.built` is a SnapTone already converted from the downloaded model (with `cabIr` in it, Tone Match): the draft
+ * starts at the write step, which waits for the user's Write like any other.
  */
-export function startSendDraft(toneId: number, modelId: number, name: string, kind: "snaptone" | "ir", opts: { text?: string; cabIr?: CabIrChoice | null } = {}): void {
+export function startSendDraft(
+  toneId: number,
+  modelId: number,
+  name: string,
+  kind: "snaptone" | "ir",
+  opts: { text?: string; cabIr?: CabIrChoice | null; built?: { clone: Uint8Array; check: NamCheck } } = {},
+): boolean {
   const cur = get().send[toneId];
-  if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked") return;
+  if (cur && cur.phase !== "idle" && cur.phase !== "error" && cur.phase !== "linked" && cur.phase !== "ready") return false;
   const d = useDevice.getState();
+  const built = kind === "snaptone" ? opts.built : undefined;
   set((s) => ({
     send: {
       ...s.send,
@@ -320,14 +390,14 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
         modelId,
         name,
         kind,
-        phase: "idle",
-        step: 1,
+        phase: built ? "ready" : "idle",
+        step: built ? 4 : 1,
         received: 0,
         total: null,
         progress: 0,
         error: null,
-        check: null,
-        file: null,
+        check: built?.check ?? null,
+        file: built?.clone ?? null,
         ir: null,
         proposedSlot: firstEmptySlot(kind, kind === "snaptone" ? d.snapTones : d.userIRs, d.device),
         linkedSlot: null,
@@ -336,6 +406,7 @@ export function startSendDraft(toneId: number, modelId: number, name: string, ki
       },
     },
   }));
+  return true;
 }
 
 /** A different cab IR makes the converted file stale, so the draft goes back to step 1. */

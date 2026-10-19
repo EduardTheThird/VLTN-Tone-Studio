@@ -55,6 +55,8 @@ export function runMenuCommand(cmd: MenuCommand): void {
       return ui.setPaletteOpen(!ui.paletteOpen);
     case "about":
       return ui.setAboutOpen(true);
+    case "whats-new":
+      return ui.setWhatsNewOpen(true);
     case "check-updates":
       return void checkForUpdates();
     case "reconnect":

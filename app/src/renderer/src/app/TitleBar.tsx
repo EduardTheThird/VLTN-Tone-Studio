@@ -23,11 +23,11 @@ export function TitleBar({ className }: { className?: string }) {
       // Windows/Linux: keep clear of the native window controls (Window Controls Overlay area); 16px elsewhere.
       style={{ paddingRight: "calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px)" }}
     >
-      <div className={cn("flex shrink-0 items-center gap-[9px]", native && mac ? "w-[132px]" : "w-[204px]")}>
+      <div className={cn("flex shrink-0 items-center gap-[9px]", native && mac ? "w-[132px]" : "w-[204px] max-[900px]:w-[22px]")}>
         <span className="grid size-[22px] place-items-center text-silkscreen" aria-hidden>
           <Cable className="size-3.5" strokeWidth={2.25} />
         </span>
-        <b className="text-[15px] font-semibold tracking-[-0.01em]">Tone Studio</b>
+        <b className="text-[15px] font-semibold tracking-[-0.01em] max-[900px]:hidden">Tone Studio</b>
       </div>
       <PresetSwitcher />
       <span className="flex-1" />

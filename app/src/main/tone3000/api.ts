@@ -1,10 +1,36 @@
 // TONE3000 REST client (v1). Endpoints and parameters per https://www.tone3000.com/api.
 import { HostError } from "@shared/ipc";
-import type { T3kModel, T3kTone, T3kUser, ToneListKind } from "@shared/host/tones";
+import type { T3kGear, T3kModel, T3kTone, T3kUser, ToneListKind, ToneSearchParams, ToneSort } from "@shared/host/tones";
 import { InvalidGrantError, type TokenManager, type TokenResponse } from "./tokens";
 
 export const T3K_ORIGIN = "https://www.tone3000.com";
 export const PAGE_SIZE = 20;
+export const SEARCH_PAGE_SIZE = 25;
+
+const GEARS: readonly T3kGear[] = ["amp", "amp-cab", "pedal", "outboard", "cab", "space", "experimental"];
+const SORTS: readonly ToneSort[] = ["best-match", "newest", "oldest", "trending", "downloads-all-time"];
+
+/** Renderer input is untrusted: keep only known values and a bounded query. */
+export function normalizeSearch(raw: unknown): ToneSearchParams {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const pick = <T extends string>(v: unknown, allowed: readonly T[]): T | null => (allowed.includes(v as T) ? (v as T) : null);
+  return {
+    query: typeof r.query === "string" ? r.query.trim().slice(0, 100) : "",
+    sort: pick(r.sort, SORTS) ?? "best-match",
+    gears: Array.isArray(r.gears) ? GEARS.filter((g) => (r.gears as unknown[]).includes(g)) : [],
+    format: pick(r.format, ["nam", "ir"] as const),
+    architecture: pick(r.architecture, ["1", "2", "custom"] as const),
+  };
+}
+
+export function searchPath(p: ToneSearchParams, page: number): string {
+  const q = new URLSearchParams({ page: String(page), page_size: String(SEARCH_PAGE_SIZE), sort: p.sort });
+  if (p.query) q.set("query", p.query);
+  if (p.gears.length) q.set("gears", p.gears.join("_"));
+  if (p.format) q.set("format", p.format);
+  if (p.architecture) q.set("architecture", p.architecture);
+  return `/tones/search?${q}`;
+}
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -21,13 +47,13 @@ function networkError(e: unknown): HostError {
   return new HostError("network", "Can't reach TONE3000. Check your connection and try again.");
 }
 
-async function failure(res: Response): Promise<HostError> {
+async function failure(res: Response, forbidden?: HostError): Promise<HostError> {
   if (res.status === 429) {
     const after = Number(res.headers.get("retry-after"));
     return new HostError("network", `TONE3000 asks us to slow down. Try again in ${Number.isFinite(after) && after > 0 ? Math.ceil(after) : 60} s.`);
   }
   if (res.status === 401) return new HostError("unauthorized", "Your TONE3000 sign-in expired. Sign in again.");
-  if (res.status === 403) return new HostError("unauthorized", "TONE3000 doesn't allow this tone for your account.");
+  if (res.status === 403) return forbidden ?? new HostError("unauthorized", "TONE3000 doesn't allow this tone for your account.");
   if (res.status === 404) return new HostError("not-found", "This tone isn't on TONE3000 anymore, or it's private.");
   return new HostError("network", `TONE3000 answered ${res.status}. Try again in a moment.`);
 }
@@ -59,7 +85,7 @@ export class T3kClient {
   ) {}
 
   /** Authenticated request; on 401 refreshes once and retries. */
-  async request(url: string, init: RequestInit = {}): Promise<Response> {
+  async request(url: string, init: RequestInit = {}, forbidden?: HostError): Promise<Response> {
     const send = async (token: string) => {
       try {
         return await this.fetchFn(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } });
@@ -69,12 +95,12 @@ export class T3kClient {
     };
     let res = await send(await this.tokens.accessToken());
     if (res.status === 401) res = await send(await this.tokens.forceRefresh());
-    if (!res.ok) throw await failure(res);
+    if (!res.ok) throw await failure(res, forbidden);
     return res;
   }
 
-  private async json<T>(path: string): Promise<T> {
-    const res = await this.request(`${T3K_ORIGIN}/api/v1${path}`, { headers: { "Content-Type": "application/json" } });
+  private async json<T>(path: string, forbidden?: HostError): Promise<T> {
+    const res = await this.request(`${T3K_ORIGIN}/api/v1${path}`, { headers: { "Content-Type": "application/json" } }, forbidden);
     return (await res.json()) as T;
   }
 
@@ -88,6 +114,11 @@ export class T3kClient {
       return { tones: data, page: 1, totalPages: 1, total: data.length };
     }
     const res = await this.json<Paginated<T3kTone>>(`/tones/${kind}?page=${page}&page_size=${PAGE_SIZE}`);
+    return { tones: res.data, page: res.page, totalPages: res.total_pages, total: res.total };
+  }
+
+  async search(params: ToneSearchParams, page: number): Promise<{ tones: T3kTone[]; page: number; totalPages: number; total: number }> {
+    const res = await this.json<Paginated<T3kTone>>(searchPath(params, page), new HostError("unsupported", "TONE3000 doesn't allow search for this app key."));
     return { tones: res.data, page: res.page, totalPages: res.total_pages, total: res.total };
   }
 

@@ -13,7 +13,7 @@ import { pedalName, profileOrDefault } from "@/state/device-model";
 import type { OpenFile } from "@/state/ui";
 import { prepareUserIr, type UserIrFile } from "@/userir/convert";
 import { notifyError, notifySuccess } from "@/app/notify";
-import { closeFlow, closeLinkChoice, closeSplash, continueFromSplash, irSlotLabel, linkSlot, loadAccount, loadAllCounts, loadList, openSheet, readSlots, slotLabel, useTones } from "./store";
+import { closeFlow, closeLinkChoice, closeSplash, continueFromSplash, irSlotLabel, linkSlot, loadAccount, loadAllCounts, loadTab, readSlots, slotLabel, takePickedTone, useTones } from "./store";
 import { ToneImage } from "./ToneImage";
 import { irOccupant, irSummary, ReplaceIrNote, UserIrSlotPicker, useIrWriteBlocker } from "./UserIrParts";
 
@@ -97,8 +97,8 @@ export function FlowDialog() {
         if (result.status === "connected") {
           await loadAccount();
           loadAllCounts();
-          void loadList(useTones.getState().tab, { refresh: true });
-          if (result.toneId) openSheet(result.toneId);
+          void loadTab(useTones.getState().tab, { refresh: true });
+          if (result.toneId) takePickedTone(result.toneId);
         }
       },
       (e) => {

@@ -94,7 +94,7 @@ export function ChainOverview({ preset, readOnly }: { preset: PresetState; readO
                         <GearFor
                           key={b}
                           block={block}
-                          className={cn(wide ? "w-[58px]" : "w-[30px]", replaced ? "saturate-0 brightness-[.4]" : !block.enabled && "saturate-[.15] brightness-50")}
+                          className={cn(wide ? "w-[58px]" : "h-[46px] w-auto [&>svg]:h-full [&>svg]:w-auto", replaced ? "saturate-0 brightness-[.4]" : !block.enabled && "saturate-[.15] brightness-50")}
                         />
                       );
                     })}
@@ -236,7 +236,7 @@ function FlatChain({ preset, readOnly }: { preset: PresetState; readOnly: boolea
                 )}
               >
                 {drop?.target === b && <span aria-hidden className={cn("absolute inset-y-1 w-0.5 rounded-pill bg-silkscreen", drop.side === "before" ? "-left-1" : "-right-1")} />}
-                <GearFor block={block} name={name} className={cn(WIDE_ART.includes(artFor(block)) ? "w-[58px]" : "w-[30px]", !block.enabled && "saturate-[.15] brightness-50")} />
+                <GearFor block={block} name={name} className={cn(WIDE_ART.includes(artFor(block)) ? "w-[58px]" : "h-[46px] w-auto [&>svg]:h-full [&>svg]:w-auto", !block.enabled && "saturate-[.15] brightness-50")} />
               </button>
             </TooltipTrigger>
             <TooltipContent>{`${block.code} ${name}`}</TooltipContent>
