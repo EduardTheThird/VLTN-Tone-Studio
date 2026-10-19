@@ -7,8 +7,10 @@ import { WHATS_NEW_VERSION, saveWhatsNewSeen } from "@/state/whats-new";
 import stems from "@/assets/whats-new/stems.webp";
 import toneMatch from "@/assets/whats-new/tone-match.webp";
 import search from "@/assets/whats-new/search.webp";
+import gear from "@/assets/whats-new/gear.webp";
 
 const SLIDES = [
+  { title: "Pedals and amps that look like the real thing", text: "Every effect is drawn after the pedal it models, with its own colour, size and lettering, joined by patch cables. The board fits itself to the window; a zoom bar and a loupe on the knob you turn take you closer.", image: gear },
   { title: "Pick the stem separation model", text: "Before the first split, choose a model (Standard, Best or Fine-tuned) and a quality (Fast, Balanced or Max). Models download, resume and delete from the same picker.", image: stems },
   { title: "Tone match builds a SnapTone", text: "Your downloaded NAM captures are ranked against the song's guitar. Build the SnapTone with a cab IR designed for that song; nothing is written until you press Write.", image: toneMatch },
   { title: "Search TONE3000 in the app", text: "A new Search tab with gear, architecture and sort filters. Browse is still there as a fallback.", image: search },

@@ -25,14 +25,14 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 <br>
 <br>
 
-### Download v0.7.2
+### Download v0.8.0
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 <br>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.7.2/vltn-tone-studio-0.7.2-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.0/vltn-tone-studio-0.8.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
 
 <sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
@@ -46,7 +46,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studi
 <br>
 <br>
 
-[Download](#download-v072) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v080) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -60,8 +60,9 @@ Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studi
 
 ## Every knob. Live.
 
-Turn a knob on screen and you hear it on the pedal right away.<br>
-Nothing is saved until you say so. Compare with the saved preset, undo, and drag pedals into a new order.
+Turn a knob on screen and you hear it on the pedal right away, with a loupe that shows the knob you are turning.<br>
+Nothing is saved until you say so. Compare with the saved preset, undo, and drag pedals into a new order.<br>
+Every effect is drawn after the real pedal it models, with its own colour, size and lettering, and patch cables join them. The board fits itself to the window, and a zoom bar beside it takes you closer.
 
 <br>
 
@@ -101,7 +102,7 @@ Use the arrow keys to move through them and hear each one on the pedal. Press <k
 ## The amp, then the cab.
 
 Pick an amp and a cabinet, or load one of your 20 User IR slots.<br>
-The amp's controls stay in the strip at the bottom of the screen.
+Each amp head is dressed like the real one (Marshall, Orange, Mesa, Peavey, Diezel, Vox, Fender and more) and stands on a 4x12 stack. The amp's controls stay in the strip at the bottom of the screen.
 
 <br>
 
@@ -181,11 +182,17 @@ A session log keeps every connection step, error and MIDI message, ready to atta
 
 ## Tones from TONE3000.
 
-Browse and download NAM captures and IRs from TONE3000, and see which slots on your pedal already hold them.
+Browse, search and download NAM captures and IRs from TONE3000, and see which slots on your pedal already hold them.<br>
+The Search tab finds an amp, pedal or artist and narrows it down by gear, NAM architecture and sort order.
 
 <br>
 
 <img src="assets/tones.png" alt="Tones screen with trending TONE3000 captures and the GP-5's SnapTone and User IR slots" width="100%">
+
+<br>
+<br>
+
+<img src="assets/tones-search.png" alt="Searching TONE3000 for a dual rectifier, with gear, NAM architecture and sort filters" width="100%">
 
 <br>
 <br>
@@ -222,7 +229,14 @@ Compare its sizes, match levels, and shape it before it goes to the pedal.
 ## From a song to a tone.
 
 Drop a song and split it into drums, bass, guitar, piano, vocals and the rest, on your own computer.<br>
-Mute or solo any of them and export them as WAV.
+Choose the separation model (Standard, Best or Fine-tuned) and the quality (Fast, Balanced or Max) before you split. Mute or solo any stem and export them as WAV.
+
+<br>
+
+<img src="assets/song-model-picker.png" alt="Choosing a separation model and quality before the first split" width="100%">
+
+<br>
+<br>
 
 <br>
 
@@ -242,6 +256,15 @@ Tone Match listens to the guitar alone and proposes a preset for your GP-5, GP-5
 
 It shows what it heard: gain, echo, reverb, level, and the guitar's spectrum against a typical guitar.<br>
 Record yourself through the pedal and it designs a cabinet IR that brings your tone closer to the song's. Write it to a User IR slot and pick it in the CAB block.
+
+<br>
+
+<img src="assets/song-snaptone.png" alt="NAM captures ranked against the song's guitar, ready to be built into a SnapTone" width="100%">
+
+<br>
+<br>
+
+The NAM captures you downloaded from TONE3000 are ranked against the song's guitar. Pick one and Tone Studio builds a SnapTone from it, with a cab IR designed for the song. Nothing goes to the pedal until you press Write.
 
 <br>
 
