@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { LayersIcon, PowerIcon } from "lucide-react";
 import { profileFor } from "@shared/devices";
 import stageUrl from "@/assets/backdrops/stage.svg";
+import floorUrl from "@/assets/textures/floor.webp";
 import { AmpHead, AmpPanel, Cab, Capture, Dial, artFor, isUserIrFxid, knobsForBlock, modelTitle, paramTitle, voicingOf } from "@/components/gear";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
   const voicing = voicingOf(amp.model?.type);
   const { nsOn } = nsOf(preset);
   const cabArt = (
-    <Cab name={modelTitle(cab)} ir={isIR} className={cn("relative w-[clamp(220px,min(calc((100vh-470px)*1.3),20vw),540px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !cab.enabled && "saturate-[.2] brightness-50")} />
+    <Cab name={modelTitle(cab)} ir={isIR} origin={cab.model?.origin} match={{ name: ampName, origin: amp.model?.origin, type: amp.model?.type }} className={cn("relative w-[clamp(200px,min(calc((100vh-470px)*1.05),20vw),520px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !cab.enabled && "saturate-[.2] brightness-50")} />
   );
   return (
     <section
@@ -63,6 +64,11 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
       className="relative mx-7 my-3.5 flex min-h-0 flex-1 flex-col gap-3.5 overflow-hidden rounded-xl bg-[#0a090c] bg-cover bg-center bg-no-repeat px-6 pt-[18px] pb-5 shadow-[inset_0_0_0_1px_var(--glass-edge),inset_0_1px_0_rgb(255_255_255/0.07)] [@media(max-height:820px)]:my-2.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:py-3"
       style={{ backgroundImage: `url(${stageUrl})` }}
     >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[39%] bg-[length:560px] opacity-80 mix-blend-soft-light [mask-image:linear-gradient(to_bottom,transparent,#000_35%)]"
+        style={{ backgroundImage: `url(${floorUrl})` }}
+      />
       <BoardHead
         title="Amp & cab"
         hint={
@@ -92,12 +98,13 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
             <AmpHead
               name={ampName}
               type={amp.model?.type}
+              origin={amp.model?.origin}
               on={amp.enabled}
               knobs={knobsForBlock(amp)}
               interactive
               disabled={readOnly}
               onKnobChange={(id, v) => editParam(a, Number(id), v)}
-              className={cn("relative w-[clamp(280px,min(calc((100vh-470px)*1.7),26vw),680px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
+              className={cn("relative w-[clamp(300px,min(calc((100vh-470px)*1.9),34vw),820px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
             />
           )}
           </Floor>
@@ -213,6 +220,7 @@ export function AmpStrip({ preset, readOnly }: { preset: PresetState; readOnly: 
       <AmpPanel
         name={name}
         type={amp.model?.type}
+        origin={amp.model?.origin}
         on={amp.enabled}
         knobs={knobsForBlock(amp)}
         interactive
