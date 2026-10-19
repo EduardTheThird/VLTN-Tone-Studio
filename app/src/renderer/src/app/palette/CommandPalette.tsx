@@ -19,6 +19,7 @@ import {
   Save,
   Search,
   Settings2,
+  Sparkles,
   Speaker,
   Stethoscope,
   Unplug,
@@ -239,6 +240,16 @@ function useGroups(close: () => void): Group[] {
         run: () => {
           close();
           runMenuCommand("about");
+        },
+      }),
+      actionEntry({
+        id: "whats-new",
+        label: "What's new",
+        icon: Sparkles,
+        words: ["release", "changelog", "version"],
+        run: () => {
+          close();
+          runMenuCommand("whats-new");
         },
       }),
       ...(isElectron

@@ -80,6 +80,7 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
       submenu: [
         { label: "Diagnostics report", click: send("diagnostics-report") },
         ...(isMac ? [] : [{ label: "Check for updates…", click: send("check-updates") }]),
+        { label: "What's new", click: send("whats-new") },
         { label: "About VLTN Tone Studio", click: send("about") },
       ],
     },

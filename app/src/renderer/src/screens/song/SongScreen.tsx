@@ -11,12 +11,9 @@ import { StemsPanel } from "./stems/StemsPanel";
 import { ToneMatchPanel } from "./tonematch/ToneMatchPanel";
 import { useSongTab, type SongTab } from "./tab";
 
-/** Decode `file` and split it right away (the reason anyone drops a song here). */
+/** Decode `file`; the Stems tab then offers the model and quality choice before the split. */
 export async function openSong(file: File): Promise<void> {
-  const song = useSong.getState();
-  await song.load(file);
-  const now = useSong.getState();
-  if (now.source?.name === file.name && now.status.kind === "idle") await now.split();
+  await useSong.getState().load(file);
 }
 
 /** Audio files dropped on the window or opened while this screen is showing. */
