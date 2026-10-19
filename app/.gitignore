@@ -4,3 +4,4 @@ dist/
 *.log
 # Valeton's SnapTone test signal (not ours to publish); pipeline.test.ts uses it when present.
 src/renderer/src/snaptone/fixtures/nam_input_wav.wav
+.omc/

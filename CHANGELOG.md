@@ -18,6 +18,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Page titles are one size (32 px) on every screen; Library, Tones, Device, Song, the title bar and the What's new dialog fit narrow and short windows better (icon-only toolbar, wrapping headers, split bar under the model list, tab bar that keeps its tabs).
 - Empty states start at the top of their pane, unread Library slots show a dash instead of "Not read yet" 60 times, and empty Tones slots recede.
 - Gear drawings no longer use SVG filters or blend modes (grain and metal are pre-rendered images) and the model picker draws its thumbnails only once, so long lists scroll smoothly.
+- **Every supported pedal is fully supported.** The GP-150, GP-180, GP-200, GP-200LT and GP-200JR are no longer marked experimental or read-only: Tone Studio reads, writes, backs up, restores, imports, exports and uploads SnapTones and User IRs on all of them.
 
 ### Fixed
 - **A pedal with one knob has it in the middle, and knobs stay inside a pedal's panel.**
