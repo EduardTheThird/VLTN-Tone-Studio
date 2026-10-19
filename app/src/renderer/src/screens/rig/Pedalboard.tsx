@@ -1,3 +1,4 @@
+import { PatchCables } from "./PatchCables";
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
@@ -111,8 +112,9 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
         ref={rowRef}
         role="list"
         aria-label="Pedals in signal order"
-        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-[22px] overflow-x-auto overflow-y-hidden [scrollbar-width:thin]", readOnly && "opacity-70")}
+        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-9 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]", readOnly && "opacity-70")}
       >
+        <PatchCables rowRef={rowRef} codes={blocks.map((b) => preset.blocks[b].code)} />
         {blocks.map((b) =>
           b === ns && nsOn ? (
             <NsColumn key={b} block={preset.blocks[ns]} readOnly={readOnly} name={nsSlot} device={device} />
@@ -314,7 +316,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
         onDrop={onDrop}
         className={cn("relative flex flex-none flex-col items-center gap-2.5 [@media(max-height:820px)]:gap-2", movable && "cursor-grab", dragging && "opacity-50")}
       >
-        {dropSide && <span aria-hidden className={cn("absolute top-10 bottom-10 w-[3px] rounded-pill bg-silkscreen", dropSide === "before" ? "-left-[13px]" : "-right-[13px]")} />}
+        {dropSide && <span aria-hidden className={cn("absolute top-10 bottom-10 w-[3px] rounded-pill bg-silkscreen", dropSide === "before" ? "-left-[19px]" : "-right-[19px]")} />}
         <ModelButton block={block} label={label} selected={selected} disabled={readOnly} />
         {block.code === "NS" && snapToneReplacesAmpCab(device) ? (
           <Capture

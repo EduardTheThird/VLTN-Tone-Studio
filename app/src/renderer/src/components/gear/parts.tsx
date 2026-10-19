@@ -1,7 +1,7 @@
 // Shared SVG parts of the gear drawings: gradients, machined knob with LED value ring, slide switch, light pipe,
 // steel footswitch, perforated grille. Coordinates are viewBox units of the drawing that uses them.
 import type { ReactNode, SVGProps } from "react";
-import { FONT, clamp01, fit, shade as shadeStop, type Finish } from "./art";
+import { FONT, clamp01, shade as shadeStop, type Finish } from "./art";
 
 interface TextProps {
   x: number;
@@ -85,14 +85,20 @@ export function KnobArt({ id, cx, cy, r, value, min, max, dark = false, ring = "
     <g>
       <path d={arc(a0, a0 + sweep)} fill="none" stroke={track} strokeWidth={1.6} strokeLinecap="round" />
       {val && <path d={val} fill="none" stroke={ring} strokeWidth={1.8} strokeLinecap="round" />}
-      <circle cx={cx} cy={cy + r * 0.14} r={r} fill="#000" fillOpacity={0.38} />
+      <circle cx={cx} cy={cy + r * 0.14} r={r + 0.9} fill="#000" fillOpacity={0.4} />
+      <circle cx={cx} cy={cy} r={r + 0.9} fill="none" stroke="#000" strokeOpacity={0.35} strokeWidth={0.5} />
       <circle cx={cx} cy={cy} r={r} fill={`url(#${dark ? "capd" : "cap"}${id})`} />
       <circle cx={cx} cy={cy} r={r - 0.5} fill="none" stroke="#fff" strokeOpacity={dark ? 0.12 : 0.6} strokeWidth={0.6} />
       {/* knurled rim and the dished top of a machined cap */}
       <circle cx={cx} cy={cy} r={r - 1.1} fill="none" stroke="#000" strokeOpacity={dark ? 0.5 : 0.2} strokeWidth={Math.min(1, r * 0.1)} strokeDasharray="0.45 0.6" />
       <circle cx={cx} cy={cy} r={r * 0.56} fill="none" stroke="#000" strokeOpacity={dark ? 0.45 : 0.14} strokeWidth={0.5} />
       <circle cx={cx} cy={cy + 0.35} r={r * 0.56} fill="none" stroke="#fff" strokeOpacity={dark ? 0.1 : 0.55} strokeWidth={0.4} />
-      <circle cx={dx.toFixed(2)} cy={dy.toFixed(2)} r={Math.max(1, r * 0.13)} fill={dark ? "#fff" : "#1c1c1e"} />
+      <path
+        d={`M${P(end, r * 0.3)[0].toFixed(2)} ${P(end, r * 0.3)[1].toFixed(2)}L${dx.toFixed(2)} ${dy.toFixed(2)}`}
+        stroke={dark ? "#fff" : "#1c1c1e"}
+        strokeWidth={Math.max(1, r * 0.17)}
+        strokeLinecap="round"
+      />
       {focus && <circle cx={cx} cy={cy} r={R + 3.2} fill="none" stroke="#fff" strokeWidth={1} strokeOpacity={0.9} />}
     </g>
   );
@@ -182,6 +188,14 @@ export function Enclosure({ id, light = false, kind = "matte", ...rest }: { id: 
         <rect x="4" y="139" width="92" height="8" fill="#000" opacity={light ? 0.1 : 0.22} />
       </g>
       <rect x="4.4" y="3.4" width="91.2" height="143.2" rx="14.6" fill="none" stroke="#fff" strokeOpacity={light ? 0.75 : 0.16} strokeWidth={0.8} />
+      {/* input and output jacks, one on each side: the patch cables plug in here (screens/rig/PatchCables.tsx) */}
+      {[1.6, 94.4].map((x) => (
+        <g key={x}>
+          <rect x={x} y={66.2} width={4} height={7.6} rx={1.2} fill={`url(#steel${id})`} />
+          <rect x={x} y={66.2} width={4} height={7.6} rx={1.2} fill="none" stroke="#000" strokeOpacity={0.35} strokeWidth={0.4} />
+          <circle cx={x === 1.6 ? 4.6 : 95.4} cy={70} r={1.5} fill="#0a0a0b" />
+        </g>
+      ))}
     </g>
   );
 }
@@ -199,9 +213,10 @@ export function Screw({ id, cx, cy, turn = 0 }: { id: string; cx: number; cy: nu
 }
 
 /** Model name as the silkscreen/stamp on the enclosure: caps, slanted, with a pressed edge. */
-export function Nameplate({ x, y, name, ink, light, maxW = 54, size = 8.6 }: { x: number; y: number; name: string; ink: string; light: boolean; maxW?: number; size?: number }) {
+export function Nameplate({ x, y, name, ink, light, maxW = 52, size = 8.6 }: { x: number; y: number; name: string; ink: string; light: boolean; maxW?: number; size?: number }) {
   const text = name.toUpperCase();
-  const s = fit(text, maxW, size, true);
+  // bold slanted caps run about 0.72 em wide per letter, plus the 0.35 letter-spacing
+  const s = Math.min(size, (maxW - 0.35 * text.length) / (0.72 * text.length));
   const props = { size: s, weight: 800, anchor: "start" as const, spacing: 0.35, italic: true };
   return (
     <g>

@@ -67,11 +67,11 @@ export function Pedal(props: PedalProps) {
             w: 2 * r + 10,
             h: 2 * r + 10,
           });
-          const ly = y + r + 9.5;
+          const ly = y + r + 10.2;
           parts.push(
             <g key={`k${k.id}`}>
               <KnobArt id={id} cx={x} cy={y} r={r} value={k.value} min={k.min} max={k.max} dark={darkCaps} ring={ring} track={track} focus={foc} bipolar={isBipolar(k)} />
-              <T x={x} y={ly} fill={ink} size={4.6} opacity={0.72} spacing={0.3}>
+              <T x={x} y={ly} fill={ink} size={4.6} opacity={0.78} spacing={0.45} weight={650}>
                 {k.label.toUpperCase()}
               </T>
               {showValues && (
@@ -99,28 +99,28 @@ export function Pedal(props: PedalProps) {
           rest.forEach((k, i) => K(k, rest.length === 1 ? 50 : 24 + i * (52 / Math.max(1, rest.length - 1)), 92, 7.5));
           ty = 92;
         } else if (layout === "tri") {
-          const pos = hasT ? [[27, 42], [73, 42], [50, 68]] : [[27, 46], [73, 46], [50, 74]];
-          knobs.slice(0, 3).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 9 : 10));
+          const pos = hasT ? [[27, 38], [73, 38], [50, 70]] : [[27, 40], [73, 40], [50, 74]];
+          knobs.slice(0, 3).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 7.8 : 8.6));
           ty = 102;
         } else if (layout === "grid") {
-          const pos = hasT ? [[30, 42], [70, 42], [30, 72], [70, 72]] : [[30, 46], [70, 46], [30, 80], [70, 80]];
-          knobs.slice(0, 4).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 8.5 : 9.5));
+          const pos = hasT ? [[30, 37], [70, 37], [30, 69], [70, 69]] : [[30, 44], [70, 44], [30, 84], [70, 84]];
+          knobs.slice(0, 4).forEach((k, i) => K(k, pos[i][0], pos[i][1], hasT ? 7.2 : 8.4));
           ty = 102;
         } else if (layout === "dense") {
           // more than four knobs: three columns of small knobs
           const rows = Math.ceil(knobs.length / 3);
-          const dy = rows > 2 ? 22 : 28;
+          const dy = rows > 2 ? 24 : 30;
           knobs.forEach((k, i) => {
             const row = Math.floor(i / 3);
             const inRow = Math.min(3, knobs.length - row * 3);
             const x = inRow === 1 ? 50 : 22 + (56 * (i % 3)) / (inRow - 1);
-            K(k, x, 38 + row * dy, rows > 2 ? 6 : 7);
+            K(k, x, 34 + row * dy, rows > 2 ? 4.8 : 6.2);
           });
-          ty = 38 + rows * dy + (rows > 2 ? 0 : -2);
+          ty = 34 + rows * dy + (rows > 2 ? 2 : 0);
         } else {
           const n = Math.max(1, knobs.length);
-          const r = n >= 3 ? 9 : 11;
-          knobs.forEach((k, i) => K(k, n === 1 ? 50 : 20 + (60 * i) / (n - 1), 50, r));
+          const r = n >= 3 ? 7.2 : 11;
+          knobs.forEach((k, i) => K(k, n === 1 ? 50 : n >= 3 ? 19 + (62 * i) / (n - 1) : 22 + (56 * i) / (n - 1), 50, r));
           ty = 88;
         }
         const tall = hasT && ty > 96;
