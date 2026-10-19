@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { BLOCK_HEX, shade } from "@/components/gear/art";
 import type { BlockCode } from "@/state/device-types";
 
@@ -22,7 +22,7 @@ export function PatchCables({ rowRef, codes }: { rowRef: RefObject<HTMLElement |
   const [size, setSize] = useState<[number, number]>([0, 0]);
   const key = codes.join();
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const row = rowRef.current;
     if (!row) return;
     const measure = () => {
@@ -47,7 +47,8 @@ export function PatchCables({ rowRef, codes }: { rowRef: RefObject<HTMLElement |
     ro.observe(row);
     row.querySelectorAll(":scope > [role=listitem]").forEach((el) => ro.observe(el));
     return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for `codes`
+    // the row ref is attached after a child's layout effects run, hence useEffect; `key` stands for `codes`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowRef, key]);
 
   if (!cables.length) return null;

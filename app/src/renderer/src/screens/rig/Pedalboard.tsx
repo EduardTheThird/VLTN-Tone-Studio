@@ -1,5 +1,5 @@
 import { PatchCables } from "./PatchCables";
-import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type WheelEvent } from "react";
 import { profileFor, snapToneLabel, type DeviceKey } from "@shared/devices";
 import { ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import pedalboardUrl from "@/assets/backdrops/pedalboard.svg";
@@ -22,8 +22,10 @@ import { useMediaQuery } from "./use-media-query";
 export const DRAG_MIME = "application/x-gp5-block";
 
 /** Pedal art width: scales with the window height left for the board (2:3 gear), so a 1280×800 window still shows
- *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). */
-const GEAR_W = "w-[clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),186px)]";
+ *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). Never wider than what makes all pedals
+ *  of the row (--n, on the container) fit side by side, down to 132px; a longer GP-200 board scrolls from there. */
+const GEAR_W =
+  "w-[min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),186px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))]";
 
 function stateLine(b: BlockState, device: DeviceKey) {
   if (b.code === "NS") return b.enabled ? (snapToneReplacesAmpCab(device) ? "SnapTone on, replacing the amp and cab" : "SnapTone on") : "SnapTone off";
@@ -55,6 +57,21 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
   const [moreFor, setMoreFor] = useState<number | null>(null);
   const selected = useRig((s) => s.selected);
   const rowRef = useRef<HTMLDivElement>(null);
+  // The row scrolls only when even the smallest pedals don't fit: then its ends fade out and the wheel scrolls it sideways
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const check = () => setScrolls(row.scrollWidth > row.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [blocks.length, view]);
+  const onWheel = (e: WheelEvent<HTMLDivElement>) => {
+    const row = e.currentTarget;
+    if (scrolls && Math.abs(e.deltaY) > Math.abs(e.deltaX)) row.scrollLeft += e.deltaY;
+  };
   const snapTones = useDevice((s) => s.snapTones);
   const pedal = usePedalName();
   const nsSlot = ns >= 0 ? snapToneName(preset.blocks[ns], snapTones, device) : "";
@@ -110,9 +127,11 @@ export function Pedalboard({ preset, view, readOnly, showValues }: BoardProps) {
       <BoardHead title={view === "before" ? "Before the amp" : "After the amp"} hint={hint} keys />
       <div
         ref={rowRef}
+        style={{ "--n": blocks.length } as CSSProperties}
+        onWheel={onWheel}
         role="list"
         aria-label="Pedals in signal order"
-        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-9 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]", readOnly && "opacity-70")}
+        className={cn("relative flex min-h-0 flex-1 items-start justify-center-safe gap-9 overflow-x-auto overflow-y-hidden [container-type:inline-size] [scrollbar-width:thin]", scrolls && "[mask-image:linear-gradient(to_right,transparent,#000_32px,#000_calc(100%-32px),transparent)]", readOnly && "opacity-70")}
       >
         <PatchCables rowRef={rowRef} codes={blocks.map((b) => preset.blocks[b].code)} />
         {blocks.map((b) =>
