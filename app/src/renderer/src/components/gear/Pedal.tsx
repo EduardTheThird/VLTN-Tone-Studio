@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import type { BlockCode } from "@/state/device-types";
 import { BLOCK_HEX, finishFor, fit, hash, lum, type Finish } from "./art";
+import { pedalStyle } from "./pedal-styles";
 import { GearFrame, type Control } from "./controls";
 import { formatValue } from "./knob-math";
+import { Jewel } from "./amp-parts";
 import { BlockTag, Defs, Enclosure, FootswitchArt, KnobArt, LightBar, Nameplate, Screw, SlideSwitch, T } from "./parts";
 import { paramTitle, type GearBaseProps, type GearKnob } from "./types";
 
@@ -13,6 +15,8 @@ export interface PedalProps extends GearBaseProps {
   finish?: Finish;
   /** Hue override */
   color?: string;
+  /** The real pedal it models: with the name, it picks the colour, size and details */
+  origin?: string;
   layout?: PedalLayout;
 }
 
@@ -23,10 +27,19 @@ export const pedalControls = (all: readonly GearKnob[]) => ({ knobs: all.filter(
 
 /** Stompbox: matte/noir/frost enclosure, machined knobs with LED value rings, light pipe, steel footswitch. */
 export function Pedal(props: PedalProps) {
-  const { block, name, on = true, knobs: all = [], interactive, disabled, showValues, focus, onKnobChange, onToggleOn, finish, color, layout: want, className, style } = props;
+  const { block, name, on = true, knobs: all = [], interactive, disabled, showValues, focus, onKnobChange, onToggleOn, finish, color, origin, layout: want, scaled, className, style: baseStyle } = props;
+  const look = pedalStyle(name, origin, block);
+  // knobs need room: a mini enclosure with many of them grows
+  const nk = pedalControls(all).knobs.length;
+  const W = Math.max(look.w, nk >= 4 ? 96 : nk === 3 ? 86 : 0);
+  const H = Math.max(look.h, nk >= 5 ? 160 : 0);
+  const ox = (W - 100) / 2;
+  const bd = H - 150;
+  const kd = bd * 0.35 + (look.treadle ?? 0);
+  const style = scaled ? { ...baseStyle, width: `calc(var(--gw) * ${((W / 100) * Math.min(1, 150 / H)).toFixed(3)})` } : baseStyle;
   return (
     <GearFrame
-      view={[100, 150]}
+      view={[W, H]}
       label={`${name} ${block} pedal, ${on ? "on" : "bypassed"}`}
       interactive={interactive}
       disabled={disabled}
@@ -36,12 +49,12 @@ export function Pedal(props: PedalProps) {
         const controls: Control[] = [];
         const { knobs, toggles } = pedalControls(all);
         const h = hash(name);
-        const f = finishFor(name, BLOCK_HEX[block], h, finish, color);
+        const f = look.body ? { kind: look.finish ?? "matte", body: look.body, accent: look.accent ?? "#1c1c1e" } : finishFor(name, BLOCK_HEX[block], h, finish, color);
         const light = lum(f.body) > 0.6;
-        const ink = light ? "#1c1c1e" : "#ffffff";
+        const ink = look.ink ?? (light ? "#1c1c1e" : "#ffffff");
         const ring = f.kind === "noir" ? f.accent : light ? "#1c1c1e" : "#ffffff";
         const track = light ? "rgba(0,0,0,.16)" : "rgba(255,255,255,.18)";
-        const darkCaps = f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
+        const darkCaps = look.darkKnobs !== undefined ? !look.darkKnobs : f.kind === "frost" ? true : f.kind === "noir" ? false : (h >>> 6) % 2 === 0;
         const hasT = toggles.length > 0;
         const picked: PedalLayout =
           knobs.length > 4
@@ -52,7 +65,10 @@ export function Pedal(props: PedalProps) {
         const focusId = active ?? focus;
         const parts: ReactNode[] = [];
 
-        const K = (k: GearKnob, x: number, y: number, r: number) => {
+        const narrow = Math.min(1, (W - 26) / 74);
+        const K = (k: GearKnob, x0: number, y: number, r0: number) => {
+          const x = 50 + (x0 - 50) * narrow;
+          const r = r0 * Math.min(1, 0.55 + narrow * 0.45);
           const foc = k.id === focusId;
           const shown = formatValue(k.value, k);
           controls.push({
@@ -71,7 +87,7 @@ export function Pedal(props: PedalProps) {
           parts.push(
             <g key={`k${k.id}`}>
               <KnobArt id={id} cx={x} cy={y} r={r} value={k.value} min={k.min} max={k.max} dark={darkCaps} ring={ring} track={track} focus={foc} bipolar={isBipolar(k)} />
-              <T x={x} y={ly} fill={ink} size={4.6} opacity={0.78} spacing={0.45} weight={650}>
+              <T x={x} y={ly} fill={ink} size={look.labelFont ? 5 : 4.6} opacity={0.85} spacing={look.labelFont ? 0.3 : 0.45} weight={look.labelFont ? 700 : 650} family={look.labelFont}>
                 {k.label.toUpperCase()}
               </T>
               {showValues && (
@@ -145,27 +161,68 @@ export function Pedal(props: PedalProps) {
         });
         controls.push({ kind: "fs", id: "fs", label: `${name} ${block}`, on, onToggle: onToggleOn, x: 50 - fsR - 3, y: fsY - fsR - 3, w: 2 * fsR + 6, h: 2 * fsR + 6 });
 
+        for (const c of controls) {
+          c.x += ox;
+          c.y += c.kind === "fs" ? bd : kd;
+        }
+        const ex = (W - 100) / 2;
+        const lblW = 76;
         const art = (
           <>
             <Defs id={id} body={f.body} />
-            <Enclosure id={id} light={light} kind={f.kind} />
-            <path d="M18 3.6h64" stroke="#fff" strokeOpacity={light ? 0.9 : 0.32} strokeWidth={0.8} strokeLinecap="round" />
+            <Enclosure id={id} light={light} kind={f.kind} w={W} h={H} rx={look.rx} />
+            <path d={`M${look.rx + 3} 3.6h${W - 2 * look.rx - 6}`} stroke="#fff" strokeOpacity={light ? 0.9 : 0.32} strokeWidth={0.8} strokeLinecap="round" />
             {f.kind === "noir" && (
               <>
                 <clipPath id={`clip${id}`}>
-                  <rect x="4" y="3" width="92" height="144" rx="15" />
+                  <rect x="4" y="3" width={W - 8} height={H - 6} rx={look.rx} />
                 </clipPath>
-                <rect x="4" y="3" width="92" height="5" fill={f.accent} clipPath={`url(#clip${id})`} />
+                <rect x="4" y="3" width={W - 8} height="5" fill={f.accent} clipPath={`url(#clip${id})`} />
               </>
             )}
-            {f.kind === "frost" && <rect x="12" y="25" width="76" height="1.2" rx=".6" fill={f.accent} />}
-            <Nameplate x={12} y={19} name={name} ink={ink} light={light} />
-            <BlockTag x={88} y={19} code={block} ink={ink} />
-            <Screw id={id} cx={12} cy={141} turn={(h >>> 3) % 180} />
-            <Screw id={id} cx={88} cy={141} turn={(h >>> 11) % 180} />
-            {parts}
-            <LightBar cx={50} cy={lbY} on={on} color={f.kind === "matte" ? (light ? "#1c1c1e" : "#ffffff") : f.accent} />
-            <FootswitchArt id={id} cx={50} cy={fsY} r={fsR} />
+            {f.kind === "frost" && <rect x="12" y="25" width={W - 24} height="1.2" rx=".6" fill={f.accent} />}
+            <g transform={`translate(${ex} 0)`}>
+              {look.treadle ? (
+                <g>
+                  <rect x="14" y="26" width="72" height={look.treadle + kd * 0 + 38} rx="7" fill="#000" fillOpacity={0.4} transform="translate(0 1.4)" />
+                  <rect x="14" y="26" width="72" height={look.treadle + 38} rx="7" fill={f.kind === "frost" ? "#1d1d20" : "#0b0b0d"} stroke="#fff" strokeOpacity={0.14} strokeWidth={0.6} />
+                  {Array.from({ length: Math.floor((look.treadle + 28) / 4.4) }, (_, i) => (
+                    <rect key={i} x="18" y={31 + i * 4.4} width="64" height="2" rx="1" fill="#fff" fillOpacity={0.2} />
+                  ))}
+                </g>
+              ) : null}
+              {look.label === "strip" ? (
+                <g>
+                  <rect x="12" y="11" width={lblW} height="13" rx="2" fill="#0d0d0f" stroke="#fff" strokeOpacity={0.18} strokeWidth={0.4} transform={`translate(${(76 - lblW) / 2 + 0} 0)`} />
+                  <T x={50} y={20.6} fill="#f4f4f4" size={Math.min(8.4, (lblW - 8) / (name.length * 0.62))} weight={look.fontWeight ?? 700} spacing={0.5} family={look.font}>
+                    {name.toUpperCase()}
+                  </T>
+                </g>
+              ) : look.label === "script" ? (
+                <T x={50} y={look.treadle ? 20 : 21} fill={ink} size={Math.min(look.font ? 11.5 : 10.5, 80 / (name.length * 0.52))} weight={look.fontWeight ?? 800} italic={!look.font} spacing={0.1} family={look.font}>
+                  {name}
+                </T>
+              ) : (
+                <Nameplate x={12} y={19} name={name} ink={ink} light={light} family={look.font} />
+              )}
+              {look.label === "stamp" && <BlockTag x={88} y={19} code={block} ink={ink} />}
+              <Screw id={id} cx={12} cy={H - 9} turn={(h >>> 3) % 180} />
+              <Screw id={id} cx={88} cy={H - 9} turn={(h >>> 11) % 180} />
+              <g transform={`translate(0 ${kd})`}>{parts}</g>
+              <g transform={`translate(0 ${bd})`}>
+                {look.cover && (
+                  <g>
+                    <rect x="14" y={fsY - 13} width="72" height="29" rx="5" fill="#000" fillOpacity={0.4} transform="translate(0 1.2)" />
+                    <rect x="14" y={fsY - 13} width="72" height="29" rx="5" fill="#0e0e10" stroke="#fff" strokeOpacity={0.16} strokeWidth={0.5} />
+                    {[0, 1, 2].map((i) => (
+                      <rect key={i} x="19" y={fsY - 8 + i * 6.4} width="62" height="1.6" rx=".8" fill="#fff" fillOpacity={0.1} />
+                    ))}
+                  </g>
+                )}
+                {look.jewel ? <Jewel id={id} cx={50} cy={lbY - 5} on={on} r={2.8} /> : <LightBar cx={50} cy={lbY} on={on} color={f.kind === "matte" ? (light ? "#1c1c1e" : "#ffffff") : f.accent} />}
+                <FootswitchArt id={id} cx={50} cy={fsY} r={fsR} />
+              </g>
+            </g>
           </>
         );
         return { art, controls };

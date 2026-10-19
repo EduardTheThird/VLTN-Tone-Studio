@@ -96,6 +96,6 @@ export function GearFor({ block, name = modelTitle(block), onParam, ...rest }: G
     case "cab":
       return <Cab name={name} ir={isUserIrFxid(block.fxid)} origin={block.model?.origin} className={rest.className} style={rest.style} />;
     default:
-      return <Pedal {...common} block={block.code} />;
+      return <Pedal {...common} block={block.code} origin={block.model?.origin} />;
   }
 }

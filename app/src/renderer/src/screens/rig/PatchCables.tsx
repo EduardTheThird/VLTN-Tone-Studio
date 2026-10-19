@@ -30,8 +30,10 @@ export function PatchCables({ rowRef, codes }: { rowRef: RefObject<HTMLElement |
       const ox = rr.left - row.scrollLeft;
       const oy = rr.top - row.scrollTop;
       const jacks = [...row.querySelectorAll<HTMLElement>(":scope > [role=listitem]")].map((el) => {
-        const r = el.querySelector('svg[viewBox="0 0 100 150"]')?.getBoundingClientRect();
-        return r && { l: r.left - ox + r.width * 0.016, r: r.left - ox + r.width * 0.984, y: r.top - oy + r.height * JACK_Y };
+        const svg = el.querySelector<SVGSVGElement>('svg[role="img"]');
+        const r = svg?.getBoundingClientRect();
+        const vw = svg?.viewBox.baseVal.width || 100;
+        return r && { l: r.left - ox + (r.width * 1.6) / vw, r: r.left - ox + (r.width * (vw - 1.6)) / vw, y: r.top - oy + r.height * JACK_Y };
       });
       const next: Cable[] = [];
       jacks.forEach((a, i) => {

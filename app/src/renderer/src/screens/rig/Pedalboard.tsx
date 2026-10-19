@@ -27,7 +27,7 @@ export const DRAG_MIME = "application/x-gp5-block";
  *  whole pedals. --rig-banner is the offline banner height (set by RigScreen). Never wider than what makes all pedals
  *  of the row (--n, on the container) fit side by side, down to 132px; a longer GP-200 board scrolls from there. */
 const GEAR_W =
-  "w-[calc(min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),236px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))*var(--z,1))]";
+  "[--gw:calc(min(clamp(calc(112px-var(--rig-banner,0px)/1.5),calc((100vh-570px-var(--rig-banner,0px))/1.5),236px),max(132px,calc((100cqw-(var(--n,1)-1)*2.25rem)/var(--n,1))))*var(--z,1))] w-(--gw)";
 
 function stateLine(b: BlockState, device: DeviceKey) {
   if (b.code === "NS") return b.enabled ? (snapToneReplacesAmpCab(device) ? "SnapTone on, replacing the amp and cab" : "SnapTone on") : "SnapTone off";
@@ -365,6 +365,7 @@ function SlotColumn({ block, device, readOnly, showValues, dropSide, dragging, o
             interactive
             disabled={readOnly}
             showValues={showValues}
+            scaled
             onParam={(i, v) => editParam(block.index, i, v)}
             onToggleOn={(on) => editEnabled(block.index, on)}
             className={cn(GEAR_W, "drop-shadow-[0_18px_24px_rgb(0_0_0/0.6)]", !block.enabled && "saturate-[.2] brightness-50")}
