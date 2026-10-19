@@ -15,6 +15,8 @@ ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: mjsUrl };
 ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(8, navigator.hardwareConcurrency || 4) : 1;
 
 let session: ort.InferenceSession | null = null;
+let modelBytes: Uint8Array | null = null;
+let backend: Backend = "wasm";
 const cancelled = new Set<number>();
 const post = (msg: WorkerReply, transfer: Transferable[] = []) => self.postMessage(msg, transfer);
 
@@ -33,7 +35,18 @@ async function createSession(model: Uint8Array): Promise<{ session: ort.Inferenc
 }
 
 async function runSegment(mix: Float32Array): Promise<Float32Array> {
-  const s = session!;
+  try {
+    return await runOn(session!, mix);
+  } catch (e) {
+    // The GPU device was lost mid-run (driver reset, out of memory): the session is dead, so redo this chunk on the CPU.
+    if (backend !== "webgpu" || !modelBytes) throw e;
+    session = await ort.InferenceSession.create(modelBytes, { graphOptimizationLevel: "all", executionProviders: ["wasm"] });
+    backend = "wasm";
+    return runOn(session, mix);
+  }
+}
+
+async function runOn(s: ort.InferenceSession, mix: Float32Array): Promise<Float32Array> {
   const input = new ort.Tensor("float32", mix, [1, 2, SEGMENT]);
   const out = await s.run({ [s.inputNames[0]]: input });
   const stems = out[s.outputNames[0]];
@@ -66,6 +79,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     try {
       const created = await createSession(msg.model);
       session = created.session;
+      backend = created.backend;
+      modelBytes = msg.model;
       post({ type: "loaded", backend: created.backend, threads: ort.env.wasm.numThreads ?? 1, gpuError: created.gpuError });
     } catch (err) {
       post({ type: "load-error", message: err instanceof Error ? err.message : String(err) });
