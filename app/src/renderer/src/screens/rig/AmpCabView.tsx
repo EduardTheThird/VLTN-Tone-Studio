@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
 import { LayersIcon, PowerIcon } from "lucide-react";
 import { profileFor } from "@shared/devices";
-import stageUrl from "@/assets/backdrops/stage.svg";
+import stageUrl from "@/assets/backdrops/stage.webp";
+import floorUrl from "@/assets/textures/floor.webp";
 import { AmpHead, AmpPanel, Cab, Capture, Dial, artFor, isUserIrFxid, knobsForBlock, modelTitle, paramTitle, voicingOf } from "@/components/gear";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,17 @@ import { ampCab } from "./order";
 import { BoardHead, ModelButton } from "./Pedalboard";
 import { useRig } from "./rig-store";
 import { snapToneName } from "./snaptone";
+
+/** Stands the gear on the stage floor: bottom-aligned in the space above the strip, with a contact shadow. */
+function Floor({ children }: { children: ReactNode }) {
+  // a size container: the gear inside is sized from the room that is really left (cqw/cqh), not from the window
+  return (
+    <div className="relative flex min-h-0 w-full flex-1 items-end justify-center pb-3 [container-type:size]">
+      <span aria-hidden className="absolute bottom-1.5 left-1/2 h-5 w-[78%] max-w-[520px] -translate-x-1/2 rounded-[50%] bg-black/75 blur-md" />
+      {children}
+    </div>
+  );
+}
 
 const sentence = (t?: string) => (t ? t.charAt(0) + t.slice(1).toLowerCase() : "");
 
@@ -44,7 +57,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
   const voicing = voicingOf(amp.model?.type);
   const { nsOn } = nsOf(preset);
   const cabArt = (
-    <Cab name={modelTitle(cab)} ir={isIR} className={cn("w-[330px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:w-[clamp(220px,calc((100vh-560px)*1.2),330px)]", !cab.enabled && "saturate-[.2] brightness-50")} />
+    <Cab name={modelTitle(cab)} ir={isIR} origin={cab.model?.origin} match={{ name: ampName, origin: amp.model?.origin, type: amp.model?.type }} className={cn("relative", cabMore.length ? "w-[min(calc(100cqw-170px),calc(100cqh*1.05),520px)]" : "w-[min(100cqw,calc(100cqh*1.05),520px)]", "drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !cab.enabled && "saturate-[.2] brightness-50")} />
   );
   return (
     <section
@@ -52,6 +65,11 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
       className="relative mx-7 my-3.5 flex min-h-0 flex-1 flex-col gap-3.5 overflow-hidden rounded-xl bg-[#0a090c] bg-cover bg-center bg-no-repeat px-6 pt-[18px] pb-5 shadow-[inset_0_0_0_1px_var(--glass-edge),inset_0_1px_0_rgb(255_255_255/0.07)] [@media(max-height:820px)]:my-2.5 [@media(max-height:820px)]:gap-2.5 [@media(max-height:820px)]:py-3"
       style={{ backgroundImage: `url(${stageUrl})` }}
     >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[39%] bg-[length:560px] opacity-80 mix-blend-soft-light [mask-image:linear-gradient(to_bottom,transparent,#000_35%)]"
+        style={{ backgroundImage: `url(${floorUrl})` }}
+      />
       <BoardHead
         title="Amp & cab"
         hint={
@@ -66,6 +84,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
             <span className="text-sm font-semibold text-silkscreen-2">Amp</span>
             <ModelButton block={amp} label={ampName} selected={selected === a} disabled={readOnly} className="flex-1" />
           </div>
+          <Floor>
           {capture ? (
             <Capture
               name={ampName}
@@ -74,20 +93,22 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
               interactive
               disabled={readOnly}
               onToggleOn={(on) => editEnabled(a, on)}
-              className={cn("mt-[26px] w-[132px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:mt-2.5 [@media(max-height:820px)]:w-[clamp(94px,calc((100vh-560px)*0.53),132px)]", !amp.enabled && "saturate-[.2] brightness-50")}
+              className={cn("relative w-[min(60cqw,calc(100cqh*0.62),210px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
             />
           ) : (
             <AmpHead
               name={ampName}
               type={amp.model?.type}
+              origin={amp.model?.origin}
               on={amp.enabled}
               knobs={knobsForBlock(amp)}
               interactive
               disabled={readOnly}
               onKnobChange={(id, v) => editParam(a, Number(id), v)}
-              className={cn("mt-[26px] w-[400px] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)] [@media(max-height:820px)]:mt-2.5 [@media(max-height:820px)]:w-[clamp(280px,calc((100vh-560px)*1.6),400px)]", !amp.enabled && "saturate-[.2] brightness-50")}
+              className={cn("relative w-[min(100cqw,calc(100cqh*2.05),820px)] drop-shadow-[0_20px_28px_rgb(0_0_0/0.65)]", !amp.enabled && "saturate-[.2] brightness-50")}
             />
           )}
+          </Floor>
           <div className="mt-auto flex w-full max-w-[440px] items-center gap-3 rounded-pill bg-[rgb(10_10_12/0.66)] px-2.5 py-1.5 text-xs">
             {voicing && <Badge variant="outline">{sentence(voicing)}</Badge>}
             <span className="min-w-0 truncate text-silkscreen-3">{amp.model?.origin ? `Modeled on ${amp.model.origin}` : ampName}</span>
@@ -100,10 +121,11 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
             <span className="text-sm font-semibold text-silkscreen-2">Cab</span>
             <ModelButton block={cab} selected={selected === c} disabled={readOnly} className="flex-1" />
           </div>
+          <Floor>
           {cabMore.length ? (
-            <div className="flex items-center gap-5">
+            <div className="flex items-end gap-3">
               {cabArt}
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5 pb-1">
                 {cabMore.map((k) => (
                   <Dial
                     key={k.id}
@@ -111,7 +133,8 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
                     ariaLabel={`${modelTitle(cab)} ${paramTitle(k.label)}`}
                     value={k.value}
                     spec={k}
-                    size={34}
+                    size={32}
+                    layout="row"
                     color="var(--block-cab)"
                     disabled={readOnly}
                     onChange={(v) => editParam(c, Number(k.id), v)}
@@ -122,6 +145,7 @@ export function AmpCabView({ preset, readOnly }: { preset: PresetState; readOnly
           ) : (
             cabArt
           )}
+          </Floor>
           <div className="mt-auto flex w-full max-w-[440px] items-center gap-3 rounded-pill bg-[rgb(10_10_12/0.66)] px-2.5 py-1.5 text-xs">
             <ToggleGroup
               type="single"
@@ -198,6 +222,7 @@ export function AmpStrip({ preset, readOnly }: { preset: PresetState; readOnly: 
       <AmpPanel
         name={name}
         type={amp.model?.type}
+        origin={amp.model?.origin}
         on={amp.enabled}
         knobs={knobsForBlock(amp)}
         interactive

@@ -1,52 +1,68 @@
-import { MODEL_CHECKSUM_ERROR, modelDownloadError, SEPARATION_MODEL, sha256Hex, type ModelProgress, type SongHostApi } from "@shared/host/song";
+import {
+  findModel,
+  MODEL_CHECKSUM_ERROR,
+  MODEL_FILES,
+  MODEL_MISSING_ERROR,
+  modelDownloadError,
+  modelFiles,
+  sha256Hex,
+  UNKNOWN_MODEL_ERROR,
+  type ModelFile,
+  type ModelProgress,
+  type SongHostApi,
+} from "@shared/host/song";
 import { HostError } from "@shared/ipc";
 
-// Browser build: the model is cached in Cache Storage under its pinned URL, checked before it is stored; exported
-// files are downloads.
+// Browser build: each model file is cached in Cache Storage under its pinned URL, checked before it is stored.
+// A model's files download one after another, so an interrupted download keeps the files already finished
+// (Cache Storage can't append to a partial entry). Exported files are downloads.
 const CACHE = "vltn-models";
 const listeners = new Set<(p: ModelProgress) => void>();
 const PROGRESS_EVERY_BYTES = 1 << 20;
-let pending: Promise<Uint8Array> | null = null;
+const pending = new Map<string, Promise<void>>();
 
-async function cached(): Promise<Uint8Array | null> {
-  const res = await (await caches.open(CACHE)).match(SEPARATION_MODEL.url);
-  if (!res) return null;
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  return bytes.byteLength === SEPARATION_MODEL.bytes ? bytes : null;
-}
+const openCache = () => caches.open(CACHE);
 
-async function download(): Promise<Uint8Array> {
-  const total = SEPARATION_MODEL.bytes;
-  const emit = (received: number) => listeners.forEach((cb) => cb({ received, total }));
+/** Download `f`, check it and store it; `onBytes` gets the bytes received so far. */
+async function download(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(SEPARATION_MODEL.url);
+    res = await fetch(f.url);
   } catch {
     throw new HostError("network", modelDownloadError(null));
   }
   if (!res.ok || !res.body) throw new HostError("network", modelDownloadError(res.status));
-  const bytes = new Uint8Array(total);
+  const bytes = new Uint8Array(f.bytes);
   let received = 0;
   let reported = 0;
   const reader = res.body.getReader();
-  emit(0);
+  onBytes(0);
   for (;;) {
     const chunk = await reader.read().catch(() => {
       throw new HostError("network", modelDownloadError(null));
     });
     if (chunk.done) break;
-    if (received + chunk.value.byteLength > total) throw new HostError("invalid", MODEL_CHECKSUM_ERROR);
+    if (received + chunk.value.byteLength > f.bytes) throw new HostError("invalid", MODEL_CHECKSUM_ERROR);
     bytes.set(chunk.value, received);
     received += chunk.value.byteLength;
     if (received - reported >= PROGRESS_EVERY_BYTES) {
       reported = received;
-      emit(received);
+      onBytes(received);
     }
   }
-  emit(received);
-  if (received !== total || (await sha256Hex(bytes)) !== SEPARATION_MODEL.sha256) throw new HostError("invalid", MODEL_CHECKSUM_ERROR);
-  await (await caches.open(CACHE)).put(SEPARATION_MODEL.url, new Response(bytes, { headers: { "Content-Type": "application/octet-stream" } }));
-  return bytes;
+  onBytes(received);
+  if (received !== f.bytes || (await sha256Hex(bytes)) !== f.sha256) throw new HostError("invalid", MODEL_CHECKSUM_ERROR);
+  await (await openCache()).put(f.url, new Response(bytes, { headers: { "Content-Type": "application/octet-stream" } }));
+}
+
+/** One download per file at a time; a second request joins it. */
+function downloadOnce(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
+  let job = pending.get(f.file);
+  if (!job) {
+    job = download(f, onBytes).finally(() => pending.delete(f.file));
+    pending.set(f.file, job);
+  }
+  return job;
 }
 
 function downloadFile(name: string, bytes: Uint8Array) {
@@ -59,15 +75,40 @@ function downloadFile(name: string, bytes: Uint8Array) {
 }
 
 export const webSong: SongHostApi = {
-  hasModel: async () => (await (await caches.open(CACHE)).match(SEPARATION_MODEL.url)) !== undefined,
-  async model() {
-    const hit = await cached();
-    if (hit) return hit;
-    pending ??= download().finally(() => {
-      pending = null;
-    });
-    // The worker takes the buffer: hand out a copy so a joined request keeps its own.
-    return (await pending).slice();
+  async downloadedFiles() {
+    const cache = await openCache();
+    const files = [...MODEL_FILES.values()];
+    const have = await Promise.all(files.map(async (f) => (await cache.match(f.url)) !== undefined));
+    return files.filter((_, i) => have[i]).map((f) => f.file);
+  },
+  async downloadModel(id) {
+    const model = findModel(id);
+    if (!model) throw new HostError("invalid", UNKNOWN_MODEL_ERROR);
+    const cache = await openCache();
+    const missing: ModelFile[] = [];
+    for (const f of modelFiles(model)) if (!(await cache.match(f.url))) missing.push(f);
+    const total = missing.reduce((sum, f) => sum + f.bytes, 0);
+    let done = 0;
+    for (const f of missing) {
+      await downloadOnce(f, (received) => listeners.forEach((cb) => cb({ received: done + received, total })));
+      done += f.bytes;
+    }
+  },
+  async modelFile(name) {
+    const f = MODEL_FILES.get(name);
+    if (!f) throw new HostError("invalid", UNKNOWN_MODEL_ERROR);
+    const res = await (await openCache()).match(f.url);
+    const bytes = res ? new Uint8Array(await res.arrayBuffer()) : null;
+    if (!bytes || bytes.byteLength !== f.bytes) throw new HostError("not-found", MODEL_MISSING_ERROR);
+    return bytes;
+  },
+  async deleteModel(id) {
+    const model = findModel(id);
+    if (!model) throw new HostError("invalid", UNKNOWN_MODEL_ERROR);
+    const files = modelFiles(model);
+    await Promise.allSettled(files.map((f) => pending.get(f.file)));
+    const cache = await openCache();
+    for (const f of files) await cache.delete(f.url);
   },
   onModelProgress(cb) {
     listeners.add(cb);

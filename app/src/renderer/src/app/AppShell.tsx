@@ -12,6 +12,8 @@ import { useDeviceWatch } from "./device-watch";
 import { useUpdateWatch } from "./updates";
 import { CommandPalette } from "./palette/CommandPalette";
 import { AboutDialog } from "./overlays/AboutDialog";
+import { WhatsNewDialog } from "./overlays/WhatsNewDialog";
+import { useWhatsNewOnLaunch } from "./whats-new";
 import { UpdateDialog } from "./overlays/UpdateDialog";
 import { UnsavedSwitchDialog } from "./overlays/UnsavedSwitchDialog";
 import { FileDropOverlay } from "./overlays/FileDropOverlay";
@@ -38,6 +40,7 @@ export function AppShell() {
   useAppCommands();
   useDeviceWatch();
   useUpdateWatch();
+  useWhatsNewOnLaunch();
   const Active = SCREENS[screen];
   return (
     <div className="grid h-full grid-cols-[84px_minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)]">
@@ -52,6 +55,7 @@ export function AppShell() {
       <CommandPalette />
       <UnsavedSwitchDialog />
       <AboutDialog />
+      <WhatsNewDialog />
       <UpdateDialog />
       <FileDropOverlay />
     </div>

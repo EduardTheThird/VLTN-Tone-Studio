@@ -3,8 +3,10 @@ import type { ModelProgress, SongHostApi } from "@shared/host/song";
 import { invoke } from "./invoke";
 
 export const songApi: SongHostApi = {
-  hasModel: () => invoke("song:hasModel"),
-  model: () => invoke("song:model"),
+  downloadedFiles: () => invoke("song:downloadedFiles"),
+  downloadModel: (id) => invoke("song:downloadModel", id),
+  modelFile: (file) => invoke("song:modelFile", file),
+  deleteModel: (id) => invoke("song:deleteModel", id),
   onModelProgress: (cb) => {
     const handler = (_e: IpcRendererEvent, p: ModelProgress) => cb(p);
     ipcRenderer.on("song:modelProgress", handler);

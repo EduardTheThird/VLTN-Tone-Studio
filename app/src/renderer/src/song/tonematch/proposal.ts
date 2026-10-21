@@ -177,6 +177,27 @@ function eqBlock(device: DeviceKey, tone: ToneEstimate): ProposedBlock {
   return { ...block, enabled: strongest >= 6 };
 }
 
+/**
+ * The proposal with its Guitar EQ set from an offline refinement (refine-offline.ts): `eqDb` are the five bands'
+ * gains in dB (125 Hz, 400 Hz, 800 Hz, 1.6 kHz, 4 kHz). The EQ is on when a band moves by 1.5 dB or more.
+ */
+export function withRefinedEq(proposal: Proposal, eqDb: readonly number[], capture: string): Proposal {
+  const { device } = proposal;
+  const names = ["125Hz", "400Hz", "800Hz", "1.6kHz", "4kHz"];
+  const values = Object.fromEntries(names.map((n, i) => [n, clampStep((eqDb[i] ?? 0) * STEPS_PER_DB, -50, 50)]));
+  const old = proposal.blocks.find((b) => b.code === "EQ");
+  const strongest = Math.max(...Object.values(values).map(Math.abs));
+  const block = withModel(
+    device,
+    "EQ",
+    model(device, "EQ", ["Guitar EQ 1"]),
+    values,
+    `Set from the offline refinement of ${capture}: the five bands that bring its sound closest to the song's guitar (${eqDb.map((g) => fmtDb(g)).join(", ")}).`,
+    old?.confidence ?? 0.5,
+  );
+  return { ...proposal, blocks: proposal.blocks.map((b) => (b.code === "EQ" ? { ...block, enabled: strongest >= 6 } : b)) };
+}
+
 function delayBlock(device: DeviceKey, a: GuitarAnalysis): ProposedBlock {
   const d = a.delay;
   if (!d.detected || d.confidence < EFFECT_MIN_CONFIDENCE)

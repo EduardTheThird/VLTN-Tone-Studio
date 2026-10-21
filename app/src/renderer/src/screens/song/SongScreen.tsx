@@ -11,12 +11,9 @@ import { StemsPanel } from "./stems/StemsPanel";
 import { ToneMatchPanel } from "./tonematch/ToneMatchPanel";
 import { useSongTab, type SongTab } from "./tab";
 
-/** Decode `file` and split it right away (the reason anyone drops a song here). */
+/** Decode `file`; the Stems tab then offers the model and quality choice before the split. */
 export async function openSong(file: File): Promise<void> {
-  const song = useSong.getState();
-  await song.load(file);
-  const now = useSong.getState();
-  if (now.source?.name === file.name && now.status.kind === "idle") await now.split();
+  await useSong.getState().load(file);
 }
 
 /** Audio files dropped on the window or opened while this screen is showing. */
@@ -53,7 +50,7 @@ export function SongScreen() {
       />
       <Tabs value={tab} onValueChange={(v) => setTab(v as SongTab)} className="flex min-h-0 flex-1 flex-col gap-3.5">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
-          <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-semibold tracking-[-0.01em] text-balance">Song</h1>
+          <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Song</h1>
           <p className="col-start-1 row-start-2 mt-1.5 truncate text-[12px] text-silkscreen-3">
             {source ? source.name : `Split a song into stems on this computer, then find a ${pedal} tone for its guitar.`}
           </p>

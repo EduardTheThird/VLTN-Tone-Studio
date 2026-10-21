@@ -1,55 +1,69 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AudioLines, FileUp, RotateCcw, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { SEPARATION_MODEL } from "@shared/host/song";
-import { host } from "@/host";
 import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
+import { findModel, missingBytes, type SeparationModel } from "@shared/host/song";
 import { StemMixer } from "./StemMixer";
+import { megabytes, SplitOptions, useDownloadedFiles } from "./SplitOptions";
 
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
-const MODEL_MB = Math.round(SEPARATION_MODEL.bytes / 1e6);
 const SPLIT_DETAIL = {
-  starting: "Starting the separation model",
+  starting: "Starting the separation model.",
   webgpu: "Runs on this computer, on the graphics card.",
-  wasm: "Runs on this computer's processor (the graphics card can't run it): this can take several minutes.",
+  wasm: "Runs on this computer's processor: this can take several minutes.",
 } as const;
 
-/** The Stems tab: pick a song, follow the split, then play and export the stems. */
+/** "drums, bass, guitar, piano, vocals and everything else" for the stems `model` makes. */
+function stemList(model: SeparationModel | undefined): string {
+  const named = (model?.stems ?? []).filter((s) => s !== "other");
+  return named.length ? `${named.join(", ")} and everything else` : "stems";
+}
+
+/** The Stems tab: pick a song, choose the model and quality, follow the split, then play and export the stems. */
 export function StemsPanel({ onPick }: { onPick: () => void }) {
   const source = useSong((s) => s.source);
   const stems = useSong((s) => s.stems);
   const status = useSong((s) => s.status);
-  const [hasModel, setHasModel] = useState(true);
-
+  const model = findModel(useSong((s) => s.choice.model));
+  const { downloaded } = useDownloadedFiles();
+  const missing = model && downloaded ? megabytes(missingBytes(model, downloaded)) : 0;
+  // The split button follows the options in a roomy window and moves to a bar under them when the options have to scroll.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
   useEffect(() => {
-    if (source) return;
-    let live = true;
-    host.song.hasModel().then((has) => live && setHasModel(has), () => live && setHasModel(false));
-    return () => {
-      live = false;
-    };
-  }, [source]);
+    const el = scroller.current;
+    if (!el) return;
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [source, stems, status.kind]);
+  const splitButton = <Button onClick={() => void useSong.getState().split()}>{missing ? `Download ${missing} MB and split` : "Split into stems"}</Button>;
 
   if (stems && source) return <StemMixer key={source.name} stems={stems} songName={source.name} />;
 
   if (status.kind === "decoding") return <Working title="Reading the song" />;
-  if (status.kind === "model")
+  if (status.kind === "model") {
+    const mb = megabytes(status.bytes);
     return (
       <Working
-        title="Downloading the separation model"
-        detail={`First split only: ${Math.round(status.fraction * MODEL_MB)} of ${MODEL_MB} MB. It is kept for next time.`}
+        title={`Downloading the ${model?.label ?? "separation"} model`}
+        detail={`First split with it only: ${Math.round(status.fraction * mb)} of ${mb} MB. It is kept for next time.`}
         fraction={status.fraction}
       />
     );
+  }
   if (status.kind === "splitting")
     return (
       <Working
-        title="Splitting into stems"
+        title={status.passes > 1 ? `Splitting into stems, pass ${status.pass} of ${status.passes}` : "Splitting into stems"}
         detail={SPLIT_DETAIL[status.backend ?? "starting"]}
         fraction={status.fraction}
       />
@@ -81,19 +95,25 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
 
   if (source)
     return (
-      <div className="grid flex-1 place-items-center p-6">
-        <Empty className="max-w-md">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <AudioLines />
-            </EmptyMedia>
-            <EmptyTitle>{source.name}</EmptyTitle>
-            <EmptyDescription>Split it into drums, bass, guitar, piano, vocals and everything else.</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent className="flex-row justify-center gap-2">
-            <Button onClick={() => void useSong.getState().split()}>Split into stems</Button>
-          </EmptyContent>
-        </Empty>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex min-h-full flex-col items-center justify-center gap-4 py-4">
+            <Empty className="max-w-xl flex-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon" className="[@media(max-height:760px)]:hidden">
+                  <AudioLines />
+                </EmptyMedia>
+                <EmptyTitle>{source.name}</EmptyTitle>
+                <EmptyDescription>Split it into {stemList(model)}.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="max-w-xl gap-4">
+                <SplitOptions className="w-full" />
+              </EmptyContent>
+            </Empty>
+            <div className={cn("flex justify-center", over && "invisible")}>{splitButton}</div>
+          </div>
+        </div>
+        {over && <div className="flex shrink-0 justify-center border-t border-seam py-3">{splitButton}</div>}
       </div>
     );
 
@@ -106,8 +126,8 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
           </EmptyMedia>
           <EmptyTitle>Split a song into stems</EmptyTitle>
           <EmptyDescription>
-            Drop an audio file here (WAV, MP3, FLAC, M4A or OGG) or choose one. Tone Studio separates it on this computer into drums, bass,
-            guitar, piano, vocals and everything else.{!hasModel && ` The first split downloads the separation model (${MODEL_MB} MB) once.`}
+            Drop an audio file here (WAV, MP3, FLAC, M4A or OGG) or choose one. Tone Studio separates it on this computer into {stemList(model)}.
+            {missing > 0 && ` The first split with the ${model?.label} model downloads it (${missing} MB) once.`}
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent className="flex-row justify-center gap-2">

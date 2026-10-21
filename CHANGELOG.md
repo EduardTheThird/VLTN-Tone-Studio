@@ -2,6 +2,33 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [Unreleased]
+
+### Fixed
+- **The GP-150, GP-180, GP-200LT and GP-200JR are no longer read-only.** 0.8.0 announced full support, but the app still refused to change their memory on a real unit ("hasn't been tested on one"): presets, names, restores, imports, pedal settings, the Global EQ, SnapTone and User IR uploads were locked. They now write like the GP-5, GP-50 and GP-200. The GP-50 extras and the GP-200 family's Global EQ write stay behind *Settings › Experimental pedal commands*, as the README says.
+
+## [0.8.0] - 2026-10-20
+
+### Added
+- **Choose the stem separation model and quality.** The Stem Splitter used to run only Demucs `htdemucs_6s`. It now offers three models: *Standard* (htdemucs_6s, six stems, 285 MB, the default; on the graphics card when it can run it), *Fine-tuned* (the htdemucs_ft bag, four stems with the cleanest vocals, drums and bass, no guitar, 662 MB) and *Best* (htdemucs_ft's drums, bass and vocals with htdemucs_6s's guitar, piano and other, six stems, 782 MB). The fine-tuned files run on the processor only: their export has an op the WebGPU runtime can't place. Splits with them take several minutes. A fine-tuned split has no guitar, so Tone match asks you to split again with a six-stem model. There are three quality presets: *Fast*, *Balanced* (half-overlapping chunks, two averaged shifts, about 3× the time) and *Max* (four shifts, about 6×). Pick them before the split or from *Split again…* on the mixer. The choice is remembered, and the mixer says which model and quality made the stems. The picker shows which models are downloaded, downloads a model's missing files (an interrupted download picks up where it stopped) and deletes a model's files to free disk space.
+- **Tone Match builds a SnapTone from your captures.** A new card under Tone match ranks the amp and pedal NAM captures you have downloaded from TONE3000 (or pick one there from the card) against the song's guitar. Each capture plays the guitar part of Valeton's test signal; one without a cab goes through a cab IR designed for this song from its own output, so no recording is needed. The card ranks them by how well their gain and tone match the song's guitar, and says why. *Build the SnapTone* converts the one you choose with that IR inside (GP-5 family). On the GP-200 family it converts the capture alone and offers the IR for a User IR slot. It then waits at the Tones Write step: nothing goes to the pedal until you press Write. The IR can also be saved as a WAV. The ranking is an estimate: the song's mix and the test signal's level move the gain reading, and each capture is heard at the one setting it was captured at.
+- **Search TONE3000 from the app.** Tones has a new *Search* tab: type an amp, pedal or artist and narrow the results by gear, NAM architecture, sort order and the format toggle. The search runs in the main process (the query is cleaned and capped, results are cached for ten minutes and a refused request never signs you out); a newer search wins over an older one, and when a search fails it offers the embedded *Browse TONE3000* flow.
+- **Tone match refines the amp and the EQ.** A ranked capture is refined offline in the worker: a texture loss and CMA-ES tune the amp's drive and an EQ against the song's guitar, and the proposal now carries that EQ.
+- **What's new.** A carousel with screenshots opens once after an update (desktop, and not on a first launch) and from *Help › What's new* and the command palette.
+- **The board fits the window, with zoom.** 100% now means *fit*: the pedals are sized from the free space of the board and their real proportions, so a whole GP-200 board fits at 1280×720 and up; below that it crops and scrolls. A map-style bar beside the board zooms from 70% to 200% (also Ctrl + wheel) and remembers the setting. A loupe shows the knob you turn, magnified with its value above it; faders show none.
+- **Pedals, amps and cabs that look like the real ones.** About 150 effect models have their own look after the pedal they model: colour, proportions, typeface, jewel LED, footswitch cover, wah treadle and so on (Boss compacts, Tube Screamer, MXR, Rat, Fuzz Face, Cry Baby, graphic EQs, reverbs, delays …). Amp heads follow Marshall, Orange, Mesa, Peavey, Diezel, Vox, Fender and others, with tolex, grille cloth, faceplates and knobs with a printed scale; the cab is a 4x12 stack dressed like its amp. Pedals are joined by patch cables, the board and stage have metal, fabric and wood, and the board scrolls with a brushed-metal slider.
+- **Choose the model before the first split.** Opening a song no longer splits it at once: the model and quality choice comes first.
+
+### Changed
+- Page titles are one size (32 px) on every screen; Library, Tones, Device, Song, the title bar and the What's new dialog fit narrow and short windows better (icon-only toolbar, wrapping headers, split bar under the model list, tab bar that keeps its tabs).
+- Empty states start at the top of their pane, unread Library slots show a dash instead of "Not read yet" 60 times, and empty Tones slots recede.
+- Gear drawings no longer use SVG filters or blend modes (grain and metal are pre-rendered images) and the model picker draws its thumbnails only once, so long lists scroll smoothly.
+- **Every supported pedal is fully supported.** The GP-150, GP-180, GP-200, GP-200LT and GP-200JR are no longer marked experimental or read-only: Tone Studio reads, writes, backs up, restores, imports, exports and uploads SnapTones and User IRs on all of them.
+
+### Fixed
+- **A pedal with one knob has it in the middle, and knobs stay inside a pedal's panel.**
+- **A WebGPU device loss in the middle of a split no longer fails the split.** The chunk that failed runs again on WebAssembly and the rest of the split goes on the processor; the session log records it.
+
 ## [0.7.2] - 2026-10-15
 
 ### Fixed
@@ -130,6 +157,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.8.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.6.0...v0.7.0

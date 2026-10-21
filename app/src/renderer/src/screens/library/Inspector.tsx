@@ -42,7 +42,7 @@ export function Inspector({ onClose }: { onClose?: () => void }) {
 
 function NothingSelected() {
   return (
-    <div className="flex flex-1 flex-col justify-center gap-1 px-2 text-center">
+    <div className="flex flex-1 flex-col justify-start gap-1 px-2 pt-10 text-center">
       <p className="font-semibold text-silkscreen">Select a slot</p>
       <p className="text-sm text-pretty text-silkscreen-3">Its chain, volume and footswitches show here. Ctrl-click or Shift-click to select several.</p>
     </div>

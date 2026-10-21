@@ -147,6 +147,7 @@ export function analysisFixture(over: Partial<GuitarAnalysis> = {}): GuitarAnaly
     delay: { detected: true, timeMs: 375, feedback: 0.4, level: 0.5, dark: false, confidence: 0.7 },
     reverb: { detected: true, rt60: 1.2, levelDb: -12, tails: 20, dryOffsets: 2, confidence: 0.8 },
     tone: { bassDb: 2, lowMidDb: -1, midDb: -3, trebleDb: 1, presenceDb: 0.5, confidence: 0.6 },
+    texture: { centers: BAND_CENTERS, meanDb: new Float64Array(BAND_CENTERS.length), spreadDb: new Float64Array(3), levels: [0, 0, 0, 0], gainScore: 0.75, activeFrames: 900 },
     ...over,
   };
 }

@@ -30,6 +30,8 @@ export interface GearBaseProps {
   interactive?: boolean;
   /** Control layer present but read-only (disconnected) */
   disabled?: boolean;
+  /** Pedal board only: size the drawing from --gw (the board's pedal width) by its real proportions */
+  scaled?: boolean;
   /** Print values under the knob labels */
   showValues?: boolean;
   /** Knob id drawn focused (halo + value bubble) without keyboard focus */

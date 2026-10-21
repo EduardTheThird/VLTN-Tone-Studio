@@ -8,7 +8,7 @@ import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
 import { DIR_LABEL, MidiLogDecoder, hex, midiLog, pushMidiLog } from "./midi-log";
 import { deviceLogEntries, sessionLog } from "./session-log";
-import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
+import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
 import { clampGp200Eq } from "./driver/gp200-globals";
@@ -80,12 +80,6 @@ export const useDevice = create<DeviceState>((set, get) => {
   const requireIdle = () => {
     const busy = get().busy;
     if (busy) throw new DeviceError("busy", `Wait until the ${busy.kind} finishes`);
-  };
-  /** Memory writes (presets, names, settings, uploads) stop here on a real pedal of a model not tested yet. */
-  const requireWritable = () => {
-    const { device, mode } = get();
-    if (writesLocked(device, mode))
-      throw new DeviceError("unsafe", `Tone Studio doesn't change the ${pedalName(device)}'s memory yet: it hasn't been tested on one. Reading and live edits work.`);
   };
   const guardUnsaved = (what: string) => {
     if (get().unsavedChanges > 0) throw new DeviceError("unsaved", `${what} switches presets on the pedal; save or discard the unsaved changes first`);
@@ -329,7 +323,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
   /** Run an upload with busy progress, then re-read the slot table it changed. */
   const upload = async (kind: "snaptone" | "userir", label: string, send: (onProgress: (done: number, total: number) => void) => Promise<string>, reread: () => Promise<unknown>, onProgress?: (f: number) => void) => {
-    requireWritable();
     requireIdle();
     set({ busy: { kind, progress: 0, label } });
     try {
@@ -352,7 +345,6 @@ export const useDevice = create<DeviceState>((set, get) => {
    * the active slot while it has unsaved edits, then re-reads the names and, when it was affected, the active preset.
    */
   const manage = async (d: DeviceDriver, label: string, affected: number[], run: (progress: (f: number) => void) => Promise<void>) => {
-    requireWritable();
     requireIdle();
     const active = get().slot;
     const touchesActive = active !== null && affected.includes(active);
@@ -644,7 +636,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async rename(slot, name) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       // A GP-200 renames its active slot by saving the edit buffer under the new name: unsaved edits would go with it.
       const p = get().preset;
@@ -661,7 +652,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async writePreset(slot, prst, opts) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       const label = `Writing slot ${slot}`;
       set({ busy: { kind: "write", progress: 0, label } });
@@ -744,7 +734,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     setGlobal(name, value) {
       const d = requireDriver();
-      requireWritable();
       const v = d.clampGlobal(name, value);
       set({ globals: { ...(get().globals ?? {}), [name]: v } });
       touch(`global:${name}`);
@@ -752,7 +741,6 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     setGlobalEq(index, value) {
-      requireWritable();
       const d = requireFeature("globalEq");
       const eq = get().globalEq;
       if (!eq) return;
@@ -789,7 +777,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async restoreAll(entries, opts) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       guardUnsaved("A restore");
       const slots = entries.map((e) => e.slot);

@@ -37,10 +37,13 @@ function pathOf(points: [number, number][], yOf: (db: number) => number): string
 export function CurvePlot({ series, range = 6, title, className }: { series: CurveSeries[]; range?: number; title: string; className?: string }) {
   const titleId = useId();
   const values = series.flatMap((s) => s.points.filter(([f, db]) => f >= F_LO && f <= F_HI && Number.isFinite(db)).map(([, db]) => db));
-  const top = Math.ceil(Math.max(range, ...values) / range) * range;
-  const bottom = Math.floor(Math.min(-range, ...values) / range) * range;
+  const rough = Math.ceil(Math.max(range, ...values) / range) * range - Math.floor(Math.min(-range, ...values) / range) * range;
+  // a wide dB spread widens the grid step, so the scale keeps to about seven labelled lines
+  const step = range * Math.max(1, Math.ceil(rough / range / 7));
+  const top = Math.ceil(Math.max(step, ...values) / step) * step;
+  const bottom = Math.floor(Math.min(-step, ...values) / step) * step;
   const yOf = (db: number) => PAD.top + ((top - db) / (top - bottom)) * (H - PAD.top - PAD.bottom);
-  const steps = Array.from({ length: Math.round((top - bottom) / range) + 1 }, (_, i) => top - i * range);
+  const steps = Array.from({ length: Math.round((top - bottom) / step) + 1 }, (_, i) => top - i * step);
   return (
     <figure className={cn("flex flex-col gap-1.5", className)}>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby={titleId} className="w-full text-silkscreen-3">

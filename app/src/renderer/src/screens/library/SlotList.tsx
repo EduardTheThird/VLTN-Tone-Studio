@@ -24,10 +24,10 @@ import { endDrag, hasFiles, LOCAL_MIME, SLOTS_MIME, startDrag } from "./dnd";
 import { writableCollections } from "./LocalPane";
 import { isEmptyName, useLibrary, type SlotFilter } from "./store";
 
-const COLS = "grid grid-cols-[16px_var(--slot-w)_minmax(96px,var(--name-w))_160px_minmax(0,1fr)_96px] items-center gap-3";
+const COLS = "grid grid-cols-[16px_var(--slot-w)_minmax(96px,var(--name-w))_160px_minmax(0,1fr)_96px] items-center gap-3 @max-[660px]/slots:grid-cols-[16px_var(--slot-w)_minmax(80px,var(--name-w))_146px_minmax(0,1fr)_60px] @max-[660px]/slots:gap-2";
 
 /** Room for the model's slot labels ("07" or "12-C") and names (10 or 16 characters). */
-const colWidths = (p: DeviceProfile) => ({ "--slot-w": p.slotLabel(0).length > 2 ? "34px" : "22px", "--name-w": p.nameLength > 10 ? "144px" : "128px" }) as CSSProperties;
+const colWidths = (p: DeviceProfile) => ({ "--slot-w": p.slotLabel(0).length > 2 ? "38px" : "30px", "--name-w": p.nameLength > 10 ? "144px" : "128px" }) as CSSProperties;
 
 /** Slots copied with Ctrl C (pasted onto the focused slot with Ctrl V). */
 let clipboard: number[] = [];
@@ -221,7 +221,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
 
   const loading = !names.length && (status === "connecting" || status === "idle");
   const head = (
-    <div className="flex min-h-8 items-center gap-3 px-2">
+    <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2 px-2">
       <h2 className="text-[15px] font-[650] whitespace-nowrap text-silkscreen">On {listPedal}</h2>
       {names.length > 0 && <span className="text-sm whitespace-nowrap text-silkscreen-3">{hasEmpty ? `${used} used, ${rows.length - used} empty` : `${rows.length} slots`}</span>}
       <span className="flex-1" />
@@ -244,7 +244,7 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
   );
 
   return (
-    <section aria-label={`On ${listPedal}`} className="glass relative flex min-h-0 min-w-0 flex-col rounded-xl px-2 pt-3.5 pb-2">
+    <section aria-label={`On ${listPedal}`} className="glass relative flex min-h-0 min-w-0 flex-col @container/slots rounded-xl px-2 pt-3.5 pb-2">
       {head}
       {status !== "connected" && names.length > 0 && <OfflineBanner />}
       <BulkBar visible={visible.map((r) => r.slot)} visibleSelected={visibleSelected} sheetMode={sheetMode} />
@@ -263,10 +263,15 @@ export function SlotList({ sheetMode }: { sheetMode: boolean }) {
       >
         <div role="row" className={cn(COLS, "h-[30px] shrink-0 pr-2.5 pl-2 text-xs font-medium tracking-[0.04em] text-silkscreen-3 uppercase")}>
           <span role="columnheader" aria-label="Selected" />
-          <span role="columnheader">Slot</span>
+          <span role="columnheader">
+            <span className="@max-[660px]/slots:sr-only">Slot</span>
+            <span aria-hidden className="hidden @max-[660px]/slots:inline">
+              #
+            </span>
+          </span>
           <span role="columnheader">Name</span>
           <span role="columnheader">Chain</span>
-          <span role="columnheader">Amp or SnapTone</span>
+          <span role="columnheader" className="truncate">Amp or SnapTone</span>
           <span role="columnheader" aria-label="Status" />
         </div>
         <div className={cn("min-h-0 flex-1 overflow-auto", status !== "connected" && "opacity-60")} onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(null)}>
@@ -353,20 +358,20 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
       <span className="mr-1.5 ml-0.5 text-sm font-semibold whitespace-nowrap text-silkscreen">{n ? `${n} selected` : "None selected"}</span>
       <Button variant="ghost" size="sm" disabled={!n || !readable} onClick={() => void actions.backupSlots(selected)}>
         <HardDriveDownloadIcon data-icon="inline-start" />
-        Back up
+        <span className="@max-[660px]/slots:sr-only">Back up</span>
       </Button>
       <Button variant="ghost" size="sm" disabled={!n || !readable} onClick={() => void actions.exportSlots(selected)}>
         <DownloadIcon data-icon="inline-start" />
-        Export
+        <span className="@max-[660px]/slots:sr-only">Export</span>
       </Button>
       <Separator orientation="vertical" className="mx-0.5 my-3 data-[orientation=vertical]:h-5" />
       <Button variant="ghost" size="sm" disabled={!n || !writable || allUsedEmpty} onClick={() => actions.copySlots(selected)}>
         <CopyIcon data-icon="inline-start" />
-        Copy to…
+        <span className="@max-[660px]/slots:sr-only">Copy to…</span>
       </Button>
       <Button variant="ghost" size="sm" disabled={!n || !writable} onClick={() => actions.moveSlots(selected)}>
         <MoveIcon data-icon="inline-start" />
-        Move to…
+        <span className="@max-[660px]/slots:sr-only">Move to…</span>
       </Button>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -374,7 +379,7 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
           <span tabIndex={n === 2 && writable ? -1 : 0}>
             <Button variant="ghost" size="sm" disabled={n !== 2 || !writable} onClick={() => actions.swapSlots(selected[0], selected[1])}>
               <ArrowUpDownIcon data-icon="inline-start" />
-              Swap
+              <span className="@max-[660px]/slots:sr-only">Swap</span>
             </Button>
           </span>
         </TooltipTrigger>
@@ -383,7 +388,7 @@ function BulkBar({ visible, visibleSelected, sheetMode }: { visible: number[]; v
       <span className="flex-1" />
       <Button variant="ghost" size="sm" className="text-led-fault hover:text-led-fault" disabled={!n || !writable || allUsedEmpty} onClick={() => actions.clearSlots(selected)}>
         <Trash2Icon data-icon="inline-start" />
-        {emptyName === null ? "Reset to init patch" : "Clear"}
+        <span className="@max-[660px]/slots:sr-only">{emptyName === null ? "Reset to init patch" : "Clear"}</span>
       </Button>
       {sheetMode && (
         <>
@@ -483,7 +488,14 @@ const SlotRow = memo(function SlotRow({ row, selected, focused, active, drop, dr
               </>
             )}
             {/* A read GP-200 body without the effect catalog has no amp name */}
-            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">{row.summary ? "Unknown model" : "Not read yet"}</span>}
+            {!lead && !empty && !incoming && <span className="text-xs text-silkscreen-4">{row.summary ? (
+              "Unknown model"
+            ) : (
+              <span title="Not read yet">
+                <span aria-hidden>–</span>
+                <span className="sr-only">Not read yet</span>
+              </span>
+            )}</span>}
           </span>
           <span
             role="gridcell"

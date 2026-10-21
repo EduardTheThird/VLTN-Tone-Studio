@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dial } from "@/components/gear";
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
-import { attachedDevice, globalSpecsFor, pedalName, writesLocked } from "@/state/device-model";
+import { attachedDevice, globalSpecsFor, pedalName } from "@/state/device-model";
 import type { GlobalRecord, Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
@@ -15,21 +15,19 @@ import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./peda
  * model's settings table grouped like its menu. Same layout as the Rig faceplate.
  */
 export function PedalSettings({ offline }: { offline: boolean }) {
-  const { device, remembered, firmware, mode } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware, mode: s.mode })));
+  const { device, remembered, firmware } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware })));
   // Another model is attached (being connected, or on USB): the remembered values are not its settings.
   const attached = useDevice((s) => attachedDevice(s));
   const globals = attached === device ? remembered : null;
   const pedal = pedalName(attached);
-  // A real pedal of a model not tested yet: the values are read, but Tone Studio doesn't change them (the store refuses).
-  const locked = writesLocked(device, mode);
-  const live = !offline && !locked;
+  const live = !offline;
   const groups = settingsGroups(device, globals, firmware);
   const cabSim = globalSpecsFor(device).find((g) => g.name === "cabSimBypass");
 
   return (
     <section
       aria-label="Pedal settings"
-      className="relative grid grid-cols-[220px_minmax(0,1fr)] items-start gap-y-4 overflow-hidden rounded-xl bg-faceplate px-7 py-6 shadow-[inset_0_0_0_1px_var(--seam)] min-[1360px]:grid-cols-[280px_minmax(0,1fr)_236px]"
+      className="relative grid grid-cols-1 min-[1100px]:grid-cols-[220px_minmax(0,1fr)] items-start gap-y-4 overflow-hidden rounded-xl bg-faceplate px-7 py-6 shadow-[inset_0_0_0_1px_var(--seam)] min-[1360px]:grid-cols-[280px_minmax(0,1fr)_236px]"
     >
       <div className="min-w-0">
         <h2 className="mb-1.5 text-xl leading-[1.1] font-bold tracking-[-0.01em] text-balance">Pedal settings</h2>
@@ -38,7 +36,7 @@ export function PedalSettings({ offline }: { offline: boolean }) {
 
       {globals ? (
         <div
-          className={cn("flex min-w-0 flex-wrap justify-around gap-x-8 gap-y-5 border-l px-4 min-[1360px]:border-r", offline && "pointer-events-none opacity-45")}
+          className={cn("flex min-w-0 flex-wrap justify-start gap-x-8 min-[1360px]:justify-around gap-y-5 px-0 min-[1100px]:border-l min-[1100px]:px-4 min-[1360px]:border-r", offline && "pointer-events-none opacity-45")}
           aria-disabled={offline || undefined}
         >
           {groups.map(({ group, title, items }) => (
@@ -53,7 +51,7 @@ export function PedalSettings({ offline }: { offline: boolean }) {
           ))}
         </div>
       ) : (
-        <div className="flex min-h-[132px] items-center justify-center border-l px-6 text-center text-silkscreen-3 min-[1360px]:border-r">
+        <div className="flex min-h-[132px] items-center justify-center px-6 text-center text-silkscreen-3 min-[1100px]:border-l min-[1360px]:border-r">
           Connect the pedal to read its settings.
         </div>
       )}
@@ -65,16 +63,12 @@ export function PedalSettings({ offline }: { offline: boolean }) {
             Changes apply immediately
           </span>
         ) : (
-          <span className={cn("flex items-center gap-1.5 font-[550] text-silkscreen-2", !locked && "opacity-45")}>
+          <span className="flex items-center gap-1.5 font-[550] text-silkscreen-2 opacity-45">
             <Lock className="size-3.5" aria-hidden />
-            {locked && !offline ? `Read-only on the ${pedal}` : "Read-only until connected"}
+            Read-only until connected
           </span>
         )}
-        <span className="text-xs text-pretty text-silkscreen-3">
-          {locked && !offline
-            ? `Tone Studio doesn't change the ${pedal}'s settings until one has been tested. Change them on the pedal.`
-            : "Every change is sent to the pedal as you make it. There is nothing to save."}
-        </span>
+        <span className="text-xs text-pretty text-silkscreen-3">Every change is sent to the pedal as you make it. There is nothing to save.</span>
         {cabSim && <span className="text-xs text-pretty text-silkscreen-3">{cabSim.label}: turn it on when the pedal feeds a real guitar cabinet.</span>}
       </div>
     </section>
