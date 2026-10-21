@@ -65,7 +65,7 @@ export function describeError(e: unknown, slot?: number): string {
       return `The read-back differs from what was sent. Retry, or restore ${inSentence} from the backup.`;
     case "length":
     case "unsafe":
-      // The store's own refusals (a model not tested for writes yet, a locked feature) are already plain language.
+      // The store's own refusals (a locked feature, a preset without EXP settings) are already plain language.
       return e instanceof DeviceError ? e.message : "Tone Studio stopped this write because the data looked wrong. Nothing was sent.";
     case "unsupported":
       return err.message ?? "This needs the desktop app.";

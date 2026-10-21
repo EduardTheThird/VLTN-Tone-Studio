@@ -13,7 +13,7 @@ import { notifySuccess } from "@/app/notify";
 import { convertToSnapTone } from "@/snaptone/convert";
 import { useTestSignal } from "@/snaptone/signal";
 import { useDevice, usePedalName } from "@/state/device";
-import { DEFAULT_DEVICE, pedalName, writesLocked } from "@/state/device-model";
+import { DEFAULT_DEVICE, pedalName } from "@/state/device-model";
 import type { OpenFile } from "@/state/ui";
 import { CabIrPicker, noCabIrReason } from "./CabIrPicker";
 import { SnapToneSlotPicker, TestSignalNotice } from "./SnapToneSteps";
@@ -78,7 +78,6 @@ export function LocalNamDialog({ file, onClose }: { file: OpenFile | null; onClo
   const snapTones = useDevice((s) => s.snapTones);
   const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
-  const locked = useDevice((s) => writesLocked(s.device, s.mode));
   const hasSignal = useTestSignal((s) => s.has);
   const pedal = usePedalName();
 
@@ -121,7 +120,6 @@ export function LocalNamDialog({ file, onClose }: { file: OpenFile | null; onClo
 
   let blocker: string | null = null;
   if (!connected) blocker = `Connect the ${pedal} to write it.`;
-  else if (locked) blocker = `Tone Studio doesn't write to the ${pedal}'s memory yet: it hasn't been tested on one.`;
   else if (busy) blocker = `Wait until the pedal is free (${busy.label.toLowerCase()}).`;
   else if (!snapTones) blocker = "Reading the pedal's SnapTone slots…";
   else if (slot === null) blocker = "Choose a slot.";

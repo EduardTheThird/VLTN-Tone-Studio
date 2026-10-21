@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dial } from "@/components/gear";
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
-import { attachedDevice, globalSpecsFor, pedalName, writesLocked } from "@/state/device-model";
+import { attachedDevice, globalSpecsFor, pedalName } from "@/state/device-model";
 import type { GlobalRecord, Globals, SettingSpec } from "@/state/device-types";
 import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./pedal-settings";
 
@@ -15,14 +15,12 @@ import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./peda
  * model's settings table grouped like its menu. Same layout as the Rig faceplate.
  */
 export function PedalSettings({ offline }: { offline: boolean }) {
-  const { device, remembered, firmware, mode } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware, mode: s.mode })));
+  const { device, remembered, firmware } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware })));
   // Another model is attached (being connected, or on USB): the remembered values are not its settings.
   const attached = useDevice((s) => attachedDevice(s));
   const globals = attached === device ? remembered : null;
   const pedal = pedalName(attached);
-  // A real pedal of a model not tested yet: the values are read, but Tone Studio doesn't change them (the store refuses).
-  const locked = writesLocked(device, mode);
-  const live = !offline && !locked;
+  const live = !offline;
   const groups = settingsGroups(device, globals, firmware);
   const cabSim = globalSpecsFor(device).find((g) => g.name === "cabSimBypass");
 
@@ -65,16 +63,12 @@ export function PedalSettings({ offline }: { offline: boolean }) {
             Changes apply immediately
           </span>
         ) : (
-          <span className={cn("flex items-center gap-1.5 font-[550] text-silkscreen-2", !locked && "opacity-45")}>
+          <span className="flex items-center gap-1.5 font-[550] text-silkscreen-2 opacity-45">
             <Lock className="size-3.5" aria-hidden />
-            {locked && !offline ? `Read-only on the ${pedal}` : "Read-only until connected"}
+            Read-only until connected
           </span>
         )}
-        <span className="text-xs text-pretty text-silkscreen-3">
-          {locked && !offline
-            ? `Tone Studio doesn't change the ${pedal}'s settings until one has been tested. Change them on the pedal.`
-            : "Every change is sent to the pedal as you make it. There is nothing to save."}
-        </span>
+        <span className="text-xs text-pretty text-silkscreen-3">Every change is sent to the pedal as you make it. There is nothing to save.</span>
         {cabSim && <span className="text-xs text-pretty text-silkscreen-3">{cabSim.label}: turn it on when the pedal feeds a real guitar cabinet.</span>}
       </div>
     </section>
