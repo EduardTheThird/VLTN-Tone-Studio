@@ -7,7 +7,7 @@
 A desktop editor and librarian for Valeton multi-effects:<br>
 **GP-5 · GP-50 · GP-150 · GP-180 · GP-200 · GP-200LT · GP-200JR**
 
-GP-180 firmware 1.1.1 has been tested for USB read-only inspection and backup of all 200 presets. Real GP-180 editor connections currently block edits, preset selection and uploads. Bluetooth MIDI service connection has been tested; the wireless editor handshake remains unresolved. See [hardware evidence and Bluetooth support](BLUETOOTH.md) and [Performance features](PERFORMANCE.md).
+GP-180 firmware 1.1.1 has been tested for USB read-only inspection and backup of all 200 presets. Real GP-180 USB editor connections default to read-only; edits, preset selection and uploads require explicit write unlocking and remain unverified on hardware. Bluetooth MIDI remains available for performance controls, but Bluetooth editor management is disabled. Use USB to manage presets and settings. See [hardware evidence and Bluetooth support](BLUETOOTH.md) and [Performance features](PERFORMANCE.md).
 
 Shape tones live, sort and back up every slot, match a song's guitar tone, and bring NAM captures and IRs from TONE3000 straight to the pedal.
 
