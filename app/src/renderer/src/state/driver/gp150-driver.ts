@@ -12,6 +12,8 @@ import type { BackupEntry, DeviceFeature, GlobalEq, GlobalName, Globals, SlotNam
 import { GP200_EQ_DEFAULTS, clampGp200Eq } from "./gp200-globals";
 import { appEqValues, clampGp150Global, gp150EqIndex, gp150GlobalRecords, gp150GlobalSpec, type Gp150GlobalName, type Gp150Globals } from "./gp150-globals";
 import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
+import type { BleMidiConnection } from "@/bluetooth/connection";
+import { assertReadOnlyFrame } from "@/gp150/lib/read-only.mjs";
 
 /** Slot tables and tempo range, the same on the GP-150 and GP-180. */
 const PROFILE = profileFor("gp150");
@@ -62,14 +64,22 @@ export class Gp150Driver implements DeviceDriver {
   private constructor(
     transport: Gp150Transport,
     readonly portName: string,
-    opts: Pick<DriverOptions, "log"> & { timing?: Partial<Gp150Timing> },
+    opts: Pick<DriverOptions, "log" | "readOnly"> & { timing?: Partial<Gp150Timing> },
     /** The simulator behind a mock connection (tests and diagnostics), else null */
     readonly mock: MockGp150 | null = null,
     model?: DeviceKey,
   ) {
     const named = deviceForPortName(portName);
     this.#model = model ?? (named && profileFor(named).family === "gp150" ? named : "gp150");
-    this.#session = new Gp150Session(transport, { log: opts.log, timing: opts.timing });
+    // Real GP-180 inspection is read-only until hardware writes can be validated separately.
+    const readOnly = opts.readOnly ?? (!mock && this.#model === 'gp180');
+    const guarded: Gp150Transport = readOnly ? {
+      name: transport.name,
+      send: bytes => { assertReadOnlyFrame(bytes); return transport.send(bytes); },
+      onMessage: callback => transport.onMessage(callback),
+      close: () => transport.close(),
+    } : transport;
+    this.#session = new Gp150Session(guarded, { log: opts.log, timing: opts.timing });
     this.#session.addEventListener("message", (ev) => {
       for (const e of this.#toDriverEvents((ev as Event & { message: Gp150Event }).message)) this.#emit(e);
     });
@@ -79,6 +89,19 @@ export class Gp150Driver implements DeviceDriver {
   static async open(access: MIDIAccess, port: string | RegExp, opts: DriverOptions & { timing?: Partial<Gp150Timing> }): Promise<Gp150Driver> {
     const transport = await connectWebMidi({ access, port, onDisconnect: opts.onDisconnect });
     return new Gp150Driver(transport, transport.name, opts);
+  }
+
+  /** Experimental: only sync success establishes that this firmware exposes editor SysEx over BLE-MIDI. */
+  static fromBluetooth(connection: BleMidiConnection, opts: DriverOptions): Gp150Driver {
+    let unsubscribe = () => {};
+    const offDisconnect = connection.onDisconnect(opts.onDisconnect ?? (() => {}));
+    const transport: Gp150Transport = {
+      name: `${connection.name} (Bluetooth)`,
+      send: bytes => connection.send(bytes, performance.now(), true),
+      onMessage: callback => { unsubscribe(); unsubscribe = connection.subscribe(callback); },
+      close: () => { unsubscribe(); offDisconnect(); connection.close(); },
+    };
+    return new Gp150Driver(transport, transport.name, { ...opts, timing: { frameGapMs: 15, helloTimeoutMs: 5000, ackTimeoutMs: 8000, replyTimeoutMs: 12000, uploadTimeoutMs: 30000, resends: 1 } }, null, 'gp180');
   }
 
   /** Connect a simulated GP-150 or GP-180, paced like FAST_SIMULATOR unless `timing` / `mock` say otherwise. */

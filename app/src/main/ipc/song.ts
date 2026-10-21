@@ -18,6 +18,9 @@ import {
 import { sanitizeFileName } from "@shared/files-naming";
 import { HostError } from "@shared/ipc";
 import { handle, showOpenDialog, showSaveDialog } from "./handle";
+import { songSaveFilters } from './song-save-options';
+import { SongLibraryStore } from './song-library-store';
+import type { LibrarySong, Playlist } from '@shared/song-library';
 
 // The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
 // userData/models, resumed from a `.part` file after an interrupted download, checked against its pinned SHA-256
@@ -100,6 +103,16 @@ async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Pr
 }
 
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
+  const library = new SongLibraryStore(join(app.getPath('userData'), 'song-library'));
+  handle('song:library:index', () => library.index());
+  handle('song:library:begin', (_e, song: LibrarySong) => library.begin(song));
+  handle('song:library:write', (_e, token: string, name: string, bytes: Uint8Array) => library.write(token, name, bytes));
+  handle('song:library:commit', (_e, token: string) => library.commit(token));
+  handle('song:library:abort', (_e, token: string) => library.abort(token));
+  handle('song:library:audio', (_e, id: string, name: string) => library.audio(id, name));
+  handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
+  handle('song:library:settings', (_e, id: string, values: Record<string, string>) => library.settings(id, values));
+  handle('song:library:remove', (_e, id: string) => library.remove(id));
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.
   const pending = new Map<string, Promise<void>>();
   const progress = (p: ModelProgress) => getWindow()?.webContents.send("song:modelProgress", p);
@@ -154,7 +167,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     const win = getWindow();
     if (names.length === 1) {
       const name = sanitizeFileName(names[0], "Audio");
-      const opts = { title, defaultPath: join(app.getPath("music"), name), filters: [{ name: "WAV audio", extensions: ["wav"] }] };
+      const opts = { title, defaultPath: join(app.getPath("music"), name), filters: songSaveFilters(name) };
       const res = await showSaveDialog(win, opts);
       target = res.canceled || !res.filePath ? null : { kind: "file", path: res.filePath };
     } else {

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { host } from "@/host";
-import { profileFor, type DeviceProfile } from "@shared/devices";
+import { deviceForPortName, profileFor, type DeviceProfile } from "@shared/devices";
 import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
 import { DIR_LABEL, MidiLogDecoder, hex, midiLog, pushMidiLog } from "./midi-log";
@@ -11,6 +11,8 @@ import { deviceLogEntries, sessionLog } from "./session-log";
 import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
+import { Gp150Driver } from "./driver/gp150-driver";
+import { useBluetooth } from "@/bluetooth/connection";
 import { clampGp200Eq } from "./driver/gp200-globals";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
 import { clampParamValue, editPrst, orderError, syncParams, toPresetState } from "./preset-codec";
@@ -311,7 +313,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       await d.close().catch(() => {});
       // Anything the pedal sent, even a reply the handshake didn't wait for, means the port isn't silent ("busy"); a
       // pedal that already identified itself and then stalls is no wrong device.
-      throw toConnectionError(e, rxFrames > rxBefore, d.device ?? get().device, d.device !== null);
+      throw toConnectionError(e, rxFrames > rxBefore, d.device ?? deviceForPortName(d.portName) ?? get().device, d.device !== null);
     }
   };
 
@@ -486,12 +488,17 @@ export const useDevice = create<DeviceState>((set, get) => {
       try {
         const settings = await host.app.getSettings().catch(() => null);
         if (settings) set({ gp50Extras: settings.gp50Extras });
+        const writeUnlocked = settings?.gp180WriteUnlocked === true;
         let d: DeviceDriver;
         if (mode === "mock") {
           if (opts?.mockDevice) mockDevice = opts.mockDevice;
           d = await simulate(mockDevice, driverOpts);
+        } else if (mode === "bluetooth") {
+          const connection = useBluetooth.getState().connection;
+          if (!connection) throw new Error("Connect Bluetooth MIDI first, then choose Manage GP-180.");
+          d = Gp150Driver.fromBluetooth(connection, driverOpts);
         } else {
-          d = await openPort(settings?.portPattern || undefined, driverOpts);
+          d = await openPort(settings?.portPattern || undefined, { ...driverOpts, readOnly: writeUnlocked ? false : undefined });
         }
         if (cancelled()) {
           await d.close();
@@ -505,7 +512,9 @@ export const useDevice = create<DeviceState>((set, get) => {
         if (cancelled()) return;
         // attach() and the factory throw a ConnectionError; WebMIDI failures are a Gp5ConnectError (an Error) that still needs mapping.
         const base = e instanceof Error ? toConnectionError(e, false, get().device) : (e as ConnectionError);
-        const error = refineConnectionError(base, await hostCheck);
+        const error = mode === "bluetooth"
+          ? { code: "unknown" as const, message: `Bluetooth editor handshake failed. This GP-180 may use Valeton's separate wireless editor protocol rather than BLE-MIDI SysEx. ${base.message}` }
+          : refineConnectionError(base, await hostCheck);
         set({ status: "error", error });
         if (mode === "webmidi" && (error.code === "not-found" || error.code === "bootloader")) startWatch();
         throw e;

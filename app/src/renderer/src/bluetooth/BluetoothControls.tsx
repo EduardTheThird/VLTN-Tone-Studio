@@ -1,0 +1,19 @@
+import { Button } from '@/components/ui/button';
+import { connectBluetooth, useBluetooth } from './connection';
+import { useDevice } from '@/state/device';
+
+export function BluetoothControls({ editor = false }: { editor?: boolean }) {
+  const { connection, connecting, error } = useBluetooth();
+  const status = useDevice(s => s.status), mode = useDevice(s => s.mode), busy = useDevice(s => s.busy);
+  return <div className="flex max-w-xl flex-col gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2">
+      {!connection ? <Button variant="outline" disabled={connecting} onClick={() => void connectBluetooth().catch(() => {})}>{connecting ? 'Selecting Bluetooth device…' : 'Connect Bluetooth MIDI'}</Button> : <>
+        <span>Bluetooth: {connection.name}</span>
+        <Button variant="outline" disabled={status === 'connecting' || !!busy} onClick={() => { if (mode === 'bluetooth') void useDevice.getState().disconnect(); else connection.close(); }}>Disconnect Bluetooth</Button>
+        {editor && status !== 'connected' && <Button disabled={status === 'connecting'} variant="outline" onClick={() => void useDevice.getState().connect('bluetooth').catch(() => {})}>Manage GP-180 (experimental)</Button>}
+      </>}
+    </div>
+    {editor && <p className="text-silkscreen-3">Select a device advertising Bluetooth MIDI. GP-180 inspection is read-only and requires an editor handshake; Valeton’s app connection may use a different protocol.</p>}
+    {error && <p role="alert" className="text-red-400">{error}</p>}
+  </div>;
+}

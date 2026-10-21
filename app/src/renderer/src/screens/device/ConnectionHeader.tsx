@@ -8,6 +8,8 @@ import { pedalOnUsb, runningPortHolder } from "@shared/host/device";
 import { useDevice } from "@/state/device";
 import { pedalName, slotLabel, vendorApps } from "@/state/device-model";
 import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led } from "./guidance";
+import { useAppSettings } from './settings-store';
+import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 
 /** Models the Device screen offers to simulate (registry profiles with a simulator). */
 const SIMULATED = DEVICE_KEYS.filter((k) => profileFor(k).simulator);
@@ -35,7 +37,8 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
     })),
   );
   const connected = d.status === "connected";
-  const onUsb = d.mode !== "mock" ? pedalOnUsb(d.hostStatus) : null;
+  const onUsb = d.mode === "webmidi" ? pedalOnUsb(d.hostStatus) : null;
+  const gp180Unlocked = useAppSettings(s => s.settings.gp180WriteUnlocked);
   const errorLine = connected ? requestErrorLine(d.lastError) : null;
 
   const lookForPedal = () => void d.connect("webmidi").catch(() => {});
@@ -92,6 +95,8 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
           )}
         </div>
         {view.note && <p className="mt-2.5 max-w-[640px] text-pretty text-silkscreen-2">{view.note}</p>}
+        {d.mode !== 'mock' && (d.device === 'gp180' || onUsb === 'gp180') && !gp180Unlocked && <p className="mt-2 text-sm text-silkscreen-2">GP-180 inspection: read-only. Preset selection, edits and uploads are blocked. Enable writes in the GP-180 inspection panel below to test.</p>}
+        {d.mode !== 'mock' && (d.device === 'gp180' || onUsb === 'gp180') && gp180Unlocked && <p className="mt-2 text-sm text-amber-300">⚠ GP-180 writes unlocked (testing mode) — preset selection and edits are forwarded to the physical pedal.</p>}
         {view.steps.length > 0 && view.kind !== "driver" && (
           <ol className="mt-2 flex max-w-[640px] list-decimal flex-col gap-1 pl-[18px] text-silkscreen-2 marker:font-semibold marker:text-silkscreen-3">
             {view.steps.map((s) => (
@@ -114,6 +119,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 pb-0.5">
+        <BluetoothControls editor />
         {connected ? (
           <>
             <Button variant="ghost" onClick={readAgain} disabled={!!d.busy}>

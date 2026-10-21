@@ -147,6 +147,8 @@ export interface SaveFile {
 }
 
 export interface SongHostApi {
+  /** Desktop managed song library, including copied PCM audio and ordered playlists. */
+  library?: import("../song-library").SongLibraryApi;
   /** Local names (ModelFile.file) of the model files downloaded and checked already */
   downloadedFiles(): Promise<string[]>;
   /**

@@ -1,0 +1,47 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import { emptyLibrary, type LibrarySong } from '@shared/song-library';
+import { useSong } from './store';
+import { useSongLibrary } from './library';
+import { performanceKey } from './performance/settings';
+import { useNav } from '@/state/nav';
+
+const api = vi.hoisted(() => ({ index: vi.fn(), save: vi.fn(), audio: vi.fn(), playlists: vi.fn(), remove: vi.fn(), settings: vi.fn() }));
+vi.mock('@/host', () => ({ host: { song: { library: api } } }));
+vi.mock('./stems/engine', () => ({ separateStems: vi.fn() }));
+const audio = { sampleRate: 44100, channels: [new Float32Array([0, .25, -.25])] };
+const saved: LibrarySong = { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', title: 'Saved song', artist: '', sourceName: 'same.mp3', duration: 3 / 44100, audio: [{ name: 'source', sampleRate: 44100, frames: 3, channels: 1 }, { name: 'guitar', sampleRate: 44100, frames: 3, channels: 1 }], settings: { ':bpm': '95', '': '[00:00] [Am]', ':lyrics': '[00:00] Words' }, updated: '' };
+beforeEach(() => {
+  vi.clearAllMocks(); localStorage.clear();
+  api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+  api.audio.mockResolvedValue(new Uint8Array(audio.channels[0].buffer));
+  api.settings.mockResolvedValue(undefined); api.save.mockResolvedValue(undefined);
+  useSong.setState({ source: null, stems: null, status: { kind: 'idle' } });
+  useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: '', queue: [], position: -1 });
+});
+it('loads saved source/stems and preserves queue positions for repeated entries', async () => {
+  await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
+  expect(useSong.getState().source?.audio.channels[0]).toEqual(audio.channels[0]);
+  expect(useSong.getState().stems?.guitar?.channels[0]).toEqual(audio.channels[0]);
+  expect(localStorage.getItem(performanceKey(useSong.getState().source) + ':lyrics')).toBe('[00:00] Words');
+  expect(useSongLibrary.getState().position).toBe(1);
+  expect(useNav.getState().param).toBe('performance');
+});
+it('does not replace the current song when an asset read fails', async () => {
+  const source = { name: 'Current', audio }; useSong.setState({ source });
+  api.audio.mockRejectedValueOnce(new Error('Missing audio'));
+  await useSongLibrary.getState().load(saved.id);
+  expect(useSong.getState().source).toBe(source);
+  expect(useSongLibrary.getState().error).toBe('Missing audio');
+  expect(useNav.getState().param).toBe('songs');
+});
+it('saves copied audio and settings under a unique ID instead of the filename', async () => {
+  const source = { name: 'same.mp3', audio }; useSong.setState({ source, stems: { guitar: audio } });
+  localStorage.setItem(performanceKey(source), '[00:00] [C]');
+  await useSongLibrary.getState().save('My song', 'Artist');
+  const [metadata, assets] = api.save.mock.calls[0];
+  expect(metadata.id).not.toBe(saved.id);
+  expect(metadata.settings['']).toBe('[00:00] [C]');
+  expect(assets.map((a: { name: string }) => a.name)).toEqual(['source-0.f32', 'guitar-0.f32']);
+  expect(useSong.getState().source?.libraryId).toBe(metadata.id);
+  expect(localStorage.getItem(performanceKey(useSong.getState().source))).toBe('[00:00] [C]');
+});
