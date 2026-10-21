@@ -15,13 +15,14 @@ import { controlKind, isNamedRecord, rangeCaption, settingsGroups } from "./peda
  * model's settings table grouped like its menu. Same layout as the Rig faceplate.
  */
 export function PedalSettings({ offline }: { offline: boolean }) {
+  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const { device, remembered, firmware, mode } = useDevice(useShallow((s) => ({ device: s.device, remembered: s.globals, firmware: s.firmware, mode: s.mode })));
   // Another model is attached (being connected, or on USB): the remembered values are not its settings.
   const attached = useDevice((s) => attachedDevice(s));
   const globals = attached === device ? remembered : null;
   const pedal = pedalName(attached);
   // A real pedal of a model not tested yet: the values are read, but Tone Studio doesn't change them (the store refuses).
-  const locked = writesLocked(device, mode);
+  const locked = writesLocked(device, mode, gp180Unlocked);
   const live = !offline && !locked;
   const groups = settingsGroups(device, globals, firmware);
   const cabSim = globalSpecsFor(device).find((g) => g.name === "cabSimBypass");

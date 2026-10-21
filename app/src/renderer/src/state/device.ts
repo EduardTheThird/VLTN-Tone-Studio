@@ -86,7 +86,7 @@ export const useDevice = create<DeviceState>((set, get) => {
   /** Memory writes (presets, names, settings, uploads) stop here on a real pedal of a model not tested yet. */
   const requireWritable = () => {
     const { device, mode } = get();
-    if (writesLocked(device, mode))
+    if (writesLocked(device, mode, get().gp180WriteUnlocked))
       throw new DeviceError("unsafe", `Tone Studio doesn't change the ${pedalName(device)}'s memory yet: it hasn't been tested on one. Reading and live edits work.`);
   };
   const guardUnsaved = (what: string) => {
@@ -322,7 +322,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     driver = null;
     sends.clear();
     void d?.close().catch(() => {});
-    set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "lost", features: [], lockedFeatures: [] });
+    set({ status: "disconnected", gp180WriteUnlocked: false, portName: null, busy: null, connectedAt: null, disconnectReason: "lost", features: [], lockedFeatures: [] });
     if (!userDisconnected && get().mode === "webmidi" && reconnects < MAX_RECONNECTS) {
       reconnects++;
       setTimeout(() => void get().connect("webmidi").catch(() => {}), 1000 * reconnects);
@@ -419,6 +419,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     features: [],
     lockedFeatures: [],
     gp50Extras: false,
+    gp180WriteUnlocked: false,
     snapTones: null,
     userIRs: null,
     busy: null,
@@ -457,7 +458,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       const d = driver;
       driver = null;
       await d?.close().catch(() => {});
-      set({ status: "disconnected", error: null, portName: null, disconnectReason: "user" });
+      set({ status: "disconnected", error: null, portName: null, disconnectReason: "user", gp180WriteUnlocked: false });
     },
 
     clearLastError() {
@@ -468,6 +469,12 @@ export const useDevice = create<DeviceState>((set, get) => {
       return get().features.includes(feature);
     },
 
+    setGp180WriteUnlocked(on) {
+      requireIdle();
+      if (get().device !== 'gp180' || get().mode === 'mock') return;
+      requireDriver().setReadOnly?.(!on);
+      set({ gp180WriteUnlocked: on });
+    },
     setGp50Extras(on) {
       set({ gp50Extras: on });
       setFeatures(isLive() ? driver : null, get().mode, on);
@@ -481,7 +488,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       userDisconnected = false;
       const attempt = ++connectAttempt;
       const cancelled = () => attempt !== connectAttempt;
-      set({ mode, status: "connecting", error: null, portName: null });
+      set({ mode, status: "connecting", error: null, portName: null, gp180WriteUnlocked: false });
       // OS-side checks (USB, driver, Suite) run alongside; they sharpen errors and feed the Diagnostics card.
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
       const driverOpts = { log: onLog, onDisconnect: onPortLost };
@@ -496,7 +503,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         } else if (mode === "bluetooth") {
           const connection = useBluetooth.getState().connection;
           if (!connection) throw new Error("Connect Bluetooth MIDI first, then choose Manage GP-180.");
-          d = Gp150Driver.fromBluetooth(connection, driverOpts);
+          d = Gp150Driver.fromBluetooth(connection, { ...driverOpts, readOnly: !writeUnlocked });
         } else {
           d = await openPort(settings?.portPattern || undefined, { ...driverOpts, readOnly: writeUnlocked ? false : undefined });
         }
@@ -507,6 +514,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         // The port names the model before it identifies (a sync can take minutes): copy talks about this pedal, not
         // the remembered one. A failed attempt keeps it for the error copy and the report.
         set({ portName: d.portName });
+        set({ gp180WriteUnlocked: writeUnlocked });
         await attach(d, mode);
       } catch (e) {
         if (cancelled()) return;
@@ -515,7 +523,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         const error = mode === "bluetooth"
           ? { code: "unknown" as const, message: `Bluetooth editor handshake failed. This GP-180 may use Valeton's separate wireless editor protocol rather than BLE-MIDI SysEx. ${base.message}` }
           : refineConnectionError(base, await hostCheck);
-        set({ status: "error", error });
+        set({ status: "error", error, gp180WriteUnlocked: false });
         if (mode === "webmidi" && (error.code === "not-found" || error.code === "bootloader")) startWatch();
         throw e;
       }
@@ -528,7 +536,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       driver = null;
       sends.clear();
       await d?.close().catch(() => {});
-      set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "user", features: [], lockedFeatures: [] });
+      set({ status: "disconnected", gp180WriteUnlocked: false, portName: null, busy: null, connectedAt: null, disconnectReason: "user", features: [], lockedFeatures: [] });
     },
 
     async sync() {

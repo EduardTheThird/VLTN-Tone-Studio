@@ -3,6 +3,17 @@ import { assertReadOnlyFrame } from '../gp150/lib/read-only.mjs';
 import { CMD, ack, hello, packetize, query, readPatch, setParam, setBlockOn } from '../gp150/lib/protocol.mjs';
 import { Gp150Driver } from '../state/driver/gp150-driver';
 describe('GP-180 hardware read-only boundary', () => {
+  it('applies and revokes explicit write access on an existing connection', async () => {
+    const driver = await Gp150Driver.simulate('gp180', { readOnly: true, log: () => {}, onDisconnect: () => {} });
+    try {
+      await driver.sync();
+      await expect(driver.select(1)).rejects.toThrow(/read-only/i);
+      driver.setReadOnly(false);
+      await driver.select(1);
+      driver.setReadOnly(true);
+      await expect(driver.select(2)).rejects.toThrow(/read-only/i);
+    } finally { await driver.close(); }
+  });
   it('allows a complete inspection but blocks selecting a preset at the driver boundary', async () => {
     const driver = await Gp150Driver.simulate('gp180', { readOnly: true, log: () => {}, onDisconnect: () => {} });
     try {

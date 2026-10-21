@@ -6,22 +6,25 @@ import { gp150ModelByFxid } from '@/gp150/app/catalog-adapter';
 import { useAppSettings } from './settings-store';
 import { notifyError } from '@/app/notify';
 
-/** Read existing preset bytes only; this panel sends no MIDI commands. */
+/** Inspect preset bytes; write access is a separate, explicit user action. */
 export function Gp180Inspection() {
   const preset = useDevice(s => s.preset);
   const status = useDevice(s => s.status);
   const mode = useDevice(s => s.mode);
-  const connect = useDevice(s => s.connect);
+  const device = useDevice(s => s.device);
+  const busy = useDevice(s => s.busy);
+  const applyWriteAccess = useDevice(s => s.setGp180WriteUnlocked);
+  const effectiveUnlocked = useDevice(s => s.gp180WriteUnlocked);
   const { settings, patch: patchSettings } = useAppSettings();
-  const unlocked = settings.gp180WriteUnlocked;
+  const unlocked = status === 'connected' ? effectiveUnlocked : settings.gp180WriteUnlocked;
 
   const parsedPatch = useMemo(() => {
     if (preset?.device !== 'gp180') return null;
     try { return parsePrst(preset.prst); } catch { return null; }
   }, [preset]);
 
-  const isRealGp180 = preset?.device === 'gp180' || (status === 'connected' && mode !== 'mock');
-  if (!isRealGp180 && !parsedPatch) return null;
+  const isRealGp180 = device === 'gp180';
+  if (!isRealGp180) return null;
 
   const targetName = (target: number) => BLOCKS[target] ?? `Special target ${target}`;
   const parameterName = (target: number, param: number) => {
@@ -36,10 +39,7 @@ export function Gp180Inspection() {
     const next = !unlocked;
     try {
       await patchSettings({ gp180WriteUnlocked: next });
-      // Reconnect so the new readOnly setting takes effect immediately.
-      if (status === 'connected' && mode === 'webmidi') {
-        void connect('webmidi').catch(() => {});
-      }
+      if (status === 'connected') applyWriteAccess(next);
     } catch (e) {
       notifyError('Could not save GP-180 write setting', e);
     }
@@ -56,6 +56,7 @@ export function Gp180Inspection() {
             <input
               type="checkbox"
               checked={unlocked}
+              disabled={!!busy || status === 'connecting'}
               onChange={() => void toggleUnlock()}
               aria-label="Unlock GP-180 writes"
             />
@@ -66,10 +67,10 @@ export function Gp180Inspection() {
           <p className="mt-1 text-sm text-silkscreen-3">
             {unlocked
               ? 'The read-only guard is OFF. Preset selection, edits, saves, and uploads are forwarded to the physical GP-180. The pedal\'s memory can be changed. Disable when done testing.'
-              : 'Enable to remove the read-only safety guard. The app will reconnect and allow preset selection, edits, and uploads on the real GP-180. Use only for testing — enables writes to pedal memory.'}
+              : 'Enable to remove the read-only safety guard. The app will allow preset selection, edits, and uploads on the real GP-180. Use only for testing — enables writes to pedal memory.'}
           </p>
-          {unlocked && status === 'connected' && mode === 'webmidi' && (
-            <p className="mt-1 text-xs text-amber-300">Reconnected with writes enabled. "Read pedal again" to reload preset list and edit buffer.</p>
+          {unlocked && status === 'connected' && (
+            <p className="mt-1 text-xs text-amber-300">This connection has writes enabled. "Read pedal again" to reload preset list and edit buffer.</p>
           )}
         </div>
       )}

@@ -68,6 +68,7 @@ export interface ProgressOptions {
  * The optional members exist only for the `features` the connected model lists; the store checks `features` first.
  */
 export interface DeviceDriver {
+  setReadOnly?(value: boolean): void;
   /** MIDI port name, or the simulator's */
   readonly portName: string;
   /** Connected model; null until identified */

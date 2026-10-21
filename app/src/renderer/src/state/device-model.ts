@@ -34,8 +34,8 @@ export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, ex
 }
 
 /** True when Tone Studio must not change `device`'s memory: a real pedal of a model not tested yet (profile `writable`). */
-export function writesLocked(device: DeviceKey | null, mode: DeviceMode): boolean {
-  return mode !== "mock" && device !== null && !profileFor(device).writable;
+export function writesLocked(device: DeviceKey | null, mode: DeviceMode, gp180WriteUnlocked = false): boolean {
+  return mode !== "mock" && device !== null && !(device === "gp180" && gp180WriteUnlocked) && !profileFor(device).writable;
 }
 
 /** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model; GP-150: gp150-globals.ts). */

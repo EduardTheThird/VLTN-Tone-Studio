@@ -15,6 +15,7 @@ import { useNav } from "@/state/nav";
  * setting) and every section's values, sent as they change. Same layout as Pedal settings.
  */
 export function GlobalEqPanel({ offline }: { offline: boolean }) {
+  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const s = useDevice(
     useShallow((s) => ({
       eq: s.globalEq,
@@ -28,7 +29,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
   // Another model attached: the remembered EQ is not its EQ (the faceplate above shows no values either).
   if (!s.eq || s.attached !== s.device) return null;
   const pedal = pedalName(s.device);
-  const readOnly = writesLocked(s.device, s.mode);
+  const readOnly = writesLocked(s.device, s.mode, gp180Unlocked);
   const locked = offline || readOnly;
   const disabled = locked || s.experimental;
   const values = s.eq.values;

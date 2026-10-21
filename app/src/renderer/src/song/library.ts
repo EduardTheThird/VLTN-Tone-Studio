@@ -3,6 +3,7 @@ import { host } from '@/host';
 import { useSong } from './store';
 import { useNav } from '@/state/nav';
 import { assetName, emptyLibrary, type LibrarySong, type Playlist, type SongLibrary } from '@shared/song-library';
+import { migrateLyricsJob } from './performance/lyrics-jobs';
 import { performanceKey, readSettings, writeSettings } from './performance/settings';
 import type { PcmAudio, Stems } from './types';
 
@@ -43,6 +44,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       if (useSong.getState().source === source) {
         const saved = { ...source, libraryId: id };
         writeSettings(performanceKey(saved), song.settings);
+        migrateLyricsJob(performanceKey(source), performanceKey(saved));
         if (!source.libraryId) useSong.setState({ source: saved });
       }
       set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });

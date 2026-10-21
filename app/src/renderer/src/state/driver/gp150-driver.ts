@@ -50,6 +50,8 @@ export class Gp150Driver implements DeviceDriver {
   /** "exportPreset": mode-1 reads never select; "liveBpm": the 0x3020 settings record; "globalEq": the 0x2010 record; "modified": 0x3070. */
   readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm", "globalEq", "modified"];
   readonly #session: Gp150Session;
+  #readOnly = false;
+  setReadOnly(value: boolean): void { this.#readOnly = value; }
   readonly #listeners = new Set<(e: DriverEvent) => void>();
   /** The pedal's 32 Global EQ values, as last read or set (null until read). */
   #eq: number[] | null = null;
@@ -72,13 +74,13 @@ export class Gp150Driver implements DeviceDriver {
     const named = deviceForPortName(portName);
     this.#model = model ?? (named && profileFor(named).family === "gp150" ? named : "gp150");
     // Real GP-180 inspection is read-only until hardware writes can be validated separately.
-    const readOnly = opts.readOnly ?? (!mock && this.#model === 'gp180');
-    const guarded: Gp150Transport = readOnly ? {
+    this.#readOnly = opts.readOnly ?? (!mock && this.#model === 'gp180');
+    const guarded: Gp150Transport = {
       name: transport.name,
-      send: bytes => { assertReadOnlyFrame(bytes); return transport.send(bytes); },
+      send: bytes => { if (this.#readOnly) assertReadOnlyFrame(bytes); return transport.send(bytes); },
       onMessage: callback => transport.onMessage(callback),
       close: () => transport.close(),
-    } : transport;
+    };
     this.#session = new Gp150Session(guarded, { log: opts.log, timing: opts.timing });
     this.#session.addEventListener("message", (ev) => {
       for (const e of this.#toDriverEvents((ev as Event & { message: Gp150Event }).message)) this.#emit(e);

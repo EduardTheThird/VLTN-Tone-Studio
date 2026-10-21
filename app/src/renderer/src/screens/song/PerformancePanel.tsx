@@ -15,7 +15,6 @@ import { defaultChordSource } from '@/song/performance/sources';
 import { STEM_NAMES, type StemName } from '@/song/types';
 import { performanceKey, readOptions } from '@/song/performance/settings';
 import { useSongLibrary } from '@/song/library';
-import { useAppSettings } from '@/screens/device/settings-store';
 
 const field = 'rounded border border-seam bg-transparent p-2';
 function readNumber(key: string, fallback: number, min: number, max: number): number {
@@ -37,7 +36,7 @@ function PerformanceSession() {
   const bluetooth = useBluetooth(s => s.connection);
   const source = useSong(s => s.source), stems = useSong(s => s.stems);
   const device = useDevice(s => s.device), connected = useDevice(s => s.preset !== null);
-  const gp180Unlocked = useAppSettings(s => s.settings.gp180WriteUnlocked);
+  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const inspectionOnly = useDevice(s => s.device === 'gp180' && s.mode !== 'mock') && !gp180Unlocked;
   const key = performanceKey(source);
   const library = useSongLibrary();
@@ -82,7 +81,7 @@ function PerformanceSession() {
       await player.play();
       if (request !== playRequest.current) { player.pause(); return; }
       cursor.current = Math.max(0, player.position) - 0.001; pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
-      if (armed && clock) output?.send([player.position < 0.05 ? 250 : 251]); setPlaying(true);
+      setPlaying(true);
     } catch (e) { if (request === playRequest.current) fail(e); }
     finally { playPending.current = false; }
   };
@@ -118,7 +117,6 @@ function PerformanceSession() {
   useEffect(() => { if (rhythm.current) Object.assign(rhythm.current, { bpm, beats, mode, volume }); }, [bpm, beats, mode, volume]);
   useEffect(() => {
     if (!playing || !player) return;
-    cursor.current = Math.max(0, player.position) - 0.001;
     pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
     const timer = setInterval(() => {
       const now = Math.max(0, player.position); setTime(now);
@@ -138,8 +136,14 @@ function PerformanceSession() {
         cursor.current = now + 0.05;
       } catch (e) { fail(e); setArmed(false); }
     }, 20);
-    return () => { clearInterval(timer); panic(); };
+    return () => { clearInterval(timer); };
   }, [playing, player, armed, output, clock, bpm, parsed]);
+  // Transport lifecycle is separate from tempo-dependent scheduling.
+  useEffect(() => {
+    if (!playing) return;
+    if (armed && clock) { try { output?.send([(player?.position ?? 0) < 0.05 ? 250 : 251]); } catch (e) { fail(e); } }
+    return panic;
+  }, [playing, armed, output, clock]);
   useEffect(() => { activeLine.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [active]);
   useEffect(() => {
     if (!access) return;

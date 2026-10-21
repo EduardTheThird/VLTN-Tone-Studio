@@ -31,6 +31,7 @@ export function DeviceScreen() {
 }
 
 function DevicePage() {
+  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const input = useDevice(
     useShallow((s) => ({
       status: s.status,
@@ -49,7 +50,7 @@ function DevicePage() {
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);
   const guideRef = useRef<HTMLDivElement>(null);
-  const locked = view.kind === "connected" && writesLocked(input.device, input.mode);
+  const locked = view.kind === "connected" && writesLocked(input.device, input.mode, gp180Unlocked);
 
   useStatusMessage({ led: view.led, text: locked ? `Pedal settings are read-only on the ${pedalName(input.device)}` : view.statusText });
 

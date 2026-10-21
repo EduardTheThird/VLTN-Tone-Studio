@@ -78,7 +78,7 @@ export function LocalNamDialog({ file, onClose }: { file: OpenFile | null; onClo
   const snapTones = useDevice((s) => s.snapTones);
   const device = useDevice((s) => s.device);
   const busy = useDevice((s) => s.busy);
-  const locked = useDevice((s) => writesLocked(s.device, s.mode));
+  const locked = useDevice((s) => writesLocked(s.device, s.mode, s.gp180WriteUnlocked));
   const hasSignal = useTestSignal((s) => s.has);
   const pedal = usePedalName();
 

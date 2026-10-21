@@ -8,7 +8,6 @@ import { pedalOnUsb, runningPortHolder } from "@shared/host/device";
 import { useDevice } from "@/state/device";
 import { pedalName, slotLabel, vendorApps } from "@/state/device-model";
 import { clock, pedalModelName, requestErrorLine, type ConnectionView, type Led } from "./guidance";
-import { useAppSettings } from './settings-store';
 import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 
 /** Models the Device screen offers to simulate (registry profiles with a simulator). */
@@ -38,7 +37,7 @@ export function ConnectionHeader({ view, onShowFix }: { view: ConnectionView; on
   );
   const connected = d.status === "connected";
   const onUsb = d.mode === "webmidi" ? pedalOnUsb(d.hostStatus) : null;
-  const gp180Unlocked = useAppSettings(s => s.settings.gp180WriteUnlocked);
+  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const errorLine = connected ? requestErrorLine(d.lastError) : null;
 
   const lookForPedal = () => void d.connect("webmidi").catch(() => {});
