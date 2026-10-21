@@ -1,5 +1,5 @@
 // The device store on the simulated GP-200 family: connect and sync, live edits, the GP-200 patch fields, save, rename,
-// write, the effect catalog (built in, then the user's import), the read-only LT and JR, and a clean protocol log.
+// write, the effect catalog (built in, then the user's import), LT and JR writes on a real pedal, and a clean protocol log.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useGp200Catalog } from "@/gp200/app/catalog-store";
 import { buildCatalogFromXml } from "@/gp200/lib/catalog.mjs";
@@ -220,33 +220,25 @@ describe("GP-200 connecting after a GP-50", () => {
   }, 30_000);
 });
 
-describe.each(["gp200lt", "gp200jr"] as const)("%s: read-only on a real pedal", (key) => {
+describe.each(["gp200lt", "gp200jr"] as const)("%s: writes on a real pedal", (key) => {
   beforeAll(async () => {
     await store().connect("mock", { mockDevice: key });
+    useDevice.setState({ mode: "webmidi" });
   }, 30_000);
   afterAll(async () => {
     useDevice.setState({ mode: "mock" });
     await store().disconnect();
   });
 
-  it("takes writes in the simulator", async () => {
+  it("renames, writes, changes settings and uploads User IRs", async () => {
     expect(store().device).toBe(key);
     expect(store().names).toHaveLength(profileFor(key).slotCount);
-    await store().rename(5, "Sim Write");
-    expect(store().names[5].name).toBe("Sim Write");
-  }, 30_000);
-
-  it("refuses every memory write on a real pedal and keeps live edits", async () => {
-    useDevice.setState({ mode: "webmidi" });
-    const unsafe = { code: "unsafe" };
-    await expect(store().writePreset(7, store().preset!.prst)).rejects.toMatchObject(unsafe);
-    await expect(store().saveToSlot(store().slot!)).rejects.toMatchObject(unsafe);
-    await expect(store().rename(7, "No")).rejects.toMatchObject(unsafe);
-    await expect(store().uploadUserIr(0, "No", new Uint8Array(16))).rejects.toMatchObject(unsafe);
-    expect(() => store().setGlobal("inputLevel", 3)).toThrow(/hasn't been tested/);
-    expect(() => store().setGlobalEq(GLOBAL_EQ_INDEX.level, 60)).toThrow(/hasn't been tested/);
-    store().setVolume(55);
-    await until(async () => expect((await onPedal()).volume).toBe(55));
+    await store().rename(5, "Real Write");
+    expect(store().names[5].name).toBe("Real Write");
+    await store().writePreset(7, store().preset!.prst);
+    store().setGlobal("inputLevel", 3);
+    expect(store().globals?.inputLevel).toBe(3);
+    await store().uploadUserIr(0, "Real IR", new Uint8Array(16));
     expect(driver().mock!.violations).toEqual([]);
   }, 30_000);
 });

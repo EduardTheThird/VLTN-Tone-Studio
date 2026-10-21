@@ -1,7 +1,6 @@
 // DeviceDriver for the GP-150 and GP-180: an adapter over Gp150Session, plus the simulator (MockGp150). Facts: the
 // GP-180 captures of majabojarska/Valeton-GP180-Rev-Eng (one protocol for both). Safety: the session serializes requests,
-// waits for the pedal's ACK of every message, verifies full writes by reading back, and never builds the factory reset;
-// memory writes on a real unit stay locked until one has been tested (profile `writable`).
+// waits for the pedal's ACK of every message, verifies full writes by reading back, and never builds the factory reset.
 import { Gp150Session, type Gp150Event, type Gp150Timing, type Gp150Transport, type ListEntry } from "@/gp150/lib/session.mjs";
 import { MockGp150, type MockGp150Options } from "@/gp150/lib/mock-device.mjs";
 import { CMD, GLOBALS, GLOBAL_EQ } from "@/gp150/lib/protocol.mjs";

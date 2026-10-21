@@ -7,9 +7,9 @@ const failure = (code: string, message: string) => Object.assign(new Error(messa
 describe("describeError", () => {
   afterEach(() => useDevice.setState({ device: null }));
 
-  it("keeps the store's plain refusal for a model not tested for writes yet", () => {
-    useDevice.setState({ device: "gp200lt" });
-    const locked = new DeviceError("unsafe", "Tone Studio doesn't change the GP-200LT's memory yet: it hasn't been tested on one. Reading and live edits work.");
+  it("keeps the store's plain refusal for a feature behind Experimental pedal commands", () => {
+    useDevice.setState({ device: "gp200" });
+    const locked = new DeviceError("unsafe", "This needs Experimental pedal commands, which you can turn on in Settings.");
     expect(describeError(locked)).toBe(locked.message);
     expect(describeError(failure("unsafe", "refusing to send a destructive frame"))).toMatch(/data looked wrong\. Nothing was sent/);
   });

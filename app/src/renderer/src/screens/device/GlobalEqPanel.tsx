@@ -6,7 +6,7 @@ import { Dial } from "@/components/gear";
 import { GLOBAL_EQ_INDEX } from "@/gp200/lib/protocol.mjs";
 import { cn } from "@/lib/utils";
 import { useDevice } from "@/state/device";
-import { attachedDevice, pedalName, writesLocked } from "@/state/device-model";
+import { attachedDevice, pedalName } from "@/state/device-model";
 import { GP200_EQ_BANDS, gp200EqSpec } from "@/state/driver/gp200-globals";
 import { useNav } from "@/state/nav";
 
@@ -20,7 +20,6 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
       eq: s.globalEq,
       on: s.globals?.globalEq,
       device: s.device,
-      mode: s.mode,
       experimental: s.lockedFeatures.includes("globalEq"),
       attached: attachedDevice(s),
     })),
@@ -28,9 +27,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
   // Another model attached: the remembered EQ is not its EQ (the faceplate above shows no values either).
   if (!s.eq || s.attached !== s.device) return null;
   const pedal = pedalName(s.device);
-  const readOnly = writesLocked(s.device, s.mode);
-  const locked = offline || readOnly;
-  const disabled = locked || s.experimental;
+  const disabled = offline || s.experimental;
   const values = s.eq.values;
 
   /** `name`: the accessible name ("Band 1 frequency") */
@@ -64,7 +61,7 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
         <div className="flex items-center gap-2.5 text-sm font-[550] text-silkscreen-2">
           <Switch
             checked={s.on === 1}
-            disabled={locked || s.on === undefined}
+            disabled={offline || s.on === undefined}
             onCheckedChange={(v) => useDevice.getState().setGlobal("globalEq", v ? 1 : 0)}
             aria-label="Global EQ on"
           />
@@ -93,11 +90,6 @@ export function GlobalEqPanel({ offline }: { offline: boolean }) {
           <span className="flex items-center gap-1.5 font-[550] text-silkscreen-2 opacity-45">
             <Lock className="size-3.5" aria-hidden />
             Read-only until connected
-          </span>
-        ) : readOnly ? (
-          <span className="flex items-center gap-1.5 font-[550] text-silkscreen-2">
-            <Lock className="size-3.5" aria-hidden />
-            Read-only on the {pedal}
           </span>
         ) : s.experimental ? (
           <>
