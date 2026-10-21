@@ -170,7 +170,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
   if (status !== "error" || !error) {
     const lost = input.disconnectReason === "lost";
     return base("disconnected", "off", "Not connected", "Not connected", lost ? "The pedal went away (unplugged or switched off)" : lastSeen, {
-      note: mode === "bluetooth" ? "Enable Bluetooth on the pedal, close other Bluetooth MIDI apps, then use Connect Bluetooth MIDI. Choose Manage GP-180 to test wireless editor access." : `${plugIn(pedal)} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
+      note: mode === "bluetooth" ? "Bluetooth editor management is disabled. Connect by USB to manage the pedal. Bluetooth MIDI remains available for performance controls." : `${plugIn(pedal)} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
       statusText: `${pedal} not connected`,
     });
   }

@@ -11,8 +11,6 @@ import { deviceLogEntries, sessionLog } from "./session-log";
 import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
-import { Gp150Driver } from "./driver/gp150-driver";
-import { useBluetooth } from "@/bluetooth/connection";
 import { clampGp200Eq } from "./driver/gp200-globals";
 import type { DeviceDriver, DriverEvent } from "./driver/types";
 import { clampParamValue, editPrst, orderError, syncParams, toPresetState } from "./preset-codec";
@@ -481,6 +479,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     async connect(mode = get().mode, opts) {
+      if (mode === "bluetooth") throw new Error("Bluetooth editor management is disabled. Connect by USB to manage the pedal. Bluetooth MIDI remains available for performance controls.");
       if (get().status === "connecting") return;
       stopWatch();
       userDisconnected = false;
@@ -500,10 +499,6 @@ export const useDevice = create<DeviceState>((set, get) => {
         if (mode === "mock") {
           if (opts?.mockDevice) mockDevice = opts.mockDevice;
           d = await simulate(mockDevice, driverOpts);
-        } else if (mode === "bluetooth") {
-          const connection = useBluetooth.getState().connection;
-          if (!connection) throw new Error("Connect Bluetooth MIDI first, then choose Manage GP-180.");
-          d = Gp150Driver.fromBluetooth(connection, { ...driverOpts, readOnly: !writeUnlocked });
         } else {
           d = await openPort(settings?.portPattern || undefined, { ...driverOpts, readOnly: writeUnlocked ? false : undefined });
         }
@@ -520,9 +515,7 @@ export const useDevice = create<DeviceState>((set, get) => {
         if (cancelled()) return;
         // attach() and the factory throw a ConnectionError; WebMIDI failures are a Gp5ConnectError (an Error) that still needs mapping.
         const base = e instanceof Error ? toConnectionError(e, false, get().device) : (e as ConnectionError);
-        const error = mode === "bluetooth"
-          ? { code: "unknown" as const, message: `Bluetooth editor handshake failed. This GP-180 may use Valeton's separate wireless editor protocol rather than BLE-MIDI SysEx. ${base.message}` }
-          : refineConnectionError(base, await hostCheck);
+        const error = refineConnectionError(base, await hostCheck);
         set({ status: "error", error, gp180WriteUnlocked: false });
         if (mode === "webmidi" && (error.code === "not-found" || error.code === "bootloader")) startWatch();
         throw e;

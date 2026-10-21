@@ -16,7 +16,13 @@ export interface BleDevice extends EventTarget {
 }
 interface BluetoothApi { requestDevice(options: { filters: ({ services: string[] } | { namePrefix: string })[]; optionalServices: string[] }): Promise<BleDevice> }
 type Listener = (bytes: Uint8Array) => void;
-export const useBluetooth = create<{ connection: BleMidiConnection | null; connecting: boolean; error: string | null }>(() => ({ connection: null, connecting: false, error: null }));
+export interface BluetoothDiagnostics {
+  device: string;
+  writes: number;
+  notifications: number;
+  messages: number;
+}
+export const useBluetooth = create<{ connection: BleMidiConnection | null; connecting: boolean; error: string | null; diagnostics: BluetoothDiagnostics | null }>(() => ({ connection: null, connecting: false, error: null, diagnostics: null }));
 
 export class BleMidiConnection {
   readonly id = 'bluetooth-midi';
@@ -30,7 +36,17 @@ export class BleMidiConnection {
   private generation = 0;
   private queued = 0;
   private decoder = new BleMidiDecoder();
-  private constructor(readonly device: BleDevice, private characteristic: Characteristic) {}
+  private diagnostics: BluetoothDiagnostics;
+  private constructor(readonly device: BleDevice, private characteristic: Characteristic) {
+    this.diagnostics = { device: this.name, writes: 0, notifications: 0, messages: 0 };
+    useBluetooth.setState({ diagnostics: this.diagnostics });
+  }
+  private record(counts: Partial<Pick<BluetoothDiagnostics, 'writes' | 'notifications' | 'messages'>>) {
+    const previous = this.diagnostics;
+    this.diagnostics = { ...previous, ...counts };
+    // Keep the last session's evidence after cleanup without overwriting a newer session.
+    if (useBluetooth.getState().diagnostics === previous) useBluetooth.setState({ diagnostics: this.diagnostics });
+  }
   static async open(device: BleDevice): Promise<BleMidiConnection> {
     try {
       const server = await device.gatt?.connect();
@@ -43,22 +59,31 @@ export class BleMidiConnection {
       device.addEventListener('gattserverdisconnected', connection.lost);
       try { await characteristic.startNotifications(); }
       catch (e) { connection.close(); throw e; }
+      if (connection.state !== 'connected') {
+        connection.close();
+        throw new Error('Bluetooth disconnected during setup. Keep the device nearby and try connecting again.');
+      }
       return connection;
     } catch (e) { device.gatt?.disconnect(); throw e; }
   }
   private receive = () => {
     const value = this.characteristic.value;
     if (!value || this.closed) return;
-    for (const message of this.decoder.decode(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))) {
+    const messages = this.decoder.decode(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    this.record({ notifications: this.diagnostics.notifications + 1, messages: this.diagnostics.messages + messages.length });
+    for (const message of messages) {
       for (const listener of this.listeners) listener(message);
     }
   };
-  private lost = () => {
+  private lost = (event?: Event) => {
     if (this.closed) return;
     this.closed = true; this.clear(); this.decoder.reset();
     this.characteristic.removeEventListener('characteristicvaluechanged', this.receive);
     this.device.removeEventListener('gattserverdisconnected', this.lost);
-    if (useBluetooth.getState().connection === this) useBluetooth.setState({ connection: null });
+    if (useBluetooth.getState().connection === this) useBluetooth.setState({
+      connection: null,
+      ...(event ? { error: 'Bluetooth MIDI disconnected. Check that the device is powered on and nearby, then connect again.' } : {}),
+    });
     for (const listener of this.disconnectListeners) listener();
     this.listeners.clear(); this.disconnectListeners.clear();
   };
@@ -79,8 +104,14 @@ export class BleMidiConnection {
           if (this.closed) return;
           if (this.characteristic.properties.writeWithoutResponse) await this.characteristic.writeValueWithoutResponse(packet as Uint8Array<ArrayBuffer>);
           else await this.characteristic.writeValueWithResponse(packet as Uint8Array<ArrayBuffer>);
+          this.record({ writes: this.diagnostics.writes + 1 });
         }
-      }).catch(e => { useBluetooth.setState({ error: `Bluetooth write failed: ${String(e)}` }); this.close(); }).finally(() => { this.queued--; });
+      }).catch(e => {
+        // A rejected write can arrive after this session was closed and replaced.
+        if (this.closed) return;
+        useBluetooth.setState({ error: `Bluetooth write failed: ${String(e)}` });
+        this.close();
+      }).finally(() => { this.queued--; });
     };
     const delay = timestamp - performance.now();
     if (delay <= 1) enqueue();
@@ -100,8 +131,12 @@ export async function connectBluetooth(): Promise<BleMidiConnection> {
   if (current.connection?.state === 'connected') return current.connection;
   if (current.connecting) throw new Error('Bluetooth selection is already in progress.');
   const bluetooth = (navigator as Navigator & { bluetooth?: BluetoothApi }).bluetooth;
-  if (!bluetooth) throw new Error('Web Bluetooth is unavailable. Use the desktop app or Chrome/Edge with a Bluetooth adapter.');
-  useBluetooth.setState({ connecting: true, error: null });
+  if (!bluetooth) {
+    const error = 'Web Bluetooth is unavailable. Use the desktop app or Chrome/Edge with a Bluetooth adapter.';
+    useBluetooth.setState({ error });
+    throw new Error(error);
+  }
+  useBluetooth.setState({ connecting: true, error: null, diagnostics: null });
   try {
     const device = await bluetooth.requestDevice({ filters: [{ services: [MIDI_SERVICE] }, { namePrefix: 'GP-180' }, { namePrefix: 'GP180' }, { namePrefix: 'Valeton' }], optionalServices: [MIDI_SERVICE] });
     const connection = await BleMidiConnection.open(device);

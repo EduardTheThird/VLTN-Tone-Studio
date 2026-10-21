@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BleMidiConnection, type BleDevice, useBluetooth } from './connection';
+import { BleMidiConnection, connectBluetooth, type BleDevice, useBluetooth } from './connection';
 import { BleMidiDecoder } from './ble-midi';
 
 function fixture() {
@@ -15,8 +15,55 @@ function fixture() {
   return { device, gatt, characteristic };
 }
 const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
-afterEach(() => { useBluetooth.getState().connection?.close(); useBluetooth.setState({ connection: null, error: null }); vi.useRealTimers(); });
+afterEach(() => { useBluetooth.getState().connection?.close(); useBluetooth.setState({ connection: null, connecting: false, error: null }); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe('Bluetooth connection lifecycle', () => {
+  it('retains completed writes and counts undecodable notifications after cleanup', async () => {
+    const f = fixture(), connection = await BleMidiConnection.open(f.device);
+    connection.send([0xf8]);
+    await settle();
+    f.characteristic.value = new DataView(Uint8Array.from([0, 0]).buffer);
+    f.characteristic.dispatchEvent(new Event('characteristicvaluechanged'));
+    f.characteristic.value = new DataView(Uint8Array.from([0x80, 0x80, 0xf8]).buffer);
+    f.characteristic.dispatchEvent(new Event('characteristicvaluechanged'));
+    connection.close();
+    expect(useBluetooth.getState().diagnostics).toEqual({ device: 'GP-180', writes: 1, notifications: 2, messages: 1 });
+  });
+  it('rejects a connection lost while enabling notifications and allows another attempt', async () => {
+    const f = fixture();
+    f.characteristic.startNotifications.mockImplementationOnce(async () => {
+      f.gatt.connected = false;
+      f.device.dispatchEvent(new Event('gattserverdisconnected'));
+      return f.characteristic;
+    });
+    const next = fixture();
+    const requestDevice = vi.fn().mockResolvedValueOnce(f.device).mockResolvedValueOnce(next.device);
+    vi.stubGlobal('navigator', { bluetooth: { requestDevice } });
+    await expect(connectBluetooth()).rejects.toThrow('disconnected during setup');
+    expect(useBluetooth.getState().connection).toBeNull();
+    expect(useBluetooth.getState().connecting).toBe(false);
+    const reconnected = await connectBluetooth();
+    expect(useBluetooth.getState().connection).toBe(reconnected);
+    expect(useBluetooth.getState().error).toBeNull();
+  });
+  it('shows an error when Bluetooth is unavailable', async () => {
+    vi.stubGlobal('navigator', {});
+    await expect(connectBluetooth()).rejects.toThrow('Web Bluetooth is unavailable');
+    expect(useBluetooth.getState().error).toContain('Web Bluetooth is unavailable');
+  });
+  it('ignores a late write failure after a new session is connected', async () => {
+    const f = fixture(), connection = await BleMidiConnection.open(f.device);
+    let rejectWrite!: (reason: Error) => void;
+    f.characteristic.writeValueWithoutResponse.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectWrite = reject; }));
+    connection.send([0xf8]);
+    await settle();
+    connection.close();
+    const next = await BleMidiConnection.open(fixture().device);
+    useBluetooth.setState({ connection: next, error: null });
+    rejectWrite(new Error('old session failed'));
+    await settle();
+    expect(useBluetooth.getState().connection).toBe(next);
+    expect(useBluetooth.getState().error).toBeNull();
+  });
   it('finishes an in-flight SysEx when clearing pending performance cues', async () => {
     const f = fixture(), connection = await BleMidiConnection.open(f.device);
     const message = [0xf0, ...Array(80).fill(1), 0xf7];
@@ -41,6 +88,7 @@ describe('Bluetooth connection lifecycle', () => {
     f.characteristic.dispatchEvent(new Event('characteristicvaluechanged'));
     expect(received).toHaveBeenCalledTimes(1); expect(lost).toHaveBeenCalledTimes(1);
     expect(useBluetooth.getState().connection).toBeNull(); expect(() => connection.send([0xf8])).toThrow();
+    expect(useBluetooth.getState().error).toContain('Bluetooth MIDI disconnected');
   });
   it('clears future performance messages without cancelling editor requests', async () => {
     vi.useFakeTimers();
