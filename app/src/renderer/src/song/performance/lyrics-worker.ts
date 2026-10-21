@@ -1,14 +1,18 @@
-import { env, pipeline } from '@huggingface/transformers';
-import wasm from '@whisper-ort/ort-wasm-simd-threaded.jsep.wasm?url';
-import mjs from '@whisper-ort/ort-wasm-simd-threaded.jsep.mjs?url';
 import { transcriptSegments } from './lyrics';
 
-env.allowLocalModels = false;
-env.backends.onnx.wasm!.wasmPaths = { wasm, mjs };
-env.backends.onnx.wasm!.numThreads = 1;
-env.backends.onnx.wasm!.proxy = false;
 self.onmessage = async (event: MessageEvent<Float32Array>) => {
   try {
+    // Load inside the handler so module/asset failures reach the UI instead of
+    // terminating worker startup with an opaque error event.
+    const [{ env, pipeline }, { default: wasm }, { default: mjs }] = await Promise.all([
+      import('@huggingface/transformers'),
+      import('@whisper-ort/ort-wasm-simd-threaded.jsep.wasm?url'),
+      import('@whisper-ort/ort-wasm-simd-threaded.jsep.mjs?url'),
+    ]);
+    env.allowLocalModels = false;
+    env.backends.onnx.wasm!.wasmPaths = { wasm, mjs };
+    env.backends.onnx.wasm!.numThreads = 1;
+    env.backends.onnx.wasm!.proxy = false;
     const transcribe = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
       device: 'wasm', dtype: 'q8',
       progress_callback: p => {
