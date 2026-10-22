@@ -18,6 +18,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-180 USB editor sessions default to read-only. An explicit testing switch unlocks writes; hardware writes remain unverified. This supersedes the general support statement in 0.8.0 below.
 
 ### Fixed
+- Performance MIDI now disarms on gross scheduling interruptions, binds arming to the exact output, preserves BLE note releases across duplicate stop cleanup, rejects cues past the audio end, and avoids echoed Stop feedback. Bluetooth writes time out and discard excessively late queued commands without retrying uncertain delivery.
 - Pause/panic releases only channels used for note messages, avoiding unintended GP-180 looper Stop commands from blanket CC64 resets.
 - Untimed bracket chords remain visible in the combined reader. Incomplete/empty MIDI tokens now block playback with an error.
 - Background lyrics/key changes made during the first song save are retained. Reopening Performance no longer clears the previous key estimate while analysis runs.

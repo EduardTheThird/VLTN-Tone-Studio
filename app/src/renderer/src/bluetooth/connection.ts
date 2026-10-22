@@ -106,6 +106,7 @@ export class BleMidiConnection {
       this.queued++;
       this.chain = this.chain.then(async () => {
         if (this.closed || (!editor && generation !== this.generation)) return;
+        if (!editor && performance.now() - timestamp > 250) throw new Error('Bluetooth MIDI command is over 250 ms late; pending commands discarded. Check the pedal state before reconnecting.');
         for (const packet of packets) {
           // Once started, complete the message so clear() cannot leave a partial SysEx.
           if (this.closed) return;
@@ -123,8 +124,16 @@ export class BleMidiConnection {
               maxIntervalMs: Math.max(previous?.maxIntervalMs ?? 0, interval ?? 0),
             } });
           }
-          if (this.characteristic.properties.writeWithoutResponse) await this.characteristic.writeValueWithoutResponse(packet as Uint8Array<ArrayBuffer>);
-          else await this.characteristic.writeValueWithResponse(packet as Uint8Array<ArrayBuffer>);
+          // Some adapter failures leave the GATT promise pending indefinitely.
+          // Do not retry a command that might already have reached the pedal.
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              this.characteristic.properties.writeWithoutResponse ? this.characteristic.writeValueWithoutResponse(packet as Uint8Array<ArrayBuffer>) : this.characteristic.writeValueWithResponse(packet as Uint8Array<ArrayBuffer>),
+              new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('Bluetooth MIDI write timed out; delivery is unknown. Check the pedal state before reconnecting.')), 1000); }),
+            ]);
+          } finally { if (timeout !== undefined) clearTimeout(timeout); }
+          if (this.closed) return;
           this.record({ writes: this.diagnostics.writes + 1, ...(clock ? { clockTiming: { ...this.diagnostics.clockTiming!, maxWriteMs: Math.max(this.diagnostics.clockTiming!.maxWriteMs, performance.now() - started) } } : {}) });
         }
       }).catch(e => {

@@ -17,6 +17,33 @@ function fixture() {
 const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
 afterEach(() => { useBluetooth.getState().connection?.close(); useBluetooth.setState({ connection: null, connecting: false, error: null }); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe('Bluetooth connection lifecycle', () => {
+  it('times out an unresolved write, discards queued commands and never retries uncertain delivery', async () => {
+    vi.useFakeTimers();
+    const f=fixture(),connection=await BleMidiConnection.open(f.device);
+    useBluetooth.setState({connection});
+    let finish!:()=>void;
+    f.characteristic.writeValueWithoutResponse.mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve;}));
+    connection.send([0xc0,1]);connection.send([0xc0,2]);
+    connection.send([0xc0,3],performance.now()+1500);
+    await settle();await vi.advanceTimersByTimeAsync(1001);await settle();
+    expect(connection.state).toBe('disconnected');
+    expect(useBluetooth.getState().error).toContain('delivery is unknown');
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    finish();await vi.advanceTimersByTimeAsync(1000);await settle();
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    expect(useBluetooth.getState().diagnostics?.writes).toBe(0);
+  });
+  it('discards commands waiting over 250 ms behind a slow write instead of sending a late burst', async () => {
+    vi.useFakeTimers();
+    const f=fixture(),connection=await BleMidiConnection.open(f.device);
+    useBluetooth.setState({connection});
+    f.characteristic.writeValueWithoutResponse.mockImplementationOnce(()=>new Promise<void>(resolve=>setTimeout(resolve,300)));
+    connection.send([0xc0,1]);connection.send([0xc0,2]);connection.send([0xc0,3]);
+    await settle();await vi.advanceTimersByTimeAsync(350);await settle();
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    expect(connection.state).toBe('disconnected');
+    expect(useBluetooth.getState().error).toContain('over 250 ms late');
+  });
   it('measures late clock dispatch and slow serialized GATT writes', async () => {
     vi.useFakeTimers();
     const f=fixture(), connection=await BleMidiConnection.open(f.device);

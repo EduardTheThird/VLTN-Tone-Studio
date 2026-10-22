@@ -61,7 +61,12 @@ function PerformanceSession() {
   const [midiStatus, setMidiStatus] = useState('');
   const [portsVersion, setPortsVersion] = useState(0);
   const initialOutput = portId === 'bluetooth-midi' ? bluetooth : access?.outputs.get(portId);
-  const [armed, setArmed] = useState(() => !!midiSession?.armed && midiSession.output === initialOutput && initialOutput?.state === 'connected'), [clock, setClock] = useState(!midiConfig.tempoOnStart && options.clock === true);
+  const clearedOutput = useRef<typeof initialOutput>(undefined);
+  // Arming belongs to this exact connection object, never just a reusable port ID.
+  const [armedOutput, setArmedOutput] = useState(() => midiSession?.armed && midiSession.output === initialOutput && initialOutput?.state === 'connected' ? initialOutput : null);
+  const armed = !!armedOutput && armedOutput === initialOutput && initialOutput?.state === 'connected';
+  const setArmed = (value: boolean) => setArmedOutput(value ? initialOutput ?? null : null);
+  const [clock, setClock] = useState(!midiConfig.tempoOnStart && options.clock === true);
   const previousBluetooth = useRef(bluetooth);
   const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
@@ -73,10 +78,13 @@ function PerformanceSession() {
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const saveChart = (value: string) => { pause(); setChart(value); try { localStorage.setItem(key, value); } catch (e) { fail(e); } };
   const panic = () => {
-    if (!output || output.state !== 'connected') { noteChannels.current.clear(); return; }
+    if (!output || clearedOutput.current === output) return;
+    // Pause handlers and React lifecycle cleanup can both run for one stop.
+    // A second clear would cancel the BLE note releases queued by the first.
+    clearedOutput.current = output;
     try {
       (output as { clear?: () => void }).clear?.();
-      if (!armed) return;
+      if (!armed || output.state !== 'connected') { noteChannels.current.clear(); return; }
       // CC64 is sustain on synths but looper Stop on the GP-180. Release only
       // channels where this session actually queued note messages.
       for (const ch of noteChannels.current) { output.send([176 + ch, 64, 0]); output.send([176 + ch, 123, 0]); }
@@ -85,10 +93,18 @@ function PerformanceSession() {
     } catch (e) { fail(e); }
   };
   const sendPerformance = (bytes: number[], timestamp?: number) => {
+    clearedOutput.current = undefined;
     output?.send(bytes, timestamp);
     if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) noteChannels.current.add(bytes[0] & 15);
   };
-  const pause = () => { playRequest.current++; player?.pause(); setPlaying(false); panic(); if (library.playlistPlaying) library.pausePlaylist(); };
+  const pause = () => {
+    const wasRunning = player?.isPlaying || playPending.current;
+    playRequest.current++; player?.pause(); setPlaying(false);
+    // A pedal/THRU path can echo our Stop back into the selected input.
+    // Repeated Stop while already stopped must not transmit another Stop.
+    if (wasRunning) panic();
+    if (library.playlistPlaying) library.pausePlaylist();
+  };
   const play = async () => {
     if (!player || parsed.error || playPending.current || player.isPlaying) return;
     const request = ++playRequest.current;
@@ -166,7 +182,7 @@ function PerformanceSession() {
   // Transport lifecycle is separate from tempo-dependent scheduling.
   useEffect(() => {
     if (!playing) return;
-    if (armed && clock) { try { output?.send([(player?.position ?? 0) < 0.05 ? 250 : 251]); } catch (e) { fail(e); } }
+    if (armed && clock) { try { sendPerformance([(player?.position ?? 0) < 0.05 ? 250 : 251]); } catch (e) { fail(e); setArmed(false); } }
     return panic;
   }, [playing, armed, output, clock]);
   useEffect(() => {
@@ -174,26 +190,35 @@ function PerformanceSession() {
     // Map the audio timeline once. AudioContext.currentTime advances in render
     // quanta; resampling this mapping on every poll adds jitter to every pulse.
     const origin = performance.now() - player.position * 1000;
+    let lastPoll = performance.now();
     pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
     const fill = () => {
       const now = player.position; setTime(Math.max(0, now));
       const tempoMessages = startTempo.current; startTempo.current = null;
       try {
         if (armed && output?.state === 'connected') {
-          scheduleCues(parsed.cues, cursor.current, now + 0.05, now, origin + now * 1000, (bytes, timestamp) => sendPerformance(bytes, timestamp));
+          const wall = performance.now();
+          // A delayed timer or suspended AudioContext must not replay an old cue
+          // burst or send the lookahead early against a frozen audio clock.
+          if (wall - lastPoll > 250 || wall - (origin + now * 1000) > 250 || parsed.cues.some(c => c.messages.length && c.time > cursor.current && c.time < now - 0.25)) {
+            panic(); setArmed(false);
+            throw new Error('MIDI timing interrupted: cues disarmed and pending commands cleared. Audio continues. Pause and check the pedal state before rearming.');
+          }
+          scheduleCues(parsed.cues, cursor.current, Math.min(player.duration, now + 0.05), now, origin + now * 1000, (bytes, timestamp) => sendPerformance(bytes, timestamp));
           // Apply song tempo after start-position patch recalls at the same timestamp:
           // a patch can carry its own BPM and otherwise overwrite the requested tempo.
-          if (tempoMessages) for (const bytes of tempoMessages) output.send(bytes, Math.max(performance.now(), origin + Math.max(0, now) * 1000));
+          if (tempoMessages) for (const bytes of tempoMessages) sendPerformance(bytes, Math.max(performance.now(), origin + Math.max(0, now) * 1000));
           if (clock) {
             const currentPulse = now * bpm / 60 * 24;
             // Drop stale clocks after a suspended renderer instead of flooding the rig.
             pulse.current = Math.max(pulse.current, Math.floor(currentPulse));
             while (pulse.current / 24 * 60 / bpm < now + 0.05) {
               const seconds = pulse.current / 24 * 60 / bpm;
-              output.send([248], Math.max(performance.now(), origin + seconds * 1000)); pulse.current++;
+              sendPerformance([248], Math.max(performance.now(), origin + seconds * 1000)); pulse.current++;
             }
           }
         }
+        lastPoll = performance.now();
         cursor.current = now + 0.05;
       } catch (e) { fail(e); setArmed(false); }
     };
@@ -218,6 +243,7 @@ function PerformanceSession() {
       if (saved) setInputId(saved.id);
     }
   }, [access, portsVersion]);
+  useEffect(() => { if (armedOutput && armedOutput !== output) setArmed(false); }, [armedOutput, output]);
   useEffect(() => { if (previousBluetooth.current !== bluetooth && portId === 'bluetooth-midi') setArmed(false); previousBluetooth.current = bluetooth; }, [bluetooth, portId]);
   useEffect(() => {
     const input = access?.inputs.get(inputId);

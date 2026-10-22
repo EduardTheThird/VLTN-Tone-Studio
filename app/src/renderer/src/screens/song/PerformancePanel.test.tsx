@@ -13,6 +13,90 @@ vi.mock('@/bluetooth/BluetoothControls', () => ({ BluetoothControls: () => null 
 vi.mock('./LyricsTrack', () => ({ LyricsTrack: () => null }));
 vi.mock('@/song/stems/player', () => ({ StemPlayer: class { names=['other']; duration=60; get position(){return mocks.position;} async seek(value: number){mocks.position=value;} isPlaying=false; setMix(value: unknown){mocks.mix(value);} setMetronome(value: unknown){mocks.metronome(value);} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
 afterEach(() => { cleanup(); mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); mocks.metronome.mockClear(); mocks.mix.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it('disarms after a renderer stall instead of replaying missed patch changes',async()=>{
+  vi.useFakeTimers();
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[00:00.04] {midi:pc 1 1}\n[00:00.40] {midi:pc 1 2}\n[00:00.60] {midi:pc 1 3}');
+  render(<PerformancePanel/>);fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  mocks.send.mockClear();mocks.clear.mockClear();
+  mocks.position=2;
+  act(()=>{vi.setSystemTime(Date.now()+2000);vi.advanceTimersByTime(20);});
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
+  expect(mocks.clear).toHaveBeenCalled();
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('alert').textContent).toContain('MIDI timing interrupted');
+  expect(screen.getByText('Pause')).toBeTruthy();
+  mocks.position=3;act(()=>vi.advanceTimersByTime(1000));
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
+});
+it('disarms when audio time stops advancing instead of sending cues early',async()=>{
+  vi.useFakeTimers();
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  render(<PerformancePanel/>);fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  act(()=>vi.advanceTimersByTime(300));
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('alert').textContent).toContain('MIDI timing interrupted');
+});
+it('never sends to a replacement USB output with the same ID without explicit rearming',async()=>{
+  vi.useFakeTimers();const replacementSend=vi.fn();
+  const access=Object.assign(new EventTarget(),{outputs:new Map([['usb',{id:'usb',name:'GP-180',state:'connected',send:mocks.send,clear:mocks.clear}]]),inputs:new Map()});
+  vi.stubGlobal('navigator',{requestMIDIAccess:async()=>access});
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[00:00.10] {midi:pc 1 2}');
+  render(<PerformancePanel/>);
+  await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
+  fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'usb'}});
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  access.outputs.set('usb',{id:'usb',name:'GP-180',state:'connected',send:replacementSend,clear:vi.fn()});
+  mocks.position=.08;act(()=>access.dispatchEvent(new Event('statechange')));
+  act(()=>vi.advanceTimersByTime(20));
+  expect(replacementSend).not.toHaveBeenCalled();
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+});
+it('does not queue chart commands beyond the end of the audio',async()=>{
+  vi.useFakeTimers();mocks.position=59.98;
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[01:00.01] {midi:pc 1 8}');
+  render(<PerformancePanel/>);fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
+});
+it('does not create a Stop feedback loop when the pedal echoes transport messages',async()=>{
+  vi.useFakeTimers();
+  const input=Object.assign(new EventTarget(),{id:'remote',name:'Pedal THRU',state:'connected'});
+  const send=vi.fn((bytes:number[])=>{
+    // Bound the simulated echo so a regression fails without overflowing the stack.
+    if(bytes[0]===252 && send.mock.calls.length<20) input.dispatchEvent(Object.assign(new Event('midimessage'),{data:new Uint8Array([252])}));
+  });
+  const access=Object.assign(new EventTarget(),{outputs:new Map([['usb',{id:'usb',name:'GP-180',state:'connected',send,clear:mocks.clear}]]),inputs:new Map([['remote',input]])});
+  vi.stubGlobal('navigator',{requestMIDIAccess:async()=>access});
+  render(<PerformancePanel/>);
+  await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
+  fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'usb'}});
+  fireEvent.change(screen.getByLabelText('MIDI input'),{target:{value:'remote'}});
+  fireEvent.click(screen.getByLabelText('Send cues'));fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  send.mockClear();fireEvent.click(screen.getByText('Pause'));
+  const stops=send.mock.calls.filter(c=>c[0][0]===252).length;
+  expect(stops).toBeGreaterThan(0);expect(stops).toBeLessThanOrEqual(2);
+  send.mockClear();act(()=>input.dispatchEvent(Object.assign(new Event('midimessage'),{data:new Uint8Array([252])})));
+  expect(send).not.toHaveBeenCalled();
+});
+it('preserves queued BLE note releases when pause and lifecycle cleanup both run',async()=>{
+  let generation=0;const delivered:number[][]=[];
+  const clear=vi.fn(()=>{generation++;});
+  const send=vi.fn((bytes:number[])=>{const scheduled=generation;void Promise.resolve().then(()=>{if(scheduled===generation)delivered.push(bytes);});});
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send,clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[00:00] {midi:note 5 60 100}');
+  render(<PerformancePanel/>);fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(delivered).toContainEqual([0x94,60,100]);clear.mockClear();delivered.length=0;
+  await act(async()=>{fireEvent.click(screen.getByText('Pause'));});
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(delivered).toEqual([[0xb4,64,0],[0xb4,123,0]]);
+});
 it('locks recording BPM during playback and stops MIDI clock on pause', async () => {
   vi.useFakeTimers(); localStorage.clear(); HTMLElement.prototype.scrollIntoView=vi.fn();
   const access=Object.assign(new EventTarget(), { outputs: new Map([['fake', {id:'fake', name:'Fake MIDI', state:'connected', send:mocks.send, clear:mocks.clear}]]), inputs: new Map() });

@@ -27,6 +27,8 @@ The subsequent backup feature passed the full Windows suite: **770 passed, 3 ski
 
 ## Generic previews
 
+The subsequent [MIDI reliability review](MIDI-RELIABILITY-REVIEW.md) documents fault-injection findings, queue/transport fixes and remaining live-performance work. It supersedes the earlier MIDI cleanup implementation details above where noted; the physical-pedal evidence remains unchanged.
+
 [Performance, command builder and guitar tabs](screenshots/README.md) use fictional text and synthetic audio. Playback was paused; MIDI was disarmed. The captures show real UI components, not connected-device results. No reference application, user song text, preset names or device identifiers are included.
 
 ## Recommended follow-ups
