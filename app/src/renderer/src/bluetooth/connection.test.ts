@@ -53,6 +53,7 @@ describe('Bluetooth connection lifecycle', () => {
     connection.send([0xf8],start+20);
     await vi.advanceTimersByTimeAsync(70); await settle();
     expect(useBluetooth.getState().diagnostics?.clockTiming).toMatchObject({pulses:2,maxLateMs:10,maxWriteMs:30,minIntervalMs:30,maxIntervalMs:30});
+    expect(useBluetooth.getState().diagnostics?.performanceTiming).toMatchObject({commands:2,maxLateMs:10,maxWriteMs:30});
     connection.close();
   });
   it('sends channel-specific PC and CC over Bluetooth without Web MIDI or USB', async () => {

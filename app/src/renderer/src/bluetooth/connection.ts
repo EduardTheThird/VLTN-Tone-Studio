@@ -21,6 +21,7 @@ export interface BluetoothDiagnostics {
   writes: number;
   notifications: number;
   messages: number;
+  performanceTiming?: { commands:number; maxLateMs:number; maxWriteMs:number };
   clockTiming?: { pulses: number; maxLateMs: number; maxWriteMs: number; minIntervalMs: number; maxIntervalMs: number };
 }
 export const useBluetooth = create<{ connection: BleMidiConnection | null; connecting: boolean; error: string | null; diagnostics: BluetoothDiagnostics | null }>(() => ({ connection: null, connecting: false, error: null, diagnostics: null }));
@@ -43,7 +44,7 @@ export class BleMidiConnection {
     this.diagnostics = { device: this.name, writes: 0, notifications: 0, messages: 0 };
     useBluetooth.setState({ diagnostics: this.diagnostics });
   }
-  private record(counts: Partial<Pick<BluetoothDiagnostics, 'writes' | 'notifications' | 'messages' | 'clockTiming'>>) {
+  private record(counts: Partial<Pick<BluetoothDiagnostics, 'writes' | 'notifications' | 'messages' | 'clockTiming' | 'performanceTiming'>>) {
     const previous = this.diagnostics;
     this.diagnostics = { ...previous, ...counts };
     // Keep the last session's evidence after cleanup without overwriting a newer session.
@@ -107,6 +108,10 @@ export class BleMidiConnection {
       this.chain = this.chain.then(async () => {
         if (this.closed || (!editor && generation !== this.generation)) return;
         if (!editor && performance.now() - timestamp > 250) throw new Error('Bluetooth MIDI command is over 250 ms late; pending commands discarded. Check the pedal state before reconnecting.');
+        if (!editor) {
+          const previous=this.diagnostics.performanceTiming;
+          this.record({performanceTiming:{commands:(previous?.commands??0)+1,maxLateMs:Math.max(previous?.maxLateMs??0,performance.now()-timestamp),maxWriteMs:previous?.maxWriteMs??0}});
+        }
         for (const packet of packets) {
           // Once started, complete the message so clear() cannot leave a partial SysEx.
           if (this.closed) return;
@@ -134,6 +139,7 @@ export class BleMidiConnection {
             ]);
           } finally { if (timeout !== undefined) clearTimeout(timeout); }
           if (this.closed) return;
+          if (!editor) this.record({performanceTiming:{...this.diagnostics.performanceTiming!,maxWriteMs:Math.max(this.diagnostics.performanceTiming!.maxWriteMs,performance.now()-started)}});
           this.record({ writes: this.diagnostics.writes + 1, ...(clock ? { clockTiming: { ...this.diagnostics.clockTiming!, maxWriteMs: Math.max(this.diagnostics.clockTiming!.maxWriteMs, performance.now() - started) } } : {}) });
         }
       }).catch(e => {

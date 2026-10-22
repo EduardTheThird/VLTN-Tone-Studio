@@ -3,9 +3,12 @@ import { Button } from '@/components/ui/button';
 import { useSong } from '@/song/store';
 import { StemPlayer } from '@/song/stems/player';
 import { defaultMix } from '@/song/stems/mix';
-import { lrcTime, parseChart, scheduleCues, transpose } from '@/song/performance/chart';
+import { lrcTime, parseChart, transpose } from '@/song/performance/chart';
 import type { Chord } from '@/song/performance/chords';
 import { host } from '@/host';
+import { startMidiScheduler, prepareMidiScheduler, midiNow } from '@/song/performance/midi-scheduler-client';
+import { useMidiDiagnostics } from '@/song/performance/midi-diagnostics';
+import { MidiHealth } from './MidiHealth';
 import { useBluetooth } from '@/bluetooth/connection';
 import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 import { LyricsTrack } from './LyricsTrack';
@@ -68,7 +71,9 @@ function PerformanceSession() {
   const setArmed = (value: boolean) => setArmedOutput(value ? initialOutput ?? null : null);
   const [clock, setClock] = useState(!midiConfig.tempoOnStart && options.clock === true);
   const previousBluetooth = useRef(bluetooth);
-  const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
+  const scheduler = useRef<ReturnType<typeof startMidiScheduler> | null>(null);
+  const prepared = useRef<ReturnType<typeof prepareMidiScheduler> | null>(null), readyWorker = useRef<Worker | null>(null);
+  const cursor = useRef(-0.001), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
   const startTempo = useRef<number[][] | null>(null);
   const noteChannels = useRef(new Set<number>());
@@ -77,7 +82,12 @@ function PerformanceSession() {
   const output = portId === 'bluetooth-midi' ? bluetooth : access?.outputs.get(portId);
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const saveChart = (value: string) => { pause(); setChart(value); try { localStorage.setItem(key, value); } catch (e) { fail(e); } };
+  const recordQueued = (bytes:number[],timestamp?:number,label='Manual / transport') => {
+    const queued=midiNow(),intended=(timestamp??performance.now())+performance.timeOrigin;
+    useMidiDiagnostics.getState().record({label,intended,queued,lateMs:Math.max(0,queued-intended),bytes});
+  };
   const panic = () => {
+    scheduler.current?.stop(); scheduler.current = null;
     if (!output || clearedOutput.current === output) return;
     // Pause handlers and React lifecycle cleanup can both run for one stop.
     // A second clear would cancel the BLE note releases queued by the first.
@@ -87,14 +97,15 @@ function PerformanceSession() {
       if (!armed || output.state !== 'connected') { noteChannels.current.clear(); return; }
       // CC64 is sustain on synths but looper Stop on the GP-180. Release only
       // channels where this session actually queued note messages.
-      for (const ch of noteChannels.current) { output.send([176 + ch, 64, 0]); output.send([176 + ch, 123, 0]); }
+      for (const ch of noteChannels.current) for(const bytes of [[176+ch,64,0],[176+ch,123,0]]) {output.send(bytes);recordQueued(bytes,undefined,'Note cleanup');}
       noteChannels.current.clear();
-      if (clock) output.send([252]);
-    } catch (e) { fail(e); }
+      if (clock) {output.send([252]);recordQueued([252],undefined,'Transport Stop');}
+    } catch (e) { useMidiDiagnostics.getState().fault(String(e));fail(e); }
   };
-  const sendPerformance = (bytes: number[], timestamp?: number) => {
+  const sendPerformance = (bytes: number[], timestamp?: number, label = 'Manual / transport') => {
     clearedOutput.current = undefined;
     output?.send(bytes, timestamp);
+    recordQueued(bytes,timestamp,label);
     if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) noteChannels.current.add(bytes[0] & 15);
   };
   const pause = () => {
@@ -116,12 +127,24 @@ function PerformanceSession() {
         const tempo = Math.round(bpm), status = 0xb0 + midiConfig.tempoChannel - 1;
         tempoMessages = [[status, 73, tempo >> 7], [status, 74, tempo & 127]];
       }
+      if(armed) {
+        const warm=prepared.current??prepareMidiScheduler();prepared.current=warm;
+        await warm.ready;
+        if(request!==playRequest.current)return;
+        readyWorker.current=warm.worker;prepared.current=null;
+      }
       await player.play();
-      if (request !== playRequest.current) { player.pause(); return; }
+      if (request !== playRequest.current) { player.pause();readyWorker.current?.terminate();readyWorker.current=null; return; }
       startTempo.current = tempoMessages;
-      cursor.current = Math.max(0, player.position) - 0.001; pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
+      cursor.current = Math.max(0, player.position) - 0.001;
       setPlaying(true);
-    } catch (e) { if (request === playRequest.current) { fail(e); if (library.playlistPlaying) library.pausePlaylist(); } }
+    } catch (e) {
+      readyWorker.current?.terminate();readyWorker.current=null;
+      if (request === playRequest.current) {
+        if(armed){useMidiDiagnostics.getState().fault(String(e));setArmed(false);if(queued)library.rememberMidi(null);}
+        fail(e); if (library.playlistPlaying) library.pausePlaylist();
+      }
+    }
     finally { playPending.current = false; }
   };
   const seek = async (value: number) => { pause(); await player?.seek(value); setTime(value); cursor.current = value - 0.001; };
@@ -148,7 +171,7 @@ function PerformanceSession() {
     };
     setPlayer(p); setTime(0); setPlaying(false); setMix(options.mix);
     return () => {
-      playRequest.current++; void p.dispose();
+      playRequest.current++;readyWorker.current?.terminate();readyWorker.current=null; void p.dispose();
       // Leaving Performance pauses the set; replacing its source during advance does not.
       if (useSong.getState().source === source && useSongLibrary.getState().playlistPlaying) useSongLibrary.getState().pausePlaylist();
     };
@@ -185,53 +208,52 @@ function PerformanceSession() {
     if (armed && clock) { try { sendPerformance([(player?.position ?? 0) < 0.05 ? 250 : 251]); } catch (e) { fail(e); setArmed(false); } }
     return panic;
   }, [playing, armed, output, clock]);
+  // Reader refresh is independent of the MIDI scheduler and its cursor.
+  useEffect(()=>{
+    if(!armed || playing || !player)return;
+    try {
+      const warm=prepared.current??prepareMidiScheduler();prepared.current=warm;
+      return ()=>{if(prepared.current===warm){warm.cancel();prepared.current=null;}};
+    }catch(e){useMidiDiagnostics.getState().fault(String(e));setArmed(false);fail(e);}
+  },[armed,playing,player,output]);
   useEffect(() => {
     if (!playing || !player) return;
-    // Map the audio timeline once. AudioContext.currentTime advances in render
-    // quanta; resampling this mapping on every poll adds jitter to every pulse.
-    const origin = performance.now() - player.position * 1000;
-    let lastPoll = performance.now();
-    pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
-    const fill = () => {
-      const now = player.position; setTime(Math.max(0, now));
-      const tempoMessages = startTempo.current; startTempo.current = null;
-      try {
-        if (armed && output?.state === 'connected') {
-          const wall = performance.now();
-          // A delayed timer or suspended AudioContext must not replay an old cue
-          // burst or send the lookahead early against a frozen audio clock.
-          if (wall - lastPoll > 250 || wall - (origin + now * 1000) > 250 || parsed.cues.some(c => c.messages.length && c.time > cursor.current && c.time < now - 0.25)) {
-            panic(); setArmed(false);
-            throw new Error('MIDI timing interrupted: cues disarmed and pending commands cleared. Audio continues. Pause and check the pedal state before rearming.');
-          }
-          scheduleCues(parsed.cues, cursor.current, Math.min(player.duration, now + 0.05), now, origin + now * 1000, (bytes, timestamp) => sendPerformance(bytes, timestamp));
-          // Apply song tempo after start-position patch recalls at the same timestamp:
-          // a patch can carry its own BPM and otherwise overwrite the requested tempo.
-          if (tempoMessages) for (const bytes of tempoMessages) sendPerformance(bytes, Math.max(performance.now(), origin + Math.max(0, now) * 1000));
-          if (clock) {
-            const currentPulse = now * bpm / 60 * 24;
-            // Drop stale clocks after a suspended renderer instead of flooding the rig.
-            pulse.current = Math.max(pulse.current, Math.floor(currentPulse));
-            while (pulse.current / 24 * 60 / bpm < now + 0.05) {
-              const seconds = pulse.current / 24 * 60 / bpm;
-              sendPerformance([248], Math.max(performance.now(), origin + seconds * 1000)); pulse.current++;
-            }
-          }
-        }
-        lastPoll = performance.now();
-        cursor.current = now + 0.05;
-      } catch (e) { fail(e); setArmed(false); }
+    const timer = setInterval(() => setTime(Math.max(0,player.position)),50);
+    return () => clearInterval(timer);
+  },[playing,player]);
+  useEffect(() => {
+    if (!playing || !player) return;
+    if(!armed || output?.state!=='connected') {startTempo.current=null;readyWorker.current?.terminate();readyWorker.current=null;return;}
+    const fault = (message:string) => {
+      useMidiDiagnostics.getState().fault(message);
+      panic(); setArmed(false); fail(message);
+      if (queued) library.rememberMidi(null);
     };
-    fill();
-    const timer = setInterval(fill, 20);
-    return () => { clearInterval(timer); };
-  }, [playing, player, armed, output, clock, bpm, parsed]);
+    try {
+      const position = player.position;
+      const handle = startMidiScheduler({cues:parsed.cues,position,duration:player.duration,origin:midiNow()-position*1000,bpm,clock,tempo:startTempo.current},message=>{
+        sendPerformance(message.bytes,message.due-performance.timeOrigin,message.label);
+      },fault,readyWorker.current??undefined);
+      readyWorker.current=null;
+      startTempo.current = null;
+      scheduler.current = handle;
+      // Audio position is a checkpoint, not the scheduling clock. A missing or
+      // frozen checkpoint makes the worker stop producing new batches.
+      const timer = setInterval(()=>handle.sync(player.position),50);
+      return () => { clearInterval(timer);handle.stop();if(scheduler.current===handle)scheduler.current=null; };
+    } catch (e) { fault(e instanceof Error?e.message:String(e)); }
+  },[playing,player,armed,output,clock,bpm,parsed]);
   useEffect(() => {
     if (!access) return;
-    const update = () => { setPortsVersion(n => n + 1); if (portId !== 'bluetooth-midi' && access.outputs.get(portId)?.state !== 'connected') setArmed(false); };
+    const update = () => {
+      setPortsVersion(n => n + 1);
+      if (portId !== 'bluetooth-midi' && armedOutput && (access.outputs.get(portId)?.state !== 'connected' || access.outputs.get(portId)!==armedOutput)) {
+        useMidiDiagnostics.getState().fault('System MIDI output disconnected or replaced. Cues disarmed.');setArmed(false);
+      }
+    };
     access.addEventListener('statechange', update);
     return () => access.removeEventListener('statechange', update);
-  }, [access, portId]);
+  }, [access, portId, armedOutput]);
   useEffect(() => {
     if (!access) return;
     if (!access.outputs.get(portId) && midiConfig.output?.transport === 'system') {
@@ -244,7 +266,13 @@ function PerformanceSession() {
     }
   }, [access, portsVersion]);
   useEffect(() => { if (armedOutput && armedOutput !== output) setArmed(false); }, [armedOutput, output]);
-  useEffect(() => { if (previousBluetooth.current !== bluetooth && portId === 'bluetooth-midi') setArmed(false); previousBluetooth.current = bluetooth; }, [bluetooth, portId]);
+  useEffect(() => {
+    if (previousBluetooth.current !== bluetooth && portId === 'bluetooth-midi') {
+      if(armedOutput && armedOutput===previousBluetooth.current)useMidiDiagnostics.getState().fault('Bluetooth output disconnected or replaced. Cues disarmed.');
+      setArmed(false);
+    }
+    previousBluetooth.current = bluetooth;
+  }, [bluetooth, portId, armedOutput]);
   useEffect(() => {
     const input = access?.inputs.get(inputId);
     const receive = (data: Uint8Array) => {
@@ -302,6 +330,7 @@ function PerformanceSession() {
         <label><input type="checkbox" aria-label="MIDI Clock (24 PPQN)" disabled={midiConfig.tempoOnStart} checked={clock} onChange={e => { cursor.current = player?.position ?? time; setClock(e.target.checked); }} /> Send MIDI Clock</label>
       </div>
     </div>
+    <MidiHealth cues={parsed.cues} duration={player?.duration ?? 0} clock={clock} tempoChannel={midiConfig.tempoOnStart ? midiConfig.tempoChannel : undefined} outputName={portId === 'bluetooth-midi' ? `Bluetooth ${output?.name || ''}` : output?.name || undefined} parseError={parsed.error} />
     <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
     {player && <div aria-label="Performance mixer" className="flex flex-wrap gap-3">{player.names.map(name => <div key={name} className="flex items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm"><label><input type="checkbox" aria-label={`${stems ? name : 'Song'} enabled`} checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {stems ? name : 'Song'}</label><input aria-label={`${stems ? name : 'Song'} volume`} className="w-24" type="range" min="0" max="1" step="0.01" value={mix[name].volume} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))} /><span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span></div>)}</div>}
     <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={saveChart} transport={<>

@@ -2,17 +2,50 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PerformancePanel } from './PerformancePanel';
 import { readMidiConfiguration, useMidiConfiguration } from '@/song/performance/midi-configuration';
+import type { SchedulerConfig, ScheduledMessage } from '@/song/performance/midi-scheduler';
+vi.mock('@/song/performance/midi-scheduler-client',async()=>{
+  const {MidiSchedule}=await import('@/song/performance/midi-scheduler');
+  const now=()=>performance.timeOrigin+performance.now();
+  return {midiNow:now,prepareMidiScheduler:()=>({worker:{terminate:vi.fn()},ready:Promise.resolve(),cancel:vi.fn()}),startMidiScheduler:(config:SchedulerConfig,send:(message:ScheduledMessage)=>void,fault:(message:string)=>void)=>{
+    const schedule=new MidiSchedule(config,now(),reply=>{if(reply.type==='fault')fault(reply.error);else if(reply.type==='batch')reply.messages.forEach(send);});
+    schedule.tick(now());const timer=setInterval(()=>schedule.tick(now()),20);
+    return {stop(){schedule.stop();clearInterval(timer);},sync(position:number){schedule.sync(position,now(),now());}};
+  }};
+});
 beforeEach(()=>{localStorage.clear();useMidiConfiguration.setState(readMidiConfiguration());HTMLElement.prototype.scrollTo=vi.fn();});
-const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), metronome: vi.fn(), mix: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
+const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), metronome: vi.fn(), mix: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', libraryId: undefined as string|undefined, audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
 vi.mock('@/song/store', () => ({ useSong: Object.assign((select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}), {getState:()=>({source:mocks.source})}) }));
 vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock', gp180WriteUnlocked: false}) }));
-vi.mock('@/song/library', () => ({ useSongLibrary: Object.assign(() => ({queue: [], position: -1, index: {songs: []}}), {getState:()=>({queue:[],position:-1,playlistPlaying:false})}) }));
+const playlist=vi.hoisted(()=>({active:false,queue:[] as string[],position:0,playlistPlaying:true,busy:false,index:{songs:[]},midiSession:null as {access:MIDIAccess|null;portId:string;inputId:string;armed:boolean;output:unknown}|null,rememberMidi:vi.fn(),pausePlaylist:vi.fn(),resumePlaylist:vi.fn()}));
+vi.mock('@/song/library', () => ({ useSongLibrary: Object.assign(() => playlist.active?playlist:({queue: [], position: -1, index: {songs: []}}), {getState:()=>playlist.active?playlist:({queue:[],position:-1,playlistPlaying:false})}) }));
 vi.mock('@/host', () => ({ host: {} }));
-vi.mock('@/bluetooth/connection', () => ({ useBluetooth: (select: (s: unknown) => unknown) => select({connection: mocks.bluetooth}) }));
+vi.mock('@/bluetooth/connection', () => ({ useBluetooth: Object.assign((select: (s: unknown) => unknown) => select({connection: mocks.bluetooth}), {getState:()=>({connection:mocks.bluetooth,diagnostics:null})}) }));
 vi.mock('@/bluetooth/BluetoothControls', () => ({ BluetoothControls: () => null }));
 vi.mock('./LyricsTrack', () => ({ LyricsTrack: () => null }));
 vi.mock('@/song/stems/player', () => ({ StemPlayer: class { names=['other']; duration=60; get position(){return mocks.position;} async seek(value: number){mocks.position=value;} isPlaying=false; setMix(value: unknown){mocks.mix(value);} setMetronome(value: unknown){mocks.metronome(value);} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
-afterEach(() => { cleanup(); mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); mocks.metronome.mockClear(); mocks.mix.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); playlist.active=false; mocks.source.libraryId=undefined; mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); mocks.metronome.mockClear(); mocks.mix.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it('replaces a playlist worker without replaying old-song cues and invalidates carried arming on a timing fault',async()=>{
+  vi.useFakeTimers();
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  playlist.active=true;playlist.queue=['a','b'];playlist.position=0;playlist.playlistPlaying=true;
+  playlist.midiSession={access:null,portId:'bluetooth-midi',inputId:'',armed:true,output:mocks.bluetooth};
+  playlist.rememberMidi.mockImplementation(session=>{playlist.midiSession=session;});
+  playlist.pausePlaylist.mockImplementation(()=>{playlist.playlistPlaying=false;});
+  localStorage.setItem('vltn.song:a','[00:00] {midi:pc 1 1}\n[00:00.20] {midi:pc 1 2}');
+  localStorage.setItem('vltn.song:b','[00:00] {midi:pc 1 3}');
+  mocks.source={...mocks.source,libraryId:'a'};
+  let view:ReturnType<typeof render>;
+  await act(async()=>{view=render(<PerformancePanel/>);});
+  expect(mocks.send.mock.calls.map(c=>c[0])).toContainEqual([192,1]);
+  playlist.position=1;mocks.source={...mocks.source,libraryId:'b'};mocks.position=0;
+  await act(async()=>{view.rerender(<PerformancePanel/>);});
+  expect(mocks.send.mock.calls.map(c=>c[0])).toContainEqual([192,3]);
+  for(let ms=20;ms<=240;ms+=20){mocks.position=ms/1000;act(()=>vi.advanceTimersByTime(20));}
+  expect(mocks.send.mock.calls.map(c=>c[0])).not.toContainEqual([192,2]);
+  mocks.position=2;act(()=>vi.advanceTimersByTime(60));
+  expect(playlist.midiSession?.armed).not.toBe(true);
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+});
 it('disarms after a renderer stall instead of replaying missed patch changes',async()=>{
   vi.useFakeTimers();
   mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
@@ -21,7 +54,7 @@ it('disarms after a renderer stall instead of replaying missed patch changes',as
   await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
   mocks.send.mockClear();mocks.clear.mockClear();
   mocks.position=2;
-  act(()=>{vi.setSystemTime(Date.now()+2000);vi.advanceTimersByTime(20);});
+  act(()=>vi.advanceTimersByTime(60));
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
   expect(mocks.clear).toHaveBeenCalled();
   expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
@@ -128,7 +161,7 @@ it('sends timed song cues to Bluetooth without a USB editor or Web MIDI access',
   await act(async () => { fireEvent.click(screen.getByText('Play song')); });
   act(() => vi.advanceTimersByTime(20));
   expect(mocks.send.mock.calls.filter(c => c[0][0] === 0xc2).map(c => c[0])).toEqual([[0xc2,7]]);
-  mocks.position=0.98; act(() => vi.advanceTimersByTime(20));
+  while(mocks.position<0.98){mocks.position=Math.min(.98,mocks.position+.02);act(()=>vi.advanceTimersByTime(20));}
   mocks.position=1.2; act(() => vi.advanceTimersByTime(40));
   expect(mocks.send.mock.calls.filter(c => c[0][0] === 0xb3 && c[0][1] === 12).map(c => c[0])).toEqual([[0xb3,12,127]]);
   fireEvent.click(screen.getByText('Pause'));
@@ -199,7 +232,8 @@ it.each([90,120,180])('schedules exactly 24 MIDI clock pulses per beat at %i BPM
   const stamps=mocks.send.mock.calls.filter(c=>c[0][0]===248).map(c=>c[1]-origin).filter(t=>t<10000-0.001);
   expect(stamps).toHaveLength(bpm/60*24*10);
   // Ignore the first already-due pulse; subsequent timestamps must form a steady tempo grid.
-  for(let i=2;i<stamps.length;i++)expect(stamps[i]-stamps[i-1]).toBeCloseTo(60000/bpm/24,5);
+  // Cross-worker epoch timestamps lose sub-microsecond floating-point precision.
+  for(let i=2;i<stamps.length;i++)expect(stamps[i]-stamps[i-1]).toBeCloseTo(60000/bpm/24,3);
   fireEvent.click(screen.getByText('Pause'));
   mocks.send.mockClear();act(()=>vi.advanceTimersByTime(1000));
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===248)).toHaveLength(0);
@@ -222,7 +256,7 @@ it('sends Start before clock and keeps a fixed timestamp grid through audio poll
   }
   const stamps=mocks.send.mock.calls.filter(c=>c[0][0]===248).map(c=>c[1]);
   expect(stamps[0]).toBeCloseTo(origin,5);
-  stamps.forEach((stamp,i)=>expect(stamp).toBeCloseTo(origin+i*60000/120/24,5));
+  stamps.forEach((stamp,i)=>expect(stamp).toBeCloseTo(origin+i*60000/120/24,3));
 });
 it('keeps scheduled MIDI running while commands are hidden and remembers visibility', async () => {
   vi.useFakeTimers();
@@ -238,7 +272,7 @@ it('keeps scheduled MIDI running while commands are hidden and remembers visibil
   expect(screen.queryByLabelText('MIDI cue builder')).toBeNull();
   expect(screen.getByText('Pause')).toBeTruthy();
   expect(mocks.clear).not.toHaveBeenCalled();
-  mocks.position=0.98; act(()=>vi.advanceTimersByTime(20));
+  while(mocks.position<0.98){mocks.position=Math.min(.98,mocks.position+.02);act(()=>vi.advanceTimersByTime(20));}
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===176 && c[0][1]===12).map(c=>c[0])).toEqual([[176,12,100]]);
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
   view.unmount(); render(<PerformancePanel/>);
