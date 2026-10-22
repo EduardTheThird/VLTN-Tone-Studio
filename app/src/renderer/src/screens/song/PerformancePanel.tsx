@@ -9,6 +9,7 @@ import { host } from '@/host';
 import { useBluetooth } from '@/bluetooth/connection';
 import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 import { LyricsTrack } from './LyricsTrack';
+import { SongKey } from './SongKey';
 import { PerformanceReader } from './PerformanceReader';
 import { ChordVoicings } from './ChordVoicings';
 import { MidiCueBuilder } from './MidiCueBuilder';
@@ -140,7 +141,7 @@ function PerformanceSession() {
   useEffect(() => {
     if (queued && library.playlistPlaying && !library.busy) library.rememberMidi({ access, portId, inputId, armed, output });
   }, [queued, library.playlistPlaying, library.busy, access, portId, inputId, armed, output]);
-  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ beats, shift, clock, volume, mix, chordChoice, lyricsLanguage: readOptions(key, { lyricsLanguage: 'auto' }).lyricsLanguage })); } catch (e) { fail(e); } }, [key, beats, shift, clock, volume, mix, chordChoice]);
+  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ ...readOptions(key, {}), beats, shift, clock, volume, mix, chordChoice, lyricsLanguage: readOptions(key, { lyricsLanguage: 'auto' }).lyricsLanguage })); } catch (e) { fail(e); } }, [key, beats, shift, clock, volume, mix, chordChoice]);
   useEffect(() => {
     setChords([]); setAnalysing(false);
     const audio = chordSource ? stems?.[chordSource] : undefined;
@@ -267,6 +268,7 @@ function PerformanceSession() {
         <label><input type="checkbox" aria-label="MIDI Clock (24 PPQN)" disabled={midiConfig.tempoOnStart} checked={clock} onChange={e => { cursor.current = player?.position ?? time; setClock(e.target.checked); }} /> Send MIDI Clock</label>
       </div>
     </div>
+    <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
     {player && <div aria-label="Performance mixer" className="flex flex-wrap gap-3">{player.names.map(name => <div key={name} className="flex items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm"><label><input type="checkbox" aria-label={`${stems ? name : 'Song'} enabled`} checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {stems ? name : 'Song'}</label><input aria-label={`${stems ? name : 'Song'} volume`} className="w-24" type="range" min="0" max="1" step="0.01" value={mix[name].volume} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))} /><span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span></div>)}</div>}
     <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={saveChart} transport={<>
       <Button disabled={!player || !!parsed.error || library.busy} onClick={() => playing ? pause() : startPlayback()}>{playing ? 'Pause' : queued && library.queue.length > 1 ? 'Play playlist' : 'Play song'}</Button>

@@ -214,3 +214,15 @@ it('applies automatic tempo after song-start patch recalls on the same MIDI time
   expect(stamps[2]).toBeCloseTo(stamps[1],1);
   expect(stamps[3]).toBeCloseTo(stamps[1],1);
 });
+
+it('preserves the song key when mixer, tempo and metronome options are saved',()=>{
+  const view=render(<PerformancePanel />);
+  fireEvent.change(screen.getByLabelText('Song key override'),{target:{value:'D minor'}});
+  fireEvent.change(screen.getByLabelText('Song volume'),{target:{value:'0.35'}});
+  fireEvent.change(screen.getByLabelText('BPM'),{target:{value:'100'}});
+  fireEvent.click(screen.getByLabelText('Metronome'));
+  view.unmount();render(<PerformancePanel />);
+  expect((screen.getByLabelText('Song key override') as HTMLSelectElement).value).toBe('D minor');
+  expect((screen.getByLabelText('Song volume') as HTMLInputElement).value).toBe('0.35');
+  expect((screen.getByLabelText('BPM') as HTMLInputElement).value).toBe('100');
+});

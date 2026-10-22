@@ -62,3 +62,11 @@ In Performance, choose a MIDI setup preset and apply it:
 Port preferences, setup choices, automatic tempo/channel, selected pedal and command/value, pedal channels and assigned CCs are remembered on this computer. System ports restore after enabling MIDI access, using their ID or an unambiguous matching name. Bluetooth requires a manual connection; sending must still be armed each session. Automatic GP-180 tempo uses the current song BPM rounded to an integer, within 40–300 BPM. Remove conflicting tempo cues from the chart when using it.
 
 **Show MIDI commands** in the performance reader remembers whether MIDI cue markers and the command builder are visible. Hiding them does not pause playback, disarm MIDI or change cue execution. Saved MIDI cues continue to trigger at their timestamps.
+
+## Song key
+
+Performance automatically estimates the recording’s overall major/minor key using a background worker. It uses a usable guitar stem first, then piano, other, bass or vocals, finally the original mix if no suitable stem is present. Silent stems are skipped. The selected source, a tentative/clearer match indicator and alternative keys are shown. Silence or insufficient tonal evidence produces **Unknown** instead of a forced answer.
+
+The detector aggregates spectral pitch-class information across up to 600 windows distributed over the recording and correlates it with major/minor tonal profiles ([method reference](https://music21.org/music21docs/moduleReference/moduleAnalysisDiscrete.html)). It does not use the first chord as the song key. No model download, network request or MIDI command is involved. Relative major/minor keys, modal music, detuning, sparse riffs, separation artifacts and changing keys can be ambiguous. Synthetic progression tests do not establish real-song accuracy.
+
+**Key override** saves a manual correction, independently of automatic analysis. The recording key and transposed chord-display key are shown separately; neither shifts audio pitch nor changes MIDI. Key metadata is stored with the existing song options: save song changes before quitting to retain it in the desktop library, as with other performance edits.
