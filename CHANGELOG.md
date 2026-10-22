@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
+- Portable compressed song-library export and restore as new copies, including source audio, stems, charts, lyrics, key/mix settings and ordered playlists, with streaming progress and integrity checks.
 - Automatic song-key estimation from guitar with harmonic-stem/original-mix fallback, alternative keys and a saved manual override.
 - Song Performance with timed lyrics/chords, MIDI cues, optional MIDI clock, transport input and a remembered metronome that follows song playback. See [Performance](PERFORMANCE.md).
 - Saved songs and ordered playlists with local audio/stem storage and automatic sequential playback. See [the song library guide](SONG-LIBRARY.md).

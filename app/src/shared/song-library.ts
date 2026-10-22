@@ -5,7 +5,12 @@ export interface LibrarySong {
 }
 export interface Playlist { id: string; name: string; songs: string[] }
 export interface SongLibrary { version: 1; songs: LibrarySong[]; playlists: Playlist[] }
+export interface LibraryTransferProgress { phase: string; completed: number; total: number }
+export interface LibraryTransferResult { songs: number; playlists: number; fileName: string }
 export interface SongLibraryApi {
+  exportBackup(): Promise<LibraryTransferResult | null>;
+  restoreBackup(): Promise<LibraryTransferResult | null>;
+  onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;
   index(): Promise<SongLibrary>;
   save(song: LibrarySong, assets: { name: string; bytes: Uint8Array }[]): Promise<void>;
   audio(id: string, name: string): Promise<Uint8Array>;

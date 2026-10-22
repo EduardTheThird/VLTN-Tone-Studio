@@ -5,13 +5,14 @@ import { useSongLibrary } from './library';
 import { performanceKey } from './performance/settings';
 import { useNav } from '@/state/nav';
 
-const api = vi.hoisted(() => ({ index: vi.fn(), save: vi.fn(), audio: vi.fn(), playlists: vi.fn(), remove: vi.fn(), settings: vi.fn() }));
+const api = vi.hoisted(() => ({ index: vi.fn(), save: vi.fn(), audio: vi.fn(), playlists: vi.fn(), remove: vi.fn(), settings: vi.fn(), exportBackup: vi.fn(), restoreBackup: vi.fn(), onTransferProgress: vi.fn() }));
 vi.mock('@/host', () => ({ host: { song: { library: api } } }));
 vi.mock('./stems/engine', () => ({ separateStems: vi.fn() }));
 const audio = { sampleRate: 44100, channels: [new Float32Array([0, .25, -.25])] };
 const saved: LibrarySong = { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', title: 'Saved song', artist: '', sourceName: 'same.mp3', duration: 3 / 44100, audio: [{ name: 'source', sampleRate: 44100, frames: 3, channels: 1 }, { name: 'guitar', sampleRate: 44100, frames: 3, channels: 1 }], settings: { ':bpm': '95', '': '[00:00] [Am]', ':lyrics': '[00:00] Words' }, updated: '' };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear();
+  api.exportBackup.mockResolvedValue(null);api.restoreBackup.mockResolvedValue(null);api.onTransferProgress.mockReturnValue(vi.fn());
   api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
   api.audio.mockResolvedValue(new Uint8Array(audio.channels[0].buffer));
   api.settings.mockResolvedValue(undefined); api.save.mockResolvedValue(undefined);
@@ -103,4 +104,33 @@ it('keeps lyrics and key updates that finish during the first audio save', async
   expect(localStorage.getItem(key+':lyrics')).toBe('[00:00] Finished during save');
   expect(JSON.parse(localStorage.getItem(key+':options')!).songKey).toBe('D minor');
   expect(api.settings).toHaveBeenCalledWith(useSong.getState().source?.libraryId,expect.objectContaining({':lyrics':'[00:00] Finished during save'}));
+});
+
+it('flushes current saved-song edits before exporting, reports progress, and cleans up the listener',async()=>{
+  const source={name:saved.sourceName,audio,libraryId:saved.id};useSong.setState({source});
+  localStorage.setItem(performanceKey(source)+':lyrics','[00:00] Latest lyrics');
+  const unsubscribe=vi.fn();api.onTransferProgress.mockImplementationOnce(callback=>{callback({phase:'Checking files',completed:1,total:4});return unsubscribe;});
+  api.exportBackup.mockResolvedValueOnce({songs:1,playlists:2,fileName:'demo.tar.gz'});
+  await useSongLibrary.getState().exportBackup();
+  expect(api.settings).toHaveBeenCalledWith(saved.id,expect.objectContaining({':lyrics':'[00:00] Latest lyrics'}));
+  expect(api.exportBackup).toHaveBeenCalledTimes(1);expect(unsubscribe).toHaveBeenCalled();
+  expect(useSongLibrary.getState()).toMatchObject({busy:false,transfer:'',notice:'Exported 1 songs and 2 playlists to demo.tar.gz.'});
+});
+it('treats a cancelled backup picker as cancellation and preserves the library',async()=>{
+  const index={...emptyLibrary(),songs:[saved]};useSongLibrary.setState({index});
+  await useSongLibrary.getState().restoreBackup();
+  expect(useSongLibrary.getState().index).toBe(index);
+  expect(useSongLibrary.getState().notice).toBe('Backup restore cancelled.');
+  expect(useSongLibrary.getState().error).toBe('');
+});
+it('refreshes restored copies without loading a song or arming MIDI, and reports failures without clearing the index',async()=>{
+  api.restoreBackup.mockResolvedValueOnce({songs:1,playlists:1,fileName:'demo.tar.gz'});
+  await useSongLibrary.getState().restoreBackup();
+  expect(useSongLibrary.getState()).toMatchObject({index:{songs:[saved]},queue:[],midiSession:null,playlistPlaying:false});
+  expect(useSong.getState().source).toBeNull();
+  const index=useSongLibrary.getState().index;
+  api.restoreBackup.mockRejectedValueOnce(new Error('Checksum mismatch'));
+  await useSongLibrary.getState().restoreBackup();
+  expect(useSongLibrary.getState().index).toBe(index);
+  expect(useSongLibrary.getState()).toMatchObject({error:'Checksum mismatch',busy:false,transfer:''});
 });

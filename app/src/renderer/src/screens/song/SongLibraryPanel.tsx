@@ -32,7 +32,13 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
         <Button variant="outline" disabled={library.busy} onClick={onPick}>Import audio…</Button>
       </div>
     </div>
-    {library.busy && <p role="status">Working with saved songs…</p>}
+    <section aria-label="Portable library backup" className="space-y-3 rounded border border-seam p-4">
+      <h2 className="font-semibold">Portable library backup</h2>
+      <p className="text-sm text-silkscreen-3">Export all saved songs, source audio, stems, charts, lyrics, key/mix settings and playlists into one compressed archive. Save the current song first to include new audio or stems. Current edits to an already-saved song are included automatically.</p>
+      <div className="flex flex-wrap gap-3"><Button variant="outline" disabled={library.busy || !library.index.songs.length || ['splitting','model','decoding'].includes(status.kind)} onClick={()=>void library.exportBackup()}>Export library backup…</Button><Button variant="outline" disabled={library.busy || ['splitting','model','decoding'].includes(status.kind)} onClick={()=>void library.restoreBackup()}>Restore backup as new copies…</Button></div>
+      <p className="text-xs text-silkscreen-3">Restore adds new songs and playlists, keeping your existing library. Importing the same backup again creates duplicates. MIDI ports, cue arming and account settings are not included.</p>
+    </section>
+    {library.busy && <p role="status">{library.transfer || 'Working with saved songs…'}</p>}
     {library.busy && library.playlistPlaying && <Button variant="outline" onClick={() => library.pausePlaylist()}>Stop playlist</Button>}
     {library.notice && <p role="status">{library.notice}</p>}
     {library.error && <p role="alert" className="text-red-400">{library.error}</p>}

@@ -4,6 +4,13 @@ import { invoke } from "./invoke";
 
 export const songApi: SongHostApi = {
   library: {
+    exportBackup: () => invoke('song:library:exportBackup'),
+    restoreBackup: () => invoke('song:library:restoreBackup'),
+    onTransferProgress(callback) {
+      const listener=(_event:IpcRendererEvent,progress:import('@shared/song-library').LibraryTransferProgress)=>callback(progress);
+      ipcRenderer.on('song:library:progress',listener);
+      return ()=>{ipcRenderer.removeListener('song:library:progress',listener);};
+    },
     index: () => invoke('song:library:index'),
     audio: (id, name) => invoke('song:library:audio', id, name),
     playlists: playlists => invoke('song:library:playlists', playlists),

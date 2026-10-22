@@ -2,7 +2,7 @@ import { app, net, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   findModel,
   MODEL_CHECKSUM_ERROR,
@@ -113,6 +113,19 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
   handle('song:library:settings', (_e, id: string, values: Record<string, string>) => library.settings(id, values));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
+  const transferProgress=(value: import('../../shared/song-library').LibraryTransferProgress)=>getWindow()?.webContents.send('song:library:progress',value);
+  handle('song:library:exportBackup', async()=>{
+    const selection=await showSaveDialog(getWindow(),{title:'Export portable song library',defaultPath:join(app.getPath('documents'),'Tone-Studio-library-'+new Date().toISOString().slice(0,10)+'.tar.gz'),filters:[{name:'Portable song library',extensions:['tar.gz']}]});
+    if(selection.canceled || !selection.filePath)return null;
+    const result=await library.exportBackup(selection.filePath,transferProgress);
+    return {...result,fileName:basename(selection.filePath)};
+  });
+  handle('song:library:restoreBackup', async()=>{
+    const selection=await showOpenDialog(getWindow(),{title:'Restore song library as new copies',properties:['openFile'],filters:[{name:'Portable song library',extensions:['gz','tgz']}]});
+    if(selection.canceled || !selection.filePaths[0])return null;
+    const path=selection.filePaths[0],result=await library.restoreBackup(path,transferProgress);
+    return {...result,fileName:basename(path)};
+  });
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.
   const pending = new Map<string, Promise<void>>();
   const progress = (p: ModelProgress) => getWindow()?.webContents.send("song:modelProgress", p);

@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { assetName, emptyLibrary, validId, validatePlaylists, validateSong, type LibrarySong, type Playlist, type SongLibrary } from '../../shared/song-library';
+import { exportBackup, readBackup } from './song-library-backup';
+import { assetName, emptyLibrary, validId, validatePlaylists, validateSong, type LibrarySong, type Playlist, type SongLibrary, type LibraryTransferProgress } from '../../shared/song-library';
 
-type DiskIndex = SongLibrary & { revisions: Record<string, string> };
+export type DiskIndex = SongLibrary & { revisions: Record<string, string> };
 /** Audio is staged before publishing a new index. An interrupted save leaves the previous song intact. */
 export class SongLibraryStore {
   private pending = new Map<string, LibrarySong>();
@@ -62,6 +63,38 @@ export class SongLibraryStore {
       if (!song) throw new Error('Saved song not found.');
       const updated = { ...song, settings: values, updated: new Date().toISOString() }; validateSong(updated);
       index.songs = index.songs.map(s => s.id === id ? updated : s); await this.publish(index);
+    });
+  }
+  async exportBackup(path: string, progress?: (p: LibraryTransferProgress) => void): Promise<{songs:number;playlists:number}> {
+    return this.serial(async()=>{
+      const index=await this.read();
+      // Materialize the empty index too, so even an empty backup has a complete format.
+      await this.publish(index);
+      await exportBackup(this.root,index,path,progress);
+      return {songs:index.songs.length,playlists:index.playlists.length};
+    });
+  }
+  async restoreBackup(path: string, progress?: (p: LibraryTransferProgress) => void): Promise<{songs:number;playlists:number}> {
+    return this.serial(async()=>{
+      const stage=join(this.root,'.restore-'+randomUUID()),moved:string[]=[];
+      try {
+        const backup=await readBackup(path,stage,progress),current=await this.read();
+        const ids=new Map(backup.songs.map(song=>[song.id,randomUUID()]));
+        const revisions:Record<string,string>={...current.revisions};
+        for(const song of backup.songs) {
+          const revision=randomUUID(),target=join(this.root,revision);
+          await rename(join(stage,backup.revisions[song.id]),target);moved.push(target);
+          revisions[ids.get(song.id)!]=revision;
+        }
+        const songs=backup.songs.map(song=>({...song,id:ids.get(song.id)!}));
+        const playlists=backup.playlists.map(playlist=>({...playlist,id:randomUUID(),songs:playlist.songs.map(id=>ids.get(id)!)}));
+        await this.publish({version:1,songs:[...current.songs,...songs],playlists:[...current.playlists,...playlists],revisions});
+        moved.length=0;
+        return {songs:songs.length,playlists:playlists.length};
+      } finally {
+        await rm(stage,{recursive:true,force:true}).catch(()=>{});
+        for(const path of moved) await rm(path,{recursive:true,force:true}).catch(()=>{});
+      }
     });
   }
   async remove(id: string): Promise<void> {

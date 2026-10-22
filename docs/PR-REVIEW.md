@@ -21,6 +21,10 @@ Each behavioural fix has regression coverage. Final local checks on Windows:
 
 The extended test timeout accommodates the protocol simulators on this Windows host. These are local results, not a claim of packaged-release or new physical-pedal verification.
 
+### Portable library backup validation
+
+The subsequent backup feature passed the full Windows suite: **770 passed, 3 skipped**, across 97 files. An additional publication-failure rollback test was added afterward; all **11 backup archive tests** passed, including exact PCM/settings/playlist round trips, repeated imports, highly compressed silence, corrupt/truncated archives, unsafe paths/links, and cleanup after a failed index publication. Typechecking and the production build passed. Native file-picker cancellation and renderer progress/listener handling have automated coverage; packaged cross-platform transfer testing remains a release check.
+
 ## Generic previews
 
 [Performance, command builder and guitar tabs](screenshots/README.md) use fictional text and synthetic audio. Playback was paused; MIDI was disarmed. The captures show real UI components, not connected-device results. No reference application, user song text, preset names or device identifiers are included.
@@ -30,6 +34,6 @@ The extended test timeout accommodates the protocol simulators on this Windows h
 1. **First-beat offset:** allow the recording's first real downbeat to anchor the metronome when there is silence or an unmetered intro. Current beat zero is audio time zero.
 2. **Seek lock during playback:** guard against accidental progress-slider movement on stage, while keeping deliberate stopped seeks available.
 3. **Recognition evaluation:** compare keys/chords/lyrics with reviewed real-song annotations, including relative minor, modes, detuned guitars and key changes. Existing synthetic tests are not an accuracy benchmark.
-4. **Library backup/export and storage management:** provide a complete portable song-library export and cleanup of abandoned audio revisions. Until then, back up the whole library folder while the app is closed.
+4. **Storage management:** portable library export/restore is now implemented; automatic cleanup of abandoned audio revisions and resumable transfers remain follow-ups. See [the library guide](../SONG-LIBRARY.md#portable-backup-and-restore).
 
 These are recommendations, not features implemented in this review. Cross-platform packaged builds, GP-180 editor writes and the full pedal-action catalogue still need their own hardware/release verification. Continuous app MIDI clock remains unsuitable for the tested GP-180/TimeLine rig; use the documented one-time tempo setup.

@@ -8,7 +8,9 @@ import { performanceKey, readSettings, writeSettings } from './performance/setti
 import type { PcmAudio, Stems } from './types';
 
 interface LibraryState {
-  index: SongLibrary; busy: boolean; error: string; notice: string;
+  index: SongLibrary; busy: boolean; error: string; notice: string; transfer: string;
+  exportBackup(): Promise<void>;
+  restoreBackup(): Promise<void>;
   queue: string[]; position: number;
   playlistPlaying: boolean;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
@@ -63,8 +65,29 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     useNav.getState().go('song', 'performance');
   };
   return {
-    index: emptyLibrary(), busy: false, error: '', notice: '', queue: [], position: -1,
+    index: emptyLibrary(), busy: false, error: '', notice: '', transfer: '', queue: [], position: -1,
     playlistPlaying: false, midiSession: null,
+    exportBackup: () => run(async()=>{
+      const service=api();
+      set({transfer:'Preparing library backup…'});
+      const unsubscribe=service.onTransferProgress(p=>set({transfer:`${p.phase} · ${p.completed} / ${p.total} files`}));
+      try {
+        const source=useSong.getState().source;
+        if(source?.libraryId) await service.settings(source.libraryId,readSettings(performanceKey(source)));
+        const result=await service.exportBackup();
+        set({notice:result?`Exported ${result.songs} songs and ${result.playlists} playlists to ${result.fileName}.`:'Backup export cancelled.'});
+      } finally {unsubscribe();set({transfer:''});}
+    }),
+    restoreBackup: () => run(async()=>{
+      const service=api();
+      set({transfer:'Checking library backup…'});
+      const unsubscribe=service.onTransferProgress(p=>set({transfer:`${p.phase} · ${p.completed} / ${p.total} files`}));
+      try {
+        const result=await service.restoreBackup();
+        if(result) set({index:await service.index(),queue:[],position:-1,playlistPlaying:false,midiSession:null,notice:`Restored ${result.songs} songs and ${result.playlists} playlists as new copies. Existing songs were kept.`});
+        else set({notice:'Backup restore cancelled.'});
+      } finally {unsubscribe();set({transfer:''});}
+    }),
     rememberMidi: midiSession => set({ midiSession }),
     pausePlaylist: () => { loadGeneration++; set({ playlistPlaying: false }); },
     resumePlaylist: () => { if (!get().busy && get().queue.length) set({ playlistPlaying: true, error: '', notice: '' }); },
