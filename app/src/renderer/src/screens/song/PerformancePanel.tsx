@@ -16,6 +16,7 @@ import { defaultChordSource } from '@/song/performance/sources';
 import { STEM_NAMES, type StemName } from '@/song/types';
 import { performanceKey, readOptions } from '@/song/performance/settings';
 import { useSongLibrary } from '@/song/library';
+import { useMidiConfiguration, MIDI_SETUP_PRESETS, rememberedPort } from '@/song/performance/midi-configuration';
 
 const field = 'rounded border border-seam bg-transparent p-2';
 function readNumber(key: string, fallback: number, min: number, max: number): number {
@@ -35,6 +36,7 @@ export function PerformancePanel() {
 
 function PerformanceSession() {
   const bluetooth = useBluetooth(s => s.connection);
+  const midiConfig = useMidiConfiguration();
   const source = useSong(s => s.source), stems = useSong(s => s.stems);
   const key = performanceKey(source);
   const library = useSongLibrary();
@@ -54,11 +56,11 @@ function PerformanceSession() {
   const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
   const [chords, setChords] = useState<Chord[]>([]), [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState('');
-  const [access, setAccess] = useState<MIDIAccess | null>(midiSession?.access ?? null), [portId, setPortId] = useState(midiSession?.portId ?? (bluetooth?.state === 'connected' ? bluetooth.id : '')), [inputId, setInputId] = useState(midiSession?.inputId ?? '');
+  const [access, setAccess] = useState<MIDIAccess | null>(midiSession?.access ?? null), [portId, setPortId] = useState(midiSession?.portId ?? (midiConfig.output?.transport === 'system' ? midiConfig.output.id : bluetooth?.state === 'connected' ? bluetooth.id : '')), [inputId, setInputId] = useState(midiSession?.inputId ?? (midiConfig.input?.transport === 'bluetooth' ? 'bluetooth-midi' : ''));
   const [midiStatus, setMidiStatus] = useState('');
   const [portsVersion, setPortsVersion] = useState(0);
   const initialOutput = portId === 'bluetooth-midi' ? bluetooth : access?.outputs.get(portId);
-  const [armed, setArmed] = useState(() => !!midiSession?.armed && midiSession.output === initialOutput && initialOutput?.state === 'connected'), [clock, setClock] = useState(options.clock === true);
+  const [armed, setArmed] = useState(() => !!midiSession?.armed && midiSession.output === initialOutput && initialOutput?.state === 'connected'), [clock, setClock] = useState(!midiConfig.tempoOnStart && options.clock === true);
   const previousBluetooth = useRef(bluetooth);
   const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
@@ -82,6 +84,11 @@ function PerformanceSession() {
     const request = ++playRequest.current;
     playPending.current = true;
     try {
+      if (armed && midiConfig.tempoOnStart && output?.state === 'connected') {
+        if (bpm < 40 || bpm > 300) throw new Error('GP-180 one-time tempo supports 40–300 BPM.');
+        const tempo = Math.round(bpm), status = 0xb0 + midiConfig.tempoChannel - 1;
+        output.send([status, 73, tempo >> 7]); output.send([status, 74, tempo & 127]);
+      }
       await player.play();
       if (request !== playRequest.current) { player.pause(); return; }
       cursor.current = Math.max(0, player.position) - 0.001; pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
@@ -184,6 +191,17 @@ function PerformanceSession() {
     access.addEventListener('statechange', update);
     return () => access.removeEventListener('statechange', update);
   }, [access, portId]);
+  useEffect(() => {
+    if (!access) return;
+    if (!access.outputs.get(portId) && midiConfig.output?.transport === 'system') {
+      const saved = rememberedPort([...access.outputs.values()], midiConfig.output);
+      if (saved) setPortId(saved.id);
+    }
+    if (!inputId && midiConfig.input?.transport === 'system') {
+      const saved = rememberedPort([...access.inputs.values()], midiConfig.input);
+      if (saved) setInputId(saved.id);
+    }
+  }, [access, portsVersion]);
   useEffect(() => { if (previousBluetooth.current !== bluetooth && portId === 'bluetooth-midi') setArmed(false); previousBluetooth.current = bluetooth; }, [bluetooth, portId]);
   useEffect(() => {
     const input = access?.inputs.get(inputId);
@@ -239,7 +257,7 @@ function PerformanceSession() {
           <label className="block">Metronome volume <input aria-label="Metronome volume" type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(Number(e.target.value))} /></label>
           <p>Set BPM to match the recording. Beat one is at the start of the audio; this does not detect tempo or stretch audio.</p>
         </div></details>
-        <label><input type="checkbox" aria-label="MIDI Clock (24 PPQN)" checked={clock} onChange={e => { cursor.current = player?.position ?? time; setClock(e.target.checked); }} /> Send MIDI Clock</label>
+        <label><input type="checkbox" aria-label="MIDI Clock (24 PPQN)" disabled={midiConfig.tempoOnStart} checked={clock} onChange={e => { cursor.current = player?.position ?? time; setClock(e.target.checked); }} /> Send MIDI Clock</label>
       </div>
     </div>
     {player && <div aria-label="Performance mixer" className="flex flex-wrap gap-3">{player.names.map(name => <div key={name} className="flex items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm"><label><input type="checkbox" aria-label={`${stems ? name : 'Song'} enabled`} checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {stems ? name : 'Song'}</label><input aria-label={`${stems ? name : 'Song'} volume`} className="w-24" type="range" min="0" max="1" step="0.01" value={mix[name].volume} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))} /><span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span></div>)}</div>}
@@ -250,16 +268,32 @@ function PerformanceSession() {
       <span className="text-sm">{lrcTime(time)} / {lrcTime(player?.duration ?? 0)}</span>
     </>} />
     <section aria-label="Performance MIDI routing" className="space-y-3 rounded-xl border border-seam p-4"><h2 className="font-semibold">Performance MIDI controller</h2><p className="text-sm text-silkscreen-3">Computer → Bluetooth or USB MIDI → GP-180 → physical MIDI OUT/THRU → MIDI pedals. Choose one performance output below.</p><div className="flex flex-wrap items-center gap-3 py-3">
-      <BluetoothControls onConnected={connection => { panic(); setArmed(false); setPortId(connection.id); setMidiStatus('Bluetooth output selected. Enable Send cues to send this song’s commands.'); }} />
+      <div className="w-full space-y-2 rounded border border-seam p-3" aria-label="MIDI setup presets">
+        <div className="flex flex-wrap items-center gap-3"><label>Setup preset <select aria-label="MIDI setup preset" className={field} value={midiConfig.preset} onChange={e=>midiConfig.update({preset:e.target.value})}>{MIDI_SETUP_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <Button variant="outline" onClick={()=>{
+          const preset=MIDI_SETUP_PRESETS.find(p=>p.id===midiConfig.preset); if(!preset)return;
+          pause(); setArmed(false); setClock(preset.clock);
+          midiConfig.update({tempoOnStart:preset.tempo});
+          if(preset.transport==='bluetooth') { setPortId(bluetooth?.id ?? ''); midiConfig.update({output:{id:'bluetooth-midi',name:bluetooth?.name || 'GP-180 BLE',transport:'bluetooth'}}); }
+          else { const ports=[...(access?.outputs.values() ?? [])].filter(p=>p.state==='connected'); const saved=midiConfig.output?.transport==='system' ? rememberedPort(ports,midiConfig.output) : undefined; const chosen=saved ?? (ports.length===1?ports[0]:undefined); setPortId(chosen?.id ?? ''); if(chosen) midiConfig.update({output:{id:chosen.id,name:chosen.name || '',transport:'system'}}); else if(midiConfig.output?.transport==='bluetooth') midiConfig.update({output:null}); }
+          setMidiStatus('Setup applied. Connect the matching output, check pedal settings, then enable Send cues.');
+        }}>Apply MIDI setup</Button></div>
+        <p className="text-sm text-silkscreen-3">{MIDI_SETUP_PRESETS.find(p=>p.id===midiConfig.preset)?.description}</p>
+        <div className="flex flex-wrap items-center gap-3 text-sm"><label><input type="checkbox" checked={midiConfig.tempoOnStart} onChange={e=>{pause();if(e.target.checked)setClock(false);midiConfig.update({tempoOnStart:e.target.checked});}} /> Send song BPM to GP-180 on playback start</label>
+        <label>GP-180 tempo channel <select aria-label="GP-180 tempo channel" className={field} value={midiConfig.tempoChannel} onChange={e=>{pause();midiConfig.update({tempoChannel:Number(e.target.value)});}}>{Array.from({length:16},(_,i)=><option key={i} value={i+1}>{i+1}</option>)}</select></label></div>
+        <p className="text-xs text-silkscreen-3">Remembered on this computer: ports, setup, pedal channels, command choices and display preference. Cue sending is armed per session. Bluetooth still needs a manual connection. One-time GP-180 tempo uses the song BPM rounded to a whole number (40–300); use app clock off. Check saved chart cues for conflicting tempo commands.</p>
+        {midiConfig.output && <p className="text-xs text-silkscreen-3">Remembered output: {midiConfig.output.name}. {midiConfig.output.transport==='system' ? 'Enable USB / system MIDI to restore it when available.' : 'Connect Bluetooth MIDI to use it.'}</p>}
+      </div>
+      <BluetoothControls onConnected={connection => { panic(); setArmed(false); setPortId(connection.id); midiConfig.update({ output: { id: connection.id, name: connection.name, transport: 'bluetooth' } }); setMidiStatus('Bluetooth output selected. Enable Send cues to send this song’s commands.'); }} />
       <Button variant="outline" onClick={() => void connectMidi()}>Enable USB / system MIDI</Button>
-      <select aria-label="MIDI output" className={field} value={portId} onChange={e => { panic(); setArmed(false); setPortId(e.target.value); }}><option value="">Select output…</option>{outputs.map(p => <option value={p.id} key={p.id}>{p.id === 'bluetooth-midi' ? `Bluetooth · ${p.name}` : p.name}</option>)}</select>
+      <select aria-label="MIDI output" className={field} value={portId} onChange={e => { panic(); setArmed(false); setPortId(e.target.value); const port = outputs.find(p => p.id === e.target.value); midiConfig.update({ output: port ? { id: port.id, name: port.name || '', transport: port.id === 'bluetooth-midi' ? 'bluetooth' : 'system' } : null }); }}><option value="">Select output…</option>{outputs.map(p => <option value={p.id} key={p.id}>{p.id === 'bluetooth-midi' ? `Bluetooth · ${p.name}` : p.name}</option>)}</select>
       <label><input type="checkbox" disabled={output?.state !== 'connected' || !!parsed.error} checked={armed} onChange={e => { panic(); cursor.current = time; setArmed(e.target.checked); setMidiStatus(''); }} /> Send cues</label>
-      <select aria-label="MIDI input" className={field} value={inputId} onChange={e => setInputId(e.target.value)}><option value="">No remote input</option>{inputs.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
+      <select aria-label="MIDI input" className={field} value={inputId} onChange={e => { setInputId(e.target.value); const port=inputs.find(p=>p.id===e.target.value); midiConfig.update({ input: port ? {id:port.id,name:port.name || '',transport:port.id === 'bluetooth-midi' ? 'bluetooth' : 'system'} : null }); }}><option value="">No remote input</option>{inputs.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
       <Button variant="outline" onClick={() => { panic(); setArmed(false); }}>Panic / disarm</Button>
     </div><p className="text-sm text-silkscreen-3">Input: Start/Continue/Stop or CC 80 ≥ 64 toggles playback. Configure a GP-180 MIDI footswitch to send CC 80. Output is opt-in for each song or playlist session. PC values are 0–127; channels are 1–16. Bluetooth uses its own connection and does not need Enable USB / system MIDI.</p>
       <p role="status" className="text-sm">{output?.state === 'connected' ? `${portId === 'bluetooth-midi' ? 'Bluetooth' : 'System MIDI'} output: ${output.name} · ${armed ? 'Song cues enabled' : 'Song cues off'}` : 'Connect Bluetooth MIDI or enable USB / system MIDI, then select an output.'}</p>
       <p className="text-sm text-silkscreen-3">For GP-180 tempo control, use the named Set tempo (BPM) command at song start with app MIDI Clock off, GP-180 clock source Internal and TRS clock output On. Continuous app clock fluctuated in real USB and Bluetooth tests with a TimeLine and caused audible delay changes.</p>
-      <MidiCueBuilder time={time} cues={parsed.cues} canTest={output?.state === 'connected' && armed} onAdd={line => saveChart([chart.trimEnd(), line].filter(Boolean).join('\n'))} onTest={bytes => { if (!armed || output?.state !== 'connected') return; output.send(bytes); setMidiStatus(`MIDI command queued for ${output.name}. Check whether the downstream pedal responds.`); }} />
+      {midiConfig.showCommands && <MidiCueBuilder time={time} cues={parsed.cues} canTest={output?.state === 'connected' && armed} onAdd={line => saveChart([chart.trimEnd(), line].filter(Boolean).join('\n'))} onTest={bytes => { if (!armed || output?.state !== 'connected') return; output.send(bytes); setMidiStatus(`MIDI command queued for ${output.name}. Check whether the downstream pedal responds.`); }} />}
       {midiStatus && <p role="status" className="text-sm">{midiStatus}</p>}
       <details><summary className="cursor-pointer text-sm">GP-180 routing setup</summary><p className="py-2 text-sm text-silkscreen-3">On the GP-180, enable Bluetooth and configure MIDI IN Source as BT Only or Mixed. Configure EXP/FS jack 2 for MIDI OUT and connect the correct TRS MIDI cable to the downstream pedal. Match MIDI channels on the pedals. Forwarding Bluetooth input to physical MIDI OUT depends on the GP-180’s routing and firmware; use the test command to verify it. A Bluetooth connection alone does not confirm delivery at MIDI OUT.</p><p className="pb-2 text-sm text-silkscreen-3">For MIDI Clock, check Clock Source and Clock Output separately. The GP-180 manual says enabling Clock Output makes the pedal ignore incoming clock. Receiving the app’s clock and forwarding it to another pedal must each be verified; successful patch changes do not confirm clock routing.</p></details>
     </section>

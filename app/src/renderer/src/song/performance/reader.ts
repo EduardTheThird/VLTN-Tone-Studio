@@ -13,7 +13,7 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
   const manual = cues.flatMap(c => [...c.text.matchAll(chordPattern)].map(m => ({ time: c.time, name: m[1] })));
   const changes = manual.length ? manual : estimates;
   if (!lines.length) {
-    const plain = (lyrics || chart).split(/\r?\n/).filter(line => line.trim() && !/^\[[\w]+:/.test(line));
+    const plain = (lyrics || chart).split(/\r?\n/).filter(line => !/^\[[\w]+:/.test(line)).map(line => line.replace(/\{(?:midi|label):[^}]*\}/g, '').replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, '').trim()).filter(Boolean);
     lines = plain.map(text => ({ time: NaN, text, chords: [] }));
   }
   const timed = lines.filter(line => Number.isFinite(line.time));

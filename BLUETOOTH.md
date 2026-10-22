@@ -49,6 +49,8 @@ With Bluetooth disconnected, a saved song-start CC 73/74 tempo cue sent over **G
 
 Continuous USB clock also **failed the rig's performance test**. At an app setting of 120 BPM, both pedals fluctuated from **119–122 BPM**; at 90 BPM, both fluctuated from **89–92 BPM**. The user reported audible delay pitch/time changes and judged this unusable. USB was less erratic than Bluetooth, but neither continuous-clock route is validated for performing with this rig. Keep app MIDI Clock off and use the one-time GP-180 tempo command with its internal hardware clock instead.
 
+After restoring Internal clock and TRS clock output On, a single **120 BPM** command on **channel 16 over USB** was confirmed to hold both pedals steady at 120 BPM. Continuous app clock was left off. This repeats the successful one-time command result using USB rather than Bluetooth.
+
 ## Read-only inspection
 
 Real GP-180 USB editor sessions default to read-only. The transport allows handshake, ACK/resend, known queries and preset reads, while rejecting preset selection, edits, saves, uploads and unknown commands before transmission. **Unlock writes for testing** explicitly removes this restriction; it does not indicate that writes have passed hardware verification. Simulators remain editable.

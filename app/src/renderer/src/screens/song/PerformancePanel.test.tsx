@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PerformancePanel } from './PerformancePanel';
+import { readMidiConfiguration, useMidiConfiguration } from '@/song/performance/midi-configuration';
+beforeEach(()=>{localStorage.clear();useMidiConfiguration.setState(readMidiConfiguration());HTMLElement.prototype.scrollTo=vi.fn();});
 const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), metronome: vi.fn(), mix: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
 vi.mock('@/song/store', () => ({ useSong: Object.assign((select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}), {getState:()=>({source:mocks.source})}) }));
 vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock', gp180WriteUnlocked: false}) }));
@@ -137,4 +139,46 @@ it('sends Start before clock and keeps a fixed timestamp grid through audio poll
   const stamps=mocks.send.mock.calls.filter(c=>c[0][0]===248).map(c=>c[1]);
   expect(stamps[0]).toBeCloseTo(origin,5);
   stamps.forEach((stamp,i)=>expect(stamp).toBeCloseTo(origin+i*60000/120/24,5));
+});
+it('keeps scheduled MIDI running while commands are hidden and remembers visibility', async () => {
+  vi.useFakeTimers();
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[00:00] {label:Opening preset} {midi:pc 1 3}\n[00:01] {label:Delay change} {midi:cc 1 12 100}');
+  const view=render(<PerformancePanel/>);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(screen.getAllByLabelText('MIDI cue')).toHaveLength(2);
+  mocks.clear.mockClear(); mocks.send.mockClear();
+  fireEvent.click(screen.getByLabelText('Show MIDI commands'));
+  expect(screen.queryByLabelText('MIDI cue')).toBeNull();
+  expect(screen.queryByLabelText('MIDI cue builder')).toBeNull();
+  expect(screen.getByText('Pause')).toBeTruthy();
+  expect(mocks.clear).not.toHaveBeenCalled();
+  mocks.position=0.98; act(()=>vi.advanceTimersByTime(20));
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===176 && c[0][1]===12).map(c=>c[0])).toEqual([[176,12,100]]);
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
+  view.unmount(); render(<PerformancePanel/>);
+  expect((screen.getByLabelText('Show MIDI commands') as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+});
+
+it('remembers USB configuration and applies GP-180 one-time song tempo without arming on reopen', async () => {
+  const access=Object.assign(new EventTarget(), { outputs:new Map([['gp180',{id:'gp180',name:'GP-180 MIDI',state:'connected',send:mocks.send,clear:mocks.clear}]]),inputs:new Map() });
+  vi.stubGlobal('navigator',{requestMIDIAccess:async()=>access});
+  const view=render(<PerformancePanel/>);
+  fireEvent.change(screen.getByLabelText('MIDI setup preset'),{target:{value:'gp180-usb'}});
+  fireEvent.click(screen.getByText('Apply MIDI setup'));
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect((screen.getByLabelText('Send song BPM to GP-180 on playback start') as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText('MIDI Clock (24 PPQN)') as HTMLInputElement).checked).toBe(false);
+  await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
+  fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'gp180'}});
+  view.unmount(); render(<PerformancePanel/>);
+  await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
+  expect((screen.getByLabelText('MIDI output') as HTMLSelectElement).value).toBe('gp180');
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===191).map(c=>c[0])).toEqual([[191,73,0],[191,74,120]]);
+  expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(false);
 });

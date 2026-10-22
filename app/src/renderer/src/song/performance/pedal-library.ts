@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { PEDAL_PROFILES, parsePedalProfile, type PedalProfile } from './pedal-profiles';
 const key = 'vltn.midi-pedals.v1';
+export const DEFAULT_PEDAL_CHANNELS: Record<string, number> = {
+  'strymon-timeline': 1,
+  'boss-rc10r': 2,
+  'boss-ir200': 3,
+  'boss-sy200': 4,
+};
 interface LibraryData { profiles: PedalProfile[]; channels: Record<string,number>; assignments: Record<string,number> }
 function read(): LibraryData {
   try {

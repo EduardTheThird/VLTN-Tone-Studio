@@ -1,20 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { host } from '@/host';
 import { lrcTime, midiCommand } from '@/song/performance/chart';
 import { PEDAL_PROFILES, CUSTOM_PEDAL_TEMPLATE, actionCommands } from '@/song/performance/pedal-profiles';
 import { OpenMidiBrowser } from './OpenMidiBrowser';
-import { usePedalLibrary } from '@/song/performance/pedal-library';
+import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from '@/song/performance/pedal-library';
+import { useMidiConfiguration } from '@/song/performance/midi-configuration';
 
 export function PedalMidiPicker({time,onAdd,onTest,canTest}:{time:number;onAdd:(line:string)=>void;onTest:(bytes:number[])=>void;canTest:boolean}) {
   const library=usePedalLibrary();
+  const config=useMidiConfiguration();
   const profiles=[...PEDAL_PROFILES,...library.profiles];
-  const [pedal,setPedal]=useState(''),[actionId,setActionId]=useState(''),[query,setQuery]=useState(''),[value,setValue]=useState(0),[assignedCC,setAssignedCC]=useState(''),[error,setError]=useState(''),[definition,setDefinition]=useState(JSON.stringify(CUSTOM_PEDAL_TEMPLATE,null,2));
+  const [pedal,setPedal]=useState(config.pedal),[actionId,setActionId]=useState(config.commands[config.pedal]?.action ?? ''),[query,setQuery]=useState(''),[value,setValue]=useState(config.commands[config.pedal]?.value ?? 0),[assignedCC,setAssignedCC]=useState(String(library.assignments[config.pedal+':'+(config.commands[config.pedal]?.action ?? '')]??'')),[error,setError]=useState(''),[definition,setDefinition]=useState(JSON.stringify(CUSTOM_PEDAL_TEMPLATE,null,2));
   const [customName,setCustomName]=useState(''),[customSource,setCustomSource]=useState(''),[customLabel,setCustomLabel]=useState(''),[customType,setCustomType]=useState('pc'),[customNumber,setCustomNumber]=useState(0),[customValue,setCustomValue]=useState(127);
   const profile=profiles.find(p=>p.id===pedal), action=profile?.actions.find(a=>a.id===actionId);
-  const channel=library.channels[pedal] ?? 1;
+  const channel=library.channels[pedal] ?? DEFAULT_PEDAL_CHANNELS[pedal] ?? 1;
   const field='rounded border border-seam bg-background p-2';
-  const chooseAction=(id:string)=>{ const next=profile?.actions.find(a=>a.id===id);setActionId(id);setValue(next?.value?.default??0);setAssignedCC(String(library.assignments[pedal+':'+id]??''));setError(''); };
+  const chooseAction=(id:string)=>{ const next=profile?.actions.find(a=>a.id===id);setActionId(id);setValue(config.commands[pedal]?.action===id ? config.commands[pedal].value : next?.value?.default??0);setAssignedCC(String(library.assignments[pedal+':'+id]??''));setError(''); };
+  useEffect(()=>{
+    if(!Number.isFinite(value))return;
+    const current=useMidiConfiguration.getState();
+    current.update({pedal,commands:{...current.commands,...(pedal ? {[pedal]:{action:actionId,value}} : {})}});
+  },[pedal,actionId,value]);
   const run=(send:boolean)=>{try {
     if(!Number.isFinite(time)||time<0)throw new Error('Cue time must be zero or more seconds.');
     if(!profile||!action)throw new Error('Choose a pedal and a named command.');
@@ -38,7 +45,7 @@ export function PedalMidiPicker({time,onAdd,onTest,canTest}:{time:number;onAdd:(
   }catch(e){setError(String(e));}};
   return <div className="space-y-3" aria-label="Named pedal commands">
     <div className="flex flex-wrap items-center gap-3">
-      <label>Pedal <select aria-label="MIDI pedal" className={field} value={pedal} onChange={e=>{setPedal(e.target.value);setActionId('');setQuery('');setError('');}}><option value="">Choose a pedal…</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label>Pedal <select aria-label="MIDI pedal" className={field} value={pedal} onChange={e=>{const saved=config.commands[e.target.value];setPedal(e.target.value);setActionId(saved?.action ?? '');setValue(saved?.value ?? 0);setAssignedCC(String(library.assignments[e.target.value+':'+(saved?.action ?? '')]??''));setQuery('');setError('');}}><option value="">Choose a pedal…</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       {profile&&<><label>MIDI channel <select aria-label="Pedal MIDI channel" className={field} value={channel} onChange={e=>{try{library.setChannel(pedal,Number(e.target.value));}catch(err){setError(String(err));}}}>{Array.from({length:16},(_,i)=><option key={i} value={i+1}>{i+1}</option>)}</select></label><span className="text-xs text-silkscreen-3">Match this to the pedal’s receive channel. Choices apply to new cues; existing cues keep their saved channel and values.</span></>}
     </div>
     {profile&&<><details><summary className="cursor-pointer text-sm">Pedal setup and MIDI mapping</summary><p className="py-2 text-sm text-silkscreen-3 whitespace-pre-wrap">{profile.notes}</p></details><div className="flex flex-wrap items-center gap-3">
