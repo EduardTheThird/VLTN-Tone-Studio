@@ -13,11 +13,11 @@ it('shows inspection only for GP-180 connections', () => {
   data.device = 'gp180'; view.rerender(<Gp180Inspection />);
   expect(screen.getByLabelText('Unlock GP-180 writes')).toBeTruthy();
 });
-it('uses explicit GP-180 session access for either transport without unlocking other pedals', () => {
+it('uses explicit GP-180 session access for either transport while other supported pedals remain writable', () => {
   for (const mode of ['webmidi', 'bluetooth'] as const) {
     expect(writesLocked('gp180', mode, false)).toBe(true);
     expect(writesLocked('gp180', mode, true)).toBe(false);
-    expect(writesLocked('gp150', mode, true)).toBe(true);
-    expect(writesLocked('gp200lt', mode, true)).toBe(true);
+    expect(writesLocked('gp150', mode, true)).toBe(false);
+    expect(writesLocked('gp200lt', mode, true)).toBe(false);
   }
 });

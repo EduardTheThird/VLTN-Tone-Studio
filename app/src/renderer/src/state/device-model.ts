@@ -18,8 +18,8 @@ import { SUPPORTED_DEVICE_KEYS } from "./driver/types";
  * real pedal they stay off until the user turns on "Experimental pedal commands" (app setting `gp50Extras`); the
  * simulator always has them.
  * GP-5 family: Valeton Suite 2.1.0's GP-50 commands. GP-200 family: the Global EQ write (0x1005, known from the
- * editor's code only); its export read and live tempo are known from hardware work. GP-150: every command is known
- * from GP-180 captures of Suite itself; a real GP-150's memory stays locked by its profile (`writable`) instead.
+ * editor's code only); its export read and live tempo are known from hardware work. GP-150: none, every command is
+ * known from GP-180 captures of Suite itself.
  */
 export const EXPERIMENTAL_FEATURES: Readonly<Record<DeviceFamily, Partial<Record<DeviceFeature, true>>>> = {
   gp5: { exportPreset: true, exp: true, liveBpm: true, liveFootswitches: true, liveOrder: true, deletePreset: true, copyPreset: true, movePreset: true },
@@ -33,9 +33,9 @@ export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, ex
   return { features: all.filter(open), locked: all.filter((f) => !open(f)) };
 }
 
-/** True when Tone Studio must not change `device`'s memory: a real pedal of a model not tested yet (profile `writable`). */
+/** True when Tone Studio must not change `device`'s memory: a real GP-180 without an explicit session unlock. */
 export function writesLocked(device: DeviceKey | null, mode: DeviceMode, gp180WriteUnlocked = false): boolean {
-  return mode !== "mock" && device !== null && !(device === "gp180" && gp180WriteUnlocked) && !profileFor(device).writable;
+  return mode !== "mock" && device === "gp180" && !gp180WriteUnlocked;
 }
 
 /** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model; GP-150: gp150-globals.ts). */

@@ -19,6 +19,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Diagnostic reports include Bluetooth availability, state, last session device and GATT/MIDI counts. Missing USB-MIDI port errors no longer name only the GP-5/GP-50.
 - GP-180 backups retain the connected pedal model rather than defaulting to GP-150.
 
+## [0.8.1] - 2026-10-21
+
+### Fixed
+- **The GP-150, GP-180, GP-200LT and GP-200JR are no longer read-only.** 0.8.0 announced full support, but the app still refused to change their memory on a real unit ("hasn't been tested on one"): presets, names, restores, imports, pedal settings, the Global EQ, SnapTone and User IR uploads were locked. They now write like the GP-5, GP-50 and GP-200. The GP-50 extras and the GP-200 family's Global EQ write stay behind *Settings › Experimental pedal commands*, as the README says.
+
 ## [0.8.0] - 2026-10-20
 
 ### Added
@@ -169,6 +174,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.8.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.0...v0.7.1

@@ -68,10 +68,6 @@ describe("profiles", () => {
     expect(p.tempo).toEqual({ min: 40, max: 250 });
   });
 
-  it("keeps the untested LT, JR, GP-150 and GP-180 read-only", () => {
-    expect(DEVICE_KEYS.filter((k) => !PROFILES[k].writable)).toEqual(["gp200lt", "gp200jr", "gp150", "gp180"]);
-  });
-
   it("gives the GP-180 the GP-150's slots and file, with a third footswitch", () => {
     const [a, b] = [PROFILES.gp150, PROFILES.gp180];
     expect([b.slotCount, b.prst, b.blocks, b.snapTone]).toEqual([a.slotCount, a.prst, a.blocks, a.snapTone]);
