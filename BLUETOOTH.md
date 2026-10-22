@@ -30,6 +30,25 @@ The **GP-180 BLE** standard MIDI service connected and notification subscription
 
 Repeat an offline USB log audit with `node app/scripts/audit-gp180-log.mjs <session.log>`. This reads a local log and never opens MIDI.
 
+## Bluetooth clock test — 22 October 2026
+
+Continuous 120 BPM clock over Bluetooth was **unstable on real hardware**: the GP-180 and downstream TimeLine showed the same large tempo changes. Starting the scheduler immediately and keeping pulse timestamps on a fixed grid corrected app scheduling issues, but did not resolve the hardware result. One measured run had GATT write-start intervals of **3.3–40.4 ms** (the target was 20.83 ms), maximum dispatch lateness of **21.3 ms**, and a maximum write duration of **23 ms**. These are host measurements, not over-the-air packet captures; they do not identify which layer introduces every delay. The Bluetooth controls expose these measurements under **Bluetooth clock timing**.
+
+For this rig, use a one-time tempo command instead:
+
+1. Set GP-180 **Clock Source = Internal** and **Clock Output (TRS) = On**. Enable clock receive on the downstream TimeLine.
+2. Leave Performance's **Send MIDI Clock** off.
+3. In **Song MIDI cues**, choose **Valeton GP-180 → Set tempo (BPM)**, enter the recording BPM, and add the command at song time zero. Enable **Send cues** for playback.
+4. Use a channel accepted by the GP-180 but ignored by downstream pedals when possible. In the tested rig, GP-180 receives OMNI and TimeLine receives channel 1, so channel 16 can address the GP-180 tempo without sending its CC controls to the TimeLine.
+
+The documented GP-180 command sends CC 73 (BPM high bits) followed by CC 74 (low seven bits), supporting 40–300 BPM. Single 120 and 141 BPM commands over Bluetooth were physically confirmed to hold both pedals at the requested tempo when the GP-180 generated the outgoing clock. A saved time-zero cue on channel 16 also changed both pedals from 141 to a stable 120 BPM automatically when playback started. No USB connection was used. This sets tempo; it does not establish a shared beat phase or sample-accurate synchronization with the audio. The saved cue contains a BPM value; changing **Song BPM** does not rewrite an existing cue.
+
+## USB performance test — 22 October 2026
+
+With Bluetooth disconnected, a saved song-start CC 73/74 tempo cue sent over **GP-180 MIDI** set the GP-180 and downstream TimeLine to a stable **90 BPM**. USB editor inspection initially received no handshake reply even after changing MIDI IN Source to permit USB; restarting the pedal restored the editor connection. Firmware **1.1.1**, all **200 preset names**, active presets and global settings were read. The offline log audit of this app session checked **233 incoming editor SysEx frames and 134 outgoing editor SysEx frames**, eight preset replies across four slots, valid CRCs/chains and no unknown models. Every outgoing editor SysEx frame passed the read-only allowlist. This was an inspection, not another full backup or a preset-write test.
+
+Continuous USB clock also **failed the rig's performance test**. At an app setting of 120 BPM, both pedals fluctuated from **119–122 BPM**; at 90 BPM, both fluctuated from **89–92 BPM**. The user reported audible delay pitch/time changes and judged this unusable. USB was less erratic than Bluetooth, but neither continuous-clock route is validated for performing with this rig. Keep app MIDI Clock off and use the one-time GP-180 tempo command with its internal hardware clock instead.
+
 ## Read-only inspection
 
 Real GP-180 USB editor sessions default to read-only. The transport allows handshake, ACK/resend, known queries and preset reads, while rejecting preset selection, edits, saves, uploads and unknown commands before transmission. **Unlock writes for testing** explicitly removes this restriction; it does not indicate that writes have passed hardware verification. Simulators remain editable.

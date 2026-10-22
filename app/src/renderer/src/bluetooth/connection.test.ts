@@ -17,6 +17,17 @@ function fixture() {
 const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
 afterEach(() => { useBluetooth.getState().connection?.close(); useBluetooth.setState({ connection: null, connecting: false, error: null }); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe('Bluetooth connection lifecycle', () => {
+  it('measures late clock dispatch and slow serialized GATT writes', async () => {
+    vi.useFakeTimers();
+    const f=fixture(), connection=await BleMidiConnection.open(f.device);
+    f.characteristic.writeValueWithoutResponse.mockImplementation(async () => { await new Promise(resolve=>setTimeout(resolve,30)); });
+    const start=performance.now();
+    connection.send([0xf8],start);
+    connection.send([0xf8],start+20);
+    await vi.advanceTimersByTimeAsync(70); await settle();
+    expect(useBluetooth.getState().diagnostics?.clockTiming).toMatchObject({pulses:2,maxLateMs:10,maxWriteMs:30,minIntervalMs:30,maxIntervalMs:30});
+    connection.close();
+  });
   it('sends channel-specific PC and CC over Bluetooth without Web MIDI or USB', async () => {
     vi.useFakeTimers(); vi.stubGlobal('navigator', {});
     const f = fixture(), connection = await BleMidiConnection.open(f.device);
@@ -48,7 +59,7 @@ describe('Bluetooth connection lifecycle', () => {
     f.characteristic.value = new DataView(Uint8Array.from([0x80, 0x80, 0xf8]).buffer);
     f.characteristic.dispatchEvent(new Event('characteristicvaluechanged'));
     connection.close();
-    expect(useBluetooth.getState().diagnostics).toEqual({ device: 'GP-180', writes: 1, notifications: 2, messages: 1 });
+    expect(useBluetooth.getState().diagnostics).toMatchObject({ device: 'GP-180', writes: 1, notifications: 2, messages: 1, clockTiming: { pulses: 1 } });
   });
   it('rejects a connection lost while enabling notifications and allows another attempt', async () => {
     const f = fixture();

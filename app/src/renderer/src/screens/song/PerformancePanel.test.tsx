@@ -25,7 +25,7 @@ it('locks recording BPM during playback and stops MIDI clock on pause', async ()
   expect(mocks.send.mock.calls.some(c=>c[0][0]===252)).toBe(false);
   mocks.send.mockClear();
   expect((screen.getByLabelText('BPM') as HTMLInputElement).disabled).toBe(true);
-  act(()=>vi.advanceTimersByTime(40));
+  mocks.position=0.04; act(()=>vi.advanceTimersByTime(40));
   expect(mocks.send.mock.calls.some(c=>[250,251,252].includes(c[0][0]))).toBe(false);
   expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(true);
   fireEvent.click(screen.getByText('Pause'));
@@ -92,9 +92,49 @@ it('disables clock during playback without replaying transport or stopping audio
   mocks.position=0.01;
   fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
   expect(mocks.send.mock.calls.some(c=>c[0][0]===252)).toBe(true);
-  mocks.send.mockClear();
-  act(()=>vi.advanceTimersByTime(100));
-  expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(false);
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===192).map(c=>c[0])).toEqual([[192,9]]);
+  mocks.send.mockClear();
+  mocks.position=0.11; act(()=>vi.advanceTimersByTime(100));
+  expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(false);
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192)).toHaveLength(0);
   expect(screen.getByText('Pause')).toBeTruthy();
+});
+
+it.each([90,120,180])('schedules exactly 24 MIDI clock pulses per beat at %i BPM',async bpm=>{
+  vi.useFakeTimers(); localStorage.clear();
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100:bpm',String(bpm));
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  render(<PerformancePanel/>);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  const origin=performance.now();
+  for(let ms=20;ms<=10000;ms+=20){mocks.position=ms/1000;act(()=>vi.advanceTimersByTime(20));}
+  const stamps=mocks.send.mock.calls.filter(c=>c[0][0]===248).map(c=>c[1]-origin).filter(t=>t<10000-0.001);
+  expect(stamps).toHaveLength(bpm/60*24*10);
+  // Ignore the first already-due pulse; subsequent timestamps must form a steady tempo grid.
+  for(let i=2;i<stamps.length;i++)expect(stamps[i]-stamps[i-1]).toBeCloseTo(60000/bpm/24,5);
+  fireEvent.click(screen.getByText('Pause'));
+  mocks.send.mockClear();act(()=>vi.advanceTimersByTime(1000));
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===248)).toHaveLength(0);
+});
+
+it('sends Start before clock and keeps a fixed timestamp grid through audio polling jitter', async () => {
+  vi.useFakeTimers(); localStorage.clear();
+  mocks.position=-0.02; // The audio sources start after a 20 ms pre-roll.
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  render(<PerformancePanel/>);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  const origin=performance.now()+20;
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(mocks.send.mock.calls[0][0]).toEqual([250]);
+  for(let ms=20;ms<=1000;ms+=20){
+    // AudioContext.currentTime is quantized, unlike performance.now().
+    mocks.position=ms/1000-0.02+(ms%40===0 ? 0.002 : -0.001);
+    act(()=>vi.advanceTimersByTime(20));
+  }
+  const stamps=mocks.send.mock.calls.filter(c=>c[0][0]===248).map(c=>c[1]);
+  expect(stamps[0]).toBeCloseTo(origin,5);
+  stamps.forEach((stamp,i)=>expect(stamp).toBeCloseTo(origin+i*60000/120/24,5));
 });

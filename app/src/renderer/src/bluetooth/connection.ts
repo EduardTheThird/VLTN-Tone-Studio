@@ -21,6 +21,7 @@ export interface BluetoothDiagnostics {
   writes: number;
   notifications: number;
   messages: number;
+  clockTiming?: { pulses: number; maxLateMs: number; maxWriteMs: number; minIntervalMs: number; maxIntervalMs: number };
 }
 export const useBluetooth = create<{ connection: BleMidiConnection | null; connecting: boolean; error: string | null; diagnostics: BluetoothDiagnostics | null }>(() => ({ connection: null, connecting: false, error: null, diagnostics: null }));
 
@@ -37,11 +38,12 @@ export class BleMidiConnection {
   private queued = 0;
   private decoder = new BleMidiDecoder();
   private diagnostics: BluetoothDiagnostics;
+  private lastClockWrite: number | null = null;
   private constructor(readonly device: BleDevice, private characteristic: Characteristic) {
     this.diagnostics = { device: this.name, writes: 0, notifications: 0, messages: 0 };
     useBluetooth.setState({ diagnostics: this.diagnostics });
   }
-  private record(counts: Partial<Pick<BluetoothDiagnostics, 'writes' | 'notifications' | 'messages'>>) {
+  private record(counts: Partial<Pick<BluetoothDiagnostics, 'writes' | 'notifications' | 'messages' | 'clockTiming'>>) {
     const previous = this.diagnostics;
     this.diagnostics = { ...previous, ...counts };
     // Keep the last session's evidence after cleanup without overwriting a newer session.
@@ -107,9 +109,23 @@ export class BleMidiConnection {
         for (const packet of packets) {
           // Once started, complete the message so clear() cannot leave a partial SysEx.
           if (this.closed) return;
+          const started = performance.now();
+          const clock = bytes.length === 1 && bytes[0] === 0xf8;
+          if (clock) {
+            const previous = this.diagnostics.clockTiming;
+            const interval = this.lastClockWrite === null ? null : started - this.lastClockWrite;
+            this.lastClockWrite = started;
+            this.record({ clockTiming: {
+              pulses: (previous?.pulses ?? 0) + 1,
+              maxLateMs: Math.max(previous?.maxLateMs ?? 0, started - timestamp),
+              maxWriteMs: previous?.maxWriteMs ?? 0,
+              minIntervalMs: interval === null ? previous?.minIntervalMs ?? 0 : previous && previous.pulses > 1 ? Math.min(previous.minIntervalMs, interval) : interval,
+              maxIntervalMs: Math.max(previous?.maxIntervalMs ?? 0, interval ?? 0),
+            } });
+          }
           if (this.characteristic.properties.writeWithoutResponse) await this.characteristic.writeValueWithoutResponse(packet as Uint8Array<ArrayBuffer>);
           else await this.characteristic.writeValueWithResponse(packet as Uint8Array<ArrayBuffer>);
-          this.record({ writes: this.diagnostics.writes + 1 });
+          this.record({ writes: this.diagnostics.writes + 1, ...(clock ? { clockTiming: { ...this.diagnostics.clockTiming!, maxWriteMs: Math.max(this.diagnostics.clockTiming!.maxWriteMs, performance.now() - started) } } : {}) });
         }
       }).catch(e => {
         // A rejected write can arrive after this session was closed and replaced.
@@ -122,7 +138,7 @@ export class BleMidiConnection {
     if (delay <= 1) enqueue();
     else { const timer = setTimeout(() => { this.timers.delete(timer); if (!this.closed && generation === this.generation) enqueue(); }, delay); this.timers.add(timer); }
   }
-  clear() { this.generation++; for (const timer of this.timers) clearTimeout(timer); this.timers.clear(); }
+  clear() { this.lastClockWrite = null; this.generation++; for (const timer of this.timers) clearTimeout(timer); this.timers.clear(); }
   close() {
     if (this.closed) return;
     this.lost();
