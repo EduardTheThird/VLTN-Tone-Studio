@@ -5,8 +5,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
-- Song Performance with timed lyrics/chords, MIDI cues, MIDI clock, transport input and a standalone practice rhythm. See [Performance](PERFORMANCE.md).
-- Saved songs and ordered playlists with local audio/stem storage. See [the song library guide](SONG-LIBRARY.md).
+- Song Performance with timed lyrics/chords, MIDI cues, optional MIDI clock, transport input and a remembered metronome that follows song playback. See [Performance](PERFORMANCE.md).
+- Saved songs and ordered playlists with local audio/stem storage and automatic sequential playback. See [the song library guide](SONG-LIBRARY.md).
+- Remembered MIDI setup presets, pedal channels/command choices and a Show MIDI commands setting that does not affect cue execution. GP-180 presets use the hardware-tested one-time tempo command.
 - Standard Bluetooth MIDI connection for performance input/output, with connection lifecycle cleanup and diagnostic counters.
 - GP-180 firmware 1.1.1 USB read-only inspection and complete 200-preset backup verified on hardware.
 
@@ -15,6 +16,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-180 USB editor sessions default to read-only. An explicit testing switch unlocks writes; hardware writes remain unverified. This supersedes the general support statement in 0.8.0 below.
 
 ### Fixed
+- Pausing during audio pre-roll no longer leaves a negative resume offset; remote MIDI Start uses the current song tempo/channel; automatic tempo follows start-position patch recalls.
+- Pedal JSON exports use a JSON file filter instead of WAV.
 - Bluetooth setup rejects a connection lost while enabling notifications. Unexpected disconnects are reported, and late failures from a closed session do not overwrite a new session's error state.
 - Diagnostic reports include Bluetooth availability, state, last session device and GATT/MIDI counts. Missing USB-MIDI port errors no longer name only the GP-5/GP-50.
 - GP-180 backups retain the connected pedal model rather than defaulting to GP-150.

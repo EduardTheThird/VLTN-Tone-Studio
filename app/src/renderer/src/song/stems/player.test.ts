@@ -45,3 +45,15 @@ it('anchors clicks and stems to one audio clock, preserves bar phase on seek, an
   expect(player.isPlaying).toBe(true);
   await player.dispose();
 });
+
+it('can resume after pausing during the audio start pre-roll', async () => {
+  vi.stubGlobal('AudioContext', Context);
+  const player = new StemPlayer({other:{sampleRate:100,channels:[new Float32Array(1000)]}});
+  await player.play();
+  expect(player.position).toBeLessThan(0);
+  player.pause();
+  expect(player.position).toBe(0);
+  await player.play();
+  expect(Context.instances[0].sources.at(-1)!.start).toHaveBeenCalledWith(10.02,0);
+  await player.dispose();
+});

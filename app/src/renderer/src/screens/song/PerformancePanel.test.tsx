@@ -182,3 +182,35 @@ it('remembers USB configuration and applies GP-180 one-time song tempo without a
   expect(mocks.send.mock.calls.filter(c=>c[0][0]===191).map(c=>c[0])).toEqual([[191,73,0],[191,74,120]]);
   expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(false);
 });
+
+it('uses the latest song tempo and channel when remote MIDI starts playback', async () => {
+  const input=Object.assign(new EventTarget(),{id:'remote',name:'Footswitch',state:'connected'});
+  const access=Object.assign(new EventTarget(),{outputs:new Map([['usb',{id:'usb',name:'GP-180',state:'connected',send:mocks.send,clear:mocks.clear}]]),inputs:new Map([['remote',input]])});
+  vi.stubGlobal('navigator',{requestMIDIAccess:async()=>access});
+  render(<PerformancePanel />);
+  await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
+  fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'usb'}});
+  fireEvent.change(screen.getByLabelText('MIDI input'),{target:{value:'remote'}});
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  fireEvent.click(screen.getByLabelText('Send song BPM to GP-180 on playback start'));
+  fireEvent.change(screen.getByLabelText('BPM'),{target:{value:'141'}});
+  fireEvent.change(screen.getByLabelText('GP-180 tempo channel'),{target:{value:'15'}});
+  mocks.send.mockClear();
+  await act(async()=>{input.dispatchEvent(Object.assign(new Event('midimessage'),{data:new Uint8Array([250])}));});
+  expect(mocks.send.mock.calls.map(c=>c[0])).toContainEqual([0xbe,73,1]);
+  expect(mocks.send.mock.calls.map(c=>c[0])).toContainEqual([0xbe,74,13]);
+});
+
+it('applies automatic tempo after song-start patch recalls on the same MIDI timeline', async () => {
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  mocks.position=-0.02;
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100','[00:00] {midi:cc 16 0 0} {midi:pc 16 12}');
+  useMidiConfiguration.getState().update({tempoOnStart:true});
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect(mocks.send.mock.calls.map(c=>c[0])).toEqual([[0xbf,0,0],[0xcf,12],[0xbf,73,0],[0xbf,74,120]]);
+  const stamps=mocks.send.mock.calls.map(c=>c[1]);
+  expect(stamps[2]).toBeCloseTo(stamps[1],1);
+  expect(stamps[3]).toBeCloseTo(stamps[1],1);
+});

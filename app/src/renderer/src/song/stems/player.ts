@@ -94,7 +94,7 @@ export class StemPlayer {
 
   pause(): void {
     if (!this.playing) return;
-    this.offset = this.position;
+    this.offset = Math.max(0, this.position);
     this.playing = false;
     this.stopSources();
   }

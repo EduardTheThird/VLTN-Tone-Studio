@@ -64,6 +64,7 @@ function PerformanceSession() {
   const previousBluetooth = useRef(bluetooth);
   const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
+  const startTempo = useRef<number[][] | null>(null);
   const parsed = useMemo(() => { try { return { cues: parseChart(chart), error: '' }; } catch (e) { return { cues: [], error: String(e) }; } }, [chart]);
   const active = parsed.cues.findLastIndex(c => c.time <= time);
   const output = portId === 'bluetooth-midi' ? bluetooth : access?.outputs.get(portId);
@@ -84,13 +85,15 @@ function PerformanceSession() {
     const request = ++playRequest.current;
     playPending.current = true;
     try {
+      let tempoMessages: number[][] | null = null;
       if (armed && midiConfig.tempoOnStart && output?.state === 'connected') {
         if (bpm < 40 || bpm > 300) throw new Error('GP-180 one-time tempo supports 40–300 BPM.');
         const tempo = Math.round(bpm), status = 0xb0 + midiConfig.tempoChannel - 1;
-        output.send([status, 73, tempo >> 7]); output.send([status, 74, tempo & 127]);
+        tempoMessages = [[status, 73, tempo >> 7], [status, 74, tempo & 127]];
       }
       await player.play();
       if (request !== playRequest.current) { player.pause(); return; }
+      startTempo.current = tempoMessages;
       cursor.current = Math.max(0, player.position) - 0.001; pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
       setPlaying(true);
     } catch (e) { if (request === playRequest.current) { fail(e); if (library.playlistPlaying) library.pausePlaylist(); } }
@@ -165,9 +168,13 @@ function PerformanceSession() {
     pulse.current = Math.ceil(Math.max(0, player.position) * bpm / 60 * 24);
     const fill = () => {
       const now = player.position; setTime(Math.max(0, now));
+      const tempoMessages = startTempo.current; startTempo.current = null;
       try {
         if (armed && output?.state === 'connected') {
-          scheduleCues(parsed.cues, cursor.current, now + 0.05, now, performance.now(), (bytes, timestamp) => output.send(bytes, timestamp));
+          scheduleCues(parsed.cues, cursor.current, now + 0.05, now, origin + now * 1000, (bytes, timestamp) => output.send(bytes, timestamp));
+          // Apply song tempo after start-position patch recalls at the same timestamp:
+          // a patch can carry its own BPM and otherwise overwrite the requested tempo.
+          if (tempoMessages) for (const bytes of tempoMessages) output.send(bytes, Math.max(performance.now(), origin + Math.max(0, now) * 1000));
           if (clock) {
             const currentPulse = now * bpm / 60 * 24;
             // Drop stale clocks after a suspended renderer instead of flooding the rig.
@@ -215,7 +222,7 @@ function PerformanceSession() {
     const handler = (e: MIDIMessageEvent) => { if (e.data) receive(e.data); };
     input.addEventListener('midimessage', handler);
     return () => input.removeEventListener('midimessage', handler);
-  }, [access, inputId, player, parsed.error, armed, clock, output, bluetooth, library.playlistPlaying, library.busy, queued]);
+  }, [access, inputId, player, parsed.error, armed, clock, output, bluetooth, library.playlistPlaying, library.busy, queued, bpm, midiConfig.tempoOnStart, midiConfig.tempoChannel]);
   const connectMidi = async () => {
     setMidiStatus('Opening USB / system MIDI…');
     try {

@@ -1,8 +1,8 @@
 # MIDI pedal command presets
 
-Open **Song → Performance → Bluetooth MIDI controller → Song MIDI cues**. Choose the cue time, pedal, MIDI receive channel and a named command. Search by memory number or function. **Add pedal command** stores its label and complete MIDI sequence in the song chart. **Send pedal command now** sends that sequence through the enabled performance output.
+Open **Song → Performance → Performance MIDI controller → Song MIDI cues**. Choose the cue time, pedal, MIDI receive channel and a named command. Search by memory number or function. **Add pedal command** stores its label and complete MIDI sequence in the song chart. **Send pedal command now** sends that sequence through the enabled performance output.
 
-Channel selection addresses the pedal; it does not change its physical receive-channel setting. The local library remembers each model's channel and CC assignments. Existing cues retain their saved bytes. Chart exports include readable labels and MIDI messages, so another computer can play the chart without importing its pedal profile.
+Channel selection addresses the pedal; it does not change its physical receive-channel setting. The local library remembers each model's channel and CC assignments. Initial channels are TimeLine **1**, RC-10R **2**, IR-200 **3** and SY-200 **4**, with saved channel choices taking precedence. GP-180 defaults to channel 1 in the command builder; the automatic tempo setup uses channel 16 to avoid the TimeLine on channel 1 when the GP-180 receives OMNI. Existing cues retain their saved bytes. Chart exports include readable labels and MIDI messages, so another computer can play the chart without importing its pedal profile.
 
 ## Included profiles
 
@@ -16,7 +16,7 @@ Channel selection addresses the pedal; it does not change its physical receive-c
 
 Configurable BOSS controls require **Assigned CC** to match the named setting on the physical pedal. Accepted assignments are 1–31 and 64–95; no fixed number is guessed. Switch actions send 127 followed by 0; test the pedal's configured switch behaviour. Continuous controls use raw MIDI values, not inferred physical units. GP-180 functions without documented on/off semantics are explicitly labelled as control values.
 
-Profiles are manual-derived and tested at byte level, not hardware-validated. GP-180 Bluetooth-to-physical-output forwarding still requires a physical test; see [Bluetooth setup](BLUETOOTH.md).
+Profiles are manual-derived and tested at byte level. Real GP-180/TimeLine tests confirmed timed patch changes and one-time tempo commands over Bluetooth and USB with the TimeLine connected to physical MIDI OUT. Other pedals and the complete action catalogue have not been hardware-validated. Continuous app clock was unstable on this rig; see [hardware results and the recommended one-time tempo setup](BLUETOOTH.md).
 
 ## Community databases
 

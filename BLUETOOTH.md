@@ -12,13 +12,13 @@ The BLE-MIDI transport implements timestamp framing, fragmented SysEx, serialize
 
 The intended route is **Performance → Bluetooth MIDI → GP-180 → physical MIDI OUT/THRU → downstream MIDI pedals**. USB and the USB editor connection are not required. This route sends ordinary MIDI PC/CC/note/SysEx messages, not editor commands or preset uploads.
 
-1. Open **Song → Performance → Bluetooth MIDI controller**, click **Connect Bluetooth MIDI**, and select the GP-180 MIDI service. Connecting here selects Bluetooth as the performance output. An already-connected Bluetooth output is also available when opening a song. **Enable USB / system MIDI** is optional and is only for operating-system MIDI ports.
+1. Open **Song → Performance → Performance MIDI controller**, click **Connect Bluetooth MIDI**, and select the GP-180 MIDI service. Connecting here selects Bluetooth as the performance output. An already-connected Bluetooth output is also available when opening a song. **Enable USB / system MIDI** is optional and is only for operating-system MIDI ports.
 2. On the pedal, configure **MIDI IN Source** as **BT Only** or **Mixed**. Configure **EXP/FS jack 2** for MIDI OUT and use the appropriate TRS MIDI connection to the next pedal. Set the receiving pedals' channels and check any input/output channel filtering or remapping on the GP-180.
 3. In **Song MIDI cues**, choose the time, destination channel and PC or CC command. **Add MIDI cue** adds a timestamped command to the song's saved chart. Different channels can address different downstream pedals. PC numbers are 0–127 on the wire; pedal displays may number programs 1–128.
 4. Enable **Send cues**, then use **Send MIDI now** to check the selected command on the downstream pedal. A queued command or completed Bluetooth write does not prove it reached the physical MIDI output. Check the target pedal's response.
 5. Play the song to send the timed cues. Pause, seeking, changing outputs and leaving Performance clear pending output. Manually reopening a song or replacing a Bluetooth session requires enabling **Send cues** again. During automatic playlist playback, an armed output carries across songs only while the same device stays connected. Bluetooth disconnect is independent of USB editor activity. MIDI clock is optional and needs separate clock-routing verification on the GP-180.
 
-The [manufacturer's specifications](https://www.valeton.net/product/gp-180/) list MIDI OUT/THRU, and the [GP-180 manual's MIDI settings](https://www.manualslib.com/manual/4540022/Valeton-Gp-180.html?page=31) describe BT input routing. These do **not** clearly document arbitrary Bluetooth-to-TRS message forwarding. That final hop remains dependent on pedal routing/firmware and requires a physical test; the app cannot enable or implement an unsupported internal forwarding route.
+The [manufacturer's specifications](https://www.valeton.net/product/gp-180/) list MIDI OUT/THRU, and the [GP-180 manual's MIDI settings](https://www.manualslib.com/manual/4540022/Valeton-Gp-180.html?page=31) describe BT input routing. These do **not** clearly document arbitrary Bluetooth-to-TRS message forwarding. The final hop depends on pedal routing/firmware. The 22 October tests below confirmed timed patch changes through this route on the user’s GP-180/TimeLine rig; this does not establish compatibility with every pedal or routing configuration.
 
 ## GP-180 hardware results — 21 October 2026
 
@@ -26,11 +26,13 @@ GP-180 firmware **1.1.1** passed USB read-only inspection: 200 preset names, set
 
 These results establish compatibility with the inspected presets, not every model or write operation available in the firmware. Backups preserve the connected GP-180 model. The inspection panel displays knob assignments, expression records and footswitch masks without changing the pedal; unknown special targets remain numeric.
 
-The **GP-180 BLE** standard MIDI service connected and notification subscription succeeded. Two editor hello writes completed at the GATT layer, but **zero notifications** were received. Bluetooth editor management was disabled following this result. Physical performance MIDI input/output on this pedal remains unverified.
+The **GP-180 BLE** standard MIDI service connected and notification subscription succeeded. Two editor hello writes completed at the GATT layer, but **zero notifications** were received. Bluetooth editor management was disabled following this result. At that checkpoint, physical performance MIDI was unverified; the 22 October follow-up below verified patch and tempo commands separately from the editor protocol.
 
 Repeat an offline USB log audit with `node app/scripts/audit-gp180-log.mjs <session.log>`. This reads a local log and never opens MIDI.
 
 ## Bluetooth clock test — 22 October 2026
+
+Timed Bluetooth playback recalled GP-180 patches 15 → 16 → 13, four seconds apart. The user confirmed the sequence and downstream TimeLine response, and a stopped seek to seven seconds left the GP-180 on patch 13 without replaying earlier cues. The GP-180 received OMNI; the TimeLine received channel 1.
 
 Continuous 120 BPM clock over Bluetooth was **unstable on real hardware**: the GP-180 and downstream TimeLine showed the same large tempo changes. Starting the scheduler immediately and keeping pulse timestamps on a fixed grid corrected app scheduling issues, but did not resolve the hardware result. One measured run had GATT write-start intervals of **3.3–40.4 ms** (the target was 20.83 ms), maximum dispatch lateness of **21.3 ms**, and a maximum write duration of **23 ms**. These are host measurements, not over-the-air packet captures; they do not identify which layer introduces every delay. The Bluetooth controls expose these measurements under **Bluetooth clock timing**.
 
@@ -38,7 +40,7 @@ For this rig, use a one-time tempo command instead:
 
 1. Set GP-180 **Clock Source = Internal** and **Clock Output (TRS) = On**. Enable clock receive on the downstream TimeLine.
 2. Leave Performance's **Send MIDI Clock** off.
-3. In **Song MIDI cues**, choose **Valeton GP-180 → Set tempo (BPM)**, enter the recording BPM, and add the command at song time zero. Enable **Send cues** for playback.
+3. Apply **GP-180 + pedals · Bluetooth** to send the current song BPM automatically on playback start/resume, or in **Song MIDI cues**, choose **Valeton GP-180 → Set tempo (BPM)**, enter the recording BPM, and add the command at song time zero. Enable **Send cues** for playback.
 4. Use a channel accepted by the GP-180 but ignored by downstream pedals when possible. In the tested rig, GP-180 receives OMNI and TimeLine receives channel 1, so channel 16 can address the GP-180 tempo without sending its CC controls to the TimeLine.
 
 The documented GP-180 command sends CC 73 (BPM high bits) followed by CC 74 (low seven bits), supporting 40–300 BPM. Single 120 and 141 BPM commands over Bluetooth were physically confirmed to hold both pedals at the requested tempo when the GP-180 generated the outgoing clock. A saved time-zero cue on channel 16 also changed both pedals from 141 to a stable 120 BPM automatically when playback started. No USB connection was used. This sets tempo; it does not establish a shared beat phase or sample-accurate synchronization with the audio. The saved cue contains a BPM value; changing **Song BPM** does not rewrite an existing cue.
@@ -55,7 +57,7 @@ After restoring Internal clock and TRS clock output On, a single **120 BPM** com
 
 Real GP-180 USB editor sessions default to read-only. The transport allows handshake, ACK/resend, known queries and preset reads, while rejecting preset selection, edits, saves, uploads and unknown commands before transmission. **Unlock writes for testing** explicitly removes this restriction; it does not indicate that writes have passed hardware verification. Simulators remain editable.
 
-Independent Performance MIDI output sends commands when explicitly configured and armed. The editor's read-only guard does not filter that output. Saved songs do not store an output device ID or armed state. An existing Bluetooth connection can be selected automatically when opening a song, but cue sending remains off until enabled.
+Independent Performance MIDI output sends commands when explicitly configured and armed. The editor's read-only guard does not filter that output. Saved songs do not contain routing or arming state. Port preferences are saved globally on this computer; output remains disarmed when a song is manually reopened. An existing Bluetooth connection can be selected automatically when opening a song, but cue sending remains off until enabled.
 
 ## Troubleshooting and diagnostics
 
