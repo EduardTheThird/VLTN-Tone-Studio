@@ -2,7 +2,7 @@ import { parseChart, type Cue } from './chart';
 import type { Chord } from './chords';
 
 export interface ReaderLine { time: number; text: string; chords: { time: number; name: string }[] }
-const chordPattern = /\[([A-G][#b]?[^\]\s]*)\]/g;
+const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
 /** Merge by time interval, without inventing word-level chord alignment or changing MIDI cues. */
 export function performanceLines(chart: string, lyrics: string, estimates: Chord[]): ReaderLine[] {
   const safeParse = (text: string): Cue[] => { try { return parseChart(text); } catch { return []; } };

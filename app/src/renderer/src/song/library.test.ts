@@ -16,7 +16,7 @@ beforeEach(() => {
   api.audio.mockResolvedValue(new Uint8Array(audio.channels[0].buffer));
   api.settings.mockResolvedValue(undefined); api.save.mockResolvedValue(undefined);
   useSong.setState({ source: null, stems: null, status: { kind: 'idle' } });
-  useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: '', queue: [], position: -1 });
+  useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: '', notice: '', queue: [], position: -1, playlistPlaying: false, midiSession: null });
 });
 it('loads saved source/stems and preserves queue positions for repeated entries', async () => {
   await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
@@ -44,4 +44,48 @@ it('saves copied audio and settings under a unique ID instead of the filename', 
   expect(assets.map((a: { name: string }) => a.name)).toEqual(['source-0.f32', 'guitar-0.f32']);
   expect(useSong.getState().source?.libraryId).toBe(metadata.id);
   expect(localStorage.getItem(performanceKey(useSong.getState().source))).toBe('[00:00] [C]');
+});
+
+it('plays every playlist entry including repeats, persists outgoing settings, and stops at the end', async () => {
+  const second={...saved,id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',title:'Second song',settings:{':bpm':'130'}};
+  api.index.mockResolvedValue({...emptyLibrary(),songs:[saved,second]});
+  const queue=[saved.id,second.id,saved.id];
+  await useSongLibrary.getState().playPlaylist(queue);
+  expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+  expect(useSongLibrary.getState().position).toBe(0);
+  localStorage.setItem(performanceKey(useSong.getState().source), '[00:02] Changed words');
+  await useSongLibrary.getState().advancePlaylist();
+  expect(api.settings).toHaveBeenCalledWith(saved.id,expect.objectContaining({'':'[00:02] Changed words'}));
+  expect(useSong.getState().source?.libraryId).toBe(second.id);
+  expect(localStorage.getItem(performanceKey(useSong.getState().source)+':bpm')).toBe('130');
+  await useSongLibrary.getState().advancePlaylist();
+  expect(useSong.getState().source?.libraryId).toBe(saved.id);
+  expect(useSongLibrary.getState().position).toBe(2);
+  await useSongLibrary.getState().advancePlaylist();
+  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
+  expect(useSongLibrary.getState().notice).toBe('Playlist finished.');
+});
+
+it('cancels autoplay when Stop is pressed during an audio load', async () => {
+  await useSongLibrary.getState().load(saved.id);
+  const previous=useSong.getState().source;
+  let resolve!: (value: Uint8Array) => void;
+  api.audio.mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
+  const loading=useSongLibrary.getState().playPlaylist([saved.id,saved.id],1);
+  await vi.waitFor(()=>expect(resolve).toBeTypeOf('function'));
+  useSongLibrary.getState().pausePlaylist();
+  resolve(new Uint8Array(audio.channels[0].buffer));
+  await loading;
+  expect(useSong.getState().source).toBe(previous);
+  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
+  expect(useSongLibrary.getState().position).toBe(0);
+});
+
+it('stops the playlist on missing audio instead of silently skipping songs', async () => {
+  await useSongLibrary.getState().playPlaylist([saved.id,saved.id]);
+  api.audio.mockRejectedValueOnce(new Error('Missing audio'));
+  await useSongLibrary.getState().advancePlaylist();
+  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
+  expect(useSongLibrary.getState().error).toBe('Missing audio');
+  expect(useSongLibrary.getState().position).toBe(0);
 });

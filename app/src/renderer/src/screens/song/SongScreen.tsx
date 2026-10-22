@@ -18,6 +18,7 @@ import { useSongTab, type SongTab } from "./tab";
 /** Decode `file`; the Stems tab then offers the model and quality choice before the split. */
 export async function openSong(file: File): Promise<void> {
   if (useSongLibrary.getState().busy) return;
+  useSongLibrary.getState().pausePlaylist();
   useNav.getState().go("song", "stems");
   await useSong.getState().load(file);
 }

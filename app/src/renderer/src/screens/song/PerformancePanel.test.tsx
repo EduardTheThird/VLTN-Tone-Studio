@@ -1,17 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PerformancePanel } from './PerformancePanel';
-const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
-vi.mock('@/song/store', () => ({ useSong: (select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}) }));
+const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), metronome: vi.fn(), mix: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
+vi.mock('@/song/store', () => ({ useSong: Object.assign((select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}), {getState:()=>({source:mocks.source})}) }));
 vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock', gp180WriteUnlocked: false}) }));
-vi.mock('@/song/library', () => ({ useSongLibrary: () => ({queue: [], position: -1, index: {songs: []}}) }));
+vi.mock('@/song/library', () => ({ useSongLibrary: Object.assign(() => ({queue: [], position: -1, index: {songs: []}}), {getState:()=>({queue:[],position:-1,playlistPlaying:false})}) }));
 vi.mock('@/host', () => ({ host: {} }));
 vi.mock('@/bluetooth/connection', () => ({ useBluetooth: (select: (s: unknown) => unknown) => select({connection: mocks.bluetooth}) }));
 vi.mock('@/bluetooth/BluetoothControls', () => ({ BluetoothControls: () => null }));
 vi.mock('./LyricsTrack', () => ({ LyricsTrack: () => null }));
-vi.mock('@/song/stems/player', () => ({ StemPlayer: class { duration=60; get position(){return mocks.position;} async seek(value: number){mocks.position=value;} isPlaying=false; setMix(){} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
-afterEach(() => { cleanup(); mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
-it('keeps transport running across tempo changes and stops it on pause', async () => {
+vi.mock('@/song/stems/player', () => ({ StemPlayer: class { names=['other']; duration=60; get position(){return mocks.position;} async seek(value: number){mocks.position=value;} isPlaying=false; setMix(value: unknown){mocks.mix(value);} setMetronome(value: unknown){mocks.metronome(value);} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
+afterEach(() => { cleanup(); mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); mocks.metronome.mockClear(); mocks.mix.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it('locks recording BPM during playback and stops MIDI clock on pause', async () => {
   vi.useFakeTimers(); localStorage.clear(); HTMLElement.prototype.scrollIntoView=vi.fn();
   const access=Object.assign(new EventTarget(), { outputs: new Map([['fake', {id:'fake', name:'Fake MIDI', state:'connected', send:mocks.send, clear:mocks.clear}]]), inputs: new Map() });
   vi.stubGlobal('navigator', {requestMIDIAccess: async () => access});
@@ -24,7 +24,7 @@ it('keeps transport running across tempo changes and stops it on pause', async (
   expect(mocks.send.mock.calls.some(c=>c[0][0]===250)).toBe(true);
   expect(mocks.send.mock.calls.some(c=>c[0][0]===252)).toBe(false);
   mocks.send.mockClear();
-  fireEvent.change(screen.getByLabelText('BPM'), {target:{value:'90'}});
+  expect((screen.getByLabelText('BPM') as HTMLInputElement).disabled).toBe(true);
   act(()=>vi.advanceTimersByTime(40));
   expect(mocks.send.mock.calls.some(c=>[250,251,252].includes(c[0][0]))).toBe(false);
   expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(true);
@@ -59,4 +59,42 @@ it('disarms after a Bluetooth disconnect and does not re-arm a replacement conne
   mocks.bluetooth = {id: 'bluetooth-midi', name: 'GP-180 BLE', state: 'connected', send: mocks.send, clear: mocks.clear};
   view.rerender(<PerformancePanel />);
   expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+});
+
+it('remembers global metronome, song clock and mixer settings without arming MIDI', () => {
+  localStorage.clear();
+  const view=render(<PerformancePanel />);
+  expect(screen.queryByText('Start rhythm')).toBeNull();
+  fireEvent.click(screen.getByLabelText('Metronome'));
+  fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  fireEvent.change(screen.getByLabelText('Song volume'), {target:{value:'0.4'}});
+  expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({enabled:true,bpm:120});
+  expect(mocks.mix.mock.lastCall?.[0].other.volume).toBe(0.4);
+  view.unmount(); render(<PerformancePanel />);
+  expect((screen.getByLabelText('Metronome') as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText('MIDI Clock (24 PPQN)') as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText('Song volume') as HTMLInputElement).value).toBe('0.4');
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it('disables clock during playback without replaying transport or stopping audio', async () => {
+  vi.useFakeTimers(); localStorage.clear();
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100', '[00:00.04] {midi:pc 1 9}');
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  act(()=>vi.advanceTimersByTime(20));
+  expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(true);
+  mocks.send.mockClear();
+  mocks.position=0.01;
+  fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
+  expect(mocks.send.mock.calls.some(c=>c[0][0]===252)).toBe(true);
+  mocks.send.mockClear();
+  act(()=>vi.advanceTimersByTime(100));
+  expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(false);
+  expect(mocks.send.mock.calls.filter(c=>c[0][0]===192).map(c=>c[0])).toEqual([[192,9]]);
+  expect(screen.getByText('Pause')).toBeTruthy();
 });

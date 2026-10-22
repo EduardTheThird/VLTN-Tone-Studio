@@ -13,6 +13,8 @@ interface Voice {
   source: AudioBufferSourceNode | null;
 }
 
+export interface MetronomeSettings { enabled: boolean; bpm: number; beats: number; volume: number }
+
 export class StemPlayer {
   readonly duration: number;
   private ctx = new AudioContext({ sampleRate: 44100 });
@@ -22,6 +24,9 @@ export class StemPlayer {
   private startedAt = 0;
   private offset = 0;
   private playing = false;
+  private metronome: MetronomeSettings = { enabled: false, bpm: 120, beats: 4, volume: 0.25 };
+  private clickTimer: ReturnType<typeof setInterval> | null = null;
+  private clicks = new Set<OscillatorNode>();
   private meterBuffer = new Float32Array(2048);
   /** Called when playback reaches the end on its own */
   onEnded: (() => void) | null = null;
@@ -84,6 +89,7 @@ export class StemPlayer {
     };
     this.startedAt = when - this.offset;
     this.playing = true;
+    this.startMetronome();
   }
 
   pause(): void {
@@ -109,6 +115,46 @@ export class StemPlayer {
     for (const name of this.names) this.voice(name).gain.gain.setTargetAtTime(gains[name], this.ctx.currentTime, RAMP_S);
   }
 
+  /** Uses the stems' AudioContext and song-time origin, including after pause/seek. */
+  setMetronome(settings: MetronomeSettings): void {
+    this.stopMetronome();
+    this.metronome = settings;
+    if (this.playing) this.startMetronome();
+  }
+
+  private startMetronome(): void {
+    const { enabled, bpm, beats, volume } = this.metronome;
+    if (!enabled || !Number.isFinite(bpm) || bpm <= 0 || !Number.isInteger(beats) || beats < 1) return;
+    const interval = 60 / bpm;
+    let beat = Math.max(0, Math.ceil((this.ctx.currentTime - this.startedAt) / interval - 1e-7));
+    const fill = () => {
+      // Skip missed beats instead of playing a burst when the window resumes.
+      beat = Math.max(beat, Math.ceil((this.ctx.currentTime - this.startedAt) / interval - 1e-7));
+      while (this.startedAt + beat * interval < this.ctx.currentTime + 0.1 && beat * interval < this.duration) {
+        const when = Math.max(this.ctx.currentTime, this.startedAt + beat * interval);
+        const down = beat % beats === 0;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(down ? 1500 : 1000, when);
+        gain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * (down ? 1 : 0.65), when);
+        gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.04);
+        osc.connect(gain).connect(this.ctx.destination);
+        this.clicks.add(osc);
+        osc.onended = () => { this.clicks.delete(osc); osc.disconnect(); gain.disconnect(); };
+        osc.start(when); osc.stop(when + 0.05);
+        beat++;
+      }
+    };
+    fill();
+    this.clickTimer = setInterval(fill, 25);
+  }
+
+  private stopMetronome(): void {
+    if (this.clickTimer) clearInterval(this.clickTimer);
+    this.clickTimer = null;
+    for (const osc of this.clicks) { osc.stop(); osc.disconnect(); }
+    this.clicks.clear();
+  }
+
   /** Current RMS level (0..1) of each stem after its gain */
   levels(): Partial<Record<StemName, number>> {
     return Object.fromEntries(
@@ -129,6 +175,7 @@ export class StemPlayer {
   }
 
   private stopSources() {
+    this.stopMetronome();
     for (const name of this.names) {
       const v = this.voice(name);
       if (!v.source) continue;

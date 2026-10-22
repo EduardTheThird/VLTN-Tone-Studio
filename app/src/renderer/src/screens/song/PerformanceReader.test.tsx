@@ -34,3 +34,24 @@ it('opens transposed chord tabs and closes the overlay without closing the expan
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByText('Close expanded view')).toBeTruthy();
 });
+
+it('edits displayed lyrics and chords with MIDI preserved, validates values, and supports cancel', () => {
+  const save=vi.fn(), pause=vi.fn();
+  render(<PerformanceReader title="Song" chart="[00:01] [C]Words {midi:pc 2 12}" lyrics="" chords={[]} shift={2} time={1} onEditStart={pause} onSaveChart={save} />);
+  fireEvent.click(screen.getByText('Edit chords, lyrics & MIDI'));
+  expect(pause).toHaveBeenCalledOnce();
+  expect((screen.getByLabelText('Line 1 chords') as HTMLInputElement).value).toBe('C');
+  fireEvent.change(screen.getByLabelText('Line 1 lyrics'), {target:{value:'Correct words'}});
+  fireEvent.change(screen.getByLabelText('Line 1 chords'), {target:{value:'Am'}});
+  fireEvent.change(screen.getByLabelText('Line 1 MIDI'), {target:{value:'pc 17 12'}});
+  fireEvent.click(screen.getByText('Save performance edits'));
+  expect(save).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert').textContent).toContain('Invalid MIDI');
+  fireEvent.change(screen.getByLabelText('Line 1 MIDI'), {target:{value:'pc 2 14'}});
+  fireEvent.click(screen.getByText('Save performance edits'));
+  expect(save).toHaveBeenCalledWith('[00:01.00] [Am] Correct words {midi:pc 2 14}');
+  fireEvent.click(screen.getByText('Edit chords, lyrics & MIDI'));
+  fireEvent.change(screen.getByLabelText('Line 1 lyrics'), {target:{value:'Discard'}});
+  fireEvent.click(screen.getByText('Cancel edits'));
+  expect(save).toHaveBeenCalledTimes(1);
+});
