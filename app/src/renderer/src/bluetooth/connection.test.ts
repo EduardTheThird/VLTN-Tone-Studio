@@ -17,6 +17,28 @@ function fixture() {
 const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
 afterEach(() => { useBluetooth.getState().connection?.close(); useBluetooth.setState({ connection: null, connecting: false, error: null }); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe('Bluetooth connection lifecycle', () => {
+  it('sends channel-specific PC and CC over Bluetooth without Web MIDI or USB', async () => {
+    vi.useFakeTimers(); vi.stubGlobal('navigator', {});
+    const f = fixture(), connection = await BleMidiConnection.open(f.device);
+    connection.send([0xc2, 7]);
+    connection.send([0xb3, 12, 127], performance.now() + 100);
+    await settle();
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100); await settle();
+    const decoder = new BleMidiDecoder();
+    expect(f.characteristic.writeValueWithoutResponse.mock.calls.flatMap(([b]) => decoder.decode(b)).map(b => [...b])).toEqual([[0xc2,7], [0xb3,12,127]]);
+    connection.close();
+  });
+  it('bounds future scheduled cues and cancels them on overflow', async () => {
+    vi.useFakeTimers();
+    const f = fixture(), connection = await BleMidiConnection.open(f.device);
+    useBluetooth.setState({ connection });
+    for (let i = 0; i < 256; i++) connection.send([0xc0, i % 128], performance.now() + 1000);
+    expect(() => connection.send([0xc0, 1], performance.now() + 1000)).toThrow('cannot keep up');
+    await vi.advanceTimersByTimeAsync(1100); await settle();
+    expect(f.characteristic.writeValueWithoutResponse).not.toHaveBeenCalled();
+    expect(connection.state).toBe('disconnected');
+  });
   it('retains completed writes and counts undecodable notifications after cleanup', async () => {
     const f = fixture(), connection = await BleMidiConnection.open(f.device);
     connection.send([0xf8]);

@@ -1,22 +1,22 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PerformancePanel } from './PerformancePanel';
-const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
+const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, source: { name: 'clock-test.wav', audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
 vi.mock('@/song/store', () => ({ useSong: (select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}) }));
 vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock', gp180WriteUnlocked: false}) }));
 vi.mock('@/song/library', () => ({ useSongLibrary: () => ({queue: [], position: -1, index: {songs: []}}) }));
 vi.mock('@/host', () => ({ host: {} }));
-vi.mock('@/bluetooth/connection', () => ({ useBluetooth: (select: (s: unknown) => unknown) => select({connection: null}) }));
+vi.mock('@/bluetooth/connection', () => ({ useBluetooth: (select: (s: unknown) => unknown) => select({connection: mocks.bluetooth}) }));
 vi.mock('@/bluetooth/BluetoothControls', () => ({ BluetoothControls: () => null }));
 vi.mock('./LyricsTrack', () => ({ LyricsTrack: () => null }));
-vi.mock('@/song/stems/player', () => ({ StemPlayer: class { duration=60; position=0; isPlaying=false; setMix(){} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+vi.mock('@/song/stems/player', () => ({ StemPlayer: class { duration=60; get position(){return mocks.position;} async seek(value: number){mocks.position=value;} isPlaying=false; setMix(){} async dispose(){} async play(){this.isPlaying=true;} pause(){this.isPlaying=false;} } }));
+afterEach(() => { cleanup(); mocks.bluetooth=null; mocks.position=0; mocks.send.mockClear(); mocks.clear.mockClear(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 it('keeps transport running across tempo changes and stops it on pause', async () => {
   vi.useFakeTimers(); localStorage.clear(); HTMLElement.prototype.scrollIntoView=vi.fn();
   const access=Object.assign(new EventTarget(), { outputs: new Map([['fake', {id:'fake', name:'Fake MIDI', state:'connected', send:mocks.send, clear:mocks.clear}]]), inputs: new Map() });
   vi.stubGlobal('navigator', {requestMIDIAccess: async () => access});
   render(<PerformancePanel />);
-  await act(async () => { fireEvent.click(screen.getByText('Enable MIDI')); });
+  await act(async () => { fireEvent.click(screen.getByText('Enable USB / system MIDI')); });
   fireEvent.change(screen.getByLabelText('MIDI output'), {target:{value:'fake'}});
   fireEvent.click(screen.getByLabelText('Send cues'));
   fireEvent.click(screen.getByLabelText('MIDI Clock (24 PPQN)'));
@@ -30,4 +30,33 @@ it('keeps transport running across tempo changes and stops it on pause', async (
   expect(mocks.send.mock.calls.some(c=>c[0][0]===248)).toBe(true);
   fireEvent.click(screen.getByText('Pause'));
   expect(mocks.send.mock.calls.some(c=>c[0][0]===252)).toBe(true);
+});
+
+it('sends timed song cues to Bluetooth without a USB editor or Web MIDI access', async () => {
+  vi.useFakeTimers(); localStorage.clear(); vi.stubGlobal('navigator', {});
+  mocks.bluetooth = {id: 'bluetooth-midi', name: 'GP-180 BLE', state: 'connected', send: mocks.send, clear: mocks.clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100', '[00:00] {midi:pc 3 7}\n[00:01] {midi:cc 4 12 127}');
+  render(<PerformancePanel />);
+  expect((screen.getByLabelText('MIDI output') as HTMLSelectElement).value).toBe('bluetooth-midi');
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async () => { fireEvent.click(screen.getByText('Play song')); });
+  act(() => vi.advanceTimersByTime(20));
+  expect(mocks.send.mock.calls.filter(c => c[0][0] === 0xc2).map(c => c[0])).toEqual([[0xc2,7]]);
+  mocks.position=0.98; act(() => vi.advanceTimersByTime(20));
+  mocks.position=1.2; act(() => vi.advanceTimersByTime(40));
+  expect(mocks.send.mock.calls.filter(c => c[0][0] === 0xb3 && c[0][1] === 12).map(c => c[0])).toEqual([[0xb3,12,127]]);
+  fireEvent.click(screen.getByText('Pause'));
+  expect(mocks.clear).toHaveBeenCalled();
+});
+it('disarms after a Bluetooth disconnect and does not re-arm a replacement connection', () => {
+  localStorage.clear();
+  mocks.bluetooth = {id: 'bluetooth-midi', name: 'GP-180 BLE', state: 'connected', send: mocks.send, clear: mocks.clear};
+  const view = render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(true);
+  mocks.bluetooth=null; view.rerender(<PerformancePanel />);
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
+  mocks.bluetooth = {id: 'bluetooth-midi', name: 'GP-180 BLE', state: 'connected', send: mocks.send, clear: mocks.clear};
+  view.rerender(<PerformancePanel />);
+  expect((screen.getByLabelText('Send cues') as HTMLInputElement).checked).toBe(false);
 });

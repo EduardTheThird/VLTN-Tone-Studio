@@ -10,6 +10,10 @@ Open **Song → Performance**. Load audio through Stems first; splitting is opti
 
 Click a chord in the reader, chart preview, or stem estimates to open its guitar tabs. Standard tuning is assumed, with high e at the top and low E at the bottom; `x` means muted and `0` means open. Several positions are offered with barre shapes first, preferring closed shapes over open-string shapes. Tabs follow the displayed transposition. Common major, minor, seventh, suspended, diminished, augmented, power and slash chords are supported; unsupported spellings show an explicit message. Shapes are checked against the chord tones and requested bass. Escape closes the overlay without closing the expanded reader or stopping playback.
 
+## Pedal command library
+
+**Song MIDI cues** now offers named presets for TimeLine, RC-10R, IR-200, SY-200 and GP-180. Choose the pedal and its receive channel, then select a memory or function. Bank-select sequences are generated where needed. BOSS assignable controls require the matching CC setting from the pedal. Cues retain readable labels in the chart and scheduled-cue list. **Raw MIDI command** remains available. See [pedal profiles and custom JSON import/export](MIDI-PEDALS.md).
+
 ## Recognition implementation and limits
 
 The existing AI pipeline separates stems with Demucs and transcribes the vocals with local quantized Whisper base through Transformers.js. Choose **Lyrics language** before regenerating to supply a known language instead of relying on automatic detection. Language hints are supported by the [Transformers.js speech recognition pipeline](https://huggingface.co/docs/transformers.js/v3.0.0/en/api/pipelines). The setting travels with the saved song options. Near-identical transcript chunks less than half a second apart are deduplicated; later repeated verses are retained.
@@ -30,6 +34,8 @@ Use timestamps on every displayed line for playback-following lyrics:
 ```
 
 This is Tone Studio syntax. MIDI channels are 1–16, PC/CC/note data are 0–127. Note events need explicit note-off events. Select an output, then enable **Send cues**. MIDI messages are scheduled with Web MIDI timestamps and 50 ms lookahead; this is not a hard realtime guarantee. Pause, seek, leaving the tab and panic clear queued messages and release notes. Seeking pauses audio and skips earlier cues; pressing Play starts cues at the selected position. Editing a chart pauses playback. Port removal disarms output.
+
+**Bluetooth MIDI controller** uses Bluetooth independently of USB. Connect the GP-180 here to select its Bluetooth output, enable **Send cues**, and use **Song MIDI cues** to add PC/CC commands per time and downstream pedal channel. **Send MIDI now** sends the displayed command immediately while output is enabled. Bluetooth cues are scheduled with local timers and serialized GATT writes; the same lookahead is used, but delivery is best effort. To control pedals attached to the GP-180's physical MIDI OUT, verify Bluetooth-to-TRS forwarding on the pedal using [the wireless setup guide](BLUETOOTH.md#wireless-song-cues-through-the-gp-180). No USB editor connection or GP-180 editor write unlock is needed. **Enable USB / system MIDI** only enables additional system MIDI ports.
 
 MIDI Clock emits 24 pulses per beat at the chosen BPM with transport messages. Changing BPM while playing changes the clock rate without sending Stop. External transport input accepts Start/Continue/Stop or CC 80 with value 64–127 (any channel). Configure a GP-180 MIDI-command footswitch to send CC 80 to use it as play/pause. USB ports use Web MIDI; **Connect Bluetooth MIDI** provides standard BLE-MIDI input/output. See [Bluetooth and hardware evidence](BLUETOOTH.md). RTP-MIDI is not implemented. Do not loop output back to input.
 

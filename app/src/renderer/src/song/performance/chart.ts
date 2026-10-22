@@ -1,4 +1,4 @@
-export interface Cue { time: number; text: string; messages: number[][] }
+export interface Cue { time: number; text: string; messages: number[][]; label?: string }
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const pitch = (n: string) => ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[n[0]]! + (n[1] === '#' ? 1 : n[1] === 'b' ? -1 : 0));
 export function transpose(text: string, steps: number): string {
@@ -24,14 +24,16 @@ export function midiCommand(command: string): number[] {
 }
 export function parseChart(text: string): Cue[] {
   return text.split(/\r?\n/).flatMap((line, index) => {
-    const timestamps = [...line.matchAll(/\[(\d+):([0-5]\d(?:\.\d+)?)\]/g)];
+    let label = '';
+    const content = line.replace(/\{label:([^}]+)\}/g, (_, value:string) => { label = value.trim().slice(0,400); return ''; });
+    const timestamps = [...content.matchAll(/\[(\d+):([0-5]\d(?:\.\d+)?)\]/g)];
     if (!timestamps.length) {
-      if (/\{midi:/.test(line)) throw new Error(`Line ${index + 1}: MIDI needs a [mm:ss] timestamp.`);
+      if (/\{midi:/.test(content)) throw new Error(`Line ${index + 1}: MIDI needs a [mm:ss] timestamp.`);
       return [];
     }
     const messages: number[][] = [];
-    const body = line.replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, '').replace(/\{midi:([^}]+)\}/g, (_, cmd: string) => { messages.push(midiCommand(cmd)); return ''; }).trim();
-    return timestamps.map(t => ({ time: Number(t[1]) * 60 + Number(t[2]), text: body, messages }));
+    const body = content.replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, '').replace(/\{midi:([^}]+)\}/g, (_, cmd: string) => { messages.push(midiCommand(cmd)); return ''; }).trim();
+    return timestamps.map(t => ({ time: Number(t[1]) * 60 + Number(t[2]), text: body, messages, ...(label ? { label } : {}) }));
   }).sort((a, b) => a.time - b.time);
 }
 export function lrcTime(time: number): string { const ticks = Math.round(Math.max(0, time) * 100); return `[${String(Math.floor(ticks / 6000)).padStart(2, '0')}:${(ticks % 6000 / 100).toFixed(2).padStart(5, '0')}]`; }

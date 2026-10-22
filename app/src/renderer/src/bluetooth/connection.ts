@@ -92,10 +92,15 @@ export class BleMidiConnection {
   /** Queued GATT writes never overlap; a write failure closes the session and is visible in the UI. */
   send(bytes: readonly number[] | Uint8Array, timestamp = performance.now(), editor = false) {
     if (this.state !== 'connected') throw new Error('Bluetooth MIDI is disconnected.');
+    if (this.queued + this.timers.size >= 256) {
+      const error = 'Bluetooth MIDI cannot keep up. Connection closed; reduce MIDI traffic.';
+      if (useBluetooth.getState().connection === this) useBluetooth.setState({ error });
+      this.close();
+      throw new Error(error);
+    }
     const packets = encodeBleMidi(bytes, timestamp);
     const generation = this.generation;
     const enqueue = () => {
-      if (this.queued >= 256) { useBluetooth.setState({ error: 'Bluetooth MIDI cannot keep up. Connection closed; reduce MIDI traffic.' }); this.close(); return; }
       this.queued++;
       this.chain = this.chain.then(async () => {
         if (this.closed || (!editor && generation !== this.generation)) return;

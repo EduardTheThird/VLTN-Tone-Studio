@@ -13,6 +13,7 @@ import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 import { LyricsTrack } from './LyricsTrack';
 import { PerformanceReader } from './PerformanceReader';
 import { ChordVoicings } from './ChordVoicings';
+import { MidiCueBuilder } from './MidiCueBuilder';
 import { defaultChordSource } from '@/song/performance/sources';
 import { STEM_NAMES, type StemName } from '@/song/types';
 import { performanceKey, readOptions } from '@/song/performance/settings';
@@ -57,7 +58,8 @@ function PerformanceSession() {
   const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
   const [chords, setChords] = useState<Chord[]>([]), [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState('');
-  const [access, setAccess] = useState<MIDIAccess | null>(null), [portId, setPortId] = useState(''), [inputId, setInputId] = useState('');
+  const [access, setAccess] = useState<MIDIAccess | null>(null), [portId, setPortId] = useState(bluetooth?.state === 'connected' ? bluetooth.id : ''), [inputId, setInputId] = useState('');
+  const [midiStatus, setMidiStatus] = useState('');
   const [portsVersion, setPortsVersion] = useState(0);
   const [armed, setArmed] = useState(false), [clock, setClock] = useState(false);
   const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
@@ -69,9 +71,10 @@ function PerformanceSession() {
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const saveChart = (value: string) => { pause(); setChart(value); try { localStorage.setItem(key, value); } catch (e) { fail(e); } };
   const panic = () => {
-    if (!output || !armed || output.state !== 'connected') return;
+    if (!output || output.state !== 'connected') return;
     try {
       (output as { clear?: () => void }).clear?.();
+      if (!armed) return;
       for (let ch = 0; ch < 16; ch++) { output.send([176 + ch, 64, 0]); output.send([176 + ch, 123, 0]); }
       if (clock) output.send([252]);
     } catch (e) { fail(e); }
@@ -155,7 +158,7 @@ function PerformanceSession() {
     access.addEventListener('statechange', update);
     return () => access.removeEventListener('statechange', update);
   }, [access, portId]);
-  useEffect(() => { setArmed(false); }, [bluetooth]);
+  useEffect(() => { if (portId === 'bluetooth-midi') setArmed(false); }, [bluetooth, portId]);
   useEffect(() => {
     const input = access?.inputs.get(inputId);
     const receive = (data: Uint8Array) => {
@@ -199,15 +202,20 @@ function PerformanceSession() {
       {device === 'gp180' && <><Button variant="outline" disabled={!connected || inspectionOnly} onClick={() => { try { useDevice.getState().setBpm(bpm); } catch (e) { fail(e); } }}>Set GP-180 patch tempo</Button><label>GP-180 patch <input className={field + ' w-20'} type="number" min="1" max="200" value={patch} onChange={e => setPatch(Math.max(1, Math.min(200, Number(e.target.value) || 1)))} /></label><Button variant="outline" disabled={!connected || inspectionOnly} onClick={() => void useDevice.getState().selectSlot(patch - 1).catch(fail)}>Recall {String(patch).padStart(3, '0')}</Button></>}
     </div>
     {inspectionOnly && <p className="text-sm text-silkscreen-3">GP-180 inspection is read-only. Patch recall and pedal tempo changes are disabled; the computer’s rhythm remains available.</p>}
-    <details><summary className="cursor-pointer font-semibold">MIDI rig control</summary><div className="flex flex-wrap items-center gap-3 py-3">
-      <BluetoothControls />
-      <Button variant="outline" onClick={() => void connectMidi()}>Enable MIDI</Button>
-      <select aria-label="MIDI output" className={field} value={portId} onChange={e => { panic(); setArmed(false); setPortId(e.target.value); }}><option value="">Select output…</option>{outputs.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
-      <label><input type="checkbox" disabled={!output || !!parsed.error} checked={armed} onChange={e => { panic(); cursor.current = time; setArmed(e.target.checked); }} /> Send cues</label>
+    <section aria-label="Performance MIDI routing" className="space-y-3 rounded-xl border border-seam p-4"><h2 className="font-semibold">Bluetooth MIDI controller</h2><p className="text-sm text-silkscreen-3">Computer → Bluetooth MIDI → GP-180 → physical MIDI OUT/THRU → MIDI pedals. USB is not required for song cues.</p><div className="flex flex-wrap items-center gap-3 py-3">
+      <BluetoothControls onConnected={connection => { panic(); setArmed(false); setPortId(connection.id); setMidiStatus('Bluetooth output selected. Enable Send cues to send this song’s commands.'); }} />
+      <Button variant="outline" onClick={() => void connectMidi()}>Enable USB / system MIDI</Button>
+      <select aria-label="MIDI output" className={field} value={portId} onChange={e => { panic(); setArmed(false); setPortId(e.target.value); }}><option value="">Select output…</option>{outputs.map(p => <option value={p.id} key={p.id}>{p.id === 'bluetooth-midi' ? `Bluetooth · ${p.name}` : p.name}</option>)}</select>
+      <label><input type="checkbox" disabled={output?.state !== 'connected' || !!parsed.error} checked={armed} onChange={e => { panic(); cursor.current = time; setArmed(e.target.checked); }} /> Send cues</label>
       <label><input type="checkbox" checked={clock} onChange={e => setClock(e.target.checked)} /> MIDI Clock (24 PPQN)</label>
       <select aria-label="MIDI input" className={field} value={inputId} onChange={e => setInputId(e.target.value)}><option value="">No remote input</option>{inputs.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
       <Button variant="outline" onClick={() => { panic(); setArmed(false); }}>Panic / disarm</Button>
-    </div><p className="text-sm text-silkscreen-3">Input: Start/Continue/Stop or CC 80 ≥ 64 toggles playback. Configure a GP-180 MIDI footswitch to send CC 80. Output is opt-in for each session. PC values are 0–127; channels are 1–16. Close Valeton Suite if Windows holds the port.</p></details>
+    </div><p className="text-sm text-silkscreen-3">Input: Start/Continue/Stop or CC 80 ≥ 64 toggles playback. Configure a GP-180 MIDI footswitch to send CC 80. Output is opt-in for each song. PC values are 0–127; channels are 1–16. Bluetooth uses its own connection and does not need Enable USB / system MIDI.</p>
+      <p role="status" className="text-sm">{output?.state === 'connected' ? `${portId === 'bluetooth-midi' ? 'Bluetooth' : 'System MIDI'} output: ${output.name} · ${armed ? 'Song cues enabled' : 'Song cues off'}` : 'Connect Bluetooth MIDI and select an output.'}</p>
+      <MidiCueBuilder time={time} cues={parsed.cues} canTest={output?.state === 'connected' && armed} onAdd={line => saveChart([chart.trimEnd(), line].filter(Boolean).join('\n'))} onTest={bytes => { if (!armed || output?.state !== 'connected') return; output.send(bytes); setMidiStatus(`MIDI command queued for ${output.name}. Check whether the downstream pedal responds.`); }} />
+      {midiStatus && <p role="status" className="text-sm">{midiStatus}</p>}
+      <details><summary className="cursor-pointer text-sm">GP-180 routing setup</summary><p className="py-2 text-sm text-silkscreen-3">On the GP-180, enable Bluetooth and configure MIDI IN Source as BT Only or Mixed. Configure EXP/FS jack 2 for MIDI OUT and connect the correct TRS MIDI cable to the downstream pedal. Match MIDI channels on the pedals. Forwarding Bluetooth input to physical MIDI OUT depends on the GP-180’s routing and firmware; use the test command to verify it. A Bluetooth connection alone does not confirm delivery at MIDI OUT.</p></details>
+    </section>
     <div className="flex flex-wrap items-center gap-3"><h2 className="font-semibold">Lyrics & chords</h2><label>Transpose <input aria-label="Transpose semitones" className={field + ' w-20'} type="number" min="-12" max="12" value={shift} onChange={e => setShift(Math.max(-12, Math.min(12, Number(e.target.value) || 0)))} /></label>
       <label className="cursor-pointer underline">Import TXT / LRC / ChordPro<input type="file" accept=".txt,.lrc,.cho,.chordpro" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void f.text().then(saveChart).catch(fail); e.target.value = ''; }} /></label>
       <Button variant="outline" onClick={() => void host.song.saveFiles([{ name: 'performance.lrc', bytes: new TextEncoder().encode(chart) }], 'Export lyrics and MIDI cues').catch(fail)}>Export chart</Button>
