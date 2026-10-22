@@ -226,3 +226,16 @@ it('preserves the song key when mixer, tempo and metronome options are saved',()
   expect((screen.getByLabelText('Song volume') as HTMLInputElement).value).toBe('0.35');
   expect((screen.getByLabelText('BPM') as HTMLInputElement).value).toBe('100');
 });
+
+it.each([false,true])('releases only note channels on pause, without sending pedal looper controls (notes=%s)',async notes=>{
+  mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+  localStorage.setItem('vltn.performance.v1:clock-test.wav:44100:44100',notes?'[00:00] {midi:note 5 60 100}':'[00:00] {midi:pc 1 12}');
+  render(<PerformancePanel/>);
+  fireEvent.click(screen.getByLabelText('Send cues'));
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  mocks.send.mockClear();
+  fireEvent.click(screen.getByText('Pause'));
+  const releases=mocks.send.mock.calls.map(c=>c[0]).filter(b=>b[1]===64||b[1]===123);
+  if(notes) expect(releases).toEqual([[0xb4,64,0],[0xb4,123,0]]);
+  else expect(releases).toEqual([]);
+});

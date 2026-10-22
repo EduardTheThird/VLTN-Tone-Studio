@@ -33,7 +33,7 @@ Use timestamps on every displayed line for playback-following lyrics:
 [00:27.00] {midi:sysex F0 7D 01 F7}
 ```
 
-This is Tone Studio syntax. MIDI channels are 1–16, PC/CC/note data are 0–127. Note events need explicit note-off events. Select an output, then enable **Send cues**. MIDI messages are scheduled with Web MIDI timestamps and 50 ms lookahead; this is not a hard realtime guarantee. Pause, seek, leaving the tab and panic clear queued messages and release notes. Seeking pauses audio and skips earlier cues; pressing Play starts cues at the selected position. Editing a chart pauses playback. Port removal disarms output.
+This is Tone Studio syntax. MIDI channels are 1–16, PC/CC/note data are 0–127. Note events need explicit note-off events. Select an output, then enable **Send cues**. MIDI messages are scheduled with Web MIDI timestamps and 50 ms lookahead; this is not a hard realtime guarantee. Pause, seek, leaving the tab and panic clear queued messages and release note channels used by this session. Sustain-off/all-notes-off are sent only to channels where the app queued note messages: sending CC64 indiscriminately would trigger the GP-180 looper Stop control. Seeking pauses audio and skips earlier cues; pressing Play starts cues at the selected position. Editing a chart pauses playback. Port removal disarms output.
 
 **Bluetooth MIDI controller** uses Bluetooth independently of USB. Connect the GP-180 here to select its Bluetooth output, enable **Send cues**, and use **Song MIDI cues** to add PC/CC commands per time and downstream pedal channel. **Send MIDI now** sends the displayed command immediately while output is enabled. Bluetooth cues are scheduled with local timers and serialized GATT writes; the same lookahead is used, but delivery is best effort. To control pedals attached to the GP-180's physical MIDI OUT, verify Bluetooth-to-TRS forwarding on the pedal using [the wireless setup guide](BLUETOOTH.md#wireless-song-cues-through-the-gp-180). No USB editor connection or GP-180 editor write unlock is needed. **Enable USB / system MIDI** only enables additional system MIDI ports.
 
@@ -70,3 +70,15 @@ Performance automatically estimates the recording’s overall major/minor key us
 The detector aggregates spectral pitch-class information across up to 600 windows distributed over the recording and correlates it with major/minor tonal profiles ([method reference](https://music21.org/music21docs/moduleReference/moduleAnalysisDiscrete.html)). It does not use the first chord as the song key. No model download, network request or MIDI command is involved. Relative major/minor keys, modal music, detuning, sparse riffs, separation artifacts and changing keys can be ambiguous. Synthetic progression tests do not establish real-song accuracy.
 
 **Key override** saves a manual correction, independently of automatic analysis. The recording key and transposed chord-display key are shown separately; neither shifts audio pitch nor changes MIDI. Key metadata is stored with the existing song options: save song changes before quitting to retain it in the desktop library, as with other performance edits.
+
+## Preview screens
+
+These screenshots use the real interface components with fictional song text and synthetic audio. The playlist is paused and MIDI is disarmed. They illustrate the workflow, not a connected-hardware test.
+
+![Performance reader, playlist transport and song key](docs/screenshots/performance-demo.jpg)
+
+![Named pedal commands and scheduled MIDI cues](docs/screenshots/midi-commands-demo.jpg)
+
+![Guitar chord positions in tablature](docs/screenshots/chord-voicings-demo.jpg)
+
+Untimed bracket chords remain visible and clickable in the combined reader. They are for manual reading; add timestamps to make lyrics follow playback. Empty or incomplete `{midi:...}` tokens are rejected rather than silently omitted. A previously saved key estimate is retained while its audio source is reanalysed; a fresh successful result replaces it.

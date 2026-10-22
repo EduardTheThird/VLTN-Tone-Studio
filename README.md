@@ -486,4 +486,4 @@ VLTN Tone Studio is free software under the [GNU General Public License v3.0](LI
 
 </div>
 
-Saved audio, stems and live playlists: see [Song library](SONG-LIBRARY.md).
+Saved audio, stems and live playlists: see [Song library](SONG-LIBRARY.md). [Performance](PERFORMANCE.md) includes editable song-key estimates, combined lyrics/chords and remembered MIDI setup presets. See the [generic interface previews](PERFORMANCE.md#preview-screens) and [review notes/recommended follow-ups](docs/PR-REVIEW.md).

@@ -14,7 +14,7 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
   const changes = manual.length ? manual : estimates;
   if (!lines.length) {
     const plain = (lyrics || chart).split(/\r?\n/).filter(line => !/^\[[\w]+:/.test(line)).map(line => line.replace(/\{(?:midi|label):[^}]*\}/g, '').replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, '').trim()).filter(Boolean);
-    lines = plain.map(text => ({ time: NaN, text, chords: [] }));
+    lines = plain.map(text => ({ time: NaN, text, chords: [...text.matchAll(chordPattern)].map(match => ({ time: NaN, name: match[1] })) }));
   }
   const timed = lines.filter(line => Number.isFinite(line.time));
   if (changes.length && (!timed.length || changes[0].time < timed[0].time)) {

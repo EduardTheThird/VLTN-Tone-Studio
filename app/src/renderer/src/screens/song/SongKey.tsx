@@ -12,7 +12,10 @@ export function SongKey({ stems, original, storageKey, shift=0 }: { stems: Stems
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const input=useMemo(()=>keyAudio(stems,original),[stems,original]);
   useEffect(()=>{
-    setEstimate(null); setAnalysisSource(input?.name ?? ''); setError('');
+    // Preserve a saved result while the same source is reanalysed. Switching
+    // tabs must not replace useful saved metadata with a temporary null.
+    if (!input || input.name !== analysisSource) setEstimate(null);
+    setAnalysisSource(input?.name ?? ''); setError('');
     if(!input) {setBusy(false);return;}
     let active=true, worker:Worker|undefined;
     setBusy(true);

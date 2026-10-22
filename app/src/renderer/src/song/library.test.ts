@@ -89,3 +89,18 @@ it('stops the playlist on missing audio instead of silently skipping songs', asy
   expect(useSongLibrary.getState().error).toBe('Missing audio');
   expect(useSongLibrary.getState().position).toBe(0);
 });
+
+it('keeps lyrics and key updates that finish during the first audio save', async()=>{
+  const source={name:'draft.wav',audio};useSong.setState({source,stems:null});
+  let finish!:()=>void;
+  api.save.mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve;}));
+  const saving=useSongLibrary.getState().save('Demo','');
+  await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
+  localStorage.setItem(performanceKey(source)+':lyrics','[00:00] Finished during save');
+  localStorage.setItem(performanceKey(source)+':options',JSON.stringify({songKey:'D minor'}));
+  finish();await saving;
+  const key=performanceKey(useSong.getState().source);
+  expect(localStorage.getItem(key+':lyrics')).toBe('[00:00] Finished during save');
+  expect(JSON.parse(localStorage.getItem(key+':options')!).songKey).toBe('D minor');
+  expect(api.settings).toHaveBeenCalledWith(useSong.getState().source?.libraryId,expect.objectContaining({':lyrics':'[00:00] Finished during save'}));
+});

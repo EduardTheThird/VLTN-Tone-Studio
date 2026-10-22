@@ -101,9 +101,13 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       await api().save(song, assets);
       if (useSong.getState().source === source) {
         const saved = { ...source, libraryId: id };
-        writeSettings(performanceKey(saved), song.settings);
+        // Background transcription/key analysis can finish while audio is being copied.
+        // Promote the latest settings, not the snapshot taken before the async save.
+        const latest = readSettings(performanceKey(source));
+        writeSettings(performanceKey(saved), latest);
         migrateLyricsJob(performanceKey(source), performanceKey(saved));
         if (!source.libraryId) useSong.setState({ source: saved });
+        if (JSON.stringify(latest) !== JSON.stringify(song.settings)) await api().settings(id, latest);
       }
       set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
     }),

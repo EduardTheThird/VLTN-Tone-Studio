@@ -33,6 +33,7 @@ export function parseChart(text: string): Cue[] {
     }
     const messages: number[][] = [];
     const body = content.replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, '').replace(/\{midi:([^}]+)\}/g, (_, cmd: string) => { messages.push(midiCommand(cmd)); return ''; }).trim();
+    if (body.includes('{midi:')) throw new Error(`Line ${index + 1}: MIDI commands need nonempty contents and a closing brace.`);
     return timestamps.map(t => ({ time: Number(t[1]) * 60 + Number(t[2]), text: body, messages, ...(label ? { label } : {}) }));
   }).sort((a, b) => a.time - b.time);
 }

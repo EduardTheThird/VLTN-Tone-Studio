@@ -38,6 +38,14 @@ Bluetooth MIDI is available for Performance cues, MIDI clock and transport input
 
 The Bluetooth store retains completed-write, notification and decoded-message counts for the last session after cleanup. Diagnostics includes these counts in copied and saved reports. See [Bluetooth support and hardware results](../BLUETOOTH.md), [Performance](../PERFORMANCE.md) and [saved songs](../SONG-LIBRARY.md).
 
+## Song performance
+
+Performance combines synchronized stem playback, a song-following metronome, a lyrics/chords reader and optional timed MIDI. The key worker estimates an overall major/minor key from usable guitar, then other harmonic stems or the original mix; the result and a manual correction live in the song options. Lyrics use a separate cancellable Whisper worker. Neither analysis changes audio pitch or MIDI.
+
+The desktop library copies source/stem PCM and stores charts, lyrics and options under unique song IDs. Playlists advance sequentially; loads between songs are not gapless. MIDI port/configuration preferences are global, while cue arming stays session-only. Note-release resets are restricted to channels where this session sent note messages, since CC64 is a GP-180 looper command.
+
+See [the Performance guide and generic screenshots](../PERFORMANCE.md), [storage and playlist behaviour](../SONG-LIBRARY.md) and [review/follow-up notes](../docs/PR-REVIEW.md).
+
 ## Commands
 | Command | What it does |
 |---|---|

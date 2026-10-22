@@ -66,19 +66,27 @@ function PerformanceSession() {
   const cursor = useRef(-0.001), pulse = useRef(0), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
   const startTempo = useRef<number[][] | null>(null);
+  const noteChannels = useRef(new Set<number>());
   const parsed = useMemo(() => { try { return { cues: parseChart(chart), error: '' }; } catch (e) { return { cues: [], error: String(e) }; } }, [chart]);
   const active = parsed.cues.findLastIndex(c => c.time <= time);
   const output = portId === 'bluetooth-midi' ? bluetooth : access?.outputs.get(portId);
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const saveChart = (value: string) => { pause(); setChart(value); try { localStorage.setItem(key, value); } catch (e) { fail(e); } };
   const panic = () => {
-    if (!output || output.state !== 'connected') return;
+    if (!output || output.state !== 'connected') { noteChannels.current.clear(); return; }
     try {
       (output as { clear?: () => void }).clear?.();
       if (!armed) return;
-      for (let ch = 0; ch < 16; ch++) { output.send([176 + ch, 64, 0]); output.send([176 + ch, 123, 0]); }
+      // CC64 is sustain on synths but looper Stop on the GP-180. Release only
+      // channels where this session actually queued note messages.
+      for (const ch of noteChannels.current) { output.send([176 + ch, 64, 0]); output.send([176 + ch, 123, 0]); }
+      noteChannels.current.clear();
       if (clock) output.send([252]);
     } catch (e) { fail(e); }
+  };
+  const sendPerformance = (bytes: number[], timestamp?: number) => {
+    output?.send(bytes, timestamp);
+    if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) noteChannels.current.add(bytes[0] & 15);
   };
   const pause = () => { playRequest.current++; player?.pause(); setPlaying(false); panic(); if (library.playlistPlaying) library.pausePlaylist(); };
   const play = async () => {
@@ -172,7 +180,7 @@ function PerformanceSession() {
       const tempoMessages = startTempo.current; startTempo.current = null;
       try {
         if (armed && output?.state === 'connected') {
-          scheduleCues(parsed.cues, cursor.current, now + 0.05, now, origin + now * 1000, (bytes, timestamp) => output.send(bytes, timestamp));
+          scheduleCues(parsed.cues, cursor.current, now + 0.05, now, origin + now * 1000, (bytes, timestamp) => sendPerformance(bytes, timestamp));
           // Apply song tempo after start-position patch recalls at the same timestamp:
           // a patch can carry its own BPM and otherwise overwrite the requested tempo.
           if (tempoMessages) for (const bytes of tempoMessages) output.send(bytes, Math.max(performance.now(), origin + Math.max(0, now) * 1000));
@@ -302,7 +310,7 @@ function PerformanceSession() {
     </div><p className="text-sm text-silkscreen-3">Input: Start/Continue/Stop or CC 80 ≥ 64 toggles playback. Configure a GP-180 MIDI footswitch to send CC 80. Output is opt-in for each song or playlist session. PC values are 0–127; channels are 1–16. Bluetooth uses its own connection and does not need Enable USB / system MIDI.</p>
       <p role="status" className="text-sm">{output?.state === 'connected' ? `${portId === 'bluetooth-midi' ? 'Bluetooth' : 'System MIDI'} output: ${output.name} · ${armed ? 'Song cues enabled' : 'Song cues off'}` : 'Connect Bluetooth MIDI or enable USB / system MIDI, then select an output.'}</p>
       <p className="text-sm text-silkscreen-3">For GP-180 tempo control, use the named Set tempo (BPM) command at song start with app MIDI Clock off, GP-180 clock source Internal and TRS clock output On. Continuous app clock fluctuated in real USB and Bluetooth tests with a TimeLine and caused audible delay changes.</p>
-      {midiConfig.showCommands && <MidiCueBuilder time={time} cues={parsed.cues} canTest={output?.state === 'connected' && armed} onAdd={line => saveChart([chart.trimEnd(), line].filter(Boolean).join('\n'))} onTest={bytes => { if (!armed || output?.state !== 'connected') return; output.send(bytes); setMidiStatus(`MIDI command queued for ${output.name}. Check whether the downstream pedal responds.`); }} />}
+      {midiConfig.showCommands && <MidiCueBuilder time={time} cues={parsed.cues} canTest={output?.state === 'connected' && armed} onAdd={line => saveChart([chart.trimEnd(), line].filter(Boolean).join('\n'))} onTest={bytes => { if (!armed || output?.state !== 'connected') return; sendPerformance(bytes); setMidiStatus(`MIDI command queued for ${output.name}. Check whether the downstream pedal responds.`); }} />}
       {midiStatus && <p role="status" className="text-sm">{midiStatus}</p>}
       <details><summary className="cursor-pointer text-sm">GP-180 routing setup</summary><p className="py-2 text-sm text-silkscreen-3">On the GP-180, enable Bluetooth and configure MIDI IN Source as BT Only or Mixed. Configure EXP/FS jack 2 for MIDI OUT and connect the correct TRS MIDI cable to the downstream pedal. Match MIDI channels on the pedals. Forwarding Bluetooth input to physical MIDI OUT depends on the GP-180’s routing and firmware; use the test command to verify it. A Bluetooth connection alone does not confirm delivery at MIDI OUT.</p><p className="pb-2 text-sm text-silkscreen-3">For MIDI Clock, check Clock Source and Clock Output separately. The GP-180 manual says enabling Clock Output makes the pedal ignore incoming clock. Receiving the app’s clock and forwarding it to another pedal must each be verified; successful patch changes do not confirm clock routing.</p></details>
     </section>

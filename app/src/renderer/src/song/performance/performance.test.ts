@@ -40,3 +40,7 @@ describe('harmonic chord estimates', () => {
     expect(detectChords({ sampleRate, channels: [audio] })[0].name).toBe('C');
   });
 });
+
+it('rejects incomplete or empty MIDI tokens instead of silently ignoring them',()=>{
+  for(const token of ['{midi:pc 1 2','{midi:}']) expect(()=>parseChart('[00:00] '+token)).toThrow(/MIDI commands/);
+});

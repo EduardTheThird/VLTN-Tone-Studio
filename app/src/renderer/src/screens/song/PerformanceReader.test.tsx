@@ -55,3 +55,11 @@ it('edits displayed lyrics and chords with MIDI preserved, validates values, and
   fireEvent.click(screen.getByText('Cancel edits'));
   expect(save).toHaveBeenCalledTimes(1);
 });
+
+it('shows untimed chord symbols as playable transposed chords',()=>{
+  render(<PerformanceReader title="Demo" chart={"[Am] Open road [F]\n[C] New day"} lyrics="" chords={[]} time={0} shift={2}/>);
+  expect(screen.getByLabelText('Show Bm guitar voicings')).toBeTruthy();
+  expect(screen.getByLabelText('Show G guitar voicings')).toBeTruthy();
+  expect(screen.getByLabelText('Show D guitar voicings')).toBeTruthy();
+  expect(screen.getByText('Open road')).toBeTruthy();
+});

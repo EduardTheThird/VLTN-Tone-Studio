@@ -45,3 +45,14 @@ it('rejects late results after the audio source changes and reports unavailable 
   view.rerender(<SongKey stems={null} storageKey="song"/>);
   expect(screen.getByText('Song key: Unknown')).toBeTruthy();
 });
+
+it('keeps the saved estimate while the same source is reanalysed or the worker fails',()=>{
+  const estimate={name:'C major',tonic:0,mode:'major',confidence:'tentative',correlation:.7,margin:.04,alternatives:['A minor']};
+  localStorage.setItem('song:options',JSON.stringify({detectedKey:estimate,keyAudioSource:'guitar'}));
+  render(<SongKey stems={{guitar:audio}} original={audio} storageKey="song"/>);
+  expect(screen.getByText('Song key: C major')).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem('song:options')!).detectedKey.name).toBe('C major');
+  act(()=>workers[0].onerror?.());
+  expect(screen.getByText('Song key: C major')).toBeTruthy();
+  expect(screen.getByRole('alert')).toBeTruthy();
+});
