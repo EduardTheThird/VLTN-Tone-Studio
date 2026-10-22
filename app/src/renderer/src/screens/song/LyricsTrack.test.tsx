@@ -55,6 +55,17 @@ it('cancels work and ignores late results without replacing saved lyrics', async
   expect(localStorage.getItem('song:lyrics')).toBe('[00:00.00] Existing');
 });
 
+it('passes an explicit language to the local worker and retains other song options', async () => {
+  localStorage.setItem('song:lyrics', '[00:00.00] Existing');
+  localStorage.setItem('song:options', JSON.stringify({ shift: 3 }));
+  render(<LyricsTrack audio={audio} storageKey="song" time={0} />);
+  fireEvent.change(screen.getByLabelText('Lyrics language'), { target: { value: 'afrikaans' } });
+  fireEvent.click(screen.getByText('Regenerate lyrics'));
+  await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
+  expect(FakeWorker.current.postMessage.mock.calls[0][0].options.language).toBe('afrikaans');
+  expect(JSON.parse(localStorage.getItem('song:options')!)).toEqual({ shift: 3, lyricsLanguage: 'afrikaans' });
+});
+
 it('automatically generates missing lyrics and keeps working when the tab is closed', async () => {
   const view = render(<LyricsTrack audio={audio} storageKey="song" time={0} />);
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());

@@ -3,6 +3,7 @@ import { host } from '@/host';
 import type { PcmAudio } from '../types';
 import { lyricsLrc, type LyricSegment } from './lyrics';
 import { readSettings } from './settings';
+import { lyricsOptions, type LyricsOptions } from './lyrics-options';
 
 export interface LyricsJob { busy: boolean; status: string; error: string; text?: string }
 export const useLyricsJobs = create<{ jobs: Record<string, LyricsJob> }>(() => ({ jobs: {} }));
@@ -24,7 +25,7 @@ export function cancelLyrics(key: string) {
   for (const alias of task.keys) running.delete(alias);
 }
 /** Jobs belong to the song, not a mounted tab. No pedal or MIDI access. */
-export async function generateLyrics(key: string, audio: PcmAudio): Promise<void> {
+export async function generateLyrics(key: string, audio: PcmAudio, options: LyricsOptions = lyricsOptions(key)): Promise<void> {
   if (running.has(key)) return;
   const task: Running = { keys: new Set([key]), cancelled: false }; running.set(key, task);
   update(task, { busy: true, status: 'Preparing vocals…', error: '' });
@@ -57,6 +58,6 @@ export async function generateLyrics(key: string, audio: PcmAudio): Promise<void
       }
     };
     worker.onerror = e => { if (!task.cancelled) { update(task, { error: e.message || 'Lyrics worker could not start. Retry transcription.', status: '' }); finish(); } };
-    worker.postMessage(pcm, [pcm.buffer]);
+    worker.postMessage({ pcm, options }, [pcm.buffer]);
   } catch (e) { if (!task.cancelled) { update(task, { error: String(e), status: '' }); finish(); } }
 }

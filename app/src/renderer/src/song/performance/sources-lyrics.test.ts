@@ -15,6 +15,9 @@ describe('chord source selection', () => {
   });
 });
 describe('lyrics track', () => {
+  it('removes overlapping transcription duplicates while preserving later repeated lines', () => {
+    expect(transcriptSegments([0, 0.2, 20].map(time => ({ text: 'Sing again', timestamp: [time, time + 1] as [number, number] })), 30).map(s => s.time)).toEqual([0, 20]);
+  });
   it('rejects unusable timestamps and keeps transcription from becoming MIDI commands', () => {
     const result = transcriptSegments([
       { text: 'Second\nline', timestamp: [2, 3] },

@@ -11,6 +11,8 @@ import { host } from '@/host';
 import { useBluetooth } from '@/bluetooth/connection';
 import { BluetoothControls } from '@/bluetooth/BluetoothControls';
 import { LyricsTrack } from './LyricsTrack';
+import { PerformanceReader } from './PerformanceReader';
+import { ChordVoicings } from './ChordVoicings';
 import { defaultChordSource } from '@/song/performance/sources';
 import { STEM_NAMES, type StemName } from '@/song/types';
 import { performanceKey, readOptions } from '@/song/performance/settings';
@@ -21,9 +23,9 @@ function readNumber(key: string, fallback: number, min: number, max: number): nu
   try { const raw = localStorage.getItem(key); const n = raw === null ? NaN : Number(raw); return Number.isFinite(n) && n >= min && n <= max ? n : fallback; } catch { return fallback; }
 }
 /** Small safe formatting subset; imported charts never become HTML. */
-function chartLine(text: string) {
+function chartLine(text: string, onChord: (name: string) => void) {
   return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[A-G][^\]]*\])/g).map((part, i) =>
-    part.startsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith('*') ? <em key={i}>{part.slice(1, -1)}</em> : /^\[[A-G]/.test(part) ? <span key={i} className="mr-1 font-bold text-sky-400">{part.slice(1, -1)}</span> : part);
+    part.startsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith('*') ? <em key={i}>{part.slice(1, -1)}</em> : /^\[[A-G]/.test(part) ? <button key={i} type="button" aria-label={`Show ${part.slice(1, -1)} guitar voicings`} className="mr-1 cursor-pointer rounded font-bold text-sky-400 hover:bg-sky-400/15" onClick={() => onChord(part.slice(1, -1))}>{part.slice(1, -1)}</button> : part);
 }
 let sessionId = 0;
 export function PerformancePanel() {
@@ -40,7 +42,9 @@ function PerformanceSession() {
   const inspectionOnly = useDevice(s => s.device === 'gp180' && s.mode !== 'mock') && !gp180Unlocked;
   const key = performanceKey(source);
   const library = useSongLibrary();
-  const options = useMemo(() => readOptions(key, { beats: 4, shift: 0, mode: 'click' as 'click' | 'drums', volume: 0.25, mix: defaultMix(), chordChoice: '' as StemName | '' }), [key]);
+  const options = useMemo(() => readOptions(key, { beats: 4, shift: 0, mode: 'click' as 'click' | 'drums', volume: 0.25, mix: defaultMix(), chordChoice: '' as StemName | '', lyricsLanguage: 'auto' }), [key]);
+  const [selectedChord, setSelectedChord] = useState<string | null>(null);
+  const [lyrics, setLyrics] = useState('');
   const [chart, setChart] = useState(() => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } });
   const [bpm, setBpm] = useState(() => readNumber(key + ':bpm', 120, 30, 300)), [beats, setBeats] = useState(options.beats), [shift, setShift] = useState(options.shift);
   const [patch, setPatch] = useState(1);
@@ -95,7 +99,7 @@ function PerformanceSession() {
     return () => { playRequest.current++; void p.dispose(); };
   }, [source, stems]);
   useEffect(() => { player?.setMix(mix); }, [player, mix]);
-  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ beats, shift, mode, volume, mix, chordChoice })); } catch (e) { fail(e); } }, [key, beats, shift, mode, volume, mix, chordChoice]);
+  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ beats, shift, mode, volume, mix, chordChoice, lyricsLanguage: readOptions(key, { lyricsLanguage: 'auto' }).lyricsLanguage })); } catch (e) { fail(e); } }, [key, beats, shift, mode, volume, mix, chordChoice]);
   useEffect(() => {
     setChords([]); setAnalysing(false);
     const audio = chordSource ? stems?.[chordSource] : undefined;
@@ -144,7 +148,7 @@ function PerformanceSession() {
     if (armed && clock) { try { output?.send([(player?.position ?? 0) < 0.05 ? 250 : 251]); } catch (e) { fail(e); } }
     return panic;
   }, [playing, armed, output, clock]);
-  useEffect(() => { activeLine.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [active]);
+
   useEffect(() => {
     if (!access) return;
     const update = () => { setPortsVersion(n => n + 1); if (portId !== 'bluetooth-midi' && access.outputs.get(portId)?.state !== 'connected') setArmed(false); };
@@ -179,6 +183,12 @@ function PerformanceSession() {
       {!source && <span>Open a song in Stems, or practise with the rhythm below.</span>}
     </div>
     {stems && <div className="flex flex-wrap gap-3">{player?.names.map(name => <label key={name}><input type="checkbox" checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {name}</label>)}</div>}
+    <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} transport={<>
+      <Button disabled={!player || !!parsed.error} onClick={() => playing ? pause() : void play()}>{playing ? 'Pause' : 'Play song'}</Button>
+      <Button variant="outline" disabled={!player} onClick={() => void seek(0)}>Rewind</Button>
+      <input aria-label="Expanded song position" className="min-w-32 flex-1" type="range" min="0" max={player?.duration ?? 0} step="0.1" value={time} onChange={e => void seek(Number(e.target.value))} />
+      <span className="text-sm">{lrcTime(time)} / {lrcTime(player?.duration ?? 0)}</span>
+    </>} />
     <div className="flex flex-wrap items-center gap-3">
       <label>BPM <input className={field + ' w-20'} aria-label="BPM" type="number" min="30" max="300" value={bpm} onChange={e => setBpm(Math.max(30, Math.min(300, Number(e.target.value) || 120)))} /></label>
       <Button variant="outline" onClick={() => { const now = performance.now(); const times = tap.current.filter(t => now - t < 3000).slice(-5); times.push(now); tap.current = times; if (times.length > 1) setBpm(Math.max(30, Math.min(300, Math.round(60000 * (times.length - 1) / (now - times[0]))))); }}>Tap tempo</Button>
@@ -202,14 +212,17 @@ function PerformanceSession() {
       <label className="cursor-pointer underline">Import TXT / LRC / ChordPro<input type="file" accept=".txt,.lrc,.cho,.chordpro" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void f.text().then(saveChart).catch(fail); e.target.value = ''; }} /></label>
       <Button variant="outline" onClick={() => void host.song.saveFiles([{ name: 'performance.lrc', bytes: new TextEncoder().encode(chart) }], 'Export lyrics and MIDI cues').catch(fail)}>Export chart</Button>
     </div>
-    <LyricsTrack audio={stems?.vocals} storageKey={key} time={time} />
+    <details><summary className="cursor-pointer font-semibold">Separate lyrics and chart editors</summary>
+    <LyricsTrack audio={stems?.vocals} storageKey={key} time={time} onTextChange={setLyrics} follow={false} />
     <div className="grid gap-4 lg:grid-cols-2">
       <div><textarea aria-label="Lyrics and MIDI chart" className={field + ' min-h-64 w-full font-mono text-sm'} value={chart} onChange={e => saveChart(e.target.value)} placeholder={'[00:00.00] [C]Verse\n[00:10.00] [Am]Your lyrics {midi:pc 1 0}\n[00:20.00] [F]Chorus {midi:cc 1 64 127}'} /><p className="text-sm text-silkscreen-3">Saved locally for this audio filename and length. LRC timestamps enable scrolling and MIDI. Chords use [Am] or [C/G]. MIDI: pc, cc, note, off, sysex. Note cues need a matching off cue. Transpose changes the chart only.</p></div>
-      <div className="max-h-96 overflow-auto rounded border border-seam p-4 text-2xl leading-relaxed" aria-label="Performance lyrics">{parsed.cues.length ? parsed.cues.map((cue, i) => <p ref={i === active ? activeLine : undefined} key={i} className={i === active ? 'rounded bg-white/10 font-bold' : 'text-silkscreen-3'}>{chartLine(transpose(cue.text, shift) || '♪')}</p>) : <pre className="whitespace-pre-wrap font-sans">{chartLine(transpose(chart, shift))}</pre>}</div>
+      <div className="max-h-96 overflow-auto rounded border border-seam p-4 text-2xl leading-relaxed" aria-label="Performance lyrics">{parsed.cues.length ? parsed.cues.map((cue, i) => <p ref={i === active ? activeLine : undefined} key={i} className={i === active ? 'rounded bg-white/10 font-bold' : 'text-silkscreen-3'}>{chartLine(transpose(cue.text, shift) || '♪', setSelectedChord)}</p>) : <pre className="whitespace-pre-wrap font-sans">{chartLine(transpose(chart, shift), setSelectedChord)}</pre>}</div>
     </div>
     <div><h2 className="font-semibold">Chords from stems</h2><label>Chord source <select aria-label="Chord source" className={field} value={chordChoice} onChange={e => setChordChoice(e.target.value as StemName | '')}><option value="">Automatic - {automaticSource || 'no usable stem'}</option>{STEM_NAMES.filter(name => stems?.[name]).map(name => <option key={name} value={name}>{name}</option>)}</select></label><p className="text-sm text-silkscreen-3">Guitar is preferred. If it is missing or silent, automatic selection tries piano, then other stems. Override the source if the song has no guitar but separation left sound in that stem.</p><p className="text-sm text-silkscreen-3">{analysing ? 'Analysing harmonic stem…' : stems ? `Estimated major/minor chords from ${chordSource || 'no usable stem'}. Review by ear; N means uncertain or silence.` : 'Split the song in Stems to estimate its chords automatically.'}</p>
-      {!!chords.length && <><div className="my-2 max-h-32 overflow-auto font-mono">{chords.map(c => <span key={c.time} className="mr-4 inline-block">{lrcTime(c.time)} {transpose(`[${c.name}]`, shift)}</span>)}</div><Button variant="outline" onClick={() => void host.song.saveFiles([{ name: 'estimated-chords.lrc', bytes: new TextEncoder().encode(chords.map(c => `${lrcTime(c.time)} [${c.name}]`).join('\n')) }], 'Export estimated chords').catch(fail)}>Export chord estimates</Button><Button className="ml-2" variant="outline" onClick={() => saveChart(chart + '\n' + chords.map(c => `${lrcTime(c.time)} [${c.name}]`).join('\n'))}>Append estimates to chart</Button></>}
+      {!!chords.length && <><div className="my-2 max-h-32 overflow-auto font-mono">{chords.map(c => <span key={c.time} className="mr-4 inline-block">{lrcTime(c.time)} {c.name === 'N' ? '—' : <button type="button" className="cursor-pointer rounded text-sky-400 hover:bg-sky-400/15" aria-label={`Show ${transpose(`[${c.name}]`, shift).slice(1, -1)} guitar voicings`} onClick={() => setSelectedChord(transpose(`[${c.name}]`, shift).slice(1, -1))}>{transpose(`[${c.name}]`, shift)}</button>}</span>)}</div><Button variant="outline" onClick={() => void host.song.saveFiles([{ name: 'estimated-chords.lrc', bytes: new TextEncoder().encode(chords.map(c => `${lrcTime(c.time)} [${c.name}]`).join('\n')) }], 'Export estimated chords').catch(fail)}>Export chord estimates</Button><Button className="ml-2" variant="outline" onClick={() => saveChart(chart + '\n' + chords.map(c => `${lrcTime(c.time)} [${c.name}]`).join('\n'))}>Append estimates to chart</Button></>}
     </div>
+    </details>
+    <ChordVoicings chord={selectedChord} onClose={() => setSelectedChord(null)} />
     {(error || parsed.error) && <p role="alert" className="text-red-400">{error || parsed.error}</p>}
   </section>;
 }

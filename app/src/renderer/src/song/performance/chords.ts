@@ -1,6 +1,12 @@
 import { fft } from '../tonematch/fft';
 import type { PcmAudio } from '../types';
 export interface Chord { time: number; name: string; confidence: number }
+/** A one-window blip between identical neighbours is usually leakage or an attack transient. */
+export function smoothChordFrames(frames: Chord[]): Chord[] {
+  const stable = frames.map((frame, i) => i > 0 && i + 1 < frames.length && frame.name !== 'N' && frames[i - 1].name === frames[i + 1].name && frames[i - 1].name !== 'N'
+    ? { ...frame, name: frames[i - 1].name, confidence: Math.min(frames[i - 1].confidence, frames[i + 1].confidence) } : frame);
+  return stable.filter((frame, i) => i === 0 || frame.name !== stable[i - 1].name);
+}
 /** Windowed chroma template estimate. Major/minor only; never a transcription guarantee. */
 export function detectChords(audio: PcmAudio): Chord[] {
   const n = 8192, hop = Math.round(audio.sampleRate / 2);
@@ -8,8 +14,15 @@ export function detectChords(audio: PcmAudio): Chord[] {
   const result: Chord[] = [];
   for (let start = 0; start < audio.channels[0].length; start += hop) {
     const re = new Float64Array(n), im = new Float64Array(n), chroma = new Float64Array(12);
+    // Use the loudest channel: summing opposite-phase stereo cancels a perfectly audible guitar.
+    let channel = audio.channels[0], loudest = -1;
+    for (const candidate of audio.channels) {
+      let energy = 0;
+      for (let i = start; i < Math.min(candidate.length, start + n); i++) energy += candidate[i] ** 2;
+      if (energy > loudest) { loudest = energy; channel = candidate; }
+    }
     for (let i = 0; i < n; i++) {
-      for (const ch of audio.channels) re[i] += (ch[start + i] ?? 0) / audio.channels.length;
+      re[i] = channel[start + i] ?? 0;
       re[i] *= 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1));
     }
     fft(re, im);
@@ -26,7 +39,7 @@ export function detectChords(audio: PcmAudio): Chord[] {
       if (value > score) { score = value; name = notes[root] + (third === 3 ? 'm' : ''); }
     }
     if (score < 0.55) name = 'N';
-    if (result.at(-1)?.name !== name) result.push({ time: start / audio.sampleRate, name, confidence: score });
+    result.push({ time: start / audio.sampleRate, name, confidence: score });
   }
-  return result;
+  return smoothChordFrames(result);
 }
