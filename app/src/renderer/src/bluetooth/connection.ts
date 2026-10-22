@@ -148,7 +148,10 @@ export async function connectBluetooth(): Promise<BleMidiConnection> {
     useBluetooth.setState({ connection });
     return connection;
   } catch (e) {
-    useBluetooth.setState({ error: `Bluetooth connection failed: ${e instanceof Error ? e.message : String(e)}` });
+    const detail = e instanceof Error && e.name === 'NotFoundError'
+      ? 'No Bluetooth MIDI device was selected or found before the scan ended. Enable Bluetooth MIDI on the pedal, disconnect its phone app, keep it nearby, and try again.'
+      : e instanceof Error ? e.message : String(e);
+    useBluetooth.setState({ error: `Bluetooth connection failed: ${detail}` });
     throw e;
   } finally { useBluetooth.setState({ connecting: false }); }
 }
