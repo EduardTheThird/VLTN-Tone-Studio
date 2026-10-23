@@ -1,8 +1,28 @@
-# PR review — 22 October 2026
+# PR review — updated 23 October 2026
+
+## Current status
+
+The latest implementation validation passed **813 application tests, 3 skipped**, across **103 files**, plus typechecking and the production build. The earlier protocol run passed **159 tests**. The dated results below are historical checkpoints, not cumulative test totals.
+
+The two subsequent review findings are corrected: a worker that failed after becoming ready cannot be reused, and missing start/heartbeat responses trigger MIDI fault cleanup; resetting timing now clears both app and Bluetooth timing without cancelling queued messages, including when a write is already in flight.
+
+GP-150 and GP-180 share editor/preset/performance support while retaining separate model identities and footswitch layouts. The temporary GP-180 write guard and unlock setting are removed. Hardware evidence still covers GP-180 reads/backups and GP-180/TimeLine performance commands; enabling editor writes does not establish physical write validation. Bluetooth editor management remains disabled.
+
+## Remaining checks and useful additions
+
+Before release, exercise editor write/readback on the real GP-180, validate GP-150 hardware, rehearse long playlists and MIDI fault recovery on the actual chain, and test packaged backup/restore on a second computer. No new physical-pedal test was performed in this review.
+
+The highest-value additions are whole-playlist preflight, a stage mode with seek/edit protection and sleep prevention, configurable input channel/footswitch mappings, next-song preloading and transition/count-in options, portable rig definitions, and exportable timing reports. These remain recommendations, not implemented features. Current preflight is advisory and covers only the loaded song; backup contains song cues but excludes global MIDI routing and pedal definitions.
+
+## Final workflow review — 23 October 2026
+
+A fresh focused run passed **83 tests across 7 files**: PerformancePanel, PlaylistPlayback, song library state, library storage, backup/restore, scheduler client and Bluetooth connection. No additional defect was found in these checked paths. The branch merged cleanly with fetched upstream main in a merge-tree check, and local guide file links resolved. This pass changed documentation only, so the full-suite/build results above refer to the unchanged implementation rather than a new full run. Physical hardware and packaged cross-platform checks remain outstanding.
+
+## Historical review — 22 October 2026
 
 ## Scope
 
-Reviewed the changes against upstream main across desktop Bluetooth selection/permissions and IPC, managed song/audio storage, playlist transitions, performance audio/MIDI scheduling, pedal profiles and OpenMIDI import, GP-180 inspection/write guards, recognition workers, documentation and dependency/build changes. Existing protocol and regression tests supplement source review; this review did not send commands to physical pedals.
+Reviewed the changes against upstream main across desktop Bluetooth selection/permissions and IPC, managed song/audio storage, playlist transitions, performance audio/MIDI scheduling, pedal profiles and OpenMIDI import, GP-180 inspection and the then-active write guards, recognition workers, documentation and dependency/build changes. Existing protocol and regression tests supplement source review; this review did not send commands to physical pedals.
 
 ## Issues corrected in this pass
 

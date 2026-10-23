@@ -1,6 +1,20 @@
-# MIDI reliability review — 22 October 2026
+# MIDI reliability review — updated 23 October 2026
 
 This review covers Performance cue/clock scheduling, Bluetooth queueing and connection loss, transport input/output, and playlist MIDI session carry-over in PR #30. It is a source review with automated fault injection, not another physical-pedal session or a certification for stage use.
+
+## Current implementation
+
+Latest implementation validation: **813 application tests passed, 3 skipped**, across **103 files**; typechecking and production build passed. The earlier protocol suite passed **159 tests**. The 22 October counts below are historical.
+
+Scheduling uses a prewarmed worker with 20 ms ticks, 50 ms lookahead, audio checkpoints and a renderer output bridge. Prepared-worker failures are checked before use. Missing start acknowledgement or ongoing worker responses for more than 250 ms trigger the same disarm and queue cleanup as other scheduler faults. Timing counters describe app dispatch, not pedal receipt.
+
+**Reset timing counters** clears app and Bluetooth performance/clock measurements, including retained disconnected-session timing. It preserves traffic totals, the connection and queued messages; an in-flight write cannot restore timing from before the reset.
+
+Preflight checks the loaded song only and is advisory. Whole-playlist preflight, configurable remote input channels, sleep prevention and portable rig definitions are not implemented. GP-150 shares the command set, but the physical results remain GP-180-specific. USB editor writes no longer require a special unlock and still need physical write/readback validation.
+
+## Final workflow review — 23 October 2026
+
+A fresh focused run passed **83 tests across 7 files**: PerformancePanel, PlaylistPlayback, song library state, library storage, backup/restore, scheduler client and Bluetooth connection. No additional defect was found in these checked paths. The branch merged cleanly with fetched upstream main in a merge-tree check, and local guide file links resolved. This pass changed documentation only, so the full-suite/build results above refer to the unchanged implementation rather than a new full run. Physical hardware and packaged cross-platform checks remain outstanding.
 
 ## Confirmed defects corrected
 
@@ -16,7 +30,7 @@ This review covers Performance cue/clock scheduling, Bluetooth queueing and conn
 
 The 250 ms limit is a conservative interruption policy, not acceptable timing jitter for a delay or a timing guarantee. Most individual commands must arrive far closer to their cue. Commands already handed to hardware cannot be cancelled reliably; after a link failure the operator must verify actual pedal state.
 
-## Validation
+## Historical validation — 22 October 2026
 
 - Full Windows application suite: **779 passed, 3 skipped**, across 97 files.
 - Focused Performance/Bluetooth lifecycle suites: **36 passed**, including eight new fault regressions.

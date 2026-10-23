@@ -1,15 +1,12 @@
 # Changelog
 
-- Reject failed prepared MIDI workers and disarm on missing playback acknowledgement or worker responses.
-- Reset Bluetooth and app timing counters together without clearing queued MIDI; completed in-flight writes cannot restore old timing measurements.
-
-- Add GP-150 performance MIDI commands, Bluetooth discovery names and shared GP-150 / GP-180 setup labels. Preserve saved configurations and distinguish model-specific hardware test results.
-
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
 ## Unreleased
 
 ### Added
+- Dedicated MIDI scheduler worker with audio checkpoints, advisory cue/channel preflight and bounded timing diagnostics.
+- GP-150 performance MIDI profiles, Bluetooth discovery names and shared GP-150 / GP-180 setup presets; existing GP-180 saved settings remain compatible.
 - Portable compressed song-library export and restore as new copies, including source audio, stems, charts, lyrics, key/mix settings and ordered playlists, with streaming progress and integrity checks.
 - Automatic song-key estimation from guitar with harmonic-stem/original-mix fallback, alternative keys and a saved manual override.
 - Song Performance with timed lyrics/chords, MIDI cues, optional MIDI clock, transport input and a remembered metronome that follows song playback. See [Performance](PERFORMANCE.md).
@@ -23,6 +20,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Removed the temporary GP-180 read-only guard and write-unlock switch. USB editor operations are available normally for both GP-150 and GP-180; hardware write validation remains outstanding.
 
 ### Fixed
+- Failed prepared MIDI workers cannot be reused; missing playback acknowledgement or worker responses trigger MIDI fault cleanup.
+- Reset timing counters clears Bluetooth and app timing together without cancelling queued commands. In-flight writes cannot restore old timing measurements.
 - Performance MIDI now disarms on gross scheduling interruptions, binds arming to the exact output, preserves BLE note releases across duplicate stop cleanup, rejects cues past the audio end, and avoids echoed Stop feedback. Bluetooth writes time out and discard excessively late queued commands without retrying uncertain delivery.
 - Pause/panic releases only channels used for note messages, avoiding unintended GP-180 looper Stop commands from blanket CC64 resets.
 - Untimed bracket chords remain visible in the combined reader. Incomplete/empty MIDI tokens now block playback with an error.
