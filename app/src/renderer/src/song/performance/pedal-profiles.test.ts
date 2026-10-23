@@ -46,3 +46,11 @@ it('accepts a custom profile and rejects invalid, oversized, duplicate or unreso
   expect(()=>parsePedalProfile(' '.repeat(500001))).toThrow('too large');
   expect(()=>parsePedalProfile(JSON.stringify({...CUSTOM_PEDAL_TEMPLATE,actions:[CUSTOM_PEDAL_TEMPLATE.actions[0],CUSTOM_PEDAL_TEMPLATE.actions[0]]}))).toThrow('duplicate');
 });
+
+it('shares GP-150 and GP-180 performance commands while preserving model IDs', () => {
+  const gp150=PEDAL_PROFILES.find(p=>p.id==='valeton-gp150')!;
+  const gp180=PEDAL_PROFILES.find(p=>p.id==='valeton-gp180')!;
+  expect(gp150.actions).toEqual(gp180.actions);
+  expect(actionCommands(action('valeton-gp150','memory-129'),16)).toEqual(['cc 16 0 1','pc 16 0']);
+  expect(actionCommands(action('valeton-gp150','tempo'),16,141)).toEqual(['cc 16 73 1','cc 16 74 13']);
+});

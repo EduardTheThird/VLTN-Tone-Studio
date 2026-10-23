@@ -10,8 +10,8 @@ export function midiPreflight(cues:Cue[],options:PreflightOptions) {
   const labels=new Map<number,string[]>();
   for(const pedal of referenced) {const names=labels.get(pedal.channel)||[];names.push(pedal.name);labels.set(pedal.channel,names);}
   for(const [channel,names] of labels) if(names.length>1)add('channel-collision',`Configured channel ${channel} is shared by ${names.join(', ')}. Verify physical receive settings.`);
-  if(options.tempoChannel && referenced.some(p=>p.channel===options.tempoChannel && !/GP-180/.test(p.name)))add('tempo-channel','Automatic GP-180 tempo shares a configured downstream pedal channel. Its CC73/74 may affect that pedal.');
-  if(options.clock && /GP.?180/i.test(options.outputName||''))add('clock','Continuous app clock failed the GP-180 hardware test. Use one-time tempo with the pedal’s internal clock.');
+  if(options.tempoChannel && referenced.some(p=>p.channel===options.tempoChannel && !/GP-?(150|180)/i.test(p.name)))add('tempo-channel','Automatic GP-150 / GP-180 tempo shares a configured downstream pedal channel. Its CC73/74 may affect that pedal.');
+  if(options.clock && /GP.?(150|180)/i.test(options.outputName||''))add('clock','Continuous app clock failed the GP-180 hardware test. Use one-time tempo with the pedal’s internal clock.');
   let windowStart=0,windowBytes=0,dense=false;
   const conflicts=new Map<string,string>();
   for(let i=0;i<events.length;i++) {

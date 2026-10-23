@@ -24,3 +24,10 @@ it('warns about dense wire traffic and known GP-180 continuous clock limitations
 it('does not invent warnings for a simple complete chart',()=>{
   expect(midiPreflight(parseChart('[00:00] {midi:pc 1 1}\n[00:01] {midi:note 2 60 100}\n[00:02] {midi:off 2 60 0}'),options).issues).toEqual([]);
 });
+
+it.each(['GP-150','GP-180'])('recognizes %s for shared tempo and clock advice', model => {
+  const cues=parseChart(`[00:00] {label:Valeton ${model}: Recall memory 001} {midi:pc 16 0}`);
+  const result=midiPreflight(cues,{...options,tempoChannel:16,clock:true,outputName:model,pedals:[{name:`Valeton ${model}`,channel:16}]});
+  expect(result.issues.some(i=>i.code==='tempo-channel')).toBe(false);
+  expect(result.issues.some(i=>i.code==='clock')).toBe(true);
+});

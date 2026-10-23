@@ -174,3 +174,13 @@ describe('Bluetooth connection lifecycle', () => {
     expect(f.gatt.disconnect).toHaveBeenCalled();
   });
 });
+
+it('offers both GP-150 and GP-180 Bluetooth names without requiring service advertising', async () => {
+  const f=fixture();
+  const requestDevice=vi.fn().mockResolvedValue(f.device);
+  vi.stubGlobal('navigator',{bluetooth:{requestDevice}});
+  await connectBluetooth();
+  expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({filters:expect.arrayContaining([
+    {namePrefix:'GP-150'},{namePrefix:'GP150'},{namePrefix:'GP-180'},{namePrefix:'GP180'},
+  ])}));
+});

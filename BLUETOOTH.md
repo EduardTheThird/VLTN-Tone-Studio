@@ -1,4 +1,10 @@
-# Bluetooth MIDI and GP-180 USB support
+# Bluetooth MIDI and GP-150 / GP-180 USB support
+
+## GP-150 and GP-180 support
+
+GP-150 and GP-180 share the editor protocol, preset format and performance MIDI command set. GP-150 has two footswitches and a built-in expression pedal; GP-180 has three footswitches. Both are supported over USB and for Bluetooth performance MIDI. Separate model identities and footswitch layouts are preserved. The command builder offers both models, and setup presets cover both. Existing GP-180 saved settings and cues remain compatible. Physical validation in this project used GP-180; GP-150 has not been hardware-tested in this session.
+
+Configure the MIDI-capable EXP/FS jack for your model. GP-180-specific jack numbers and hardware results below describe the tested rig.
 
 ## Supported connections
 

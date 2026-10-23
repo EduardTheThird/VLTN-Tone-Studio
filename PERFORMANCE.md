@@ -1,4 +1,8 @@
-# Performance and GP-180 support
+# Performance and GP-150 / GP-180 support
+
+## GP-150 and GP-180 support
+
+GP-150 and GP-180 share the editor protocol, preset format and performance MIDI command set. GP-150 has two footswitches and a built-in expression pedal; GP-180 has three footswitches. Both are supported over USB and for Bluetooth performance MIDI. Separate model identities and footswitch layouts are preserved. The command builder offers both models, and setup presets cover both. Existing GP-180 saved settings and cues remain compatible. Physical validation in this project used GP-180; GP-150 has not been hardware-tested in this session.
 
 ## Use
 
@@ -12,7 +16,7 @@ Click a chord in the reader, chart preview, or stem estimates to open its guitar
 
 ## Pedal command library
 
-**Song MIDI cues** now offers named presets for TimeLine, RC-10R, IR-200, SY-200 and GP-180. Choose the pedal and its receive channel, then select a memory or function. Bank-select sequences are generated where needed. BOSS assignable controls require the matching CC setting from the pedal. Cues retain readable labels in the chart and scheduled-cue list. **Raw MIDI command** remains available. See [pedal profiles and custom JSON import/export](MIDI-PEDALS.md).
+**Song MIDI cues** now offers named presets for TimeLine, RC-10R, IR-200, SY-200, GP-150 and GP-180. Choose the pedal and its receive channel, then select a memory or function. Bank-select sequences are generated where needed. BOSS assignable controls require the matching CC setting from the pedal. Cues retain readable labels in the chart and scheduled-cue list. **Raw MIDI command** remains available. See [pedal profiles and custom JSON import/export](MIDI-PEDALS.md).
 
 ## Recognition implementation and limits
 
@@ -67,7 +71,7 @@ After splitting, opening Performance automatically estimates major/minor chords 
 
 In Performance, choose a MIDI setup preset and apply it:
 
-- **GP-180 + pedals · Bluetooth / USB** sends the song BPM once on playback start. Set the GP-180 clock source to Internal and TRS clock output to On. Channel 16 is the default tempo channel; match the GP-180 receive channel (or OMNI). Continuous app clock stays off. The GP-180 supplies clock to downstream pedals.
+- **GP-150 / GP-180 + pedals · Bluetooth / USB** sends the song BPM once on playback start. Set the GP-180 clock source to Internal and TRS clock output to On. Channel 16 is the default tempo channel; match the GP-180 receive channel (or OMNI). Continuous app clock stays off. The GP-180 supplies clock to downstream pedals.
 - **MIDI commands only** plays saved cues without automatic tempo or clock.
 - **Continuous clock · compatible receiver** enables song MIDI clock for receivers that support it reliably. The GP-180/TimeLine hardware tests did not produce a stable continuous app clock.
 
@@ -94,3 +98,11 @@ These screenshots use the real interface components with fictional song text and
 ![Guitar chord positions in tablature](docs/screenshots/chord-voicings-demo.jpg)
 
 Untimed bracket chords remain visible and clickable in the combined reader. They are for manual reading; add timestamps to make lyrics follow playback. Empty or incomplete `{midi:...}` tokens are rejected rather than silently omitted. A previously saved key estimate is retained while its audio source is reanalysed; a fresh successful result replaces it.
+
+## MIDI preflight and timing diagnostics
+
+The collapsible **MIDI preflight & timing** panel reports cue timestamps beyond the audio, conflicting or dense commands, missing note-offs and configured channel conflicts. Warnings are advisory and do not rewrite or disable intentional cues. Match physical receive channels and assignable CC settings yourself; the app cannot read those settings from ordinary performance MIDI.
+
+Cue scheduling runs in a dedicated worker, prepared before armed playback starts, with 20 ms ticks and 50 ms lookahead. Audio-position checkpoints keep it aligned to playback. The renderer still bridges output to Web MIDI or Bluetooth; this is timing isolation, not hard real-time delivery. Pause, seek, output replacement and song changes cancel the old scheduler. A scheduling interruption over 250 ms clears queued output and disarms the session instead of replaying a burst.
+
+Timing counters record queue lateness and failures, with a bounded history of recent non-clock messages. Bluetooth diagnostics also measure serialized write time. These are app-side observations, not receiver timestamps or proof of delivery. Keep continuous app clock off for the tested GP-180 rig and use one-time song tempo with hardware-generated downstream clock.

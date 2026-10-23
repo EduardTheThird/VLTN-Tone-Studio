@@ -1,5 +1,7 @@
 # Changelog
 
+- Add GP-150 performance MIDI commands, Bluetooth discovery names and shared GP-150 / GP-180 setup labels. Preserve saved configurations and distinguish model-specific hardware test results.
+
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
 ## Unreleased

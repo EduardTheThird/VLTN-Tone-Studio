@@ -39,3 +39,7 @@ The subsequent [MIDI reliability review](MIDI-RELIABILITY-REVIEW.md) documents f
 4. **Storage management:** portable library export/restore is now implemented; automatic cleanup of abandoned audio revisions and resumable transfers remain follow-ups. See [the library guide](../SONG-LIBRARY.md#portable-backup-and-restore).
 
 These are recommendations, not features implemented in this review. Cross-platform packaged builds, GP-180 editor writes and the full pedal-action catalogue still need their own hardware/release verification. Continuous app MIDI clock remains unsuitable for the tested GP-180/TimeLine rig; use the documented one-time tempo setup.
+
+## Shared-model update validation - 23 October 2026
+
+Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 protocol tests**, typechecking and production build passed. Bluetooth discovery covers both model names; command tests verify shared banked recalls and tempo bytes, and preflight recognizes both models. Prior counts above describe earlier review runs. No new physical-pedal test was performed.

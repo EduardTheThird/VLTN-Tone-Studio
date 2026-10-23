@@ -53,6 +53,11 @@ export const PEDAL_PROFILES: PedalProfile[] = [
   ] },
 ];
 
+// Keep the existing GP-180 ID and labels so saved channels and chart cues remain valid.
+// Both models use the same performance MIDI implementation.
+const gp180Profile = PEDAL_PROFILES.find(profile => profile.id === 'valeton-gp180')!;
+PEDAL_PROFILES.push({ ...gp180Profile, id: 'valeton-gp150', name: 'Valeton GP-150', notes: gp180Profile.notes.replaceAll('GP-180', 'GP-150') + ' Shared GP-150/GP-180 command set; physical validation to date used GP-180.' });
+
 export function actionCommands(action: MidiAction, channel: number, value = action.value?.default ?? 0, assignedCC?: number): string[] {
   if (!Number.isInteger(channel) || channel<1 || channel>16) throw new Error('Choose a MIDI channel from 1 to 16.');
   if (action.value && (!Number.isInteger(value) || value<action.value.min || value>action.value.max)) throw new Error(`Choose ${action.value.label} from ${action.value.min} to ${action.value.max}.`);

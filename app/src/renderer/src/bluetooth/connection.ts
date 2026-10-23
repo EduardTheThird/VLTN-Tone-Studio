@@ -174,7 +174,7 @@ export async function connectBluetooth(): Promise<BleMidiConnection> {
   }
   useBluetooth.setState({ connecting: true, error: null, diagnostics: null });
   try {
-    const device = await bluetooth.requestDevice({ filters: [{ services: [MIDI_SERVICE] }, { namePrefix: 'GP-180' }, { namePrefix: 'GP180' }, { namePrefix: 'Valeton' }], optionalServices: [MIDI_SERVICE] });
+    const device = await bluetooth.requestDevice({ filters: [{ services: [MIDI_SERVICE] }, { namePrefix: 'GP-180' }, { namePrefix: 'GP180' }, { namePrefix: 'GP-150' }, { namePrefix: 'GP150' }, { namePrefix: 'Valeton' }], optionalServices: [MIDI_SERVICE] });
     const connection = await BleMidiConnection.open(device);
     useBluetooth.setState({ connection });
     return connection;

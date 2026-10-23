@@ -33,10 +33,13 @@ The 250 ms limit is a conservative interruption policy, not acceptable timing ji
 
 ## Further robustness work, in priority order
 
-- **Performance preflight:** report commands past the song end, dense simultaneous bursts, channel collisions, missing note-offs, conflicting tempo cues and required physical CC assignments before starting a set. It should identify issues without rewriting intentional looper commands.
-- **Cue health and diagnostics:** record intended/dispatch times, worst lateness, connection changes and a per-session failure summary. Label output as queued/dispatched rather than delivered. Standard PC/CC/clock has no pedal acknowledgement; a retry could double-trigger a looper.
-- **Dedicated scheduler:** move cue timing away from rendering/analysis into a dedicated worker or native service with bounded traffic and transport cancellation. Verify timestamp support on each OS/driver. This reduces contention but cannot make Bluetooth or a general-purpose OS hard real-time. Keep tempo clock in suitable hardware for this rig.
+Preflight warnings, queue timing counters and a dedicated worker scheduler are now implemented; see [Performance](../PERFORMANCE.md#midi-preflight-and-timing-diagnostics). The worker is prepared before armed audio playback and cancelled on stop, seek or replacement. Renderer output bridging and audio checkpoints remain necessary, so driver/receiver timing and real-time guarantees remain outside this implementation. Reported timing measures queueing, not pedal receipt. Hardware results above remain GP-180-specific; the shared command set also supports GP-150.
+
 - **Session continuity:** centralize MIDI output ownership and recovery across screen changes and playlist loading. Add explicit suspend/resume handling and a performance-only sleep blocker with cleanup. Disconnection or timing failure must invalidate the carried playlist session synchronously.
 - **Hardware fault matrix:** repeat Bluetooth/USB commands on real GP-180 and all downstream pedals under CPU load, range loss, cable loss, repeated playlist entries and long-running sets. Include explicit note-offs and looper trigger counts. Automated tests cannot establish receiver latency or physical MIDI forwarding behavior.
 
 The Web MIDI specification defines equal-timestamp send ordering and queue clearing, but it does not provide a pedal-delivery acknowledgement. See the [W3C MIDIOutput contract](https://www.w3.org/TR/webmidi/#midioutput-interface).
+
+## Shared-model update validation - 23 October 2026
+
+Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 protocol tests**, typechecking and production build passed. Bluetooth discovery covers both model names; command tests verify shared banked recalls and tempo bytes, and preflight recognizes both models. Prior counts above describe earlier review runs. No new physical-pedal test was performed.

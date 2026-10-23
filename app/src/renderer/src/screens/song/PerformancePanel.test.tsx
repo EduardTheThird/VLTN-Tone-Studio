@@ -325,7 +325,7 @@ it('remembers USB configuration and applies GP-180 one-time song tempo without a
   fireEvent.change(screen.getByLabelText('MIDI setup preset'),{target:{value:'gp180-usb'}});
   fireEvent.click(screen.getByText('Apply MIDI setup'));
   expect(mocks.send).not.toHaveBeenCalled();
-  expect((screen.getByLabelText('Send song BPM to GP-180 on playback start') as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText('Send song BPM to GP-150 / GP-180 on playback start') as HTMLInputElement).checked).toBe(true);
   expect((screen.getByLabelText('MIDI Clock (24 PPQN)') as HTMLInputElement).checked).toBe(false);
   await act(async()=>{fireEvent.click(screen.getByText('Enable USB / system MIDI'));});
   fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'gp180'}});
@@ -348,9 +348,9 @@ it('uses the latest song tempo and channel when remote MIDI starts playback', as
   fireEvent.change(screen.getByLabelText('MIDI output'),{target:{value:'usb'}});
   fireEvent.change(screen.getByLabelText('MIDI input'),{target:{value:'remote'}});
   fireEvent.click(screen.getByLabelText('Send cues'));
-  fireEvent.click(screen.getByLabelText('Send song BPM to GP-180 on playback start'));
+  fireEvent.click(screen.getByLabelText('Send song BPM to GP-150 / GP-180 on playback start'));
   fireEvent.change(screen.getByLabelText('BPM'),{target:{value:'141'}});
-  fireEvent.change(screen.getByLabelText('GP-180 tempo channel'),{target:{value:'15'}});
+  fireEvent.change(screen.getByLabelText('GP-150 / GP-180 tempo channel'),{target:{value:'15'}});
   mocks.send.mockClear();
   await act(async()=>{input.dispatchEvent(Object.assign(new Event('midimessage'),{data:new Uint8Array([250])}));});
   expect(mocks.send.mock.calls.map(c=>c[0])).toContainEqual([0xbe,73,1]);
