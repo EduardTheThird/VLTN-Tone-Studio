@@ -1,19 +1,12 @@
 import { afterEach, expect, it } from 'vitest';
-import { getDriver, useDevice } from './device';
-import type { Gp150Driver } from './driver/gp150-driver';
-
+import { useDevice } from './device';
 afterEach(async () => { await useDevice.getState().disconnect(); });
-it.each(['webmidi', 'bluetooth'] as const)('uses the same memory-write gate as the %s transport', async mode => {
-  await useDevice.getState().connect('mock', { mockDevice: 'gp180' });
-  expect((getDriver() as Gp150Driver).mock).not.toBeNull();
-  // Only the simulator transport exists; the mode exercises the real-hardware policy.
-  useDevice.setState({ mode });
-  useDevice.getState().setGp180WriteUnlocked(false);
+it.each(['gp150', 'gp180'] as const)('allows %s USB writes and selection without an unlock', async model => {
+  await useDevice.getState().connect('mock', { mockDevice: model });
+  useDevice.setState({ mode: 'webmidi' });
   const preset = useDevice.getState().preset!.prst;
-  await expect(useDevice.getState().writePreset(1, preset)).rejects.toThrow(/hasn't been tested/);
-  useDevice.getState().setGp180WriteUnlocked(true);
   await useDevice.getState().writePreset(1, preset);
   expect(useDevice.getState().slot).toBe(1);
-  useDevice.getState().setGp180WriteUnlocked(false);
-  await expect(useDevice.getState().selectSlot(2)).rejects.toThrow(/read-only/i);
+  await useDevice.getState().selectSlot(2);
+  expect(useDevice.getState().slot).toBe(2);
 });

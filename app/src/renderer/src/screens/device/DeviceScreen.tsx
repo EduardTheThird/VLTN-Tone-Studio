@@ -4,7 +4,7 @@ import { notifyError } from "@/app/notify";
 import { host } from "@/host";
 import { profileFor } from "@shared/devices";
 import { useDevice } from "@/state/device";
-import { attachedDevice, pedalName, writesLocked } from "@/state/device-model";
+import { attachedDevice } from "@/state/device-model";
 import { useNav } from "@/state/nav";
 import { useCommand, useStatusHints, useStatusMessage } from "@/state/ui";
 import { BackupsPanel } from "./BackupsPanel";
@@ -31,7 +31,6 @@ export function DeviceScreen() {
 }
 
 function DevicePage() {
-  const gp180Unlocked = useDevice(s => s.gp180WriteUnlocked);
   const input = useDevice(
     useShallow((s) => ({
       status: s.status,
@@ -50,9 +49,8 @@ function DevicePage() {
   const checks = useChecks();
   const [guideOpen, setGuideOpen] = useState(view.openGuide);
   const guideRef = useRef<HTMLDivElement>(null);
-  const locked = view.kind === "connected" && writesLocked(input.device, input.mode, gp180Unlocked);
 
-  useStatusMessage({ led: view.led, text: locked ? `Pedal settings are read-only on the ${pedalName(input.device)}` : view.statusText });
+  useStatusMessage({ led: view.led, text: view.statusText });
 
   // The driver-problem state opens the Windows 11 guide by itself.
   useEffect(() => {

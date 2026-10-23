@@ -156,7 +156,7 @@ export function connectionView(input: GuidanceInput): ConnectionView {
     return base("connected", "on", mode === "mock" ? "Simulated" : mode === "bluetooth" ? "Bluetooth" : "USB", mode === "mock" ? "Simulated pedal" : mode === "bluetooth" ? "Connected over Bluetooth" : "Connected over USB", "since", {
       action: "none",
       actionLabel: null,
-      statusText: mode !== 'mock' && attached === 'gp180' ? 'GP-180 read-only inspection; editor writes are blocked' : `Pedal settings apply on the ${pedal} as you change them`,
+      statusText: `Pedal settings apply on the ${pedal} as you change them`,
       offline: false,
     });
 

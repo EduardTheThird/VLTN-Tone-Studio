@@ -53,7 +53,7 @@ it('shows connection loss inside the expanded reader',()=>{
 });
 const mocks = vi.hoisted(() => ({ send: vi.fn(), clear: vi.fn(), metronome: vi.fn(), mix: vi.fn(), bluetooth: null as null | {id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>}, position: 0, playAdvance: 0, source: { name: 'clock-test.wav', libraryId: undefined as string|undefined, audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } } }));
 vi.mock('@/song/store', () => ({ useSong: Object.assign((select: (s: unknown) => unknown) => select({source: mocks.source, stems: null}), {getState:()=>({source:mocks.source})}) }));
-vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock', gp180WriteUnlocked: false}) }));
+vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock'}) }));
 const playlist=vi.hoisted(()=>({active:false,queue:[] as string[],position:0,playlistPlaying:true,busy:false,index:{songs:[]},midiSession:null as {access:MIDIAccess|null;portId:string;inputId:string;armed:boolean;output:unknown}|null,rememberMidi:vi.fn(),pausePlaylist:vi.fn(),resumePlaylist:vi.fn()}));
 vi.mock('@/song/library', () => ({ useSongLibrary: Object.assign(() => playlist.active?playlist:({queue: [], position: -1, index: {songs: []}}), {getState:()=>playlist.active?playlist:({queue:[],position:-1,playlistPlaying:false})}) }));
 vi.mock('@/host', () => ({ host: {} }));

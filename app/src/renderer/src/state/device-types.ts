@@ -299,9 +299,6 @@ export interface DeviceState {
   lockedFeatures: readonly DeviceFeature[];
   /** Mirror of the "Experimental pedal commands" app setting (stored as gp50Extras) */
   gp50Extras: boolean;
-  /** Effective GP-180 write access of the current connection. */
-  gp180WriteUnlocked: boolean;
-  setGp180WriteUnlocked(on: boolean): void;
   /** SnapTone slot names (user + factory), when read */
   snapTones: SlotName[] | null;
   /** User IR slot names (1-based display), when read */

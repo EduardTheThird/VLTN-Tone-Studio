@@ -16,11 +16,6 @@ export interface AppSettings {
    * move, export read): off = the app uses full preset writes or hides the feature on a real GP-50. The simulator always has them.
    */
   gp50Extras: boolean;
-  /**
-   * GP-180 (real hardware, webmidi mode): disable the read-only safety guard so preset selection, edits, and uploads
-   * are forwarded to the physical pedal. Off by default. Enable only for testing; the pedal's memory can be changed.
-   */
-  gp180WriteUnlocked: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -30,7 +25,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backupBeforeWrite: true,
   checkForUpdates: true,
   gp50Extras: false,
-  gp180WriteUnlocked: false,
 };
 
 export interface AppApi {

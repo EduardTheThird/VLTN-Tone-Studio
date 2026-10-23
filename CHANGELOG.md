@@ -17,7 +17,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Changed
 - Bluetooth editor management is disabled after GP-180 handshake writes produced no notifications. Use USB for presets and settings; Bluetooth MIDI remains available for performance controls.
-- GP-180 USB editor sessions default to read-only. An explicit testing switch unlocks writes; hardware writes remain unverified. This supersedes the general support statement in 0.8.0 below.
+- Removed the temporary GP-180 read-only guard and write-unlock switch. USB editor operations are available normally for both GP-150 and GP-180; hardware write validation remains outstanding.
 
 ### Fixed
 - Performance MIDI now disarms on gross scheduling interruptions, binds arming to the exact output, preserves BLE note releases across duplicate stop cleanup, rejects cues past the audio end, and avoids echoed Stop feedback. Bluetooth writes time out and discard excessively late queued commands without retrying uncertain delivery.

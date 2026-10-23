@@ -33,11 +33,6 @@ export function gateFeatures(all: readonly DeviceFeature[], mode: DeviceMode, ex
   return { features: all.filter(open), locked: all.filter((f) => !open(f)) };
 }
 
-/** True when Tone Studio must not change `device`'s memory: a real GP-180 without an explicit session unlock. */
-export function writesLocked(device: DeviceKey | null, mode: DeviceMode, gp180WriteUnlocked = false): boolean {
-  return mode !== "mock" && device === "gp180" && !gp180WriteUnlocked;
-}
-
 /** Settings table of `device` in menu order (GP-5 family: protocol.mjs globalsFor; GP-200 family: gp200-globals.ts, per model; GP-150: gp150-globals.ts). */
 export function globalSpecsFor(device: DeviceKey | null): readonly SettingSpec[] {
   if (!device) return [];

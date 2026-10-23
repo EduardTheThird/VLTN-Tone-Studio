@@ -3,20 +3,13 @@ import { useDevice } from '@/state/device';
 import { parsePrst, blocksOfMask } from '@/gp150/lib/prst.mjs';
 import { BLOCKS } from '@/gp150/lib/protocol.mjs';
 import { gp150ModelByFxid } from '@/gp150/app/catalog-adapter';
-import { useAppSettings } from './settings-store';
-import { notifyError } from '@/app/notify';
 
-/** Inspect preset bytes; write access is a separate, explicit user action. */
+/** Inspect the last-read preset bytes and hardware assignments. */
 export function Gp180Inspection() {
   const preset = useDevice(s => s.preset);
   const status = useDevice(s => s.status);
   const mode = useDevice(s => s.mode);
   const device = useDevice(s => s.device);
-  const busy = useDevice(s => s.busy);
-  const applyWriteAccess = useDevice(s => s.setGp180WriteUnlocked);
-  const effectiveUnlocked = useDevice(s => s.gp180WriteUnlocked);
-  const { settings, patch: patchSettings } = useAppSettings();
-  const unlocked = status === 'connected' ? effectiveUnlocked : settings.gp180WriteUnlocked;
 
   const parsedPatch = useMemo(() => {
     if (preset?.device !== 'gp180') return null;
@@ -35,51 +28,15 @@ export function Gp180Inspection() {
     return model?.params.find(p => p.index === param)?.name ?? `Parameter ${param}`;
   };
 
-  const toggleUnlock = async () => {
-    const next = !unlocked;
-    try {
-      await patchSettings({ gp180WriteUnlocked: next });
-      if (status === 'connected') applyWriteAccess(next);
-    } catch (e) {
-      notifyError('Could not save GP-180 write setting', e);
-    }
-  };
-
   return (
     <section aria-label="GP-180 preset inspection" className="rounded-xl bg-faceplate p-6">
       <h2 className="text-xl font-bold">GP-180 preset inspection</h2>
-
-      {/* Write unlock toggle — shown only for real (non-mock) GP-180 */}
-      {mode !== 'mock' && (
-        <div className={`mt-3 rounded border p-3 ${unlocked ? 'border-amber-400/60 bg-amber-400/10' : 'border-seam'}`}>
-          <label className="flex cursor-pointer items-center gap-3">
-            <input
-              type="checkbox"
-              checked={unlocked}
-              disabled={!!busy || status === 'connecting'}
-              onChange={() => void toggleUnlock()}
-              aria-label="Unlock GP-180 writes"
-            />
-            <span className="font-semibold">
-              {unlocked ? '⚠ Writes unlocked (testing mode)' : 'Unlock writes for testing'}
-            </span>
-          </label>
-          <p className="mt-1 text-sm text-silkscreen-3">
-            {unlocked
-              ? 'The read-only guard is OFF. Preset selection, edits, saves, and uploads are forwarded to the physical GP-180. The pedal\'s memory can be changed. Disable when done testing.'
-              : 'Enable to remove the read-only safety guard. The app will allow preset selection, edits, and uploads on the real GP-180. Use only for testing — enables writes to pedal memory.'}
-          </p>
-          {unlocked && status === 'connected' && (
-            <p className="mt-1 text-xs text-amber-300">This connection has writes enabled. "Read pedal again" to reload preset list and edit buffer.</p>
-          )}
-        </div>
-      )}
 
       {parsedPatch && (
         <>
           <p className="mt-3 text-sm text-silkscreen-3">
             {mode === 'mock' ? 'Simulated data' : status === 'connected' ? 'Read from the connected pedal' : 'Last read; pedal disconnected'}
-            {' '}· {unlocked && mode !== 'mock' ? 'Writes enabled' : 'Read-only'} · Preset {String(parsedPatch.slot + 1).padStart(3, '0')} · {parsedPatch.tempo} BPM
+            {' '}· Preset {String(parsedPatch.slot + 1).padStart(3, '0')} · {parsedPatch.tempo} BPM
           </p>
           <div className="mt-4 grid gap-6 md:grid-cols-2">
             <div>

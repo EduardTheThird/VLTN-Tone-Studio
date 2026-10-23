@@ -59,11 +59,11 @@ Continuous USB clock also **failed the rig's performance test**. At an app setti
 
 After restoring Internal clock and TRS clock output On, a single **120 BPM** command on **channel 16 over USB** was confirmed to hold both pedals steady at 120 BPM. Continuous app clock was left off. This repeats the successful one-time command result using USB rather than Bluetooth.
 
-## Read-only inspection
+## USB editor access
 
-Real GP-180 USB editor sessions default to read-only. The transport allows handshake, ACK/resend, known queries and preset reads, while rejecting preset selection, edits, saves, uploads and unknown commands before transmission. **Unlock writes for testing** explicitly removes this restriction; it does not indicate that writes have passed hardware verification. Simulators remain editable.
+GP-150 and GP-180 USB editor sessions allow preset selection, edits, saves and uploads without a special write unlock. The temporary GP-180 read-only guard and saved unlock setting have been removed. Existing backup prompts, busy-state checks, protocol validation and write verification remain in place. Historical read-only audit results above describe the earlier testing session; physical editor writes have not been retested.
 
-Independent Performance MIDI output sends commands when explicitly configured and armed. The editor's read-only guard does not filter that output. Saved songs do not contain routing or arming state. Port preferences are saved globally on this computer; output remains disarmed when a song is manually reopened. An existing Bluetooth connection can be selected automatically when opening a song, but cue sending remains off until enabled.
+Independent Performance MIDI output sends commands when explicitly configured and armed. Performance MIDI arming is independent of editor access. Saved songs do not contain routing or arming state. Port preferences are saved globally on this computer; output remains disarmed when a song is manually reopened. An existing Bluetooth connection can be selected automatically when opening a song, but cue sending remains off until enabled.
 
 ## Troubleshooting and diagnostics
 

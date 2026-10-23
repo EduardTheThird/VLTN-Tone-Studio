@@ -12,7 +12,6 @@ import { GP200_EQ_DEFAULTS, clampGp200Eq } from "./gp200-globals";
 import { appEqValues, clampGp150Global, gp150EqIndex, gp150GlobalRecords, gp150GlobalSpec, type Gp150GlobalName, type Gp150Globals } from "./gp150-globals";
 import type { DeviceDriver, DriverEvent, DriverOptions, GlobalsSnapshot, ProgressOptions, SyncSnapshot } from "./types";
 import type { BleMidiConnection } from "@/bluetooth/connection";
-import { assertReadOnlyFrame } from "@/gp150/lib/read-only.mjs";
 
 /** Slot tables and tempo range, the same on the GP-150 and GP-180. */
 const PROFILE = profileFor("gp150");
@@ -49,8 +48,6 @@ export class Gp150Driver implements DeviceDriver {
   /** "exportPreset": mode-1 reads never select; "liveBpm": the 0x3020 settings record; "globalEq": the 0x2010 record; "modified": 0x3070. */
   readonly features: readonly DeviceFeature[] = ["exportPreset", "liveBpm", "globalEq", "modified"];
   readonly #session: Gp150Session;
-  #readOnly = false;
-  setReadOnly(value: boolean): void { this.#readOnly = value; }
   readonly #listeners = new Set<(e: DriverEvent) => void>();
   /** The pedal's 32 Global EQ values, as last read or set (null until read). */
   #eq: number[] | null = null;
@@ -65,22 +62,14 @@ export class Gp150Driver implements DeviceDriver {
   private constructor(
     transport: Gp150Transport,
     readonly portName: string,
-    opts: Pick<DriverOptions, "log" | "readOnly"> & { timing?: Partial<Gp150Timing> },
+    opts: Pick<DriverOptions, "log"> & { timing?: Partial<Gp150Timing> },
     /** The simulator behind a mock connection (tests and diagnostics), else null */
     readonly mock: MockGp150 | null = null,
     model?: DeviceKey,
   ) {
     const named = deviceForPortName(portName);
     this.#model = model ?? (named && profileFor(named).family === "gp150" ? named : "gp150");
-    // Real GP-180 inspection is read-only until hardware writes can be validated separately.
-    this.#readOnly = opts.readOnly ?? (!mock && this.#model === 'gp180');
-    const guarded: Gp150Transport = {
-      name: transport.name,
-      send: bytes => { if (this.#readOnly) assertReadOnlyFrame(bytes); return transport.send(bytes); },
-      onMessage: callback => transport.onMessage(callback),
-      close: () => transport.close(),
-    };
-    this.#session = new Gp150Session(guarded, { log: opts.log, timing: opts.timing });
+    this.#session = new Gp150Session(transport, { log: opts.log, timing: opts.timing });
     this.#session.addEventListener("message", (ev) => {
       for (const e of this.#toDriverEvents((ev as Event & { message: Gp150Event }).message)) this.#emit(e);
     });

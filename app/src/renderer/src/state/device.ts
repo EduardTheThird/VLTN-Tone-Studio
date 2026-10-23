@@ -8,7 +8,7 @@ import { pedalOnUsb } from "@shared/host/device";
 import { refineConnectionError, toConnectionError } from "./connection-error";
 import { DIR_LABEL, MidiLogDecoder, hex, midiLog, pushMidiLog } from "./midi-log";
 import { deviceLogEntries, sessionLog } from "./session-log";
-import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault, writesLocked } from "./device-model";
+import { DEFAULT_DEVICE, gateFeatures, isGp5Family, pedalName, pedalNameOrBoth, profileOrDefault } from "./device-model";
 import { cacheNames, loadCachedNames, loadDevice, loadLastConnected, saveDevice, saveLastConnected } from "./device-storage";
 import { openPort, simulate } from "./driver";
 import { clampGp200Eq } from "./driver/gp200-globals";
@@ -80,12 +80,6 @@ export const useDevice = create<DeviceState>((set, get) => {
   const requireIdle = () => {
     const busy = get().busy;
     if (busy) throw new DeviceError("busy", `Wait until the ${busy.kind} finishes`);
-  };
-  /** Memory writes (presets, names, settings, uploads) stop here on a real pedal of a model not tested yet. */
-  const requireWritable = () => {
-    const { device, mode } = get();
-    if (writesLocked(device, mode, get().gp180WriteUnlocked))
-      throw new DeviceError("unsafe", `Tone Studio doesn't change the ${pedalName(device)}'s memory yet: it hasn't been tested on one. Reading and live edits work.`);
   };
   const guardUnsaved = (what: string) => {
     if (get().unsavedChanges > 0) throw new DeviceError("unsaved", `${what} switches presets on the pedal; save or discard the unsaved changes first`);
@@ -320,7 +314,7 @@ export const useDevice = create<DeviceState>((set, get) => {
     driver = null;
     sends.clear();
     void d?.close().catch(() => {});
-    set({ status: "disconnected", gp180WriteUnlocked: false, portName: null, busy: null, connectedAt: null, disconnectReason: "lost", features: [], lockedFeatures: [] });
+    set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "lost", features: [], lockedFeatures: [] });
     if (!userDisconnected && get().mode === "webmidi" && reconnects < MAX_RECONNECTS) {
       reconnects++;
       setTimeout(() => void get().connect("webmidi").catch(() => {}), 1000 * reconnects);
@@ -329,7 +323,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
   /** Run an upload with busy progress, then re-read the slot table it changed. */
   const upload = async (kind: "snaptone" | "userir", label: string, send: (onProgress: (done: number, total: number) => void) => Promise<string>, reread: () => Promise<unknown>, onProgress?: (f: number) => void) => {
-    requireWritable();
     requireIdle();
     set({ busy: { kind, progress: 0, label } });
     try {
@@ -352,7 +345,6 @@ export const useDevice = create<DeviceState>((set, get) => {
    * the active slot while it has unsaved edits, then re-reads the names and, when it was affected, the active preset.
    */
   const manage = async (d: DeviceDriver, label: string, affected: number[], run: (progress: (f: number) => void) => Promise<void>) => {
-    requireWritable();
     requireIdle();
     const active = get().slot;
     const touchesActive = active !== null && affected.includes(active);
@@ -417,7 +409,6 @@ export const useDevice = create<DeviceState>((set, get) => {
     features: [],
     lockedFeatures: [],
     gp50Extras: false,
-    gp180WriteUnlocked: false,
     snapTones: null,
     userIRs: null,
     busy: null,
@@ -456,7 +447,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       const d = driver;
       driver = null;
       await d?.close().catch(() => {});
-      set({ status: "disconnected", error: null, portName: null, disconnectReason: "user", gp180WriteUnlocked: false });
+      set({ status: "disconnected", error: null, portName: null, disconnectReason: "user" });
     },
 
     clearLastError() {
@@ -467,12 +458,6 @@ export const useDevice = create<DeviceState>((set, get) => {
       return get().features.includes(feature);
     },
 
-    setGp180WriteUnlocked(on) {
-      requireIdle();
-      if (get().device !== 'gp180' || get().mode === 'mock') return;
-      requireDriver().setReadOnly?.(!on);
-      set({ gp180WriteUnlocked: on });
-    },
     setGp50Extras(on) {
       set({ gp50Extras: on });
       setFeatures(isLive() ? driver : null, get().mode, on);
@@ -487,20 +472,19 @@ export const useDevice = create<DeviceState>((set, get) => {
       userDisconnected = false;
       const attempt = ++connectAttempt;
       const cancelled = () => attempt !== connectAttempt;
-      set({ mode, status: "connecting", error: null, portName: null, gp180WriteUnlocked: false });
+      set({ mode, status: "connecting", error: null, portName: null });
       // OS-side checks (USB, driver, Suite) run alongside; they sharpen errors and feed the Diagnostics card.
       const hostCheck = mode === "webmidi" ? get().checkHost() : Promise.resolve(null);
       const driverOpts = { log: onLog, onDisconnect: onPortLost };
       try {
         const settings = await host.app.getSettings().catch(() => null);
         if (settings) set({ gp50Extras: settings.gp50Extras });
-        const writeUnlocked = settings?.gp180WriteUnlocked === true;
         let d: DeviceDriver;
         if (mode === "mock") {
           if (opts?.mockDevice) mockDevice = opts.mockDevice;
           d = await simulate(mockDevice, driverOpts);
         } else {
-          d = await openPort(settings?.portPattern || undefined, { ...driverOpts, readOnly: writeUnlocked ? false : undefined });
+          d = await openPort(settings?.portPattern || undefined, driverOpts);
         }
         if (cancelled()) {
           await d.close();
@@ -509,14 +493,13 @@ export const useDevice = create<DeviceState>((set, get) => {
         // The port names the model before it identifies (a sync can take minutes): copy talks about this pedal, not
         // the remembered one. A failed attempt keeps it for the error copy and the report.
         set({ portName: d.portName });
-        set({ gp180WriteUnlocked: writeUnlocked });
         await attach(d, mode);
       } catch (e) {
         if (cancelled()) return;
         // attach() and the factory throw a ConnectionError; WebMIDI failures are a Gp5ConnectError (an Error) that still needs mapping.
         const base = e instanceof Error ? toConnectionError(e, false, get().device) : (e as ConnectionError);
         const error = refineConnectionError(base, await hostCheck);
-        set({ status: "error", error, gp180WriteUnlocked: false });
+        set({ status: "error", error });
         if (mode === "webmidi" && (error.code === "not-found" || error.code === "bootloader")) startWatch();
         throw e;
       }
@@ -529,7 +512,7 @@ export const useDevice = create<DeviceState>((set, get) => {
       driver = null;
       sends.clear();
       await d?.close().catch(() => {});
-      set({ status: "disconnected", gp180WriteUnlocked: false, portName: null, busy: null, connectedAt: null, disconnectReason: "user", features: [], lockedFeatures: [] });
+      set({ status: "disconnected", portName: null, busy: null, connectedAt: null, disconnectReason: "user", features: [], lockedFeatures: [] });
     },
 
     async sync() {
@@ -654,7 +637,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async rename(slot, name) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       // A GP-200 renames its active slot by saving the edit buffer under the new name: unsaved edits would go with it.
       const p = get().preset;
@@ -671,7 +653,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async writePreset(slot, prst, opts) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       const label = `Writing slot ${slot}`;
       set({ busy: { kind: "write", progress: 0, label } });
@@ -754,7 +735,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     setGlobal(name, value) {
       const d = requireDriver();
-      requireWritable();
       const v = d.clampGlobal(name, value);
       set({ globals: { ...(get().globals ?? {}), [name]: v } });
       touch(`global:${name}`);
@@ -762,7 +742,6 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     setGlobalEq(index, value) {
-      requireWritable();
       const d = requireFeature("globalEq");
       const eq = get().globalEq;
       if (!eq) return;
@@ -799,7 +778,6 @@ export const useDevice = create<DeviceState>((set, get) => {
 
     async restoreAll(entries, opts) {
       const d = requireDriver();
-      requireWritable();
       requireIdle();
       guardUnsaved("A restore");
       const slots = entries.map((e) => e.slot);

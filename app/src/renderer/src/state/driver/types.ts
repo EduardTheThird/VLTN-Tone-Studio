@@ -68,7 +68,6 @@ export interface ProgressOptions {
  * The optional members exist only for the `features` the connected model lists; the store checks `features` first.
  */
 export interface DeviceDriver {
-  setReadOnly?(value: boolean): void;
   /** MIDI port name, or the simulator's */
   readonly portName: string;
   /** Connected model; null until identified */
@@ -142,8 +141,6 @@ export interface DeviceDriver {
 
 /** What the factory needs to open a driver. */
 export interface DriverOptions {
-  /** GP-150 family inspection: allow only handshake, acknowledgements and known reads. */
-  readOnly?: boolean;
   /** MIDI log hook: every frame in and out (the monitor decodes it) */
   log: (dir: string, bytes: Uint8Array, decoded?: unknown) => void;
   /** The port went away (unplugged, switched off) */
