@@ -5,6 +5,18 @@ import { useSong } from '@/song/store';
 import { useSongLibrary } from '@/song/library';
 import { useBluetooth, type BleMidiConnection } from '@/bluetooth/connection';
 import { PerformancePanel } from './PerformancePanel';
+import type { SchedulerConfig, ScheduledMessage } from '@/song/performance/midi-scheduler';
+// jsdom has no browser Worker; exercise the production schedule through the bridge mock.
+vi.mock('@/song/performance/midi-scheduler-client',async()=>{
+  const {MidiSchedule}=await import('@/song/performance/midi-scheduler');
+  const now=()=>performance.timeOrigin+performance.now();
+  return {midiNow:now,prepareMidiScheduler:()=>({worker:{terminate:vi.fn()},ready:Promise.resolve(),cancel:vi.fn()}),startMidiScheduler:(config:SchedulerConfig,send:(message:ScheduledMessage)=>void,fault:(message:string)=>void)=>{
+    const schedule=new MidiSchedule(config,now(),reply=>{if(reply.type==='fault')fault(reply.error);else if(reply.type==='batch')reply.messages.forEach(send);});
+    schedule.tick(now());const timer=setInterval(()=>schedule.tick(now()),20);
+    return {stop(){schedule.stop();clearInterval(timer);},sync(position:number){schedule.sync(position,now(),now());}};
+  }};
+});
+
 
 const mock=vi.hoisted(()=>({audio:vi.fn(),index:vi.fn(),settings:vi.fn(),send:vi.fn(),clear:vi.fn(),players:[] as {isPlaying:boolean;position:number;duration:number;onEnded:(()=>void)|null;end():void}[]}));
 vi.mock('@/host',()=>({host:{song:{library:{index:mock.index,audio:mock.audio,settings:mock.settings}}}}));

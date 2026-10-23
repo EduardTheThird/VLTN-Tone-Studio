@@ -76,6 +76,7 @@ function PerformanceSession() {
   const cursor = useRef(-0.001), activeLine = useRef<HTMLParagraphElement>(null);
   const playRequest = useRef(0), playPending = useRef(false);
   const startTempo = useRef<number[][] | null>(null);
+  const startPosition = useRef<number | null>(null);
   const noteChannels = useRef(new Set<number>());
   const parsed = useMemo(() => { try { return { cues: parseChart(chart), error: '' }; } catch (e) { return { cues: [], error: String(e) }; } }, [chart]);
   const active = parsed.cues.findLastIndex(c => c.time <= time);
@@ -87,6 +88,7 @@ function PerformanceSession() {
     useMidiDiagnostics.getState().record({label,intended,queued,lateMs:Math.max(0,queued-intended),bytes});
   };
   const panic = () => {
+    startPosition.current = null;
     scheduler.current?.stop(); scheduler.current = null;
     if (!output || clearedOutput.current === output) return;
     // Pause handlers and React lifecycle cleanup can both run for one stop.
@@ -133,9 +135,11 @@ function PerformanceSession() {
         if(request!==playRequest.current)return;
         readyWorker.current=warm.worker;prepared.current=null;
       }
+      const requestedPosition = player.position >= player.duration ? 0 : Math.max(0, player.position);
       await player.play();
       if (request !== playRequest.current) { player.pause();readyWorker.current?.terminate();readyWorker.current=null; return; }
       startTempo.current = tempoMessages;
+      startPosition.current = armed ? requestedPosition : null;
       cursor.current = Math.max(0, player.position) - 0.001;
       setPlaying(true);
     } catch (e) {
@@ -223,7 +227,7 @@ function PerformanceSession() {
   },[playing,player]);
   useEffect(() => {
     if (!playing || !player) return;
-    if(!armed || output?.state!=='connected') {startTempo.current=null;readyWorker.current?.terminate();readyWorker.current=null;return;}
+    if(!armed || output?.state!=='connected') {startPosition.current=null;startTempo.current=null;readyWorker.current?.terminate();readyWorker.current=null;return;}
     const fault = (message:string) => {
       useMidiDiagnostics.getState().fault(message);
       panic(); setArmed(false); fail(message);
@@ -231,7 +235,11 @@ function PerformanceSession() {
     };
     try {
       const position = player.position;
-      const handle = startMidiScheduler({cues:parsed.cues,position,duration:player.duration,origin:midiNow()-position*1000,bpm,clock,tempo:startTempo.current},message=>{
+      // Select opening cues from the requested offset, not a later React render.
+      // Keep the live audio clock as the origin so overdue starts still fault.
+      const cuePosition = startPosition.current ?? position;
+      startPosition.current = null;
+      const handle = startMidiScheduler({cues:parsed.cues,position:cuePosition,duration:player.duration,origin:midiNow()-position*1000,bpm,clock,tempo:startTempo.current},message=>{
         sendPerformance(message.bytes,message.due-performance.timeOrigin,message.label);
       },fault,readyWorker.current??undefined);
       readyWorker.current=null;
@@ -333,7 +341,10 @@ function PerformanceSession() {
     <MidiHealth cues={parsed.cues} duration={player?.duration ?? 0} clock={clock} tempoChannel={midiConfig.tempoOnStart ? midiConfig.tempoChannel : undefined} outputName={portId === 'bluetooth-midi' ? `Bluetooth ${output?.name || ''}` : output?.name || undefined} parseError={parsed.error} />
     <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
     {player && <div aria-label="Performance mixer" className="flex flex-wrap gap-3">{player.names.map(name => <div key={name} className="flex items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm"><label><input type="checkbox" aria-label={`${stems ? name : 'Song'} enabled`} checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {stems ? name : 'Song'}</label><input aria-label={`${stems ? name : 'Song'} volume`} className="w-24" type="range" min="0" max="1" step="0.01" value={mix[name].volume} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))} /><span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span></div>)}</div>}
-    <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={saveChart} transport={<>
+    <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={saveChart} status={<>
+      <p role="status">MIDI: {output?.state === 'connected' ? `${output.name} · ${armed ? 'Cues armed' : 'Cues disarmed'}` : 'Output disconnected · Cues disarmed'}</p>
+      {(error || parsed.error) && <p role="alert" className="text-red-400">{error || parsed.error}</p>}
+    </>} transport={<>
       <Button disabled={!player || !!parsed.error || library.busy} onClick={() => playing ? pause() : startPlayback()}>{playing ? 'Pause' : queued && library.queue.length > 1 ? 'Play playlist' : 'Play song'}</Button>
       <Button variant="outline" disabled={!player} onClick={() => void seek(0)}>Rewind</Button>
       <input aria-label="Expanded song position" className="min-w-32 flex-1" type="range" min="0" max={player?.duration ?? 0} step="0.1" value={time} onChange={e => void seek(Number(e.target.value))} />
@@ -384,6 +395,5 @@ function PerformanceSession() {
     </div>
     </details>
     <ChordVoicings chord={selectedChord} onClose={() => setSelectedChord(null)} />
-    {(error || parsed.error) && <p role="alert" className="text-red-400">{error || parsed.error}</p>}
   </section>;
 }

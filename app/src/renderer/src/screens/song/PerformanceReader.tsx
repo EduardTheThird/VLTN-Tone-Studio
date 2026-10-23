@@ -12,7 +12,7 @@ function formatted(text: string) {
     part.startsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith('*') ? <em key={i}>{part.slice(1, -1)}</em> : /^\[[A-G]/.test(part) ? null : part);
 }
 
-export function PerformanceReader({ chart, lyrics, chords, time, shift, title, transport, onEditStart, onSaveChart }: { chart: string; lyrics: string; chords: Chord[]; time: number; shift: number; title: string; transport?: ReactNode; onEditStart?: () => void; onSaveChart?: (chart: string) => void }) {
+export function PerformanceReader({ chart, lyrics, chords, time, shift, title, transport, status, onEditStart, onSaveChart }: { chart: string; lyrics: string; chords: Chord[]; time: number; shift: number; title: string; transport?: ReactNode; status?: ReactNode; onEditStart?: () => void; onSaveChart?: (chart: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const showCommands = useMidiConfiguration(s => s.showCommands);
@@ -58,6 +58,7 @@ export function PerformanceReader({ chart, lyrics, chords, time, shift, title, t
       <Button ref={expandButton} variant="outline" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Close expanded view' : 'Expand performance view'}</Button>
     </div>
     {expanded && <div className="mb-3 flex flex-wrap items-center gap-3">{transport}</div>}
+    {status && <div className="mb-3 shrink-0 space-y-1 text-sm" aria-label="Performance status">{status}</div>}
     {editing && onSaveChart ? <PerformanceEditor chart={chart} lyrics={lyrics} chords={chords} time={time} onCancel={() => setEditing(false)} onSave={next => { onSaveChart(next); setEditing(false); }} /> : <div ref={viewport} tabIndex={0} aria-label="Combined lyrics and chords" className={expanded ? 'relative min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg p-6' : 'relative h-[28rem] overflow-y-auto overscroll-contain rounded-lg p-4'} style={{ fontSize: size, lineHeight: 1.6 }}>
       {lines.length ? <div className="mx-auto max-w-4xl pb-48">{lines.map((line, index) => <div key={index} ref={index === active ? current : undefined} aria-current={index === active ? 'true' : undefined} className={'mb-5 rounded-lg border-l-4 px-5 py-3 transition-colors ' + (index === active ? 'border-sky-400 bg-sky-400/10 text-foreground' : 'border-transparent text-silkscreen-3')}>
         {!!line.chords.length && <div aria-label="Chords" className="flex flex-wrap gap-x-6 font-semibold text-sky-400">{line.chords.map((chord, i) => chord.name === 'N' ? <span key={i}>—</span> : <button key={i} type="button" aria-label={`Show ${transpose(`[${chord.name}]`, shift).slice(1, -1)} guitar voicings`} title={(Number.isFinite(chord.time) ? lrcTime(chord.time) + ' · ' : '') + 'Show guitar tabs'} onClick={event => { chordButton.current = event.currentTarget; setSelectedChord(transpose(`[${chord.name}]`, shift).slice(1, -1)); }} className={'cursor-pointer rounded px-1 text-left hover:bg-sky-400/15 focus-visible:outline-2 focus-visible:outline-sky-400 ' + (changes[activeChord] === chord ? 'bg-sky-400/20 text-sky-300 ring-1 ring-sky-400' : '')}>{transpose(`[${chord.name}]`, shift).slice(1, -1)}</button>)}</div>}
