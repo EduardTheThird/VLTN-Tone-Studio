@@ -39,6 +39,7 @@ export class BleMidiConnection {
   private queued = 0;
   private decoder = new BleMidiDecoder();
   private diagnostics: BluetoothDiagnostics;
+  private timingGeneration = 0;
   private lastClockWrite: number | null = null;
   private constructor(readonly device: BleDevice, private characteristic: Characteristic) {
     this.diagnostics = { device: this.name, writes: 0, notifications: 0, messages: 0 };
@@ -112,6 +113,7 @@ export class BleMidiConnection {
           const previous=this.diagnostics.performanceTiming;
           this.record({performanceTiming:{commands:(previous?.commands??0)+1,maxLateMs:Math.max(previous?.maxLateMs??0,performance.now()-timestamp),maxWriteMs:previous?.maxWriteMs??0}});
         }
+        const timingGeneration=this.timingGeneration;
         for (const packet of packets) {
           // Once started, complete the message so clear() cannot leave a partial SysEx.
           if (this.closed) return;
@@ -139,8 +141,8 @@ export class BleMidiConnection {
             ]);
           } finally { if (timeout !== undefined) clearTimeout(timeout); }
           if (this.closed) return;
-          if (!editor) this.record({performanceTiming:{...this.diagnostics.performanceTiming!,maxWriteMs:Math.max(this.diagnostics.performanceTiming!.maxWriteMs,performance.now()-started)}});
-          this.record({ writes: this.diagnostics.writes + 1, ...(clock ? { clockTiming: { ...this.diagnostics.clockTiming!, maxWriteMs: Math.max(this.diagnostics.clockTiming!.maxWriteMs, performance.now() - started) } } : {}) });
+          if (!editor && timingGeneration===this.timingGeneration) this.record({performanceTiming:{...this.diagnostics.performanceTiming!,maxWriteMs:Math.max((this.diagnostics.performanceTiming?.maxWriteMs ?? 0),performance.now()-started)}});
+          this.record({ writes: this.diagnostics.writes + 1, ...(clock && timingGeneration===this.timingGeneration ? { clockTiming: { ...this.diagnostics.clockTiming!, maxWriteMs: Math.max((this.diagnostics.clockTiming?.maxWriteMs ?? 0), performance.now() - started) } } : {}) });
         }
       }).catch(e => {
         // A rejected write can arrive after this session was closed and replaced.
@@ -152,6 +154,11 @@ export class BleMidiConnection {
     const delay = timestamp - performance.now();
     if (delay <= 1) enqueue();
     else { const timer = setTimeout(() => { this.timers.delete(timer); if (!this.closed && generation === this.generation) enqueue(); }, delay); this.timers.add(timer); }
+  }
+  resetTiming() {
+    this.timingGeneration++;
+    this.lastClockWrite = null;
+    this.record({performanceTiming:undefined,clockTiming:undefined});
   }
   clear() { this.lastClockWrite = null; this.generation++; for (const timer of this.timers) clearTimeout(timer); this.timers.clear(); }
   close() {
@@ -185,4 +192,11 @@ export async function connectBluetooth(): Promise<BleMidiConnection> {
     useBluetooth.setState({ error: `Bluetooth connection failed: ${detail}` });
     throw e;
   } finally { useBluetooth.setState({ connecting: false }); }
+}
+
+/** Reset timing only; preserve transport counters, queued messages and connection state. */
+export function resetBluetoothTiming() {
+  const {connection,diagnostics}=useBluetooth.getState();
+  if(connection)connection.resetTiming();
+  else if(diagnostics)useBluetooth.setState({diagnostics:{...diagnostics,performanceTiming:undefined,clockTiming:undefined}});
 }

@@ -4,7 +4,7 @@ import { midiPreflight } from '@/song/performance/midi-preflight';
 import { PEDAL_PROFILES } from '@/song/performance/pedal-profiles';
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from '@/song/performance/pedal-library';
 import { useMidiDiagnostics } from '@/song/performance/midi-diagnostics';
-import { useBluetooth } from '@/bluetooth/connection';
+import { useBluetooth, resetBluetoothTiming } from '@/bluetooth/connection';
 export function MidiHealth({cues,duration,clock,tempoChannel,outputName,parseError}:{cues:Cue[];duration:number;clock:boolean;tempoChannel?:number;outputName?:string;parseError:string}) {
   const library=usePedalLibrary();
   const report=useMemo(()=>midiPreflight(cues,{duration,clock,tempoChannel,outputName,pedals:[...PEDAL_PROFILES,...library.profiles].map(p=>({name:p.name,channel:library.channels[p.id]??DEFAULT_PEDAL_CHANNELS[p.id]??1}))}),[cues,duration,clock,tempoChannel,outputName,library.channels,library.profiles]);
@@ -21,8 +21,8 @@ export function MidiHealth({cues,duration,clock,tempoChannel,outputName,parseErr
       <p>Times measure app dispatch to the selected MIDI API, not pedal delivery. Worker scheduling still crosses a window bridge for Web MIDI/Bluetooth. Rendering or driver stalls can delay it; interrupted batches are discarded. Counters span songs in this app session.</p>
       {timing.lastFailure&&<p>Last failure: {timing.lastFailure}</p>}
       {outputName && /bluetooth/i.test(outputName) && ble?.performanceTiming&&<p>Bluetooth writes: {ble.performanceTiming.commands} · Worst queue lateness: {ble.performanceTiming.maxLateMs.toFixed(1)} ms · Longest packet write: {ble.performanceTiming.maxWriteMs.toFixed(1)} ms</p>}
-      <button className="rounded border border-seam px-3 py-1" onClick={()=>{useMidiDiagnostics.getState().reset();setTiming(useMidiDiagnostics.getState());}}>Reset timing counters</button>
-      <div className="max-h-40 overflow-auto"><table className="w-full text-left" aria-label="Recent MIDI dispatch"><thead><tr><th>Action</th><th>Due (app s)</th><th>Queued (app s)</th><th>Late (ms)</th><th>MIDI bytes</th></tr></thead><tbody>{timing.recent.map((event,i)=><tr key={i}><td>{event.label}</td><td>{((event.intended-performance.timeOrigin)/1000).toFixed(3)}</td><td>{((event.queued-performance.timeOrigin)/1000).toFixed(3)}</td><td>{event.lateMs.toFixed(1)}</td><td>{event.bytes.map(b=>b.toString(16).padStart(2,'0')).join(' ')}{(event.byteCount??0)>event.bytes.length?` � (${event.byteCount} bytes)`:''}</td></tr>)}</tbody></table></div>
+      <button className="rounded border border-seam px-3 py-1" onClick={()=>{useMidiDiagnostics.getState().reset();resetBluetoothTiming();setBle(useBluetooth.getState().diagnostics);setTiming(useMidiDiagnostics.getState());}}>Reset timing counters</button>
+      <div className="max-h-40 overflow-auto"><table className="w-full text-left" aria-label="Recent MIDI dispatch"><thead><tr><th>Action</th><th>Due (app s)</th><th>Queued (app s)</th><th>Late (ms)</th><th>MIDI bytes</th></tr></thead><tbody>{timing.recent.map((event,i)=><tr key={i}><td>{event.label}</td><td>{((event.intended-performance.timeOrigin)/1000).toFixed(3)}</td><td>{((event.queued-performance.timeOrigin)/1000).toFixed(3)}</td><td>{event.lateMs.toFixed(1)}</td><td>{event.bytes.map(b=>b.toString(16).padStart(2,'0')).join(' ')}{(event.byteCount??0)>event.bytes.length?` ... (${event.byteCount} bytes)`:''}</td></tr>)}</tbody></table></div>
     </div>
   </details>;
 }

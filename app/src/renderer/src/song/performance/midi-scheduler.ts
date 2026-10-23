@@ -5,7 +5,7 @@ export interface SchedulerConfig {
   cues: Cue[]; position: number; duration: number; origin: number;
   bpm: number; clock: boolean; tempo: number[][] | null;
 }
-export type SchedulerReply = { type: 'batch'; messages: ScheduledMessage[] } | { type: 'fault'; error: string } | { type: 'ready' };
+export type SchedulerReply = { type: 'batch'; messages: ScheduledMessage[] } | { type: 'fault'; error: string } | { type: 'ready' } | { type: 'started' } | { type: 'heartbeat' };
 export type SchedulerRequest = { type: 'start'; config: SchedulerConfig } | { type: 'sync'; position: number; at: number } | { type: 'stop' };
 
 /** Independent of React and audio analysis. All times are epoch milliseconds. */

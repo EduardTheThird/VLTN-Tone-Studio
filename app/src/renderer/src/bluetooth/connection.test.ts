@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BleMidiConnection, connectBluetooth, type BleDevice, useBluetooth } from './connection';
+import { BleMidiConnection, connectBluetooth, resetBluetoothTiming, type BleDevice, useBluetooth } from './connection';
 import { BleMidiDecoder } from './ble-midi';
 
 function fixture() {
@@ -183,4 +183,27 @@ it('offers both GP-150 and GP-180 Bluetooth names without requiring service adve
   expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({filters:expect.arrayContaining([
     {namePrefix:'GP-150'},{namePrefix:'GP150'},{namePrefix:'GP-180'},{namePrefix:'GP180'},
   ])}));
+});
+
+it('resets live and disconnected timing without clearing scheduled messages',async()=>{
+ vi.useFakeTimers();const f=fixture(),connection=await BleMidiConnection.open(f.device);
+ useBluetooth.setState({connection});connection.send([248]);await settle();
+ connection.send([192,1],performance.now()+100);
+ resetBluetoothTiming();expect(useBluetooth.getState().diagnostics?.clockTiming).toBeUndefined();
+ await vi.advanceTimersByTimeAsync(110);await settle();
+ expect(useBluetooth.getState().diagnostics?.performanceTiming?.commands).toBe(1);
+ expect(useBluetooth.getState().diagnostics?.writes).toBe(2);
+ connection.close();resetBluetoothTiming();
+ expect(useBluetooth.getState().diagnostics?.performanceTiming).toBeUndefined();
+ expect(useBluetooth.getState().diagnostics?.writes).toBe(2);
+});
+it('does not restore old timing when a pending write completes after reset',async()=>{
+ vi.useFakeTimers();const f=fixture(),connection=await BleMidiConnection.open(f.device);
+ useBluetooth.setState({connection});
+ f.characteristic.writeValueWithoutResponse.mockImplementationOnce(()=>new Promise<void>(resolve=>setTimeout(resolve,50)));
+ connection.send([248]);await settle();resetBluetoothTiming();
+ await vi.advanceTimersByTimeAsync(60);await settle();
+ expect(useBluetooth.getState().diagnostics).toMatchObject({writes:1});
+ expect(useBluetooth.getState().diagnostics?.performanceTiming).toBeUndefined();
+ expect(useBluetooth.getState().diagnostics?.clockTiming).toBeUndefined();
 });

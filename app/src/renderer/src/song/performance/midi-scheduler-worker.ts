@@ -6,7 +6,8 @@ self.onmessage=(event:MessageEvent<SchedulerRequest>)=>{
   if(request.type==='stop' || request.type==='start') { if(timer!==undefined)clearInterval(timer);schedule?.stop();schedule=null; }
   if(request.type==='start') {
     schedule=new MidiSchedule(request.config,now(),reply=>self.postMessage(reply));
+    self.postMessage({type:'started'});
     schedule.tick(now());timer=setInterval(()=>schedule?.tick(now()),20);
-  } else if(request.type==='sync') schedule?.sync(request.position,request.at,now());
+  } else if(request.type==='sync') {schedule?.sync(request.position,request.at,now());self.postMessage({type:'heartbeat'});}
 };
 self.postMessage({type:'ready'});

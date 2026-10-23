@@ -41,3 +41,20 @@ it('cancels an unconsumed warming worker without leaving a startup timer',async(
   vi.useFakeTimers();vi.stubGlobal('Worker',FakeWorker);const warm=prepareMidiScheduler();
   warm.cancel();await expect(warm.ready).rejects.toThrow('cancelled');expect(vi.getTimerCount()).toBe(0);
 });
+
+it('rejects a prepared worker that failed after readiness',async()=>{
+ vi.stubGlobal('Worker',FakeWorker);const warm=prepareMidiScheduler();const worker=FakeWorker.latest;
+ worker.reply({type:'ready'});await warm.ready;worker.onerror?.();
+ await expect(warm.ready).rejects.toThrow('failed before playback');
+ expect(()=>startMidiScheduler({cues:[],duration:1,position:0,origin:midiNow(),bpm:120,clock:false,tempo:null},vi.fn(),vi.fn(),warm.worker)).toThrow('failed before playback');
+ expect(worker.postMessage).not.toHaveBeenCalled();
+});
+it('requires start acknowledgement and detects a silent worker after starting',()=>{
+ vi.useFakeTimers();const first=setup();vi.advanceTimersByTime(301);
+ expect(first.fault).toHaveBeenCalledWith(expect.stringContaining('acknowledge'));
+ expect(vi.getTimerCount()).toBe(0);
+ const second=setup();second.worker.reply({type:'started'});
+ for(let i=0;i<10;i++){vi.advanceTimersByTime(100);second.worker.reply({type:'heartbeat'});}
+ expect(second.fault).not.toHaveBeenCalled();vi.advanceTimersByTime(301);
+ expect(second.fault).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
+});
