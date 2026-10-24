@@ -184,7 +184,11 @@ app.whenReady().then(async () => {
   session.defaultSession.setBluetoothPairingHandler((details, callback) => {
     if (!win || details.frame !== win.webContents.mainFrame) return callback({ confirmed: false });
     if (details.pairingKind === 'providePin') {
-      void dialog.showMessageBox(win, { type: 'info', message: 'Pair this MIDI device in Windows Bluetooth settings first', detail: 'The device requests a PIN. Complete PIN entry in system settings, then retry Bluetooth MIDI in Tone Studio.' });
+      void dialog.showMessageBox(win, {
+        type: 'info',
+        message: 'Pair this MIDI device in Windows Bluetooth settings first',
+        detail: 'The device requests a PIN. Complete PIN entry in system settings, then retry Bluetooth MIDI in Tone Studio.',
+      });
       return callback({ confirmed: false });
     }
     void dialog.showMessageBox(win, {
