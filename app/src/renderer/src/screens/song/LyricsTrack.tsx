@@ -5,17 +5,16 @@ import { cancelLyrics, generateLyrics, useLyricsJobs } from "@/song/performance/
 import { hasSignal } from "@/song/performance/sources";
 import { LYRIC_LANGUAGES, lyricsOptions, type LyricsLanguage } from "@/song/performance/lyrics-options";
 import { host } from "@/host";
+import { useActiveIndex } from "@/song/performance/playback-clock";
 
 export function LyricsTrack({
   audio,
   storageKey,
-  time,
   onTextChange,
   follow = true,
 }: {
   audio?: PcmAudio;
   storageKey: string;
-  time: number;
   onTextChange?: (text: string) => void;
   follow?: boolean;
 }) {
@@ -45,7 +44,7 @@ export function LyricsTrack({
         .sort((a, b) => a.time - b.time),
     [text],
   );
-  const active = lines.findLastIndex((line) => line.time <= time);
+  const active = useActiveIndex(useMemo(() => lines.map((line) => line.time), [lines]));
   useEffect(() => {
     if (follow) activeLine.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [active, follow]);

@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { StemPlayer } from "@/song/stems/player";
 import { defaultMix } from "@/song/stems/mix";
-import { lrcTime, parseChart, transpose } from "@/song/performance/chart";
+import { lrcTime, parseChart, transpose, type Cue } from "@/song/performance/chart";
+import { clockPosition, setClockPosition, startPlaybackClock, useActiveIndex } from "@/song/performance/playback-clock";
 import type { Chord } from "@/song/performance/chords";
 import { host } from "@/host";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
@@ -14,6 +15,7 @@ import { MidiHealth } from "./MidiHealth";
 import { useBluetooth } from "@/bluetooth/connection";
 import { BluetoothControls } from "@/bluetooth/BluetoothControls";
 import { LyricsTrack } from "./LyricsTrack";
+import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
 import { SongKey } from "./SongKey";
 import { PerformanceReader } from "./PerformanceReader";
 import { ChordVoicings } from "./ChordVoicings";
@@ -58,6 +60,15 @@ function chartLine(text: string, onChord: (name: string) => void) {
         part
       ),
     );
+}
+/** The plain lyrics preview. It owns the active-line subscription so the panel does not re-render on line changes. */
+function ChartLines({ cues, shift, onChord }: { cues: Cue[]; shift: number; onChord: (name: string) => void }) {
+  const active = useActiveIndex(useMemo(() => cues.map((cue) => cue.time), [cues]));
+  return cues.map((cue, i) => (
+    <p key={i} className={i === active ? "rounded bg-white/10 font-bold" : "text-silkscreen-3"}>
+      {chartLine(transpose(cue.text, shift) || "♪", onChord)}
+    </p>
+  ));
 }
 let sessionId = 0;
 export function PerformancePanel() {
@@ -114,8 +125,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
     }
   });
   const [player, setPlayer] = useState<StemPlayer | null>(null),
-    [playing, setPlaying] = useState(false),
-    [time, setTime] = useState(0);
+    [playing, setPlaying] = useState(false);
   const [mix, setMix] = useState(options.mix);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
@@ -144,8 +154,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
   const scheduler = useRef<ReturnType<typeof startMidiScheduler> | null>(null);
   const prepared = useRef<ReturnType<typeof prepareMidiScheduler> | null>(null),
     readyWorker = useRef<Worker | null>(null);
-  const cursor = useRef(-0.001),
-    activeLine = useRef<HTMLParagraphElement>(null);
+  const cursor = useRef(-0.001);
   const playRequest = useRef(0),
     playPending = useRef(false);
   const startTempo = useRef<number[][] | null>(null);
@@ -158,7 +167,6 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
       return { cues: [], error: String(e) };
     }
   }, [chart]);
-  const active = parsed.cues.findLastIndex((c) => c.time <= time);
   const output = portId === "bluetooth-midi" ? bluetooth : access?.outputs.get(portId);
   const degraded = (event: SchedulerDegraded) => {
     const diagnostics = useMidiDiagnostics.getState(),
@@ -297,7 +305,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
     if (stage) return;
     pause();
     await player?.seek(value);
-    setTime(value);
+    setClockPosition(value);
     cursor.current = value - 0.001;
   };
   const startPlayback = () => {
@@ -333,12 +341,12 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
     const p = new StemPlayer(stems ?? { other: source.audio });
     p.onEnded = () => {
       setPlaying(false);
-      setTime(p.duration);
+      setClockPosition(p.duration);
       const set = useSongLibrary.getState();
       if (set.playlistPlaying && set.queue[set.position] === source.libraryId) void set.advancePlaylist();
     };
     setPlayer(p);
-    setTime(0);
+    setClockPosition(0);
     setPlaying(false);
     setMix(options.mix);
     return () => {
@@ -458,8 +466,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
   }, [armed, playing, player, output]);
   useEffect(() => {
     if (!playing || !player) return;
-    const timer = setInterval(() => setTime(Math.max(0, player.position)), 50);
-    return () => clearInterval(timer);
+    return startPlaybackClock(() => player.position);
   }, [playing, player]);
   useEffect(() => {
     if (!playing || !player) return;
@@ -653,18 +660,8 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
           <Button variant="outline" disabled={!player || stage} onClick={() => void seek(0)}>
             Rewind
           </Button>
-          <span>
-            {lrcTime(time)} / {lrcTime(player?.duration ?? 0)}
-          </span>
-          <input
-            aria-label="Song position"
-            type="range"
-            min="0"
-            max={player?.duration ?? 0}
-            step="0.1"
-            value={time}
-            onChange={(e) => void seek(Number(e.target.value))}
-          />
+          <ClockOverDuration duration={player?.duration ?? 0} />
+          <PositionSlider label="Song position" duration={player?.duration ?? 0} onSeek={(value) => void seek(value)} />
           {!source && <span>Open a song in Stems to perform.</span>}
           <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
             <label>
@@ -747,7 +744,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
                 disabled={midiConfig.tempoOnStart}
                 checked={clock}
                 onChange={(e) => {
-                  cursor.current = player?.position ?? time;
+                  cursor.current = player?.position ?? clockPosition();
                   setClock(e.target.checked);
                 }}
               />{" "}
@@ -799,7 +796,6 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
         chart={chart}
         lyrics={lyrics}
         chords={chords}
-        time={time}
         shift={shift}
         title={source?.name ?? "Performance"}
         onEditStart={pause}
@@ -837,16 +833,12 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
             <Button variant="outline" disabled={!player || stage} onClick={() => void seek(0)}>
               Rewind
             </Button>
-            <input
+            <PositionSlider
               disabled={stage}
-              aria-label="Expanded song position"
+              label="Expanded song position"
               className="min-w-32 flex-1"
-              type="range"
-              min="0"
-              max={player?.duration ?? 0}
-              step="0.1"
-              value={time}
-              onChange={(e) => void seek(Number(e.target.value))}
+              duration={player?.duration ?? 0}
+              onSeek={(value) => void seek(value)}
             />
             <Button
               variant="outline"
@@ -864,9 +856,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
                 Stop playback
               </Button>
             )}
-            <span className="text-sm">
-              {lrcTime(time)} / {lrcTime(player?.duration ?? 0)}
-            </span>
+            <ClockOverDuration className="text-sm" duration={player?.duration ?? 0} />
           </>
         }
       />
@@ -1005,7 +995,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
                 checked={armed}
                 onChange={(e) => {
                   panic();
-                  cursor.current = time;
+                  cursor.current = clockPosition();
                   setArmed(e.target.checked);
                   setMidiStatus("");
                 }}
@@ -1057,7 +1047,6 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
           </p>
           {midiConfig.showCommands && (
             <MidiCueBuilder
-              time={time}
               cues={parsed.cues}
               canTest={output?.state === "connected" && armed}
               onAdd={(line) => saveChart([chart.trimEnd(), line].filter(Boolean).join("\n"))}
@@ -1126,7 +1115,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
         </div>
         <details>
           <summary className="cursor-pointer font-semibold">Separate lyrics and chart editors</summary>
-          <LyricsTrack audio={stems?.vocals} storageKey={key} time={time} onTextChange={setLyrics} follow={false} />
+          <LyricsTrack audio={stems?.vocals} storageKey={key} onTextChange={setLyrics} follow={false} />
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
               <textarea
@@ -1143,11 +1132,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
             </div>
             <div className="max-h-96 overflow-auto rounded border border-seam p-4 text-2xl leading-relaxed" aria-label="Performance lyrics">
               {parsed.cues.length ? (
-                parsed.cues.map((cue, i) => (
-                  <p ref={i === active ? activeLine : undefined} key={i} className={i === active ? "rounded bg-white/10 font-bold" : "text-silkscreen-3"}>
-                    {chartLine(transpose(cue.text, shift) || "♪", setSelectedChord)}
-                  </p>
-                ))
+                <ChartLines cues={parsed.cues} shift={shift} onChord={setSelectedChord} />
               ) : (
                 <pre className="whitespace-pre-wrap font-sans">{chartLine(transpose(chart, shift), setSelectedChord)}</pre>
               )}

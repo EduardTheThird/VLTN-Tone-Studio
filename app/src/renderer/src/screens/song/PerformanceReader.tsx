@@ -7,6 +7,8 @@ import type { Chord } from "@/song/performance/chords";
 import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceEditor } from "./PerformanceEditor";
 import { performanceLines } from "@/song/performance/reader";
+import { useActiveIndex } from "@/song/performance/playback-clock";
+import { ClockText } from "./PlaybackDisplay";
 
 function formatted(text: string) {
   return text
@@ -27,7 +29,6 @@ export function PerformanceReader({
   chart,
   lyrics,
   chords,
-  time,
   shift,
   title,
   transport,
@@ -42,7 +43,6 @@ export function PerformanceReader({
   chart: string;
   lyrics: string;
   chords: Chord[];
-  time: number;
   shift: number;
   title: string;
   transport?: ReactNode;
@@ -84,9 +84,9 @@ export function PerformanceReader({
     current = useRef<HTMLDivElement>(null),
     expandButton = useRef<HTMLButtonElement>(null);
   const chordButton = useRef<HTMLButtonElement | null>(null);
-  const active = lines.findLastIndex((line) => line.time <= time);
-  const changes = lines.flatMap((line) => line.chords);
-  const activeChord = changes.findLastIndex((chord) => chord.time <= time);
+  const active = useActiveIndex(useMemo(() => lines.map((line) => line.time), [lines]));
+  const changes = useMemo(() => lines.flatMap((line) => line.chords), [lines]);
+  const activeChord = useActiveIndex(useMemo(() => changes.map((chord) => chord.time), [changes]));
   useEffect(() => {
     if (!follow || !viewport.current || !current.current) return;
     const panel = viewport.current,
@@ -116,7 +116,7 @@ export function PerformanceReader({
         <div className="mr-auto">
           <h2 className="font-semibold">Lyrics & chords · Perform</h2>
           <p className="text-sm text-silkscreen-3">
-            {title} · {lrcTime(time)}
+            {title} · <ClockText />
           </p>
         </div>
         {!stage && onSaveChart && (
@@ -175,7 +175,6 @@ export function PerformanceReader({
           chart={chart}
           lyrics={lyrics}
           chords={chords}
-          time={time}
           onCancel={() => setEditing(false)}
           onSave={(next) => {
             onSaveChart(next);

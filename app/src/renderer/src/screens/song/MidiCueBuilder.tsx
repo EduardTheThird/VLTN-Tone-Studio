@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { lrcTime, midiCommand, type Cue } from "@/song/performance/chart";
+import { clockPosition } from "@/song/performance/playback-clock";
 import { PedalMidiPicker } from "./PedalMidiPicker";
 
 export function MidiCueBuilder({
-  time,
   cues,
   onAdd,
   onTest,
   canTest,
 }: {
-  time: number;
   cues: Cue[];
   onAdd: (line: string) => void;
   onTest: (bytes: number[]) => void;
@@ -61,7 +60,7 @@ export function MidiCueBuilder({
             onChange={(e) => setSeconds(e.target.valueAsNumber)}
           />
         </label>
-        <Button variant="outline" onClick={() => setSeconds(Math.round(time * 100) / 100)}>
+        <Button variant="outline" onClick={() => setSeconds(Math.round(clockPosition() * 100) / 100)}>
           Use playback time
         </Button>
       </div>

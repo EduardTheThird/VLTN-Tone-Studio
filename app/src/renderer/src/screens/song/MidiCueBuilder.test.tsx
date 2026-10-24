@@ -1,11 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MidiCueBuilder } from "./MidiCueBuilder";
-afterEach(cleanup);
+import { setClockPosition } from "@/song/performance/playback-clock";
+afterEach(() => {
+  cleanup();
+  setClockPosition(0);
+});
 it("builds timed PC/CC cues with independent target channels and tests the same bytes", () => {
   const add = vi.fn(),
     test = vi.fn();
-  render(<MidiCueBuilder time={12.5} cues={[]} onAdd={add} onTest={test} canTest />);
+  setClockPosition(12.5);
+  render(<MidiCueBuilder cues={[]} onAdd={add} onTest={test} canTest />);
   fireEvent.click(screen.getByText("Use playback time"));
   fireEvent.change(screen.getByLabelText("Cue MIDI channel"), { target: { value: "3" } });
   fireEvent.change(screen.getByLabelText("Cue command number"), { target: { value: "7" } });

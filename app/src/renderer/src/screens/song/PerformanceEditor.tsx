@@ -2,19 +2,18 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { editableEvents, eventChart, type EditableEvent } from "@/song/performance/editor";
 import type { Chord } from "@/song/performance/chords";
+import { clockPosition } from "@/song/performance/playback-clock";
 
 export function PerformanceEditor({
   chart,
   lyrics,
   chords,
-  time,
   onSave,
   onCancel,
 }: {
   chart: string;
   lyrics: string;
   chords: Chord[];
-  time: number;
   onSave: (chart: string) => void;
   onCancel: () => void;
 }) {
@@ -92,7 +91,7 @@ export function PerformanceEditor({
           onClick={() =>
             setRows((current) => [
               ...current,
-              { id: Math.max(-1, ...current.map((r) => r.id)) + 1, seconds: String(Math.round(time * 100) / 100), lyrics: "", chords: "", midi: "", label: "" },
+              { id: Math.max(-1, ...current.map((r) => r.id)) + 1, seconds: String(Math.round(clockPosition() * 100) / 100), lyrics: "", chords: "", midi: "", label: "" },
             ])
           }
         >

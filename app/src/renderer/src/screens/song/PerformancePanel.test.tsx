@@ -110,6 +110,7 @@ const mocks = vi.hoisted(() => ({
   bluetooth: null as null | { id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> },
   position: 0,
   playAdvance: 0,
+  panelRenders: 0,
   source: { name: "clock-test.wav", libraryId: undefined as string | undefined, audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } },
 }));
 vi.mock("@/song/store", () => ({
@@ -141,6 +142,13 @@ vi.mock("@/bluetooth/connection", () => ({
 }));
 vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null }));
 vi.mock("./LyricsTrack", () => ({ LyricsTrack: () => null }));
+// MidiHealth is rendered unconditionally by the panel, so its render count is the panel's render count.
+vi.mock("./MidiHealth", () => ({
+  MidiHealth: () => {
+    mocks.panelRenders++;
+    return null;
+  },
+}));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     names = ["other"];
@@ -712,4 +720,18 @@ it("saves the first downbeat per song and locks alignment during playback", asyn
   fireEvent.click(screen.getByText("Reset first beat"));
   expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({ firstBeat: 0 });
   expect(mocks.send).not.toHaveBeenCalled();
+});
+it("does not re-render the panel while playing", async () => {
+  vi.useFakeTimers();
+  render(<PerformancePanel />);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play song"));
+  });
+  const before = mocks.panelRenders;
+  for (let i = 0; i < 20; i++) {
+    mocks.position += 0.05;
+    act(() => vi.advanceTimersByTime(50));
+  }
+  expect(screen.getByLabelText("Song position")).toHaveProperty("value", "1");
+  expect(mocks.panelRenders - before).toBeLessThanOrEqual(2);
 });

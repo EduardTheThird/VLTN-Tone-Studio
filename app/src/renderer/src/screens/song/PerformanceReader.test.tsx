@@ -1,22 +1,29 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { setClockPosition } from "@/song/performance/playback-clock";
 import { PerformanceReader } from "./PerformanceReader";
 
-afterEach(cleanup);
+const at = (seconds: number) => act(() => setClockPosition(seconds));
+
+afterEach(() => {
+  cleanup();
+  setClockPosition(0);
+});
 it("follows playback and backward seeks, transposes chords, and can stop following", () => {
   const scroll = vi.fn();
   HTMLElement.prototype.scrollTo = scroll;
   const props = { title: "Song", chart: "[00:01] [C] First\n[00:05] [G] Second", lyrics: "", chords: [], shift: 2 };
-  const view = render(<PerformanceReader {...props} time={1} />);
+  at(1);
+  render(<PerformanceReader {...props} />);
   expect(screen.getByText("First").parentElement?.getAttribute("aria-current")).toBe("true");
   expect(within(screen.getAllByLabelText("Chords")[0]).getByText("D")).toBeTruthy();
-  view.rerender(<PerformanceReader {...props} time={6} />);
+  at(6);
   expect(screen.getByText("Second").parentElement?.getAttribute("aria-current")).toBe("true");
-  view.rerender(<PerformanceReader {...props} time={1} />);
+  at(1);
   expect(screen.getByText("First").parentElement?.getAttribute("aria-current")).toBe("true");
   fireEvent.click(screen.getByLabelText("Follow playback"));
   scroll.mockClear();
-  view.rerender(<PerformanceReader {...props} time={6} />);
+  at(6);
   expect(scroll).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Expand performance view"));
   expect(screen.getByText("Close expanded view")).toBeTruthy();
@@ -26,7 +33,7 @@ it("follows playback and backward seeks, transposes chords, and can stop followi
 
 it("opens transposed chord tabs and closes the overlay without closing the expanded reader", () => {
   HTMLElement.prototype.scrollTo = vi.fn();
-  render(<PerformanceReader title="Song" chart="[00:00] [C]Words" lyrics="" chords={[]} shift={2} time={0} />);
+  render(<PerformanceReader title="Song" chart="[00:00] [C]Words" lyrics="" chords={[]} shift={2} />);
   fireEvent.click(screen.getByText("Expand performance view"));
   fireEvent.click(screen.getByRole("button", { name: "Show D guitar voicings" }));
   expect(screen.getByRole("dialog")).toBeTruthy();
@@ -40,9 +47,7 @@ it("opens transposed chord tabs and closes the overlay without closing the expan
 it("edits displayed lyrics and chords with MIDI preserved, validates values, and supports cancel", () => {
   const save = vi.fn(),
     pause = vi.fn();
-  render(
-    <PerformanceReader title="Song" chart="[00:01] [C]Words {midi:pc 2 12}" lyrics="" chords={[]} shift={2} time={1} onEditStart={pause} onSaveChart={save} />,
-  );
+  render(<PerformanceReader title="Song" chart="[00:01] [C]Words {midi:pc 2 12}" lyrics="" chords={[]} shift={2} onEditStart={pause} onSaveChart={save} />);
   fireEvent.click(screen.getByText("Edit chords, lyrics & MIDI"));
   expect(pause).toHaveBeenCalledOnce();
   expect((screen.getByLabelText("Line 1 chords") as HTMLInputElement).value).toBe("C");
@@ -62,7 +67,7 @@ it("edits displayed lyrics and chords with MIDI preserved, validates values, and
 });
 
 it("shows untimed chord symbols as playable transposed chords", () => {
-  render(<PerformanceReader title="Demo" chart={"[Am] Open road [F]\n[C] New day"} lyrics="" chords={[]} time={0} shift={2} />);
+  render(<PerformanceReader title="Demo" chart={"[Am] Open road [F]\n[C] New day"} lyrics="" chords={[]} shift={2} />);
   expect(screen.getByLabelText("Show Bm guitar voicings")).toBeTruthy();
   expect(screen.getByLabelText("Show G guitar voicings")).toBeTruthy();
   expect(screen.getByLabelText("Show D guitar voicings")).toBeTruthy();
