@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { host } from "@/host";
 import { useSong } from "./store";
 import { useNav } from "@/state/nav";
-import { assetName, emptyLibrary, type LibrarySong, type Playlist, type SongLibrary } from "@shared/song-library";
+import { emptyLibrary, flacName, type LibraryAudio, type LibrarySong, type Playlist, type SongLibrary } from "@shared/song-library";
+import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
 import { performanceKey, readSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, Stems } from "./types";
@@ -30,6 +31,18 @@ interface LibraryState {
   load(id: string, queue?: string[], position?: number): Promise<void>;
   playlists(value: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;
+}
+const hex = (digest: ArrayBuffer) => Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+/** Fetches a saved track straight from the app protocol and decodes it in a worker; nothing is copied through IPC. */
+async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Missing or damaged ${track.name} audio.`);
+  const file = await response.arrayBuffer();
+  if (track.bytes !== undefined && file.byteLength !== track.bytes) throw new Error(`Missing or damaged ${track.name} audio.`);
+  const audio = await decodeTrack(file);
+  if (audio.channels.length !== track.channels || audio.channels[0].length !== track.frames || audio.sampleRate !== track.sampleRate)
+    throw new Error(`Missing or damaged ${track.name} audio.`);
+  return audio;
 }
 const api = () => {
   if (!host.song.library) throw new Error("Saved songs are available in the desktop app.");
@@ -59,18 +72,10 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     // Keep the performance controls visible while advancing; Stop can cancel an in-flight load.
     if (!playlist) useNav.getState().go("song", "songs");
     useSong.getState().cancel();
-    const tracks: Record<string, PcmAudio> = {};
-    for (const track of song.audio) {
-      const channels: Float32Array[] = [];
-      for (let c = 0; c < track.channels; c++) {
-        const bytes = await api().audio(id, assetName(track.name, c));
-        if (generation !== loadGeneration) return;
-        if (bytes.byteLength !== track.frames * 4) throw new Error(`Missing or damaged ${track.name} audio.`);
-        channels.push(new Float32Array(bytes.slice().buffer));
-      }
-      tracks[track.name] = { sampleRate: track.sampleRate, channels };
-    }
+    const urls = await api().audioUrls(id);
+    const loaded = await Promise.all(song.audio.map(async (track) => [track.name, await loadTrack(urls[track.name], track)] as const));
     if (generation !== loadGeneration) return;
+    const tracks: Record<string, PcmAudio> = Object.fromEntries(loaded);
     const source = { name: song.sourceName, libraryId: song.id, audio: tracks.source };
     writeSettings(performanceKey(source), song.settings);
     const stems = Object.fromEntries(Object.entries(tracks).filter(([name]) => name !== "source")) as Stems;
@@ -167,20 +172,34 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         if (!source || ["decoding", "model", "splitting"].includes(state.status.kind)) throw new Error("Wait for the song to finish loading or splitting.");
         const id = source.libraryId ?? crypto.randomUUID();
         const tracks: [string, PcmAudio][] = [["source", source.audio], ...Object.entries(state.stems ?? {})];
+        // One track at a time keeps the encoder's copy of the audio to a single track.
+        const assets: { name: string; bytes: Uint8Array }[] = [],
+          audioInfo: LibraryAudio[] = [];
+        for (const [name, audio] of tracks) {
+          const bytes = await encodeTrack(audio);
+          const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>));
+          assets.push({ name: flacName(name), bytes });
+          audioInfo.push({
+            name,
+            sampleRate: audio.sampleRate,
+            frames: audio.channels[0].length,
+            channels: audio.channels.length,
+            file: flacName(name),
+            codec: "flac",
+            bytes: bytes.length,
+            sha256,
+          });
+        }
         const song: LibrarySong = {
           id,
           title: title.trim() || source.name,
           artist: artist.trim(),
           sourceName: source.name,
           duration: source.audio.channels[0].length / source.audio.sampleRate,
-          audio: tracks.map(([name, audio]) => ({ name, sampleRate: audio.sampleRate, frames: audio.channels[0].length, channels: audio.channels.length })),
+          audio: audioInfo,
           settings: readSettings(performanceKey(source)),
           updated: new Date().toISOString(),
         };
-        // Views avoid duplicating the entire in-memory song before IPC copies one channel at a time.
-        const assets = tracks.flatMap(([name, audio]) =>
-          audio.channels.map((channel, c) => ({ name: assetName(name, c), bytes: new Uint8Array(channel.buffer, channel.byteOffset, channel.byteLength) })),
-        );
         await api().save(song, assets);
         if (useSong.getState().source === source) {
           const saved = { ...source, libraryId: id };

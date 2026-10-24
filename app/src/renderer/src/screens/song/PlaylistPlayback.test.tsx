@@ -34,15 +34,19 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
 });
 
 const mock = vi.hoisted(() => ({
-  audio: vi.fn(),
+  audioUrls: vi.fn(),
+  fetch: vi.fn(),
   index: vi.fn(),
   settings: vi.fn(),
   send: vi.fn(),
   clear: vi.fn(),
   players: [] as { isPlaying: boolean; position: number; duration: number; onEnded: (() => void) | null; end(): void }[],
 }));
-vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audio: mock.audio, settings: mock.settings } } } }));
+vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audioUrls: mock.audioUrls, settings: mock.settings } } } }));
 vi.mock("@/song/stems/engine", () => ({ separateStems: vi.fn() }));
+vi.mock("@/song/codec/flac-client", () => ({ decodeTrack: async () => ({ sampleRate: 10, channels: [new Float32Array(100)] }), encodeTrack: vi.fn() }));
+vi.stubGlobal("fetch", mock.fetch);
+const file = () => new Response(new Uint8Array(8));
 vi.mock("./LyricsTrack", () => ({ LyricsTrack: () => null }));
 vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null }));
 vi.mock("@/song/stems/player", () => ({
@@ -83,7 +87,7 @@ const song = (id: string, bpm: number, pc: number): LibrarySong => ({
   artist: "",
   sourceName: id + ".wav",
   duration: 10,
-  audio: [{ name: "source", sampleRate: 10, frames: 100, channels: 1 }],
+  audio: [{ name: "source", sampleRate: 10, frames: 100, channels: 1, file: "source.flac", codec: "flac", bytes: 8, sha256: "a".repeat(64) }],
   settings: { ":bpm": String(bpm), "": `[00:00] {midi:pc 1 ${pc}}`, ":options": JSON.stringify({ clock: bpm === 95 }) },
   updated: "",
 });
@@ -94,7 +98,8 @@ beforeEach(() => {
   localStorage.clear();
   mock.players = [];
   mock.index.mockResolvedValue({ ...emptyLibrary(), songs: [first, second] });
-  mock.audio.mockResolvedValue(new Uint8Array(new Float32Array(100).buffer));
+  mock.audioUrls.mockResolvedValue({ source: "app://library/rev/source.flac" });
+  mock.fetch.mockImplementation(async () => file());
   mock.settings.mockResolvedValue(undefined);
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
   useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], position: -1, playlistPlaying: false, midiSession: null });
@@ -183,8 +188,8 @@ it("resumes the next song after stopping a transition instead of replaying the f
   await useSongLibrary.getState().playPlaylist([first.id, second.id]);
   render(<PerformancePanel />);
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
-  let resolve!: (value: Uint8Array) => void;
-  mock.audio.mockImplementationOnce(
+  let resolve!: (value: Response) => void;
+  mock.fetch.mockImplementationOnce(
     () =>
       new Promise((r) => {
         resolve = r;
@@ -196,7 +201,7 @@ it("resumes the next song after stopping a transition instead of replaying the f
   await waitFor(() => expect(resolve).toBeTypeOf("function"));
   fireEvent.click(screen.getByText("Stop playlist"));
   await act(async () => {
-    resolve(new Uint8Array(new Float32Array(100).buffer));
+    resolve(file());
   });
   await waitFor(() => expect(useSongLibrary.getState().busy).toBe(false));
   expect(useSong.getState().source?.libraryId).toBe(first.id);

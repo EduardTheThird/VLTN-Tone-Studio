@@ -103,6 +103,9 @@ async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Pr
   await rename(partPath(f), filePath(f));
 }
 
+/** Where saved songs live. `main/index.ts` serves files below it through the `app://library` protocol. */
+export const libraryRoot = () => join(app.getPath('userData'), 'song-library');
+
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   const stagePower = new StagePower(powerSaveBlocker);
   const watched = new Set<number>();
@@ -119,14 +122,14 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     stagePower.update(owner, token, enabled);
   });
   app.once('will-quit', () => stagePower.close());
-  const library = new SongLibraryStore(join(app.getPath('userData'), 'song-library'));
+  const library = new SongLibraryStore(libraryRoot());
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());
   handle('song:library:begin', (_e, song: LibrarySong) => library.begin(song));
   handle('song:library:write', (_e, token: string, name: string, bytes: Uint8Array) => library.write(token, name, bytes));
   handle('song:library:commit', (_e, token: string) => library.commit(token));
   handle('song:library:abort', (_e, token: string) => library.abort(token));
-  handle('song:library:audio', (_e, id: string, name: string) => library.audio(id, name));
+  handle('song:library:audioUrls', (_e, id: string) => library.audioUrls(id));
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
   handle('song:library:settings', (_e, id: string, values: Record<string, string>) => library.settings(id, values));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
@@ -153,6 +156,8 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     const result = await library.restoreBackup(path, transferProgress);
     return { ...result, fileName: basename(path) };
   });
+  // Songs saved by an earlier version are converted to FLAC in the background; the song list shows them as soon as they have finished.
+  void library.migrate(transferProgress).catch((e) => console.error('Song library conversion failed', e));
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.
   const pending = new Map<string, Promise<void>>();
   const progress = (p: ModelProgress) => getWindow()?.webContents.send("song:modelProgress", p);

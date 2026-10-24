@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import { c as createTar, Parser, type ReadEntry } from "tar";
-import { assetName, validId, validatePlaylists, validateSong, type LibraryTransferProgress } from "@shared/song-library";
+import { TRACK_NAMES, trackFiles, validId, validatePlaylists, validateSong, type LibraryTransferProgress } from "@shared/song-library";
 import type { DiskIndex } from "./song-library-store";
 
 const MANIFEST = "backup-manifest.json",
@@ -19,17 +19,19 @@ interface BackupFile {
 }
 interface Manifest {
   format: "vltn-song-library";
-  version: 1;
+  /** 1: raw float32 files. 2: FLAC files. Both are read; new backups are 2. */
+  version: 1 | 2;
   files: BackupFile[];
 }
 type Progress = (value: LibraryTransferProgress) => void;
 const invalid = () => new Error("Invalid or damaged song-library backup.");
-const safePath = (path: string) => path === INDEX || /^[a-f0-9-]{36}\/(source|drums|bass|other|vocals|guitar|piano)-[01]\.f32$/.test(path);
+const SAFE_AUDIO = new RegExp(`^[a-f0-9-]{36}/(${TRACK_NAMES.join("|")})(-[01]\\.f32|\\.flac)$`);
+const safePath = (path: string) => path === INDEX || SAFE_AUDIO.test(path);
 export function validateDiskIndex(value: unknown): DiskIndex {
   const index = value as DiskIndex;
   if (
     !index ||
-    index.version !== 1 ||
+    (index.version !== 1 && index.version !== 2) ||
     !Array.isArray(index.songs) ||
     !Array.isArray(index.playlists) ||
     !index.revisions ||
@@ -51,9 +53,14 @@ export function validateDiskIndex(value: unknown): DiskIndex {
 }
 function audioFiles(index: DiskIndex): Map<string, number> {
   const result = new Map<string, number>();
+  for (const song of index.songs) for (const track of song.audio) for (const { file, bytes } of trackFiles(track)) result.set(`${index.revisions[song.id]}/${file}`, bytes);
+  return result;
+}
+/** The digests a v2 index promises for its FLAC files; the manifest must agree with them. */
+function audioHashes(index: DiskIndex): Map<string, string> {
+  const result = new Map<string, string>();
   for (const song of index.songs)
-    for (const track of song.audio)
-      for (let channel = 0; channel < track.channels; channel++) result.set(`${index.revisions[song.id]}/${assetName(track.name, channel)}`, track.frames * 4);
+    for (const track of song.audio) for (const { file, sha256 } of trackFiles(track)) if (sha256) result.set(`${index.revisions[song.id]}/${file}`, sha256);
   return result;
 }
 async function fileHash(path: string): Promise<string> {
@@ -75,7 +82,7 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
   const metadata = await readFile(join(root, INDEX));
   if (metadata.length > MAX_METADATA) throw new Error("Library metadata exceeds the supported backup size.");
   files.set(INDEX, metadata.length);
-  const manifest: Manifest = { format: "vltn-song-library", version: 1, files: [] };
+  const manifest: Manifest = { format: "vltn-song-library", version: 2, files: [] };
   let total = 0,
     done = 0;
   for (const [path, bytes] of files) {
@@ -162,7 +169,7 @@ export async function readBackup(file: string, stage: string, progress: Progress
               if (
                 !manifest ||
                 manifest.format !== "vltn-song-library" ||
-                manifest.version !== 1 ||
+                (manifest.version !== 1 && manifest.version !== 2) ||
                 !Array.isArray(manifest.files) ||
                 !manifest.files.length ||
                 manifest.files.length > MAX_FILES
@@ -206,7 +213,8 @@ export async function readBackup(file: string, stage: string, progress: Progress
               index = validateDiskIndex(JSON.parse(bytes.toString("utf8")));
               const required = audioFiles(index);
               if (required.size + 1 !== manifest!.files.length) throw invalid();
-              for (const f of manifest!.files) if (f.path !== INDEX && required.get(f.path) !== f.bytes) throw invalid();
+              const hashes = audioHashes(index);
+              for (const f of manifest!.files) if (f.path !== INDEX && (required.get(f.path) !== f.bytes || (hashes.has(f.path) && hashes.get(f.path) !== f.sha256))) throw invalid();
             } catch (e) {
               fail(e);
             }

@@ -1,29 +1,15 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { SongLibraryStore } from "./song-library-store";
-import type { LibrarySong } from "@shared/song-library";
+import { decodeFlac, quantize } from "@shared/flac";
+import { isLegacySong } from "@shared/song-library";
+import { SongLibraryStore, libraryFilePath } from "./song-library-store";
+import { flacSong, legacySong, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
 
 let root: string, store: SongLibraryStore;
-const pcm = new Uint8Array(new Float32Array([0, 0.25, -0.5, 1]).buffer);
-const song = (): LibrarySong => ({
-  id: randomUUID(),
-  title: "Live song",
-  artist: "Artist",
-  sourceName: "song.mp3",
-  duration: 4 / 44100,
-  audio: [{ name: "source", sampleRate: 44100, frames: 4, channels: 1 }],
-  settings: { "": "[00:00] [C]", ":lyrics": "[00:00] Words", ":bpm": "130" },
-  updated: new Date().toISOString(),
-});
-async function save(s: LibrarySong) {
-  const token = await store.begin(s);
-  await store.write(token, "source-0.f32", pcm);
-  await store.commit(token);
-}
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "vltn-song-library-test-"));
   store = new SongLibraryStore(root);
@@ -31,61 +17,103 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
+/** The decoded track must equal the stored float32 audio quantized to 24 bits. */
+async function expectAudio(fixture: FixtureSong, name: string) {
+  const decoded = await decodeFlac(await readSaved(root, fixture.song.id, `${name}.flac`));
+  expect(decoded.channels).toHaveLength(fixture.audio[name].length);
+  decoded.channels.forEach((channel, c) => {
+    expect(Array.from(channel.map((v) => Math.round(v * (2 ** 23 - 1))))).toEqual(Array.from(fixture.audio[name][c].map(quantize)));
+  });
+}
 it("round-trips audio, charts and duplicate playlist entries across restart", async () => {
-  const first = song(),
-    second = song();
-  await save(first);
-  await save(second);
-  const playlist = { id: randomUUID(), name: "Gig", songs: [second.id, first.id, second.id] };
+  const first = await flacSong(1),
+    second = await flacSong(2);
+  await saveFlacSong(store, first);
+  await saveFlacSong(store, second);
+  const playlist = { id: randomUUID(), name: "Gig", songs: [second.song.id, first.song.id, second.song.id] };
   await store.playlists([playlist]);
   store = new SongLibraryStore(root);
   expect((await store.index()).playlists).toEqual([playlist]);
-  expect((await store.index()).songs[0]).toEqual(first);
-  expect(await store.audio(first.id, "source-0.f32")).toEqual(pcm);
-  await store.settings(first.id, { ":bpm": "90" });
+  expect((await store.index()).songs[0]).toEqual(first.song);
+  await expectAudio(first, "source");
+  await expectAudio(first, "guitar");
+  await store.settings(first.song.id, { ":bpm": "90" });
   expect((await new SongLibraryStore(root).index()).songs[0].settings).toEqual({ ":bpm": "90" });
 });
+it("writes a v2 index and hands out protocol URLs instead of audio bytes", async () => {
+  const fixture = await flacSong();
+  await saveFlacSong(store, fixture);
+  const index = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
+  expect(index.version).toBe(2);
+  const urls = await store.audioUrls(fixture.song.id);
+  expect(Object.keys(urls).sort()).toEqual(["guitar", "source"]);
+  expect(urls.source).toBe(`app://library/${index.revisions[fixture.song.id]}/source.flac`);
+  expect(libraryFilePath(root, urls.source)).toBe(join(root, index.revisions[fixture.song.id], "source.flac"));
+});
 it("keeps the last complete revision after an incomplete replacement", async () => {
-  const original = song();
-  await save(original);
-  const token = await store.begin({ ...original, title: "Replacement" });
+  const original = await flacSong();
+  await saveFlacSong(store, original);
+  const token = await store.begin({ ...original.song, title: "Replacement" });
   await expect(store.commit(token)).rejects.toThrow();
   await store.abort(token);
-  expect((await store.index()).songs[0].title).toBe(original.title);
-  expect(await store.audio(original.id, "source-0.f32")).toEqual(pcm);
+  expect((await store.index()).songs[0].title).toBe(original.song.title);
+  await expectAudio(original, "source");
 });
-it("rejects path traversal, wrong lengths and dangling playlist references", async () => {
-  const s = song(),
-    token = await store.begin(s);
-  await expect(store.write(token, "../escape", pcm)).rejects.toThrow();
-  await expect(store.write(token, "source-0.f32", new Uint8Array(3))).rejects.toThrow();
-  await expect(store.begin({ ...s, id: "../escape" })).rejects.toThrow();
-  await expect(store.playlists([{ id: randomUUID(), name: "Missing", songs: [s.id] }])).rejects.toThrow();
+it("rejects path traversal, wrong lengths, wrong digests, raw PCM saves and dangling playlist references", async () => {
+  const { song, files } = await flacSong(),
+    token = await store.begin(song);
+  await expect(store.write(token, "../escape", files["source.flac"])).rejects.toThrow();
+  await expect(store.write(token, "source-0.f32", files["source.flac"])).rejects.toThrow();
+  await expect(store.write(token, "source.flac", new Uint8Array(3))).rejects.toThrow();
+  await expect(
+    store.write(
+      token,
+      "source.flac",
+      files["source.flac"].map((b) => b ^ 1),
+    ),
+  ).rejects.toThrow();
+  await expect(store.begin({ ...song, id: "../escape" })).rejects.toThrow();
+  await expect(store.begin(legacySong().song)).rejects.toThrow();
+  await expect(store.begin({ ...song, audio: [{ ...song.audio[0], file: "../x.flac" }] })).rejects.toThrow();
+  await expect(store.playlists([{ id: randomUUID(), name: "Missing", songs: [song.id] }])).rejects.toThrow();
   await store.abort(token);
 });
+it("serves only exact revision/track.flac URLs", () => {
+  const rev = randomUUID();
+  expect(libraryFilePath(root, `app://library/${rev}/vocals.flac`)).toBe(join(root, rev, "vocals.flac"));
+  for (const bad of [
+    `app://library/${rev}/..%2Flibrary.json`,
+    `app://library/${rev}/vocals-0.f32`,
+    `app://library/${rev}/other.flac/extra`,
+    `app://library/${rev}/notatrack.flac`,
+    `app://library/not-a-uuid/vocals.flac`,
+    `app://bundle/${rev}/vocals.flac`,
+  ])
+    expect(libraryFilePath(root, bad)).toBeNull();
+});
 it("deletes a playlist without deleting songs and removes deleted songs from every playlist", async () => {
-  const s = song();
-  await save(s);
-  await store.playlists([{ id: randomUUID(), name: "Set", songs: [s.id, s.id] }]);
+  const s = await flacSong();
+  await saveFlacSong(store, s);
+  await store.playlists([{ id: randomUUID(), name: "Set", songs: [s.song.id, s.song.id] }]);
   await store.playlists([]);
   expect((await store.index()).songs).toHaveLength(1);
-  await store.playlists([{ id: randomUUID(), name: "Set", songs: [s.id, s.id] }]);
-  await store.remove(s.id);
+  await store.playlists([{ id: randomUUID(), name: "Set", songs: [s.song.id, s.song.id] }]);
+  await store.remove(s.song.id);
   expect((await store.index()).songs).toEqual([]);
   expect((await store.index()).playlists[0].songs).toEqual([]);
-  await expect(store.audio(s.id, "source-0.f32")).rejects.toThrow();
+  await expect(store.audioUrls(s.song.id)).rejects.toThrow();
 });
 
-it("preflights saved assets without loading PCM, deduplicates IDs and reports missing or truncated audio", async () => {
-  const first = song(),
-    second = song();
-  await save(first);
-  await save(second);
+it("preflights saved files without loading them, deduplicates IDs and reports missing or truncated audio", async () => {
+  const first = await flacSong(1),
+    second = await flacSong(2);
+  await saveFlacSong(store, first);
+  await saveFlacSong(store, second);
   const index = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
-  await writeFile(join(root, index.revisions[first.id], "source-0.f32"), new Uint8Array(1));
-  await rm(join(root, index.revisions[second.id], "source-0.f32"));
+  await writeFile(join(root, index.revisions[first.song.id], "source.flac"), new Uint8Array(1));
+  await rm(join(root, index.revisions[second.song.id], "source.flac"));
   const missing = randomUUID();
-  const result = await store.preflight([first.id, second.id, first.id, missing]);
+  const result = await store.preflight([first.song.id, second.song.id, first.song.id, missing]);
   expect(result).toHaveLength(3);
   expect(result[0].errors[0]).toContain("invalid size");
   expect(result[1].errors[0]).toContain("missing or inaccessible");
@@ -93,7 +121,53 @@ it("preflights saved assets without loading PCM, deduplicates IDs and reports mi
   await expect(store.preflight(["../outside"])).rejects.toThrow("Invalid playlist");
 });
 it("returns a clean saved snapshot for intact audio", async () => {
-  const s = song();
-  await save(s);
-  expect(await store.preflight([s.id])).toEqual([{ id: s.id, song: s, errors: [] }]);
+  const s = await flacSong();
+  await saveFlacSong(store, s);
+  expect(await store.preflight([s.song.id])).toEqual([{ id: s.song.id, song: s.song, errors: [] }]);
+});
+
+it("migrates a v1 library to FLAC with the same audio and settings, then removes the v1 files", async () => {
+  const first = legacySong(1),
+    second = legacySong(2);
+  await writeLegacyLibrary(root, [first, second]);
+  const before = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
+  expect((await store.index()).songs.every(isLegacySong)).toBe(true);
+  await expect(store.audioUrls(first.song.id)).rejects.toThrow(/converted/);
+  const progress: string[] = [];
+  expect(await store.migrate((p) => progress.push(`${p.phase} ${p.completed}/${p.total}`))).toEqual({ converted: 2, failed: 0 });
+  expect(progress[0]).toBe("Converting saved songs 0/2");
+  const index = await new SongLibraryStore(root).index();
+  expect(index.version).toBe(2);
+  for (const fixture of [first, second]) {
+    const song = index.songs.find((s) => s.id === fixture.song.id)!;
+    expect(isLegacySong(song)).toBe(false);
+    expect(song.settings).toEqual(fixture.song.settings);
+    expect(song.title).toBe(fixture.song.title);
+    await expectAudio(fixture, "source");
+    await expectAudio(fixture, "guitar");
+    expect((await store.preflight([song.id]))[0].errors).toEqual([]);
+  }
+  for (const revision of Object.values(before.revisions) as string[]) expect(await readdir(root)).not.toContain(revision);
+  expect(await store.migrate()).toEqual({ converted: 0, failed: 0 });
+});
+it("leaves a v1 song untouched when its audio is damaged and still converts the others", async () => {
+  const bad = legacySong(1),
+    good = legacySong(2);
+  await writeLegacyLibrary(root, [bad, good]);
+  const before = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
+  await writeFile(join(root, before.revisions[bad.song.id], "guitar-1.f32"), new Uint8Array(5));
+  expect(await store.migrate()).toEqual({ converted: 1, failed: 1 });
+  const index = await store.index();
+  expect(isLegacySong(index.songs.find((s) => s.id === bad.song.id)!)).toBe(true);
+  expect(isLegacySong(index.songs.find((s) => s.id === good.song.id)!)).toBe(false);
+  expect(await readdir(root)).toContain(before.revisions[bad.song.id]);
+  expect((await readdir(root)).filter((p) => p.length === 36)).toHaveLength(2);
+});
+it("keeps settings edited while a song is being converted", async () => {
+  const fixture = legacySong();
+  await writeLegacyLibrary(root, [fixture]);
+  const running = store.migrate();
+  await store.settings(fixture.song.id, { ":bpm": "77" });
+  await running;
+  expect((await store.index()).songs[0].settings).toEqual({ ":bpm": "77" });
 });

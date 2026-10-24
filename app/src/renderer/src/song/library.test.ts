@@ -8,7 +8,7 @@ import { useNav } from "@/state/nav";
 const api = vi.hoisted(() => ({
   index: vi.fn(),
   save: vi.fn(),
-  audio: vi.fn(),
+  audioUrls: vi.fn(),
   playlists: vi.fn(),
   remove: vi.fn(),
   settings: vi.fn(),
@@ -19,6 +19,11 @@ const api = vi.hoisted(() => ({
 vi.mock("@/host", () => ({ host: { song: { library: api } } }));
 vi.mock("./stems/engine", () => ({ separateStems: vi.fn() }));
 const audio = { sampleRate: 44100, channels: [new Float32Array([0, 0.25, -0.25])] };
+const codec = vi.hoisted(() => ({ decodeTrack: vi.fn(), encodeTrack: vi.fn() }));
+vi.mock("./codec/flac-client", () => codec);
+const fetchFile = vi.fn();
+vi.stubGlobal("fetch", fetchFile);
+const file = (bytes = 8) => new Response(new Uint8Array(bytes));
 const saved: LibrarySong = {
   id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
   title: "Saved song",
@@ -26,8 +31,8 @@ const saved: LibrarySong = {
   sourceName: "same.mp3",
   duration: 3 / 44100,
   audio: [
-    { name: "source", sampleRate: 44100, frames: 3, channels: 1 },
-    { name: "guitar", sampleRate: 44100, frames: 3, channels: 1 },
+    { name: "source", sampleRate: 44100, frames: 3, channels: 1, file: "source.flac", codec: "flac", bytes: 8, sha256: "a".repeat(64) },
+    { name: "guitar", sampleRate: 44100, frames: 3, channels: 1, file: "guitar.flac", codec: "flac", bytes: 8, sha256: "b".repeat(64) },
   ],
   settings: { ":bpm": "95", "": "[00:00] [Am]", ":lyrics": "[00:00] Words" },
   updated: "",
@@ -39,7 +44,13 @@ beforeEach(() => {
   api.restoreBackup.mockResolvedValue(null);
   api.onTransferProgress.mockReturnValue(vi.fn());
   api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
-  api.audio.mockResolvedValue(new Uint8Array(audio.channels[0].buffer));
+  api.audioUrls.mockResolvedValue({ source: "app://library/rev/source.flac", guitar: "app://library/rev/guitar.flac" });
+  fetchFile.mockReset();
+  fetchFile.mockImplementation(async () => file());
+  codec.decodeTrack.mockReset();
+  codec.decodeTrack.mockResolvedValue(audio);
+  codec.encodeTrack.mockReset();
+  codec.encodeTrack.mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
   api.settings.mockResolvedValue(undefined);
   api.save.mockResolvedValue(undefined);
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
@@ -56,7 +67,7 @@ it("loads saved source/stems and preserves queue positions for repeated entries"
 it("does not replace the current song when an asset read fails", async () => {
   const source = { name: "Current", audio };
   useSong.setState({ source });
-  api.audio.mockRejectedValueOnce(new Error("Missing audio"));
+  fetchFile.mockRejectedValueOnce(new Error("Missing audio"));
   await useSongLibrary.getState().load(saved.id);
   expect(useSong.getState().source).toBe(source);
   expect(useSongLibrary.getState().error).toBe("Missing audio");
@@ -70,7 +81,13 @@ it("saves copied audio and settings under a unique ID instead of the filename", 
   const [metadata, assets] = api.save.mock.calls[0];
   expect(metadata.id).not.toBe(saved.id);
   expect(metadata.settings[""]).toBe("[00:00] [C]");
-  expect(assets.map((a: { name: string }) => a.name)).toEqual(["source-0.f32", "guitar-0.f32"]);
+  expect(assets.map((a: { name: string }) => a.name)).toEqual(["source.flac", "guitar.flac"]);
+  expect(metadata.audio.map((a: { file: string; codec: string; bytes: number }) => [a.file, a.codec, a.bytes])).toEqual([
+    ["source.flac", "flac", 4],
+    ["guitar.flac", "flac", 4],
+  ]);
+  expect(metadata.audio[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(codec.encodeTrack).toHaveBeenCalledTimes(2);
   expect(useSong.getState().source?.libraryId).toBe(metadata.id);
   expect(localStorage.getItem(performanceKey(useSong.getState().source))).toBe("[00:00] [C]");
 });
@@ -98,8 +115,8 @@ it("plays every playlist entry including repeats, persists outgoing settings, an
 it("cancels autoplay when Stop is pressed during an audio load", async () => {
   await useSongLibrary.getState().load(saved.id);
   const previous = useSong.getState().source;
-  let resolve!: (value: Uint8Array) => void;
-  api.audio.mockImplementationOnce(
+  let resolve!: (value: Response) => void;
+  fetchFile.mockImplementationOnce(
     () =>
       new Promise((r) => {
         resolve = r;
@@ -108,7 +125,7 @@ it("cancels autoplay when Stop is pressed during an audio load", async () => {
   const loading = useSongLibrary.getState().playPlaylist([saved.id, saved.id], 1);
   await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
   useSongLibrary.getState().pausePlaylist();
-  resolve(new Uint8Array(audio.channels[0].buffer));
+  resolve(file());
   await loading;
   expect(useSong.getState().source).toBe(previous);
   expect(useSongLibrary.getState().playlistPlaying).toBe(false);
@@ -117,7 +134,7 @@ it("cancels autoplay when Stop is pressed during an audio load", async () => {
 
 it("stops the playlist on missing audio instead of silently skipping songs", async () => {
   await useSongLibrary.getState().playPlaylist([saved.id, saved.id]);
-  api.audio.mockRejectedValueOnce(new Error("Missing audio"));
+  fetchFile.mockRejectedValueOnce(new Error("Missing audio"));
   await useSongLibrary.getState().advancePlaylist();
   expect(useSongLibrary.getState().playlistPlaying).toBe(false);
   expect(useSongLibrary.getState().error).toBe("Missing audio");
@@ -180,4 +197,21 @@ it("refreshes restored copies without loading a song or arming MIDI, and reports
   await useSongLibrary.getState().restoreBackup();
   expect(useSongLibrary.getState().index).toBe(index);
   expect(useSongLibrary.getState()).toMatchObject({ error: "Checksum mismatch", busy: false, transfer: "" });
+});
+
+it("refuses a saved track whose file size or decoded shape does not match the library", async () => {
+  fetchFile.mockResolvedValueOnce(file(3));
+  await useSongLibrary.getState().load(saved.id);
+  expect(useSongLibrary.getState().error).toBe("Missing or damaged source audio.");
+  expect(useSong.getState().source).toBeNull();
+  codec.decodeTrack.mockResolvedValueOnce({ sampleRate: 44100, channels: [new Float32Array(2)] });
+  await useSongLibrary.getState().load(saved.id);
+  expect(useSongLibrary.getState().error).toMatch(/Missing or damaged/);
+  expect(useSong.getState().source).toBeNull();
+});
+it("reports a clear error for a song that is still being converted", async () => {
+  api.audioUrls.mockRejectedValueOnce(new Error("This song is still being converted to the compact library format. Try again in a moment."));
+  await useSongLibrary.getState().load(saved.id);
+  expect(useSongLibrary.getState().error).toContain("still being converted");
+  expect(fetchFile).not.toHaveBeenCalled();
 });

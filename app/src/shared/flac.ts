@@ -1,8 +1,9 @@
-import type * as FlacModule from "libflacjs/dist/libflac.min";
+import type * as FlacModule from "libflacjs/dist/libflac";
 
 /**
  * Lossless FLAC for the song library. The same module runs in the main process (migration) and in a renderer worker (save and load), so it
- * uses the pure-JavaScript libflac build: the WASM build fetches its binary by URL, which neither Node nor the packaged app can serve.
+ * uses the plain pure-JavaScript libflac build, whose memory image is embedded. The WASM build and the `min` build fetch a second file by URL,
+ * which neither Node nor the packaged app can serve; with the `min` build the encoder silently fails to initialise.
  *
  * Samples are stored as 24-bit integers. Float32 has a 24-bit mantissa, so a stem recorded at normal levels loses nothing audible, and the
  * encoder/decoder pair is bit-exact for the quantized values.
@@ -19,7 +20,7 @@ export interface FlacAudio {
 
 let loading: Promise<typeof FlacModule> | undefined;
 function loadFlac(): Promise<typeof FlacModule> {
-  loading ??= import("libflacjs/dist/libflac.min.js").then(
+  loading ??= import("libflacjs/dist/libflac.js").then(
     (m) =>
       new Promise<typeof FlacModule>((resolve) => {
         const flac = ((m as { default?: unknown }).default ?? m) as typeof FlacModule;
@@ -45,9 +46,11 @@ export async function encodeFlac(audio: FlacAudio): Promise<Uint8Array> {
     const status = flac.init_encoder_stream(encoder, (data) => {
       chunks.push(data.slice());
     });
-    if (status !== 0) throw new Error("Could not start the FLAC encoder.");
+    if (status !== 0) throw new Error(`Could not start the FLAC encoder (status ${status}).`);
     const block = new Int32Array(BLOCK_FRAMES * channels.length);
-    for (let start = 0; start < frames; start += BLOCK_FRAMES) {
+    for (let start = 0, blockNo = 0; start < frames; start += BLOCK_FRAMES, blockNo++) {
+      // The main process migrates songs with this; give its event loop a turn about every million frames.
+      if (blockNo % 16 === 15) await new Promise((resolve) => setTimeout(resolve));
       const count = Math.min(BLOCK_FRAMES, frames - start);
       for (let i = 0; i < count; i++) for (let c = 0; c < channels.length; c++) block[i * channels.length + c] = quantize(channels[c][start + i]);
       if (!flac.FLAC__stream_encoder_process_interleaved(encoder, block.subarray(0, count * channels.length), count)) throw new Error("FLAC encoding failed.");

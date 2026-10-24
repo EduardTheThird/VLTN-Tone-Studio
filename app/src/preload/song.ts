@@ -14,7 +14,7 @@ export const songApi: SongHostApi = {
       return ()=>{ipcRenderer.removeListener('song:library:progress',listener);};
     },
     index: () => invoke('song:library:index'),
-    audio: (id, name) => invoke('song:library:audio', id, name),
+    audioUrls: id => invoke('song:library:audioUrls', id),
     playlists: playlists => invoke('song:library:playlists', playlists),
     settings: (id, values) => invoke('song:library:settings', id, values),
     remove: id => invoke('song:library:remove', id),
