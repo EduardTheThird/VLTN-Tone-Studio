@@ -72,6 +72,9 @@
     "zustand": "^5.0.15"
   },
   "overrides": {
+    "@huggingface/transformers": {
+      "onnxruntime-web": "$onnxruntime-web"
+    },
     "neural-amp-modeler-wasm": {
       "react": "$react",
       "react-dom": "$react-dom"

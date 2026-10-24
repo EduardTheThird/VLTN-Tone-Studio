@@ -8,8 +8,8 @@ self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: Lyrics
     // terminating worker startup with an opaque error event.
     const [{ env, pipeline }, { default: wasm }, { default: mjs }] = await Promise.all([
       import("@huggingface/transformers"),
-      import("@whisper-ort/ort-wasm-simd-threaded.jsep.wasm?url"),
-      import("@whisper-ort/ort-wasm-simd-threaded.jsep.mjs?url"),
+      import("onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url"),
+      import("onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url"),
     ]);
     env.allowLocalModels = false;
     env.backends.onnx.wasm!.wasmPaths = { wasm, mjs };
