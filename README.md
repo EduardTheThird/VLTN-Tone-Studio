@@ -1,17 +1,11 @@
 <div align="center">
 
-## GP-150 and GP-180 support
-
-GP-150 and GP-180 share the editor protocol, preset format and performance MIDI command set. GP-150 has two footswitches and a built-in expression pedal; GP-180 has three footswitches. Both are supported over USB and for Bluetooth performance MIDI. Separate model identities and footswitch layouts are preserved. The command builder offers both models, and setup presets cover both. Existing GP-180 saved settings and cues remain compatible. Physical validation in this project used GP-180; GP-150 has not been hardware-tested in this session.
-
 <br>
 
 # VLTN Tone Studio
 
 A desktop editor and librarian for Valeton multi-effects:<br>
 **GP-5 · GP-50 · GP-150 · GP-180 · GP-200 · GP-200LT · GP-200JR**
-
-GP-180 firmware 1.1.1 has been tested for USB read-only inspection and backup of all 200 presets. GP-150 and GP-180 USB editor connections allow preset selection, edits and uploads without a write-unlock switch. Editor writes remain unverified on physical hardware. Bluetooth MIDI remains available for performance controls, but Bluetooth editor management is disabled. Use USB to manage presets and settings. See [hardware evidence and Bluetooth support](BLUETOOTH.md) and [Performance features](PERFORMANCE.md).
 
 Shape tones live, sort and back up every slot, match a song's guitar tone, and bring NAM captures and IRs from TONE3000 straight to the pedal.
 
@@ -287,6 +281,21 @@ The NAM captures you downloaded from TONE3000 are ranked against the song's guit
 
 <br>
 
+## Perform a set.
+
+Save songs with their stems, lyrics, chords and MIDI cues, line them up in a playlist and play the whole set from one screen.<br>
+Timed program changes reach your GP-150 or GP-180 and the pedals behind it over USB or Bluetooth MIDI. Stage mode locks the screen for the gig. See the [Performance guide](PERFORMANCE.md).
+
+<br>
+
+</div>
+
+---
+
+<div align="center">
+
+<br>
+
 ## The GP-200 family.
 
 The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to how they work.
@@ -359,7 +368,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 **Which pedal is connected?** Tone Studio works it out by itself and names it everywhere.<br>
 **Presets across models.** A GP-5 preset goes onto a GP-50 unchanged. A GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing. The GP-200, LT and JR share one `.prst` file. Presets don't move between the GP-5 and GP-200 families.<br>
-**GP-150 and GP-180.** Both speak one protocol and use one `.prst` file, known from USB captures of a GP-180 published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tone Studio tells them apart by the MIDI port name. All 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. The `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only. The GP-180 has a third footswitch (FS C) in the footswitch assignments.
+**GP-150 and GP-180.** Both speak one protocol and use one `.prst` file, known from USB captures of a GP-180 published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tone Studio tells them apart by the MIDI port name. All 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. The `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only. The GP-180 has a third footswitch (FS C) in the footswitch assignments. Both also send performance MIDI (timed program changes and tempo) over USB or Bluetooth, see [Performance](PERFORMANCE.md).
 
 <br>
 
@@ -489,5 +498,3 @@ VLTN Tone Studio is free software under the [GNU General Public License v3.0](LI
 <br>
 
 </div>
-
-Saved audio, stems and live playlists: see [Song library](SONG-LIBRARY.md). [Performance](PERFORMANCE.md) includes editable song-key estimates, combined lyrics/chords and remembered MIDI setup presets. See the [generic interface previews](PERFORMANCE.md#preview-screens) and [review notes/recommended follow-ups](docs/PR-REVIEW.md).
