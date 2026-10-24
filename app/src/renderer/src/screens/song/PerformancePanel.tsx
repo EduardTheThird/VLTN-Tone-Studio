@@ -120,6 +120,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
   useEffect(() => {
+    session.locked = stage;
+  }, [session, stage]);
+  useEffect(() => {
     session.bind();
     return () => session.dispose();
   }, [session]);

@@ -103,6 +103,8 @@ export interface SessionOptions {
 export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
   private effects: Effect[];
+  /** Stage mode: seeking is refused however it is requested. */
+  locked = false;
   private bound = false;
   private flushing = false;
   private dirty = false;
@@ -245,7 +247,13 @@ export class PerformanceSession {
           if (effect.last && deps.every((value, i) => Object.is(value, effect.last?.[i]))) continue;
           effect.cleanup?.();
           effect.last = deps;
-          effect.cleanup = effect.run(this.state);
+          try {
+            effect.cleanup = effect.run(this.state);
+          } catch (e) {
+            // An effect must never surface as a failed Play; report it and keep the others running.
+            useMidiDiagnostics.getState().fault(String(e));
+            this.fail(e);
+          }
         }
       } while (this.dirty);
     } finally {
@@ -412,6 +420,7 @@ export class PerformanceSession {
   };
 
   seek = async (value: number) => {
+    if (this.locked) return;
     this.pause();
     await this.state.player?.seek(value);
     setClockPosition(value);
@@ -451,8 +460,9 @@ export class PerformanceSession {
       this.pause();
       this.panic();
       this.setArmed(false);
-      if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
     });
+    // After the flush: the carry effect would otherwise store the disarmed state over this reset.
+    if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
   };
 
   connectMidi = async () => {
@@ -600,13 +610,7 @@ export class PerformanceSession {
           }
         },
       },
-      // Arming never survives a change of output object.
-      {
-        deps: (s) => [s.armedOutput, selectOutput(s)],
-        run: (s) => {
-          if (s.armedOutput && s.armedOutput !== selectOutput(s)) this.setArmed(false);
-        },
-      },
+      // A replaced or lost Bluetooth connection disarms. This runs before the generic check below so the fault is reported.
       {
         deps: (s) => [s.bluetooth, s.portId, s.armedOutput],
         run: (s) => {
@@ -616,6 +620,13 @@ export class PerformanceSession {
             this.setArmed(false);
           }
           this.previousBluetooth = s.bluetooth;
+        },
+      },
+      // Arming never survives a change of output object.
+      {
+        deps: (s) => [s.armedOutput, selectOutput(s)],
+        run: (s) => {
+          if (s.armedOutput && s.armedOutput !== selectOutput(s)) this.setArmed(false);
         },
       },
       // Remote transport input: Start/Continue/Stop, or CC80 >= 64 toggles playback.
@@ -682,6 +693,8 @@ export class PerformanceSession {
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
         },
         (message) => {
+          // A replaced output object (same port id) is never sent to; the statechange handler disarms.
+          if (this.output !== output) return;
           this.sendPerformance(message.bytes, message.due - performance.timeOrigin, message.label);
         },
         fault,
