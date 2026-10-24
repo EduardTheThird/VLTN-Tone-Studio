@@ -10,7 +10,7 @@ Scheduling uses a prewarmed worker with 20 ms ticks, 50 ms lookahead, audio chec
 
 **Reset timing counters** clears app and Bluetooth performance/clock measurements, including retained disconnected-session timing. It preserves traffic totals, the connection and queued messages; an in-flight write cannot restore timing from before the reset.
 
-Preflight is advisory: Performance checks the loaded song, and Songs & playlists offers a whole-playlist saved-data check. Configurable remote input channels, sleep prevention and portable rig definitions are not implemented. GP-150 shares the command set, but the physical results remain GP-180-specific. USB editor writes no longer require a special unlock and still need physical write/readback validation.
+Preflight is advisory: Performance checks the loaded song, and Songs & playlists offers a whole-playlist saved-data check. Stage-mode sleep prevention is implemented. Configurable remote input channels and portable rig definitions are not implemented. GP-150 shares the command set, but the physical results remain GP-180-specific. USB editor writes no longer require a special unlock and still need physical write/readback validation.
 
 ## Final workflow review — 23 October 2026
 
@@ -49,7 +49,7 @@ The 250 ms limit is a conservative interruption policy, not acceptable timing ji
 
 Preflight warnings, queue timing counters and a dedicated worker scheduler are now implemented; see [Performance](../PERFORMANCE.md#midi-preflight-and-timing-diagnostics). The worker is prepared before armed audio playback and cancelled on stop, seek or replacement. Renderer output bridging and audio checkpoints remain necessary, so driver/receiver timing and real-time guarantees remain outside this implementation. Reported timing measures queueing, not pedal receipt. Hardware results above remain GP-180-specific; the shared command set also supports GP-150.
 
-- **Session continuity:** centralize MIDI output ownership and recovery across screen changes and playlist loading. Add explicit suspend/resume handling and a performance-only sleep blocker with cleanup. Disconnection or timing failure must invalidate the carried playlist session synchronously.
+- **Session continuity:** centralize MIDI output ownership and recovery across screen changes and playlist loading. Stage mode now supplies a playback-only sleep blocker with cleanup; explicit suspend/resume handling remains a follow-up. Disconnection or timing failure must invalidate the carried playlist session synchronously.
 - **Hardware fault matrix:** repeat Bluetooth/USB commands on real GP-180 and all downstream pedals under CPU load, range loss, cable loss, repeated playlist entries and long-running sets. Include explicit note-offs and looper trigger counts. Automated tests cannot establish receiver latency or physical MIDI forwarding behavior.
 
 The Web MIDI specification defines equal-timestamp send ordering and queue clearing, but it does not provide a pedal-delivery acknowledgement. See the [W3C MIDIOutput contract](https://www.w3.org/TR/webmidi/#midioutput-interface).
@@ -63,3 +63,7 @@ Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 p
 Whole-playlist preflight is now implemented under Songs & playlists, superseding the earlier recommendation to add it. It validates saved file metadata and charts/tempo/MIDI per entry, including repeated songs, without playback or MIDI transmission. The Performance panel still checks its loaded song. See [the playlist guide](../SONG-LIBRARY.md#whole-playlist-preflight) for snapshot limits and what remains a physical check.
 
 Validation for playlist preflight: **821 application tests passed, 3 skipped**, across **105 files**; typechecking and production build passed. The 12 focused preflight/storage/UI tests include repeated entries, missing/truncated audio, malformed cues, incompatible tempo, playback-duration matching and stale-response suppression. No physical MIDI was sent.
+
+## Stage mode update — 24 October 2026
+
+Stage mode is implemented, superseding the earlier stage-mode/seek-lock/sleep-prevention recommendations. The modal reader hides setup and editing, disables seeking/rewind/chord popups, preserves transport and Panic, and persists across song transitions. Desktop sleep prevention uses renewable leases with pause/exit/crash cleanup. Browser sleep prevention and a real OS sleep-policy test are not claimed. See [Stage mode](../PERFORMANCE.md#stage-mode).

@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
+- Stage mode with large transport/lyrics, locked seeking and editors, visible MIDI status/Panic, and renewable desktop sleep prevention during playback.
 - Whole-playlist preflight with per-entry saved audio, chart, tempo and MIDI warnings, without loading tracks or sending commands.
 - Dedicated MIDI scheduler worker with audio checkpoints, advisory cue/channel preflight and bounded timing diagnostics.
 - GP-150 performance MIDI profiles, Bluetooth discovery names and shared GP-150 / GP-180 setup presets; existing GP-180 saved settings remain compatible.

@@ -1,4 +1,4 @@
-import { app, net, type BrowserWindow } from "electron";
+import { app, net, powerSaveBlocker, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -19,6 +19,7 @@ import { sanitizeFileName } from "@shared/files-naming";
 import { HostError } from "@shared/ipc";
 import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { songSaveFilters } from './song-save-options';
+import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
 import type { LibrarySong, Playlist } from '@shared/song-library';
 
@@ -103,6 +104,17 @@ async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Pr
 }
 
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
+  const stagePower=new StagePower(powerSaveBlocker), watched=new Set<number>();
+  handle('song:stagePower',(event,token:string,enabled:boolean)=>{
+    const owner=event.sender.id;
+    if(!watched.has(owner)){
+      watched.add(owner);
+      event.sender.once('destroyed',()=>{stagePower.release(owner);watched.delete(owner);});
+      event.sender.on('render-process-gone',()=>stagePower.release(owner));
+    }
+    stagePower.update(owner,token,enabled);
+  });
+  app.once('will-quit',()=>stagePower.close());
   const library = new SongLibraryStore(join(app.getPath('userData'), 'song-library'));
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());

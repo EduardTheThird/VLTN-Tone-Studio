@@ -8,6 +8,7 @@ import type { Chord } from '@/song/performance/chords';
 import { host } from '@/host';
 import { startMidiScheduler, prepareMidiScheduler, midiNow } from '@/song/performance/midi-scheduler-client';
 import { useMidiDiagnostics } from '@/song/performance/midi-diagnostics';
+import { useStagePower } from './use-stage-power';
 import { MidiHealth } from './MidiHealth';
 import { useBluetooth } from '@/bluetooth/connection';
 import { BluetoothControls } from '@/bluetooth/BluetoothControls';
@@ -35,10 +36,11 @@ let sessionId = 0;
 export function PerformancePanel() {
   const source = useSong(s => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
-  return <PerformanceSession key={generation} />;
+  const [stage,setStage]=useState(false);
+  return <PerformanceSession key={generation} stage={stage} setStage={setStage} />;
 }
 
-function PerformanceSession() {
+function PerformanceSession({stage,setStage}:{stage:boolean;setStage:(value:boolean)=>void}) {
   const bluetooth = useBluetooth(s => s.connection);
   const midiConfig = useMidiConfiguration();
   const source = useSong(s => s.source), stems = useSong(s => s.stems);
@@ -151,7 +153,7 @@ function PerformanceSession() {
     }
     finally { playPending.current = false; }
   };
-  const seek = async (value: number) => { pause(); await player?.seek(value); setTime(value); cursor.current = value - 0.001; };
+  const seek = async (value: number) => { if(stage)return; pause(); await player?.seek(value); setTime(value); cursor.current = value - 0.001; };
   const startPlayback = () => {
     if (queued && library.queue.length > 1) {
       if (player && player.position >= player.duration) {
@@ -307,8 +309,11 @@ function PerformanceSession() {
   };
   const outputs = [...(access?.outputs.values() ?? []), ...(bluetooth ? [bluetooth] : [])].filter(p => p.state === 'connected');
   const inputs = [...(access?.inputs.values() ?? []), ...(bluetooth ? [bluetooth] : [])].filter(p => p.state === 'connected');
+  const powerError=useStagePower(stage && (playing || library.playlistPlaying));
   void portsVersion;
   return <section className="glass flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-xl p-5" aria-label="Performance">
+    <div style={{display:stage?'none':'contents'}}>
+    <Button variant="outline" onClick={()=>setStage(true)}>Enter stage mode</Button>
     {queued && <div aria-label="Playlist transport" className="flex flex-wrap items-center gap-3 rounded border border-seam p-3">
       <strong>{library.index.songs.find(s => s.id === source?.libraryId)?.title}</strong>
       <span>{library.position + 1} / {library.queue.length}</span>
@@ -322,7 +327,7 @@ function PerformanceSession() {
     {queued && library.notice === 'Playlist finished.' && <p role="status">Playlist finished.</p>}
     <div className="flex flex-wrap items-center gap-3">
       <Button disabled={!player || !!parsed.error || library.busy} onClick={() => playing ? pause() : startPlayback()}>{playing ? 'Pause' : queued && library.queue.length > 1 ? 'Play playlist' : 'Play song'}</Button>
-      <Button variant="outline" disabled={!player} onClick={() => void seek(0)}>Rewind</Button>
+      <Button variant="outline" disabled={!player || stage} onClick={() => void seek(0)}>Rewind</Button>
       <span>{lrcTime(time)} / {lrcTime(player?.duration ?? 0)}</span>
       <input aria-label="Song position" type="range" min="0" max={player?.duration ?? 0} step="0.1" value={time} onChange={e => void seek(Number(e.target.value))} />
       {!source && <span>Open a song in Stems to perform.</span>}
@@ -341,15 +346,25 @@ function PerformanceSession() {
     <MidiHealth cues={parsed.cues} duration={player?.duration ?? 0} clock={clock} tempoChannel={midiConfig.tempoOnStart ? midiConfig.tempoChannel : undefined} outputName={portId === 'bluetooth-midi' ? `Bluetooth ${output?.name || ''}` : output?.name || undefined} parseError={parsed.error} />
     <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
     {player && <div aria-label="Performance mixer" className="flex flex-wrap gap-3">{player.names.map(name => <div key={name} className="flex items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm"><label><input type="checkbox" aria-label={`${stems ? name : 'Song'} enabled`} checked={!mix[name].mute} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], mute: !e.target.checked } }))} /> {stems ? name : 'Song'}</label><input aria-label={`${stems ? name : 'Song'} volume`} className="w-24" type="range" min="0" max="1" step="0.01" value={mix[name].volume} onChange={e => setMix(m => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))} /><span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span></div>)}</div>}
-    <PerformanceReader chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={saveChart} status={<>
+    </div>
+    <PerformanceReader stage={stage} onExitStage={()=>setStage(false)} chart={chart} lyrics={lyrics} chords={chords} time={time} shift={shift} title={source?.name ?? 'Performance'} onEditStart={pause} onSaveChart={stage?undefined:saveChart} status={<>
+      {stage && <p>Stage mode: seeking and editing locked. {queued ? `Set ${library.position+1} / ${library.queue.length}` : ''}</p>}
+      {stage && (playing || library.playlistPlaying) && !powerError && host.song.stagePower && <p>Desktop sleep prevention requested during playback.</p>}
+      {stage && library.error && <p role="alert">{library.error}</p>}
+      {stage && library.notice && <p role="status">{library.notice}</p>}
+      {stage && queued && <p>Next: {library.index.songs.find(s=>s.id===library.queue[library.position+1])?.title ?? 'End of set'}</p>}
+      {stage && powerError && <p role="alert">{powerError}</p>}
       <p role="status">MIDI: {output?.state === 'connected' ? `${output.name} · ${armed ? 'Cues armed' : 'Cues disarmed'}` : 'Output disconnected · Cues disarmed'}</p>
       {(error || parsed.error) && <p role="alert" className="text-red-400">{error || parsed.error}</p>}
     </>} transport={<>
       <Button disabled={!player || !!parsed.error || library.busy} onClick={() => playing ? pause() : startPlayback()}>{playing ? 'Pause' : queued && library.queue.length > 1 ? 'Play playlist' : 'Play song'}</Button>
-      <Button variant="outline" disabled={!player} onClick={() => void seek(0)}>Rewind</Button>
-      <input aria-label="Expanded song position" className="min-w-32 flex-1" type="range" min="0" max={player?.duration ?? 0} step="0.1" value={time} onChange={e => void seek(Number(e.target.value))} />
+      <Button variant="outline" disabled={!player || stage} onClick={() => void seek(0)}>Rewind</Button>
+      <input disabled={stage} aria-label="Expanded song position" className="min-w-32 flex-1" type="range" min="0" max={player?.duration ?? 0} step="0.1" value={time} onChange={e => void seek(Number(e.target.value))} />
+      <Button variant="outline" onClick={()=>{pause();panic();setArmed(false);if(queued)library.rememberMidi(null);}}>Panic / stop MIDI</Button>
+      {stage && <Button variant="outline" onClick={pause}>Stop playback</Button>}
       <span className="text-sm">{lrcTime(time)} / {lrcTime(player?.duration ?? 0)}</span>
     </>} />
+    <div style={{display:stage?'none':'contents'}}>
     <section aria-label="Performance MIDI routing" className="space-y-3 rounded-xl border border-seam p-4"><h2 className="font-semibold">Performance MIDI controller</h2><p className="text-sm text-silkscreen-3">Computer → Bluetooth or USB MIDI → GP-150 / GP-180 → physical MIDI OUT/THRU → MIDI pedals. Choose one performance output below.</p><div className="flex flex-wrap items-center gap-3 py-3">
       <div className="w-full space-y-2 rounded border border-seam p-3" aria-label="MIDI setup presets">
         <div className="flex flex-wrap items-center gap-3"><label>Setup preset <select aria-label="MIDI setup preset" className={field} value={midiConfig.preset} onChange={e=>midiConfig.update({preset:e.target.value})}>{MIDI_SETUP_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -395,5 +410,6 @@ function PerformanceSession() {
     </div>
     </details>
     <ChordVoicings chord={selectedChord} onClose={() => setSelectedChord(null)} />
+    </div>
   </section>;
 }

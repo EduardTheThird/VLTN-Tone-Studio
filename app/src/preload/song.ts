@@ -3,6 +3,7 @@ import type { ModelProgress, SongHostApi } from "@shared/host/song";
 import { invoke } from "./invoke";
 
 export const songApi: SongHostApi = {
+  stagePower: (token,enabled) => invoke('song:stagePower',token,enabled),
   library: {
     preflight: ids => invoke('song:library:preflight', ids),
     exportBackup: () => invoke('song:library:exportBackup'),

@@ -56,7 +56,7 @@ vi.mock('@/song/store', () => ({ useSong: Object.assign((select: (s: unknown) =>
 vi.mock('@/state/device', () => ({ useDevice: (select: (s: unknown) => unknown) => select({device: 'gp5', preset: null, mode: 'mock'}) }));
 const playlist=vi.hoisted(()=>({active:false,queue:[] as string[],position:0,playlistPlaying:true,busy:false,index:{songs:[]},midiSession:null as {access:MIDIAccess|null;portId:string;inputId:string;armed:boolean;output:unknown}|null,rememberMidi:vi.fn(),pausePlaylist:vi.fn(),resumePlaylist:vi.fn()}));
 vi.mock('@/song/library', () => ({ useSongLibrary: Object.assign(() => playlist.active?playlist:({queue: [], position: -1, index: {songs: []}}), {getState:()=>playlist.active?playlist:({queue:[],position:-1,playlistPlaying:false})}) }));
-vi.mock('@/host', () => ({ host: {} }));
+vi.mock('@/host', () => ({ host: {song:{}} }));
 vi.mock('@/bluetooth/connection', () => ({ useBluetooth: Object.assign((select: (s: unknown) => unknown) => select({connection: mocks.bluetooth}), {getState:()=>({connection:mocks.bluetooth,diagnostics:null})}) }));
 vi.mock('@/bluetooth/BluetoothControls', () => ({ BluetoothControls: () => null }));
 vi.mock('./LyricsTrack', () => ({ LyricsTrack: () => null }));
@@ -394,4 +394,29 @@ it.each([false,true])('releases only note channels on pause, without sending ped
   const releases=mocks.send.mock.calls.map(c=>c[0]).filter(b=>b[1]===64||b[1]===123);
   if(notes) expect(releases).toEqual([[0xb4,64,0],[0xb4,123,0]]);
   else expect(releases).toEqual([]);
+});
+
+it('locks stage seeking and editors while keeping panic available',async()=>{
+ mocks.bluetooth={id:'bluetooth-midi',name:'GP-180 BLE',state:'connected',send:mocks.send,clear:mocks.clear};
+ render(<PerformancePanel/>);fireEvent.click(screen.getByLabelText('Send cues'));
+ fireEvent.click(screen.getByText('Enter stage mode'));
+ const stage=within(screen.getByRole('dialog',{name:'Stage mode'}));
+ expect((stage.getByLabelText('Expanded song position') as HTMLInputElement).disabled).toBe(true);
+ expect(stage.queryByText('Edit chords, lyrics & MIDI')).toBeNull();
+ await act(async()=>{fireEvent.click(stage.getByText('Play song'));});
+ expect(stage.getByText('Pause')).toBeTruthy();
+ fireEvent.click(stage.getByText('Panic / stop MIDI'));
+ expect(stage.getByLabelText('Performance status').textContent).toContain('Cues disarmed');
+ expect(stage.getByText('Play song')).toBeTruthy();
+ fireEvent.keyDown(stage.getByText('Exit stage mode'),{key:'Escape'});
+ expect(screen.getByRole('dialog',{name:'Stage mode'})).toBeTruthy();
+ fireEvent.click(stage.getByText('Exit stage mode'));
+ expect(screen.queryByRole('dialog',{name:'Stage mode'})).toBeNull();
+});
+
+it('keeps stage mode active when a new playlist song replaces the source',()=>{
+ const view=render(<PerformancePanel/>);fireEvent.click(screen.getByText('Enter stage mode'));
+ mocks.source={...mocks.source,libraryId:'next-stage-song'};view.rerender(<PerformancePanel/>);
+ expect(screen.getByRole('dialog',{name:'Stage mode'})).toBeTruthy();
+ expect((screen.getByLabelText('Expanded song position') as HTMLInputElement).disabled).toBe(true);
 });

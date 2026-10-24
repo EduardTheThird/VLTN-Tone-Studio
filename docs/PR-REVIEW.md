@@ -12,7 +12,7 @@ GP-150 and GP-180 share editor/preset/performance support while retaining separa
 
 Before release, exercise editor write/readback on the real GP-180, validate GP-150 hardware, rehearse long playlists and MIDI fault recovery on the actual chain, and test packaged backup/restore on a second computer. No new physical-pedal test was performed in this review.
 
-The highest-value remaining additions are a stage mode with seek/edit protection and sleep prevention, configurable input channel/footswitch mappings, next-song preloading and transition/count-in options, portable rig definitions, and exportable timing reports. These remain recommendations, not implemented features. Preflight is advisory: Performance checks the loaded song, and Songs & playlists checks the whole saved playlist; backup contains song cues but excludes global MIDI routing and pedal definitions.
+The highest-value remaining additions are configurable input channel/footswitch mappings, next-song preloading and transition/count-in options, portable rig definitions, and exportable timing reports. These remain recommendations, not implemented features. Preflight is advisory: Performance checks the loaded song, and Songs & playlists checks the whole saved playlist; backup contains song cues but excludes global MIDI routing and pedal definitions.
 
 ## Final workflow review — 23 October 2026
 
@@ -54,11 +54,11 @@ The subsequent [MIDI reliability review](MIDI-RELIABILITY-REVIEW.md) documents f
 ## Recommended follow-ups
 
 1. **First-beat offset:** allow the recording's first real downbeat to anchor the metronome when there is silence or an unmetered intro. Current beat zero is audio time zero.
-2. **Seek lock during playback:** guard against accidental progress-slider movement on stage, while keeping deliberate stopped seeks available.
+2. **Stage mode:** now implemented with seek/edit locks and sleep prevention; a real OS sleep-policy check remains outstanding.
 3. **Recognition evaluation:** compare keys/chords/lyrics with reviewed real-song annotations, including relative minor, modes, detuned guitars and key changes. Existing synthetic tests are not an accuracy benchmark.
 4. **Storage management:** portable library export/restore is now implemented; automatic cleanup of abandoned audio revisions and resumable transfers remain follow-ups. See [the library guide](../SONG-LIBRARY.md#portable-backup-and-restore).
 
-These are recommendations, not features implemented in this review. Cross-platform packaged builds, GP-180 editor writes and the full pedal-action catalogue still need their own hardware/release verification. Continuous app MIDI clock remains unsuitable for the tested GP-180/TimeLine rig; use the documented one-time tempo setup.
+The remaining follow-ups are recommendations; completed work is identified above. Cross-platform packaged builds, GP-180 editor writes and the full pedal-action catalogue still need their own hardware/release verification. Continuous app MIDI clock remains unsuitable for the tested GP-180/TimeLine rig; use the documented one-time tempo setup.
 
 ## Shared-model update validation - 23 October 2026
 
@@ -69,3 +69,9 @@ Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 p
 Whole-playlist preflight is now implemented under Songs & playlists, superseding the earlier recommendation to add it. It validates saved file metadata and charts/tempo/MIDI per entry, including repeated songs, without playback or MIDI transmission. The Performance panel still checks its loaded song. See [the playlist guide](../SONG-LIBRARY.md#whole-playlist-preflight) for snapshot limits and what remains a physical check.
 
 Validation for playlist preflight: **821 application tests passed, 3 skipped**, across **105 files**; typechecking and production build passed. The 12 focused preflight/storage/UI tests include repeated entries, missing/truncated audio, malformed cues, incompatible tempo, playback-duration matching and stale-response suppression. No physical MIDI was sent.
+
+## Stage mode update — 24 October 2026
+
+Stage mode is implemented, superseding the earlier stage-mode/seek-lock/sleep-prevention recommendations. The modal reader hides setup and editing, disables seeking/rewind/chord popups, preserves transport and Panic, and persists across song transitions. Desktop sleep prevention uses renewable leases with pause/exit/crash cleanup. Browser sleep prevention and a real OS sleep-policy test are not claimed. See [Stage mode](../PERFORMANCE.md#stage-mode).
+
+Stage-mode validation: **827 application tests passed, 3 skipped**, across **107 files**; typechecking and the production build passed. Tests cover transport locks, Panic, song transitions, sleep-lease renewal/expiry and renderer cleanup. Actual OS sleep/wake behavior remains untested.

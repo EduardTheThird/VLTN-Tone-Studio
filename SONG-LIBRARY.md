@@ -40,3 +40,11 @@ Select a playlist under **Song → Songs & playlists**, then choose **Check play
 The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect PCM file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
 
 Errors and warnings are advisory and do not block intentional playback. The report uses current saved MIDI preferences and configured pedal channels; it cannot confirm a connected output, physical receive channels or pedal response. Playlist/library or MIDI preference changes clear the report. Recheck after external file changes. Preflight is unavailable while a library operation or playlist playback is active.
+
+## Stage mode
+
+Prepare the song or playlist, check the output and arm MIDI as needed, then choose **Enter stage mode** in Performance. Stage mode fills the window with larger lyrics and transport buttons. It keeps MIDI status and faults visible, hides setup/mixer/editor controls, and disables seeking, rewind and chord popups. It does not arm MIDI or change the song BPM. The stage view stays active across automatic playlist transitions.
+
+**Play/Pause**, **Stop playback** and **Panic / stop MIDI** remain accessible. Panic pauses playback/the set, clears queued MIDI and disarms cues using the existing cleanup rules. It cannot reverse commands already received by a pedal. Use **Exit stage mode** to seek, edit, change the mix or reconnect/rearm; Escape and outside clicks do not accidentally unlock the stage view. Leaving the Performance screen resets stage mode.
+
+In the desktop app, active stage playback requests system/display sleep prevention. Pausing, finishing the set, exiting stage mode or leaving Performance releases it. Requests renew during playback and expire after 15 seconds without renewal; closing the window or a renderer crash also clears them. The browser build reports that sleep prevention is unavailable. This does not override deliberate sleep, lid-close behavior or system power policy.
