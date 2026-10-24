@@ -100,7 +100,7 @@ Exported charts carry readable labels and the MIDI messages, so another computer
 
 ## Bluetooth
 
-Bluetooth MIDI carries performance cues, transport input and clock. Bluetooth editor management is off, so use USB to read or write presets and settings. Bluetooth audio and Bluetooth MIDI are separate services.
+Bluetooth MIDI carries performance cues, transport input and clock. If the link drops, the app shows "Reconnecting… (attempt n)" and retries by itself (after 0.5, 1, 2, 4 s and so on, up to 30 s between attempts) without asking you to pick the device again. Choose **Stop reconnecting** to give up. After it reconnects the song stays disarmed: check the pedal, rearm and choose where to resume. Bluetooth editor management is off, so use USB to read or write presets and settings. Bluetooth audio and Bluetooth MIDI are separate services.
 
 To send cues from Performance to a GP-180 and on to pedals on its MIDI OUT:
 
@@ -161,6 +161,7 @@ On the desktop, playback in stage mode keeps the computer and display awake. It 
 
 - **Nothing reaches the pedal.** Check that **Send cues** is on, the right output is selected and the channel matches the pedal. Use **Send MIDI now** to test one command.
 - **"N late MIDI commands dropped" notice.** A stall (a busy window, a slow driver) never disarms the song. A program change, controller or SysEx more than 250 ms late is dropped instead of played out of place, late clock pulses are skipped, and the schedule re-syncs to the audio. Note-offs are always sent. The notice shows where it happened, and the dropped commands are counted in Diagnostics. Check the pedal if a patch looks wrong.
+- **Bluetooth: "late messages dropped".** A Bluetooth command that is more than 250 ms late when it reaches the radio is dropped, counted under the Bluetooth status and never closes the link. The link closes only on a write error, a write timeout or a Bluetooth disconnect, and it then reconnects automatically.
 - **Cues stopped and the output disarmed.** This now only happens when timing cannot recover: the scheduler worker failed, the audio clock stopped advancing, three re-syncs happened within five seconds, or the output disconnected. Queued commands are cleared and audio keeps playing. Check the pedal, rearm and choose where to resume.
 - **Bluetooth closed by itself.** A write that waits more than 250 ms, or takes more than a second, closes the connection and is not retried, because the pedal may already have got it.
 - **Tempo jumps.** Turn **Send MIDI Clock** off and use the one-time tempo command.

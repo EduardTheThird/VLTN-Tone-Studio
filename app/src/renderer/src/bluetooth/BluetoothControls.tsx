@@ -1,12 +1,19 @@
 import { Button } from "@/components/ui/button";
-import { connectBluetooth, useBluetooth, type BleMidiConnection } from "./connection";
+import { connectBluetooth, stopBluetoothReconnect, useBluetooth, type BleMidiConnection } from "./connection";
 
 export function BluetoothControls({ editor = false, onConnected }: { editor?: boolean; onConnected?: (connection: BleMidiConnection) => void }) {
-  const { connection, connecting, error, diagnostics } = useBluetooth();
+  const { connection, connecting, error, diagnostics, reconnect } = useBluetooth();
   return (
     <div className="flex max-w-xl flex-col gap-2 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        {!connection ? (
+        {!connection && reconnect ? (
+          <>
+            <span role="status">Reconnecting… (attempt {reconnect.attempt})</span>
+            <Button variant="outline" onClick={() => stopBluetoothReconnect()}>
+              Stop reconnecting
+            </Button>
+          </>
+        ) : !connection ? (
           <Button
             variant="outline"
             disabled={connecting}
@@ -41,6 +48,12 @@ export function BluetoothControls({ editor = false, onConnected }: { editor?: bo
             {diagnostics.clockTiming.maxIntervalMs.toFixed(1)} ms
           </p>
         </details>
+      )}
+      {diagnostics && (diagnostics.dropped > 0 || diagnostics.reconnects > 0) && (
+        <p className="text-silkscreen-3">
+          {diagnostics.dropped} late message{diagnostics.dropped === 1 ? "" : "s"} dropped · {diagnostics.reconnects} automatic reconnect
+          {diagnostics.reconnects === 1 ? "" : "s"}
+        </p>
       )}
       {error && (
         <p role="alert" className="text-red-400">

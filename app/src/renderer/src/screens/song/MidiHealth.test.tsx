@@ -22,7 +22,15 @@ it("shows advisory preflight and bounded timing data without changing cue sendin
   expect(screen.getByLabelText("MIDI timing totals").textContent).toContain("Worst dispatch lateness: 12.0 ms");
   expect(screen.getByText("Opening patch")).toBeTruthy();
   useBluetooth.setState({
-    diagnostics: { device: "GP-180", writes: 3, notifications: 0, messages: 0, performanceTiming: { commands: 3, maxLateMs: 20, maxWriteMs: 30 } },
+    diagnostics: {
+      device: "GP-180",
+      writes: 3,
+      notifications: 0,
+      messages: 0,
+      dropped: 0,
+      reconnects: 0,
+      performanceTiming: { commands: 3, maxLateMs: 20, maxWriteMs: 30 },
+    },
   });
   fireEvent.click(screen.getByText("Reset timing counters"));
   expect(useBluetooth.getState().diagnostics?.performanceTiming).toBeUndefined();

@@ -13,10 +13,13 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 - **Pedal state on mid-song start.** Starting or seeking into a song, or recovering from a stall, now sets each pedal to the patch and controller values in force at that point. Trigger controls such as looper and tap tempo are left out, and `{chase}` / `{nochase}` on a cue override the defaults.
 
+- **Bluetooth link resilience.** Bluetooth MIDI now packs messages that fall within a few milliseconds into one packet (stamped with their intended send time), so a busy stream no longer needs a write per message. If the pedal goes out of range or drops the link, the app reconnects on its own with a growing delay, without the device chooser; the song stays disarmed until you rearm it. **Stop reconnecting** is next to the status.
+
 ### Changed
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- A Bluetooth MIDI command that arrives more than 250 ms late is now dropped and counted instead of closing the Bluetooth connection.
 - Pause and panic only release channels that sent notes, so they no longer trigger the GP-180 looper Stop.
 - A stall no longer disarms MIDI for the rest of the song. Late program changes, controllers and notes are dropped (note-offs are always sent), the schedule re-syncs, and a notice shows what was dropped. USB cues are queued up to a second ahead with exact timestamps. MIDI only disarms when timing cannot recover.
 - GP-180 backups keep the connected pedal model rather than defaulting to GP-150.
