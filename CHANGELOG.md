@@ -16,7 +16,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Fixed
 - Pause and panic only release channels that sent notes, so they no longer trigger the GP-180 looper Stop.
-- MIDI disarms on a gross scheduling or Bluetooth write delay instead of replaying a burst of late commands.
+- A stall no longer disarms MIDI for the rest of the song. Late program changes, controllers and notes are dropped (note-offs are always sent), the schedule re-syncs, and a notice shows what was dropped. USB cues are queued up to a second ahead with exact timestamps. MIDI only disarms when timing cannot recover.
 - GP-180 backups keep the connected pedal model rather than defaulting to GP-150.
 
 ## [0.8.1] - 2026-10-21

@@ -1,5 +1,14 @@
-import type { ScheduledMessage, SchedulerConfig, SchedulerReply } from "./midi-scheduler";
+import { lateAction, STALE_MS, type ScheduledMessage, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
 const failedWorkers = new WeakMap<Worker, Error>();
+/** The session keeps running through late messages; this reports them so the UI can show a non-blocking notice. */
+export interface SchedulerDegraded {
+  /** Song position in seconds. */
+  position: number;
+  dropped: ScheduledMessage[];
+  resynced: boolean;
+}
+/** The worker only answers our checkpoints, so a long silence means it is gone. Shorter stalls come from a busy renderer and recover on their own. */
+const WORKER_SILENCE_MS = 3000;
 export const midiNow = () => performance.timeOrigin + performance.now();
 /** Warm an idle worker before starting audio, with a bounded startup wait. */
 export function prepareMidiScheduler() {
@@ -47,7 +56,13 @@ export function prepareMidiScheduler() {
   };
 }
 /** The worker owns cue selection/timers. Window-only MIDI/Bluetooth APIs stay here. */
-export function startMidiScheduler(config: SchedulerConfig, onSend: (message: ScheduledMessage) => void, onFault: (error: string) => void, prepared?: Worker) {
+export function startMidiScheduler(
+  config: SchedulerConfig,
+  onSend: (message: ScheduledMessage) => void,
+  onFault: (error: string) => void,
+  prepared?: Worker,
+  onDegraded?: (event: SchedulerDegraded) => void,
+) {
   const worker = prepared ?? new Worker(new URL("./midi-scheduler-worker.ts", import.meta.url), { type: "module" });
   const failed = failedWorkers.get(worker);
   if (failed) throw failed;
@@ -81,26 +96,31 @@ export function startMidiScheduler(config: SchedulerConfig, onSend: (message: Sc
       fault(reply.error);
       return;
     }
-    // Reject a delayed bridge batch before sending any part of it.
-    if (reply.messages.some((message) => midiNow() - message.due > 250)) {
-      fault("MIDI dispatch interrupted: delayed commands discarded and cues disarmed.");
+    if (reply.type === "resync") {
+      onDegraded?.({ position: reply.position, dropped: [], resynced: true });
       return;
     }
+    if (reply.type !== "batch") return;
+    // The bridge can delay a batch. Judge each message on its own: a late one is dropped (note-offs are still sent), the rest go out.
+    const dropped = [...(reply.dropped ?? [])];
     try {
       for (const message of reply.messages) {
         if (!active) return;
-        if (midiNow() - message.due > 250) {
-          fault("MIDI dispatch interrupted: delayed commands discarded and cues disarmed.");
-          return;
+        if (midiNow() - message.due > STALE_MS) {
+          const action = lateAction(message.bytes);
+          if (action === "drop") dropped.push(message);
+          if (action !== "send") continue;
         }
         onSend(message);
       }
     } catch (error) {
       fault(error instanceof Error ? error.message : String(error));
+      return;
     }
+    if (dropped.length) onDegraded?.({ position: Math.min(...dropped.map((m) => m.time ?? (m.due - config.origin) / 1000)), dropped, resynced: false });
   };
   watchdog = setInterval(() => {
-    if (midiNow() - (started ? lastResponse : requestedAt) > 250)
+    if (midiNow() - (started ? lastResponse : requestedAt) > WORKER_SILENCE_MS)
       fault(started ? "MIDI scheduler stopped responding. Cues disarmed." : "MIDI scheduler did not acknowledge playback. Cues disarmed.");
   }, 50);
   try {

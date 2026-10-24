@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { MidiSchedule, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
+import { BLUETOOTH_LOOKAHEAD, MidiSchedule, SYSTEM_LOOKAHEAD, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
 import { parseChart } from "./chart";
 const config = (patch: Partial<SchedulerConfig> = {}): SchedulerConfig => ({
   cues: parseChart("[00:00] {midi:pc 1 1}\n[00:01] {midi:cc 2 12 127}"),
@@ -25,13 +25,15 @@ it("queues each cue once on the fixed grid, preserves message order and applies 
   });
   f.schedule.tick(1000);
   f.schedule.sync(0.98, 1980, 1980);
-  f.schedule.tick(1980); // long poll deliberately faults
+  f.schedule.tick(1980); // a long poll resyncs instead of faulting
   expect(f.messages().map((m) => m.bytes)).toEqual([
     [192, 1],
     [191, 73, 0],
     [191, 74, 120],
+    [177, 12, 127],
   ]);
-  expect(f.replies.at(-1)?.type).toBe("fault");
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  expect(f.replies.some((r) => r.type === "resync")).toBe(true);
 });
 it("fills on-time cues without duplication and never emits after stop", () => {
   const f = fixture();
@@ -62,23 +64,75 @@ it.each([90, 120, 180])("keeps 24 PPQN at %i BPM despite checkpoint jitter", (bp
   expect(pulses).toHaveLength((bpm / 60) * 24 * 10);
   pulses.forEach((p, i) => expect(p.due).toBeCloseTo(1000 + (i * 60000) / bpm / 24, 6));
 });
-it("faults only once if audio freezes or checkpoints disappear and never produces catch-up commands", () => {
-  const f = fixture({ cues: parseChart("[00:00.50] {midi:pc 1 2}") });
-  for (let t = 1000; t <= 1300; t += 20) {
+it("faults once when the audio clock stops advancing and never produces catch-up commands", () => {
+  const f = fixture({ cues: parseChart("[00:03] {midi:pc 1 2}"), duration: 10 });
+  for (let t = 1000; t <= 2100; t += 20) {
     f.schedule.sync(0, t, t);
     f.schedule.tick(t);
   }
-  f.schedule.tick(2000);
-  expect(f.replies).toHaveLength(1);
-  expect(f.replies[0].type).toBe("fault");
-  const g = fixture({ cues: [] });
-  for (let t = 1000; t <= 1300; t += 20) g.schedule.tick(t);
-  expect(g.replies.at(-1)?.type).toBe("fault");
+  f.schedule.tick(3000);
+  expect(f.replies.filter((r) => r.type === "fault")).toHaveLength(1);
+  expect(f.replies.at(-1)?.type).toBe("fault");
+  expect(f.messages()).toEqual([]);
 });
-it("rejects an old startup anchor instead of applying late start tempo", () => {
+it("resyncs when checkpoints disappear and only faults after three resyncs within five seconds", () => {
+  const f = fixture({ cues: [] });
+  for (let t = 1000; t < 1500; t += 20) f.schedule.tick(t);
+  expect(f.replies.filter((r) => r.type === "resync")).toHaveLength(1);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  for (let t = 1500; t <= 2000; t += 20) f.schedule.tick(t);
+  expect(f.replies.filter((r) => r.type === "fault")).toHaveLength(1);
+});
+it("keeps the session running through a frozen renderer: stale patch changes are dropped and counted, later ones still fire", () => {
+  const f = fixture({ cues: parseChart("[00:00.30] {midi:pc 1 2}\n[00:00.35] {midi:pc 1 3}\n[00:01.00] {midi:pc 1 4}"), duration: 5 });
+  f.schedule.tick(1000);
+  f.schedule.sync(0, 1000, 1000);
+  // Nothing runs for 700 ms, then everything resumes.
+  f.schedule.sync(0.7, 1700, 1700);
+  for (let t = 1700; t <= 2000; t += 20) {
+    f.schedule.sync((t - 1000) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  const dropped = f.replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : []));
+  expect(dropped.map((m) => m.bytes)).toEqual([
+    [192, 2],
+    [192, 3],
+  ]);
+  expect(f.messages().map((m) => m.bytes)).toEqual([[192, 4]]);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  expect(f.replies.some((r) => r.type === "resync")).toBe(true);
+});
+it("sends a late note-off, drops a late note-on and silently drops late clock pulses", () => {
+  const f = fixture({ cues: parseChart("[00:00.10] {midi:note 1 60 100}\n[00:00.10] {midi:off 1 60 0}"), clock: true, duration: 5 });
+  f.schedule.sync(0.7, 1700, 1700);
+  f.schedule.tick(1700);
+  const dropped = f.replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : []));
+  expect(dropped.map((m) => m.bytes)).toEqual([[144, 60, 100]]);
+  expect(f.messages().map((m) => m.bytes)).toContainEqual([128, 60, 0]);
+  expect(
+    f
+      .messages()
+      .filter((m) => m.bytes[0] === 248)
+      .every((m) => 1700 - m.due <= 250),
+  ).toBe(true);
+  expect(dropped.some((m) => m.bytes[0] === 248)).toBe(false);
+});
+it("emits system MIDI cues up to a second ahead with exact due times, and only 120 ms ahead for Bluetooth", () => {
+  const cues = parseChart("[00:00.05] {midi:pc 1 1}\n[00:00.90] {midi:pc 1 2}\n[00:02.00] {midi:pc 1 3}");
+  const usb = fixture({ cues, duration: 5, lookahead: SYSTEM_LOOKAHEAD });
+  usb.schedule.tick(1000);
+  expect(usb.messages().map((m) => [m.bytes, m.due])).toEqual([
+    [[192, 1], 1050],
+    [[192, 2], 1900],
+  ]);
+  const ble = fixture({ cues, duration: 5, lookahead: BLUETOOTH_LOOKAHEAD });
+  ble.schedule.tick(1000);
+  expect(ble.messages().map((m) => m.bytes)).toEqual([[192, 1]]);
+});
+it("does not apply the start tempo late: it is dropped and the session carries on", () => {
   const replies: SchedulerReply[] = [];
   const schedule = new MidiSchedule(config({ cues: [], tempo: [[191, 74, 120]] }), 1500, (r) => replies.push(r));
   schedule.tick(1500);
-  expect(replies).toHaveLength(1);
-  expect(replies[0].type).toBe("fault");
+  expect(replies.some((r) => r.type === "fault")).toBe(false);
+  expect(replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : [])).map((m) => m.bytes)).toEqual([[191, 74, 120]]);
 });

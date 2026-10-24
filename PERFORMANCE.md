@@ -158,7 +158,8 @@ On the desktop, playback in stage mode keeps the computer and display awake. It 
 ## Troubleshooting
 
 - **Nothing reaches the pedal.** Check that **Send cues** is on, the right output is selected and the channel matches the pedal. Use **Send MIDI now** to test one command.
-- **Cues stopped and the output disarmed.** A timing interruption of more than 250 ms clears queued commands and disarms, rather than playing a burst late. Audio keeps playing. Check the pedal, rearm and choose where to resume.
+- **"N late MIDI commands dropped" notice.** A stall (a busy window, a slow driver) never disarms the song. A program change, controller or SysEx more than 250 ms late is dropped instead of played out of place, late clock pulses are skipped, and the schedule re-syncs to the audio. Note-offs are always sent. The notice shows where it happened, and the dropped commands are counted in Diagnostics. Check the pedal if a patch looks wrong.
+- **Cues stopped and the output disarmed.** This now only happens when timing cannot recover: the scheduler worker failed, the audio clock stopped advancing, three re-syncs happened within five seconds, or the output disconnected. Queued commands are cleared and audio keeps playing. Check the pedal, rearm and choose where to resume.
 - **Bluetooth closed by itself.** A write that waits more than 250 ms, or takes more than a second, closes the connection and is not retried, because the pedal may already have got it.
 - **Tempo jumps.** Turn **Send MIDI Clock** off and use the one-time tempo command.
 - **A pedal answers the wrong command.** Two pedals share a channel, or the pedal is on OMNI. Give each its own channel.
@@ -168,7 +169,7 @@ On the desktop, playback in stage mode keeps the computer and display awake. It 
 
 ## Limits
 
-- Timing is best effort. The cue scheduler runs in its own worker with 50 ms lookahead, but delivery goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
+- Timing is best effort. The cue scheduler runs in its own worker. USB and system MIDI cues are handed to Web MIDI up to a second ahead with exact timestamps, so a busy window cannot delay them; Bluetooth cues are held about 120 ms ahead because Bluetooth cannot timestamp on the receiving side. Delivery still goes through Web MIDI or Bluetooth and the operating system, and delivery goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
 - The app cannot read a pedal's channel, routing or state. Missed commands are never reconstructed.
 - Playlists are not gapless. Audio is never stretched or pitch-shifted.
 - Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.

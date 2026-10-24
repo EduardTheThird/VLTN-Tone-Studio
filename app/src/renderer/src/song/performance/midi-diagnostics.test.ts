@@ -12,3 +12,19 @@ it("bounds recent cue history without clock flooding and accumulates late dispat
   state.reset();
   expect(useMidiDiagnostics.getState()).toMatchObject({ queued: 0, recent: [], failures: 0 });
 });
+it("counts dropped commands and resyncs, keeps the dropped bytes for a later chase, and clears them on reset", () => {
+  const state = useMidiDiagnostics.getState();
+  state.reset();
+  state.resync();
+  state.drop([
+    { label: "Cue A", intended: 0, queued: 300, lateMs: 300, bytes: [192, 1] },
+    { label: "Cue B", intended: 0, queued: 300, lateMs: 300, bytes: [192, 2] },
+  ]);
+  expect(useMidiDiagnostics.getState()).toMatchObject({ dropped: 2, resyncs: 1, failures: 0 });
+  expect(useMidiDiagnostics.getState().droppedMessages.map((m) => m.bytes)).toEqual([
+    [192, 2],
+    [192, 1],
+  ]);
+  state.reset();
+  expect(useMidiDiagnostics.getState()).toMatchObject({ dropped: 0, resyncs: 0, droppedMessages: [] });
+});

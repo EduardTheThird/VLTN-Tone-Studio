@@ -6,7 +6,8 @@ import { defaultMix } from "@/song/stems/mix";
 import { lrcTime, parseChart, transpose } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
 import { host } from "@/host";
-import { startMidiScheduler, prepareMidiScheduler, midiNow } from "@/song/performance/midi-scheduler-client";
+import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
+import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD } from "@/song/performance/midi-scheduler";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { useStagePower } from "./use-stage-power";
 import { MidiHealth } from "./MidiHealth";
@@ -122,6 +123,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
   const [chords, setChords] = useState<Chord[]>([]),
     [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState("");
+  const [lateNotice, setLateNotice] = useState<{ dropped: number; position: number; resynced: boolean; at: number } | null>(null);
   const [access, setAccess] = useState<MIDIAccess | null>(midiSession?.access ?? null),
     [portId, setPortId] = useState(
       midiSession?.portId ?? (midiConfig.output?.transport === "system" ? midiConfig.output.id : bluetooth?.state === "connected" ? bluetooth.id : ""),
@@ -158,6 +160,23 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
   }, [chart]);
   const active = parsed.cues.findLastIndex((c) => c.time <= time);
   const output = portId === "bluetooth-midi" ? bluetooth : access?.outputs.get(portId);
+  const degraded = (event: SchedulerDegraded) => {
+    const diagnostics = useMidiDiagnostics.getState(),
+      now = midiNow();
+    if (event.resynced) diagnostics.resync();
+    if (event.dropped.length)
+      diagnostics.drop(event.dropped.map((m) => ({ label: m.label, intended: m.due, queued: now, lateMs: Math.max(0, now - m.due), bytes: m.bytes })));
+    // Events from one stall arrive separately (resync, then drops); show them as one notice.
+    setLateNotice((n) => {
+      const recent = n !== null && now - n.at < 2000;
+      return {
+        dropped: (recent ? n.dropped : 0) + event.dropped.length,
+        position: event.position,
+        resynced: (recent && n.resynced) || event.resynced,
+        at: now,
+      };
+    });
+  };
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const saveChart = (value: string) => {
     pause();
@@ -458,6 +477,7 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
       fail(message);
       if (queued) library.rememberMidi(null);
     };
+    setLateNotice(null);
     try {
       const position = player.position;
       // Select opening cues from the requested offset, not a later React render.
@@ -465,12 +485,22 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
       const cuePosition = startPosition.current ?? position;
       startPosition.current = null;
       const handle = startMidiScheduler(
-        { cues: parsed.cues, position: cuePosition, duration: player.duration, origin: midiNow() - position * 1000, bpm, clock, tempo: startTempo.current },
+        {
+          cues: parsed.cues,
+          position: cuePosition,
+          duration: player.duration,
+          origin: midiNow() - position * 1000,
+          bpm,
+          clock,
+          tempo: startTempo.current,
+          lookahead: portId === "bluetooth-midi" ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
+        },
         (message) => {
           sendPerformance(message.bytes, message.due - performance.timeOrigin, message.label);
         },
         fault,
         readyWorker.current ?? undefined,
+        degraded,
       );
       readyWorker.current = null;
       startTempo.current = null;
@@ -785,6 +815,13 @@ function PerformanceSession({ stage, setStage }: { stage: boolean; setStage: (va
             <p role="status">
               MIDI: {output?.state === "connected" ? `${output.name} · ${armed ? "Cues armed" : "Cues disarmed"}` : "Output disconnected · Cues disarmed"}
             </p>
+            {lateNotice && lateNotice.dropped + (lateNotice.resynced ? 1 : 0) > 0 && (
+              <p role="status" className="text-amber-400">
+                {lateNotice.dropped} late MIDI command{lateNotice.dropped === 1 ? "" : "s"} dropped at {Math.floor(lateNotice.position / 60)}:
+                {String(Math.floor(lateNotice.position % 60)).padStart(2, "0")}
+                {lateNotice.resynced ? " (resynced)" : ""}
+              </p>
+            )}
             {(error || parsed.error) && (
               <p role="alert" className="text-red-400">
                 {error || parsed.error}

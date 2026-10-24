@@ -9,10 +9,20 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
   return {
     midiNow: now,
     prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
-    startMidiScheduler: (config: SchedulerConfig, send: (message: ScheduledMessage) => void, fault: (message: string) => void) => {
+    startMidiScheduler: (
+      config: SchedulerConfig,
+      send: (message: ScheduledMessage) => void,
+      fault: (message: string) => void,
+      _prepared?: unknown,
+      degraded?: (event: { position: number; dropped: ScheduledMessage[]; resynced: boolean }) => void,
+    ) => {
       const schedule = new MidiSchedule(config, now(), (reply) => {
         if (reply.type === "fault") fault(reply.error);
-        else if (reply.type === "batch") reply.messages.forEach(send);
+        else if (reply.type === "resync") degraded?.({ position: reply.position, dropped: [], resynced: true });
+        else if (reply.type === "batch") {
+          reply.messages.forEach(send);
+          if (reply.dropped?.length) degraded?.({ position: reply.dropped[0].time ?? 0, dropped: reply.dropped, resynced: false });
+        }
       });
       schedule.tick(now());
       const timer = setInterval(() => schedule.tick(now()), 20);
@@ -45,7 +55,7 @@ it.each([0, 10])("preserves cues at the requested %s-second offset after a delay
   });
   expect(mocks.send.mock.calls.map((c) => c[0])).toEqual([[192, offset === 0 ? 7 : 8]]);
 });
-it("disarms instead of replaying opening cues after an overdue start", async () => {
+it("drops an opening cue that is overdue at start without disarming the session", async () => {
   mocks.playAdvance = 0.3;
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
   localStorage.setItem("vltn.performance.v1:clock-test.wav:44100:44100", "[00:00] {midi:pc 1 7}");
@@ -55,8 +65,8 @@ it("disarms instead of replaying opening cues after an overdue start", async () 
     fireEvent.click(screen.getByText("Play song"));
   });
   expect(mocks.send).not.toHaveBeenCalled();
-  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
-  expect(screen.getByRole("alert").textContent).toContain("MIDI timing interrupted");
+  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText(/late MIDI command dropped/)).toBeTruthy();
 });
 it("keeps timing faults and disarming visible in expanded performance view", async () => {
   vi.useFakeTimers();
@@ -69,8 +79,7 @@ it("keeps timing faults and disarming visible in expanded performance view", asy
   fireEvent.click(screen.getByText("Expand performance view"));
   const reader = within(screen.getByLabelText("Combined performance view"));
   expect(reader.getByLabelText("Performance status").textContent).toContain("Cues armed");
-  mocks.position = 2;
-  act(() => vi.advanceTimersByTime(60));
+  act(() => vi.advanceTimersByTime(1300));
   expect(reader.getByRole("alert").textContent).toContain("MIDI timing interrupted");
   expect(reader.getByLabelText("Performance status").textContent).toContain("Cues disarmed");
   expect(reader.getByText("Pause")).toBeTruthy();
@@ -200,12 +209,11 @@ it("replaces a playlist worker without replaying old-song cues and invalidates c
     act(() => vi.advanceTimersByTime(20));
   }
   expect(mocks.send.mock.calls.map((c) => c[0])).not.toContainEqual([192, 2]);
-  mocks.position = 2;
-  act(() => vi.advanceTimersByTime(60));
+  act(() => vi.advanceTimersByTime(1300));
   expect(playlist.midiSession?.armed).not.toBe(true);
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
 });
-it("disarms after a renderer stall instead of replaying missed patch changes", async () => {
+it("drops stale patch changes after a renderer stall and keeps the session armed", async () => {
   vi.useFakeTimers();
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
   localStorage.setItem("vltn.performance.v1:clock-test.wav:44100:44100", "[00:00.04] {midi:pc 1 1}\n[00:00.40] {midi:pc 1 2}\n[00:00.60] {midi:pc 1 3}");
@@ -219,13 +227,10 @@ it("disarms after a renderer stall instead of replaying missed patch changes", a
   mocks.position = 2;
   act(() => vi.advanceTimersByTime(60));
   expect(mocks.send.mock.calls.filter((c) => c[0][0] === 192)).toHaveLength(0);
-  expect(mocks.clear).toHaveBeenCalled();
-  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
-  expect(screen.getByRole("alert").textContent).toContain("MIDI timing interrupted");
-  expect(screen.getByText("Pause")).toBeTruthy();
-  mocks.position = 3;
-  act(() => vi.advanceTimersByTime(1000));
-  expect(mocks.send.mock.calls.filter((c) => c[0][0] === 192)).toHaveLength(0);
+  expect(mocks.clear).not.toHaveBeenCalled();
+  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText(/2 late MIDI commands dropped at 0:00 \(resynced\)/)).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 it("disarms when audio time stops advancing instead of sending cues early", async () => {
   vi.useFakeTimers();
@@ -236,6 +241,8 @@ it("disarms when audio time stops advancing instead of sending cues early", asyn
     fireEvent.click(screen.getByText("Play song"));
   });
   act(() => vi.advanceTimersByTime(300));
+  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+  act(() => vi.advanceTimersByTime(1000));
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole("alert").textContent).toContain("MIDI timing interrupted");
 });
