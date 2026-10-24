@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -49,4 +49,20 @@ it('deletes a playlist without deleting songs and removes deleted songs from eve
   expect((await store.index()).songs).toEqual([]);
   expect((await store.index()).playlists[0].songs).toEqual([]);
   await expect(store.audio(s.id, 'source-0.f32')).rejects.toThrow();
+});
+
+it('preflights saved assets without loading PCM, deduplicates IDs and reports missing or truncated audio',async()=>{
+ const first=song(),second=song();await save(first);await save(second);
+ const index=JSON.parse(await readFile(join(root,'library.json'),'utf8'));
+ await writeFile(join(root,index.revisions[first.id],'source-0.f32'),new Uint8Array(1));
+ await rm(join(root,index.revisions[second.id],'source-0.f32'));
+ const missing=randomUUID();const result=await store.preflight([first.id,second.id,first.id,missing]);
+ expect(result).toHaveLength(3);
+ expect(result[0].errors[0]).toContain('invalid size');
+ expect(result[1].errors[0]).toContain('missing or inaccessible');
+ expect(result[2].errors).toEqual(['Song is missing from the library.']);
+ await expect(store.preflight(['../outside'])).rejects.toThrow('Invalid playlist');
+});
+it('returns a clean saved snapshot for intact audio',async()=>{
+ const s=song();await save(s);expect(await store.preflight([s.id])).toEqual([{id:s.id,song:s,errors:[]}]);
 });

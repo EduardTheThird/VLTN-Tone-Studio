@@ -22,6 +22,29 @@ export class SongLibraryStore {
     await writeFile(temp, JSON.stringify(index));
     await rename(temp, join(this.root, 'library.json'));
   }
+  async preflight(ids: string[]): Promise<import('../../shared/song-library').LibraryPreflightSong[]> {
+    if (!Array.isArray(ids) || ids.length > 10000 || ids.some(id => typeof id !== 'string' || !validId(id))) throw new Error('Invalid playlist song IDs.');
+    return this.serial(async () => {
+      const index = await this.read();
+      const results: import('../../shared/song-library').LibraryPreflightSong[] = [];
+      for (const id of new Set(ids)) {
+        const song = index.songs.find(s => s.id === id), errors: string[] = [];
+        if (!song) { results.push({id, errors:['Song is missing from the library.']}); continue; }
+        try { validateSong(song); } catch { results.push({id, errors:['Saved song metadata is invalid.']}); continue; }
+        const revision = index.revisions[id];
+        if (!revision || !validId(revision)) errors.push('Saved audio revision is missing.');
+        else for (const track of song.audio) for (let c=0;c<track.channels;c++) {
+          const name=assetName(track.name,c);
+          try {
+            const info=await stat(join(this.root,revision,name));
+            if (!info.isFile() || info.size!==track.frames*4) errors.push(`${name}: audio file has an invalid size or type.`);
+          } catch { errors.push(`${name}: audio file is missing or inaccessible.`); }
+        }
+        results.push({id,song,errors});
+      }
+      return results;
+    });
+  }
   async index(): Promise<SongLibrary> { const { revisions: _, ...index } = await this.read(); return index; }
   async begin(song: LibrarySong): Promise<string> {
     validateSong(song); const token = randomUUID();

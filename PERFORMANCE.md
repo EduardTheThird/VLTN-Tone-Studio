@@ -113,8 +113,16 @@ The scheduler checks prepared-worker health again at playback start and requires
 
 1. Save the songs, audio/stems, charts and recording BPM before performing. Review recognition drafts and manual key corrections.
 2. Choose **Load set paused** in Songs & playlists. Connect the intended output, apply the MIDI setup, and check the physical receive channels and routing.
-3. Review **MIDI preflight & timing** for each song. It checks the loaded song only; it does not validate an entire playlist or read back pedal settings.
+3. Review **MIDI preflight & timing** for each song. The Performance panel checks the loaded song. Use **Check playlist** in Songs & playlists to review all saved entries; neither check reads back physical pedal settings.
 4. Enable **Send cues** in Performance, then use its **Play playlist** button. Starting again from the library's **Play playlist** starts a new, disarmed MIDI session.
 5. After a disconnect or timing fault, pause and check the pedals' actual state. Reconnect/select the output and explicitly rearm before resuming. The app does not replay missed commands or reconstruct all prior pedal settings after a seek.
 
 The metronome on/off preference is global; song BPM, beats and metronome volume are stored with the song. A solo selected in Stems also affects the shared mix; clear it in Stems when preparing the full backing track. Playlist transitions load sequentially and are not gapless. Complete analysis and backups before starting the set.
+
+## Whole-playlist preflight
+
+Select a playlist under **Song → Songs & playlists**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
+
+The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect PCM file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
+
+Errors and warnings are advisory and do not block intentional playback. The report uses current saved MIDI preferences and configured pedal channels; it cannot confirm a connected output, physical receive channels or pedal response. Playlist/library or MIDI preference changes clear the report. Recheck after external file changes. Preflight is unavailable while a library operation or playlist playback is active.

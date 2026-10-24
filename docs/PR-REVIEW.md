@@ -12,7 +12,7 @@ GP-150 and GP-180 share editor/preset/performance support while retaining separa
 
 Before release, exercise editor write/readback on the real GP-180, validate GP-150 hardware, rehearse long playlists and MIDI fault recovery on the actual chain, and test packaged backup/restore on a second computer. No new physical-pedal test was performed in this review.
 
-The highest-value additions are whole-playlist preflight, a stage mode with seek/edit protection and sleep prevention, configurable input channel/footswitch mappings, next-song preloading and transition/count-in options, portable rig definitions, and exportable timing reports. These remain recommendations, not implemented features. Current preflight is advisory and covers only the loaded song; backup contains song cues but excludes global MIDI routing and pedal definitions.
+The highest-value remaining additions are a stage mode with seek/edit protection and sleep prevention, configurable input channel/footswitch mappings, next-song preloading and transition/count-in options, portable rig definitions, and exportable timing reports. These remain recommendations, not implemented features. Preflight is advisory: Performance checks the loaded song, and Songs & playlists checks the whole saved playlist; backup contains song cues but excludes global MIDI routing and pedal definitions.
 
 ## Final workflow review — 23 October 2026
 
@@ -63,3 +63,9 @@ These are recommendations, not features implemented in this review. Cross-platfo
 ## Shared-model update validation - 23 October 2026
 
 Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 protocol tests**, typechecking and production build passed. Bluetooth discovery covers both model names; command tests verify shared banked recalls and tempo bytes, and preflight recognizes both models. Prior counts above describe earlier review runs. No new physical-pedal test was performed.
+
+## Playlist preflight update — 24 October 2026
+
+Whole-playlist preflight is now implemented under Songs & playlists, superseding the earlier recommendation to add it. It validates saved file metadata and charts/tempo/MIDI per entry, including repeated songs, without playback or MIDI transmission. The Performance panel still checks its loaded song. See [the playlist guide](../SONG-LIBRARY.md#whole-playlist-preflight) for snapshot limits and what remains a physical check.
+
+Validation for playlist preflight: **821 application tests passed, 3 skipped**, across **105 files**; typechecking and production build passed. The 12 focused preflight/storage/UI tests include repeated entries, missing/truncated audio, malformed cues, incompatible tempo, playback-duration matching and stale-response suppression. No physical MIDI was sent.

@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
+- Whole-playlist preflight with per-entry saved audio, chart, tempo and MIDI warnings, without loading tracks or sending commands.
 - Dedicated MIDI scheduler worker with audio checkpoints, advisory cue/channel preflight and bounded timing diagnostics.
 - GP-150 performance MIDI profiles, Bluetooth discovery names and shared GP-150 / GP-180 setup presets; existing GP-180 saved settings remain compatible.
 - Portable compressed song-library export and restore as new copies, including source audio, stems, charts, lyrics, key/mix settings and ordered playlists, with streaming progress and integrity checks.

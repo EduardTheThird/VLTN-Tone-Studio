@@ -4,6 +4,7 @@ import { invoke } from "./invoke";
 
 export const songApi: SongHostApi = {
   library: {
+    preflight: ids => invoke('song:library:preflight', ids),
     exportBackup: () => invoke('song:library:exportBackup'),
     restoreBackup: () => invoke('song:library:restoreBackup'),
     onTransferProgress(callback) {

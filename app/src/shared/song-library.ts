@@ -7,7 +7,9 @@ export interface Playlist { id: string; name: string; songs: string[] }
 export interface SongLibrary { version: 1; songs: LibrarySong[]; playlists: Playlist[] }
 export interface LibraryTransferProgress { phase: string; completed: number; total: number }
 export interface LibraryTransferResult { songs: number; playlists: number; fileName: string }
+export interface LibraryPreflightSong { id: string; song?: LibrarySong; errors: string[] }
 export interface SongLibraryApi {
+  preflight(ids: string[]): Promise<LibraryPreflightSong[]>;
   exportBackup(): Promise<LibraryTransferResult | null>;
   restoreBackup(): Promise<LibraryTransferResult | null>;
   onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;

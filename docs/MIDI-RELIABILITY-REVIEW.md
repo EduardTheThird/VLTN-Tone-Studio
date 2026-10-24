@@ -10,7 +10,7 @@ Scheduling uses a prewarmed worker with 20 ms ticks, 50 ms lookahead, audio chec
 
 **Reset timing counters** clears app and Bluetooth performance/clock measurements, including retained disconnected-session timing. It preserves traffic totals, the connection and queued messages; an in-flight write cannot restore timing from before the reset.
 
-Preflight checks the loaded song only and is advisory. Whole-playlist preflight, configurable remote input channels, sleep prevention and portable rig definitions are not implemented. GP-150 shares the command set, but the physical results remain GP-180-specific. USB editor writes no longer require a special unlock and still need physical write/readback validation.
+Preflight is advisory: Performance checks the loaded song, and Songs & playlists offers a whole-playlist saved-data check. Configurable remote input channels, sleep prevention and portable rig definitions are not implemented. GP-150 shares the command set, but the physical results remain GP-180-specific. USB editor writes no longer require a special unlock and still need physical write/readback validation.
 
 ## Final workflow review — 23 October 2026
 
@@ -57,3 +57,9 @@ The Web MIDI specification defines equal-timestamp send ordering and queue clear
 ## Shared-model update validation - 23 October 2026
 
 Full Windows suite: **812 passed, 3 skipped**, across **103 files**. All **159 protocol tests**, typechecking and production build passed. Bluetooth discovery covers both model names; command tests verify shared banked recalls and tempo bytes, and preflight recognizes both models. Prior counts above describe earlier review runs. No new physical-pedal test was performed.
+
+## Playlist preflight update — 24 October 2026
+
+Whole-playlist preflight is now implemented under Songs & playlists, superseding the earlier recommendation to add it. It validates saved file metadata and charts/tempo/MIDI per entry, including repeated songs, without playback or MIDI transmission. The Performance panel still checks its loaded song. See [the playlist guide](../SONG-LIBRARY.md#whole-playlist-preflight) for snapshot limits and what remains a physical check.
+
+Validation for playlist preflight: **821 application tests passed, 3 skipped**, across **105 files**; typechecking and production build passed. The 12 focused preflight/storage/UI tests include repeated entries, missing/truncated audio, malformed cues, incompatible tempo, playback-duration matching and stale-response suppression. No physical MIDI was sent.

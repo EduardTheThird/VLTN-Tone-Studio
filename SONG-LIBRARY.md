@@ -32,3 +32,11 @@ The archive includes `backup-manifest.json`, `library.json`, and referenced UUID
 MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, account credentials, downloaded analysis models and application-wide preferences are not included. Song MIDI cues retain their actual commands, channels and labels and do not require the original pedal profiles for playback. This exports the song library, not a backup of physical pedal presets.
 
 The first archive format supports up to 50,000 declared files, 512 GiB of uncompressed content, and 8 MiB each for metadata/manifest. Backups can still be large because they include full float32 audio. Allow free space for the compressed archive when exporting, and for all restored audio when importing. Keep the app open until completion. Interrupted operations can leave temporary archives or unreferenced staging directories; automatic resume/garbage collection is not implemented.
+
+## Whole-playlist preflight
+
+Select a playlist under **Song → Songs & playlists**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
+
+The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect PCM file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
+
+Errors and warnings are advisory and do not block intentional playback. The report uses current saved MIDI preferences and configured pedal channels; it cannot confirm a connected output, physical receive channels or pedal response. Playlist/library or MIDI preference changes clear the report. Recheck after external file changes. Preflight is unavailable while a library operation or playlist playback is active.

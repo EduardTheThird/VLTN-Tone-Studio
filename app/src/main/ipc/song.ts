@@ -104,6 +104,7 @@ async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Pr
 
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   const library = new SongLibraryStore(join(app.getPath('userData'), 'song-library'));
+  handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());
   handle('song:library:begin', (_e, song: LibrarySong) => library.begin(song));
   handle('song:library:write', (_e, token: string, name: string, bytes: Uint8Array) => library.write(token, name, bytes));

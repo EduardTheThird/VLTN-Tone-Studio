@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useSong } from '@/song/store';
 import { useSongLibrary } from '@/song/library';
 import { formatTime } from '@/song/stems/mix';
+import { PlaylistPreflight } from './PlaylistPreflight';
 import { host } from '@/host';
 
 const field = 'rounded border border-seam bg-transparent p-2';
@@ -63,6 +64,7 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
           <div className="mb-3 flex flex-wrap gap-2"><input aria-label="Playlist name" key={playlist.id + playlist.name} defaultValue={playlist.name} className={field} disabled={library.busy} onBlur={e => { const next = e.target.value.trim(); if (next && next !== playlist.name) void library.playlists(library.index.playlists.map(p => p.id === playlist.id ? { ...p, name: next } : p)); }} /><Button disabled={!playlist.songs.length || library.busy} onClick={() => void library.playPlaylist([...playlist.songs])}>Play playlist</Button><Button variant="outline" disabled={!playlist.songs.length || library.busy} onClick={() => void library.load(playlist.songs[0], [...playlist.songs], 0)}>Load set paused</Button><Button variant="outline" disabled={library.busy} onClick={() => setConfirm('playlist:' + playlist.id)}>Delete playlist…</Button></div>
           {confirm === 'playlist:' + playlist.id && <div>Keep the songs and delete this playlist? <Button disabled={library.busy} onClick={() => { void library.playlists(library.index.playlists.filter(p => p.id !== playlist.id)); setSelected(''); setConfirm(''); }}>Confirm delete playlist</Button><Button variant="outline" onClick={() => setConfirm('')}>Keep playlist</Button></div>}
           <p className="mb-3">{playlist.songs.length} entries · {formatTime(duration)} · Automatically advances during playback</p>
+          <PlaylistPreflight key={playlist.id} ids={playlist.songs} disabled={library.busy || library.playlistPlaying} revision={library.index} />
           <ol className="space-y-2">{playlist.songs.map((id, i) => <li key={i} className="flex flex-wrap items-center gap-2 rounded border border-seam p-2"><span className="flex-1">{i + 1}. {library.index.songs.find(s => s.id === id)?.title ?? 'Missing song'}</span><Button variant="outline" disabled={library.busy} onClick={() => void library.playPlaylist([...playlist.songs], i)}>Play from here</Button><Button variant="outline" disabled={library.busy} onClick={() => void library.load(id, [...playlist.songs], i)}>Load paused</Button><Button aria-label={`Move entry ${i + 1} up`} variant="outline" disabled={i === 0 || library.busy} onClick={() => move(i, -1)}>↑</Button><Button aria-label={`Move entry ${i + 1} down`} variant="outline" disabled={i === playlist.songs.length - 1 || library.busy} onClick={() => move(i, 1)}>↓</Button><Button aria-label={`Remove entry ${i + 1}`} variant="outline" disabled={library.busy} onClick={() => update(playlist.songs.filter((_, index) => index !== i))}>Remove</Button></li>)}</ol>
         </>}
       </div>
