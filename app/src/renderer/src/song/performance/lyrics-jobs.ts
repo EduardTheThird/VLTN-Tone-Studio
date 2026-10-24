@@ -1,8 +1,7 @@
 import { create } from "zustand";
-import { host } from "@/host";
 import type { PcmAudio } from "../types";
 import { lyricsLrc, type LyricSegment } from "./lyrics";
-import { readSettings } from "./settings";
+import { flushSettings, setSetting } from "./settings";
 import { lyricsOptions, type LyricsOptions } from "./lyrics-options";
 
 export interface LyricsJob {
@@ -72,10 +71,8 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
         if (text) {
           update(task, { text, status: "Lyrics ready. Review the words and timing while listening." });
           try {
-            for (const alias of task.keys) {
-              localStorage.setItem(alias + ":lyrics", text);
-              if (alias.startsWith("vltn.song:") && host.song.library) await host.song.library.settings(alias.slice("vltn.song:".length), readSettings(alias));
-            }
+            for (const alias of task.keys) setSetting(alias, ":lyrics", text);
+            await flushSettings();
           } catch (e) {
             update(task, { error: `Lyrics generated, but saving failed: ${String(e)}. Export a copy.` });
           }

@@ -1,7 +1,7 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { exportBackup, readBackup } from "./song-library-backup";
+import { exportBackup, readBackup, readBackupIndex } from "./song-library-backup";
 import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
 import {
   assetName,
@@ -18,14 +18,66 @@ import {
   type Playlist,
   type SongLibrary,
   type LibraryTransferProgress,
+  type LibraryBackupPreview,
+  type RestoreMode,
 } from "@shared/song-library";
 
 export type DiskIndex = SongLibrary & { revisions: Record<string, string> };
+/** A save session or staging folder older than this is abandoned: the renderer crashed or the user gave up. */
+export const ORPHAN_AGE_MS = 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+/** Songs with the same source audio are the same song. Older saves and raw-float songs carry no digest and never match. */
+export const contentHash = (song: LibrarySong): string | undefined => song.audio.find((a) => a.name === "source")?.sha256;
 /** Audio is staged before publishing a new index. An interrupted save leaves the previous song intact. */
 export class SongLibraryStore {
-  private pending = new Map<string, LibrarySong>();
+  private pending = new Map<string, { song: LibrarySong; created: number }>();
+  /** Folders being written by a conversion, which runs outside `serial()`. The sweep must not take them. */
+  private converting = new Set<string>();
   private tail: Promise<unknown> = Promise.resolve();
-  constructor(private root: string) {}
+  private sweeper: ReturnType<typeof setInterval> | undefined;
+  constructor(
+    private root: string,
+    private now: () => number = Date.now,
+  ) {}
+  /** Sweeps now and then every 10 minutes. */
+  startSweeping(): void {
+    const sweep = () => void this.sweep().catch((e) => console.error("Song library sweep failed", e));
+    sweep();
+    this.sweeper = setInterval(sweep, SWEEP_INTERVAL_MS);
+    this.sweeper.unref?.();
+  }
+  stopSweeping(): void {
+    clearInterval(this.sweeper);
+  }
+  /**
+   * Drops save sessions older than an hour and deletes folders in the library root that no revision refers to. Runs inside `serial()`, so no
+   * commit or restore is publishing while it looks, and only deletes what is also older than an hour, so a fresh save is never touched.
+   */
+  async sweep(): Promise<void> {
+    return this.serial(async () => {
+      const cutoff = this.now() - ORPHAN_AGE_MS;
+      for (const [token, { created }] of this.pending) {
+        if (created > cutoff) continue;
+        this.pending.delete(token);
+        await rm(join(this.root, token), { recursive: true, force: true }).catch(() => {});
+      }
+      let index: DiskIndex, names: string[];
+      try {
+        index = await this.read();
+        names = await readdir(this.root);
+      } catch {
+        return;
+      }
+      const live = new Set(Object.values(index.revisions));
+      for (const name of names) {
+        const folder = validId(name) || name.startsWith(".restore-"),
+          temp = name.startsWith("index-") && name.endsWith(".tmp");
+        if ((!folder && !temp) || live.has(name) || this.pending.has(name) || this.converting.has(name)) continue;
+        const info = await stat(join(this.root, name)).catch(() => null);
+        if (info && info.mtimeMs <= cutoff) await rm(join(this.root, name), { recursive: true, force: true }).catch(() => {});
+      }
+    });
+  }
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const job = this.tail.then(fn, fn);
     this.tail = job.catch(() => {});
@@ -92,11 +144,11 @@ export class SongLibraryStore {
     if (!song.audio.every(isFlacTrack)) throw new Error("Songs are saved as FLAC.");
     const token = randomUUID();
     await mkdir(join(this.root, token), { recursive: true });
-    this.pending.set(token, song);
+    this.pending.set(token, { song, created: this.now() });
     return token;
   }
   async write(token: string, name: string, bytes: Uint8Array): Promise<void> {
-    const song = this.pending.get(token);
+    const song = this.pending.get(token)?.song;
     const track = song?.audio.find((a) => a.file === name);
     if (!track || bytes.byteLength !== track.bytes || createHash("sha256").update(bytes).digest("hex") !== track.sha256)
       throw new Error("Invalid song audio asset.");
@@ -104,7 +156,7 @@ export class SongLibraryStore {
   }
   async commit(token: string): Promise<void> {
     return this.serial(async () => {
-      const song = this.pending.get(token);
+      const song = this.pending.get(token)?.song;
       if (!song) throw new Error("Save session expired.");
       for (const a of song.audio) {
         if ((await stat(join(this.root, token, a.file!))).size !== a.bytes) throw new Error("Incomplete song save.");
@@ -141,12 +193,16 @@ export class SongLibraryStore {
       await this.publish(index);
     });
   }
-  async settings(id: string, values: Record<string, string>): Promise<void> {
+  /** Merges the changed entries into the song's settings. An empty value removes the entry. */
+  async updateSettings(id: string, patch: Record<string, string>): Promise<void> {
+    if (!validId(id) || !patch || typeof patch !== "object" || Object.values(patch).some((v) => typeof v !== "string"))
+      throw new Error("Invalid song settings.");
     return this.serial(async () => {
       const index = await this.read(),
         song = index.songs.find((s) => s.id === id);
       if (!song) throw new Error("Saved song not found.");
-      const updated = { ...song, settings: values, updated: new Date().toISOString() };
+      const merged = Object.fromEntries(Object.entries({ ...song.settings, ...patch }).filter(([, value]) => value));
+      const updated = { ...song, settings: merged, updated: new Date().toISOString() };
       validateSong(updated);
       index.songs = index.songs.map((s) => (s.id === id ? updated : s));
       await this.publish(index);
@@ -161,27 +217,59 @@ export class SongLibraryStore {
       return { songs: index.songs.length, playlists: index.playlists.length };
     });
   }
-  async restoreBackup(path: string, progress?: (p: LibraryTransferProgress) => void): Promise<{ songs: number; playlists: number }> {
+  /** Reads just the library index of a backup, so the user can choose how to restore before any audio is extracted. */
+  async inspectBackup(path: string): Promise<Omit<LibraryBackupPreview, "fileName">> {
+    const backup = await readBackupIndex(path),
+      known = new Set((await this.serial(() => this.read())).songs.map(contentHash).filter(Boolean));
+    const duplicates = backup.songs.filter((song) => known.has(contentHash(song))).length;
+    return { songs: backup.songs.length, playlists: backup.playlists.length, duplicates };
+  }
+  /**
+   * "copy" gives every song and playlist in the backup a new ID. "skip" leaves out songs whose source audio is already in the library, points
+   * playlist entries at the existing songs, and leaves out playlists that already exist with the same name and songs.
+   */
+  async restoreBackup(
+    path: string,
+    progress?: (p: LibraryTransferProgress) => void,
+    mode: RestoreMode = "copy",
+  ): Promise<{ songs: number; playlists: number; skipped?: number }> {
     return this.serial(async () => {
       const stage = join(this.root, ".restore-" + randomUUID()),
         moved: string[] = [];
       try {
         const backup = await readBackup(path, stage, progress),
           current = await this.read();
-        const ids = new Map(backup.songs.map((song) => [song.id, randomUUID()]));
-        const revisions: Record<string, string> = { ...current.revisions };
+        const existing = new Map<string, string>();
+        if (mode === "skip") for (const song of current.songs) if (contentHash(song)) existing.set(contentHash(song)!, song.id);
+        const ids = new Map<string, string>(),
+          fresh: LibrarySong[] = [];
         for (const song of backup.songs) {
+          const same = existing.get(contentHash(song) ?? "");
+          if (same) ids.set(song.id, same);
+          else {
+            ids.set(song.id, randomUUID());
+            fresh.push(song);
+          }
+        }
+        const revisions: Record<string, string> = { ...current.revisions };
+        for (const song of fresh) {
           const revision = randomUUID(),
             target = join(this.root, revision);
           await rename(join(stage, backup.revisions[song.id]), target);
           moved.push(target);
           revisions[ids.get(song.id)!] = revision;
         }
-        const songs = backup.songs.map((song) => ({ ...song, id: ids.get(song.id)! }));
-        const playlists = backup.playlists.map((playlist) => ({ ...playlist, id: randomUUID(), songs: playlist.songs.map((id) => ids.get(id)!) }));
+        const songs = fresh.map((song) => ({ ...song, id: ids.get(song.id)! }));
+        let playlists = backup.playlists.map((playlist) => ({ ...playlist, id: randomUUID(), songs: playlist.songs.map((id) => ids.get(id)!) }));
+        if (mode === "skip") {
+          const key = (p: Playlist) => JSON.stringify([p.name, p.songs]);
+          const have = new Set(current.playlists.map(key));
+          playlists = playlists.filter((p) => !have.has(key(p)));
+        }
         await this.publish({ version: 2, songs: [...current.songs, ...songs], playlists: [...current.playlists, ...playlists], revisions });
         moved.length = 0;
-        return { songs: songs.length, playlists: playlists.length };
+        const result = { songs: songs.length, playlists: playlists.length };
+        return mode === "skip" ? { ...result, skipped: backup.songs.length - songs.length } : result;
       } finally {
         await rm(stage, { recursive: true, force: true }).catch(() => {});
         for (const path of moved) await rm(path, { recursive: true, force: true }).catch(() => {});
@@ -217,6 +305,7 @@ export class SongLibraryStore {
     const target = randomUUID(),
       audio: LibrarySong["audio"] = [];
     await mkdir(join(this.root, target), { recursive: true });
+    this.converting.add(target);
     try {
       for (const track of song.audio) {
         if (isFlacTrack(track)) {
@@ -252,6 +341,8 @@ export class SongLibraryStore {
     } catch (e) {
       await rm(join(this.root, target), { recursive: true, force: true }).catch(() => {});
       throw e;
+    } finally {
+      this.converting.delete(target);
     }
   }
   async remove(id: string): Promise<void> {

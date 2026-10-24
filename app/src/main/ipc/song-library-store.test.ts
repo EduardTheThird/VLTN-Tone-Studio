@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -37,8 +37,8 @@ it("round-trips audio, charts and duplicate playlist entries across restart", as
   expect((await store.index()).songs[0]).toEqual(first.song);
   await expectAudio(first, "source");
   await expectAudio(first, "guitar");
-  await store.settings(first.song.id, { ":bpm": "90" });
-  expect((await new SongLibraryStore(root).index()).songs[0].settings).toEqual({ ":bpm": "90" });
+  await store.updateSettings(first.song.id, { ":bpm": "90" });
+  expect((await new SongLibraryStore(root).index()).songs[0].settings).toEqual({ ...first.song.settings, ":bpm": "90" });
 });
 it("writes a v2 index and hands out protocol URLs instead of audio bytes", async () => {
   const fixture = await flacSong();
@@ -167,7 +167,58 @@ it("keeps settings edited while a song is being converted", async () => {
   const fixture = legacySong();
   await writeLegacyLibrary(root, [fixture]);
   const running = store.migrate();
-  await store.settings(fixture.song.id, { ":bpm": "77" });
+  await store.updateSettings(fixture.song.id, { ":bpm": "77" });
   await running;
-  expect((await store.index()).songs[0].settings).toEqual({ ":bpm": "77" });
+  expect((await store.index()).songs[0].settings[":bpm"]).toBe("77");
+});
+it("sweeps only true orphans and expired save sessions", async () => {
+  let clock = Date.now();
+  store = new SongLibraryStore(root, () => clock);
+  const kept = await flacSong(1);
+  await saveFlacSong(store, kept);
+  const revision = JSON.parse(await readFile(join(root, "library.json"), "utf8")).revisions[kept.song.id];
+  const old = new Date(clock - 2 * 60 * 60 * 1000),
+    orphan = join(root, randomUUID()),
+    fresh = join(root, randomUUID()),
+    stage = join(root, ".restore-" + randomUUID());
+  for (const dir of [orphan, fresh, stage, join(root, revision)]) await mkdir(dir, { recursive: true });
+  for (const dir of [orphan, stage, join(root, revision)]) await utimes(dir, old, old);
+  // An abandoned save: begun, never committed.
+  const abandoned = await flacSong(2),
+    token = await store.begin(abandoned.song);
+  clock += 2 * 60 * 60 * 1000;
+  await utimes(join(root, token), old, old);
+  await utimes(fresh, new Date(clock), new Date(clock));
+  await store.sweep();
+  const names = await readdir(root);
+  expect(names).toContain(revision);
+  expect(names).toContain(fresh.slice(root.length + 1));
+  expect(names).not.toContain(orphan.slice(root.length + 1));
+  expect(names).not.toContain(stage.slice(root.length + 1));
+  expect(names).not.toContain(token);
+  await expect(store.commit(token)).rejects.toThrow("Save session expired.");
+});
+it("keeps a save session that is still young", async () => {
+  const clock = Date.now();
+  store = new SongLibraryStore(root, () => clock);
+  const fixture = await flacSong(1);
+  const token = await store.begin(fixture.song);
+  await store.sweep();
+  expect(await readdir(root)).toContain(token);
+});
+it("merges a settings patch, removes emptied entries, and survives a restart", async () => {
+  const fixture = await flacSong(1);
+  await saveFlacSong(store, fixture);
+  await store.updateSettings(fixture.song.id, { ":lyrics": "[00:01] New words", ":options": "" });
+  await store.updateSettings(fixture.song.id, { ":bpm": "98" });
+  const settings = (await new SongLibraryStore(root).index()).songs[0].settings;
+  expect(settings).toEqual({ "": fixture.song.settings[""], ":lyrics": "[00:01] New words", ":bpm": "98" });
+});
+it("rejects settings patches for unknown songs, unknown keys and non-string values", async () => {
+  const fixture = await flacSong(1);
+  await saveFlacSong(store, fixture);
+  await expect(store.updateSettings(randomUUID(), { ":bpm": "90" })).rejects.toThrow("Saved song not found.");
+  await expect(store.updateSettings(fixture.song.id, { ":other": "x" })).rejects.toThrow("Invalid song settings.");
+  await expect(store.updateSettings(fixture.song.id, { ":bpm": 90 as unknown as string })).rejects.toThrow("Invalid song settings.");
+  await expect(store.updateSettings("../x", { ":bpm": "90" })).rejects.toThrow("Invalid song settings.");
 });

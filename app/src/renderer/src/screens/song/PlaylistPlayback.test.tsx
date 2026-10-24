@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "@/song/store";
+import { clearSettingsCache } from "@/song/performance/settings";
 import { useSongLibrary } from "@/song/library";
 import { useBluetooth, type BleMidiConnection } from "@/bluetooth/connection";
 import { PerformancePanel } from "./PerformancePanel";
@@ -42,7 +43,7 @@ const mock = vi.hoisted(() => ({
   clear: vi.fn(),
   players: [] as { isPlaying: boolean; position: number; duration: number; onEnded: (() => void) | null; end(): void }[],
 }));
-vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audioUrls: mock.audioUrls, settings: mock.settings } } } }));
+vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audioUrls: mock.audioUrls, updateSettings: mock.settings } } } }));
 vi.mock("@/song/stems/engine", () => ({ separateStems: vi.fn() }));
 vi.mock("@/song/codec/flac-client", () => ({ decodeTrack: async () => ({ sampleRate: 10, channels: [new Float32Array(100)] }), encodeTrack: vi.fn() }));
 vi.stubGlobal("fetch", mock.fetch);
@@ -96,6 +97,7 @@ const first = song("first", 95, 12),
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  clearSettingsCache();
   mock.players = [];
   mock.index.mockResolvedValue({ ...emptyLibrary(), songs: [first, second] });
   mock.audioUrls.mockResolvedValue({ source: "app://library/rev/source.flac" });

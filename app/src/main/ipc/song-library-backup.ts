@@ -266,3 +266,42 @@ export async function readBackup(file: string, stage: string, progress: Progress
     throw e;
   }
 }
+/**
+ * Reads only the library index (the second entry), then stops. It lets the restore dialog count songs and duplicates without extracting audio.
+ * The full checks still run in `readBackup` when the restore itself starts.
+ */
+export async function readBackupIndex(file: string): Promise<DiskIndex> {
+  const input = createReadStream(file),
+    parser = new Parser({ strict: true, maxMetaEntrySize: MAX_METADATA, maxDecompressionRatio: 2048 });
+  return new Promise<DiskIndex>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error, index?: DiskIndex) => {
+      if (settled) return;
+      settled = true;
+      input.destroy();
+      parser.abort(error ?? invalid());
+      if (index) resolve(index);
+      else reject(error ?? invalid());
+    };
+    parser.on("error", (e) => finish(e instanceof Error ? e : invalid()));
+    input.on("error", (e) => finish(e));
+    parser.on("end", () => finish());
+    parser.on("entry", (entry: ReadEntry) => {
+      if (entry.path !== INDEX) {
+        entry.resume();
+        return;
+      }
+      if (entry.type !== "File" || entry.size > MAX_METADATA) return finish();
+      const chunks: Buffer[] = [];
+      entry.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      entry.on("end", () => {
+        try {
+          finish(undefined, validateDiskIndex(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
+        } catch (e) {
+          finish(e instanceof Error ? e : invalid());
+        }
+      });
+    });
+    input.pipe(parser);
+  });
+}

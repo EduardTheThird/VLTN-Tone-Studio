@@ -204,3 +204,49 @@ it("does not overwrite an existing backup if a source asset is missing, and refu
   await expect(store.exportBackup(archive)).rejects.toThrow();
   expect(await readFile(archive)).toEqual(original);
 });
+it("restoring twice with skip adds no songs or playlists, and playlist entries point at the existing songs", async () => {
+  const first = await flacSong(1),
+    second = await flacSong(2);
+  second.song.title = "Second demo";
+  await save(store, first);
+  await save(store, second);
+  await store.playlists([{ id: randomUUID(), name: "Demo set", songs: [first.song.id, second.song.id] }]);
+  await store.exportBackup(archive);
+  const target = new SongLibraryStore(join(temp, "skip-target"));
+  expect(await target.inspectBackup(archive)).toEqual({ songs: 2, playlists: 1, duplicates: 0 });
+  expect(await target.restoreBackup(archive, undefined, "skip")).toEqual({ songs: 2, playlists: 1, skipped: 0 });
+  const once = await target.index();
+  expect(await target.inspectBackup(archive)).toEqual({ songs: 2, playlists: 1, duplicates: 2 });
+  expect(await target.restoreBackup(archive, undefined, "skip")).toEqual({ songs: 0, playlists: 0, skipped: 2 });
+  const twice = await target.index();
+  expect(twice.songs.map((s) => s.id)).toEqual(once.songs.map((s) => s.id));
+  expect(twice.playlists).toEqual(once.playlists);
+  expect(twice.playlists[0].songs).toEqual(once.songs.map((s) => s.id));
+  expect(await readdir(join(temp, "skip-target"))).toHaveLength(2 + 1);
+});
+it("maps playlist entries to existing songs when only some songs are already in the library", async () => {
+  const first = await flacSong(1),
+    second = await flacSong(2);
+  await save(store, first);
+  await save(store, second);
+  await store.playlists([{ id: randomUUID(), name: "Both", songs: [first.song.id, second.song.id] }]);
+  await store.exportBackup(archive);
+  const target = new SongLibraryStore(join(temp, "partial"));
+  await save(target, first);
+  expect(await target.restoreBackup(archive, undefined, "skip")).toEqual({ songs: 1, playlists: 1, skipped: 1 });
+  const index = await target.index();
+  expect(index.songs).toHaveLength(2);
+  expect(index.playlists[0].songs[0]).toBe(first.song.id);
+  expect(index.songs.map((s) => s.id)).toContain(index.playlists[0].songs[1]);
+});
+it("restores as copies when asked, even if the songs are already there", async () => {
+  const first = await flacSong(1);
+  await save(store, first);
+  await store.exportBackup(archive);
+  expect(await store.restoreBackup(archive, undefined, "copy")).toEqual({ songs: 1, playlists: 0 });
+  expect((await store.index()).songs).toHaveLength(2);
+});
+it("rejects a damaged archive when inspecting", async () => {
+  await writeFile(archive, "not an archive");
+  await expect(store.inspectBackup(archive)).rejects.toThrow();
+});

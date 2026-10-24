@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
 import { useSongLibrary } from "./library";
-import { performanceKey } from "./performance/settings";
+import { clearSettingsCache, getSetting, performanceKey, setSetting } from "./performance/settings";
 import { useNav } from "@/state/nav";
 
 const api = vi.hoisted(() => ({
@@ -11,8 +11,9 @@ const api = vi.hoisted(() => ({
   audioUrls: vi.fn(),
   playlists: vi.fn(),
   remove: vi.fn(),
-  settings: vi.fn(),
+  updateSettings: vi.fn(),
   exportBackup: vi.fn(),
+  inspectBackup: vi.fn(),
   restoreBackup: vi.fn(),
   onTransferProgress: vi.fn(),
 }));
@@ -40,8 +41,9 @@ const saved: LibrarySong = {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  clearSettingsCache();
   api.exportBackup.mockResolvedValue(null);
-  api.restoreBackup.mockResolvedValue(null);
+  api.inspectBackup.mockResolvedValue(null);
   api.onTransferProgress.mockReturnValue(vi.fn());
   api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
   api.audioUrls.mockResolvedValue({ source: "app://library/rev/source.flac", guitar: "app://library/rev/guitar.flac" });
@@ -51,7 +53,7 @@ beforeEach(() => {
   codec.decodeTrack.mockResolvedValue(audio);
   codec.encodeTrack.mockReset();
   codec.encodeTrack.mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
-  api.settings.mockResolvedValue(undefined);
+  api.updateSettings.mockResolvedValue(undefined);
   api.save.mockResolvedValue(undefined);
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
   useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], position: -1, playlistPlaying: false, midiSession: null });
@@ -60,7 +62,7 @@ it("loads saved source/stems and preserves queue positions for repeated entries"
   await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
   expect(useSong.getState().source?.audio.channels[0]).toEqual(audio.channels[0]);
   expect(useSong.getState().stems?.guitar?.channels[0]).toEqual(audio.channels[0]);
-  expect(localStorage.getItem(performanceKey(useSong.getState().source) + ":lyrics")).toBe("[00:00] Words");
+  expect(getSetting(performanceKey(useSong.getState().source), ":lyrics")).toBe("[00:00] Words");
   expect(useSongLibrary.getState().position).toBe(1);
   expect(useNav.getState().param).toBe("performance");
 });
@@ -89,7 +91,7 @@ it("saves copied audio and settings under a unique ID instead of the filename", 
   expect(metadata.audio[0].sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(codec.encodeTrack).toHaveBeenCalledTimes(2);
   expect(useSong.getState().source?.libraryId).toBe(metadata.id);
-  expect(localStorage.getItem(performanceKey(useSong.getState().source))).toBe("[00:00] [C]");
+  expect(getSetting(performanceKey(useSong.getState().source), "")).toBe("[00:00] [C]");
 });
 
 it("plays every playlist entry including repeats, persists outgoing settings, and stops at the end", async () => {
@@ -99,11 +101,11 @@ it("plays every playlist entry including repeats, persists outgoing settings, an
   await useSongLibrary.getState().playPlaylist(queue);
   expect(useSongLibrary.getState().playlistPlaying).toBe(true);
   expect(useSongLibrary.getState().position).toBe(0);
-  localStorage.setItem(performanceKey(useSong.getState().source), "[00:02] Changed words");
+  setSetting(performanceKey(useSong.getState().source), "", "[00:02] Changed words");
   await useSongLibrary.getState().advancePlaylist();
-  expect(api.settings).toHaveBeenCalledWith(saved.id, expect.objectContaining({ "": "[00:02] Changed words" }));
+  expect(api.updateSettings).toHaveBeenCalledWith(saved.id, expect.objectContaining({ "": "[00:02] Changed words" }));
   expect(useSong.getState().source?.libraryId).toBe(second.id);
-  expect(localStorage.getItem(performanceKey(useSong.getState().source) + ":bpm")).toBe("130");
+  expect(getSetting(performanceKey(useSong.getState().source), ":bpm")).toBe("130");
   await useSongLibrary.getState().advancePlaylist();
   expect(useSong.getState().source?.libraryId).toBe(saved.id);
   expect(useSongLibrary.getState().position).toBe(2);
@@ -153,20 +155,20 @@ it("keeps lyrics and key updates that finish during the first audio save", async
   );
   const saving = useSongLibrary.getState().save("Demo", "");
   await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
-  localStorage.setItem(performanceKey(source) + ":lyrics", "[00:00] Finished during save");
-  localStorage.setItem(performanceKey(source) + ":options", JSON.stringify({ songKey: "D minor" }));
+  setSetting(performanceKey(source), ":lyrics", "[00:00] Finished during save");
+  setSetting(performanceKey(source), ":options", JSON.stringify({ songKey: "D minor" }));
   finish();
   await saving;
   const key = performanceKey(useSong.getState().source);
-  expect(localStorage.getItem(key + ":lyrics")).toBe("[00:00] Finished during save");
-  expect(JSON.parse(localStorage.getItem(key + ":options")!).songKey).toBe("D minor");
-  expect(api.settings).toHaveBeenCalledWith(useSong.getState().source?.libraryId, expect.objectContaining({ ":lyrics": "[00:00] Finished during save" }));
+  expect(getSetting(key, ":lyrics")).toBe("[00:00] Finished during save");
+  expect(JSON.parse(getSetting(key, ":options")).songKey).toBe("D minor");
+  expect(api.updateSettings).toHaveBeenCalledWith(useSong.getState().source?.libraryId, expect.objectContaining({ ":lyrics": "[00:00] Finished during save" }));
 });
 
 it("flushes current saved-song edits before exporting, reports progress, and cleans up the listener", async () => {
   const source = { name: saved.sourceName, audio, libraryId: saved.id };
   useSong.setState({ source });
-  localStorage.setItem(performanceKey(source) + ":lyrics", "[00:00] Latest lyrics");
+  setSetting(performanceKey(source), ":lyrics", "[00:00] Latest lyrics");
   const unsubscribe = vi.fn();
   api.onTransferProgress.mockImplementationOnce((callback) => {
     callback({ phase: "Checking files", completed: 1, total: 4 });
@@ -174,7 +176,7 @@ it("flushes current saved-song edits before exporting, reports progress, and cle
   });
   api.exportBackup.mockResolvedValueOnce({ songs: 1, playlists: 2, fileName: "demo.tar.gz" });
   await useSongLibrary.getState().exportBackup();
-  expect(api.settings).toHaveBeenCalledWith(saved.id, expect.objectContaining({ ":lyrics": "[00:00] Latest lyrics" }));
+  expect(api.updateSettings).toHaveBeenCalledWith(saved.id, expect.objectContaining({ ":lyrics": "[00:00] Latest lyrics" }));
   expect(api.exportBackup).toHaveBeenCalledTimes(1);
   expect(unsubscribe).toHaveBeenCalled();
   expect(useSongLibrary.getState()).toMatchObject({ busy: false, transfer: "", notice: "Exported 1 songs and 2 playlists to demo.tar.gz." });
@@ -188,8 +190,10 @@ it("treats a cancelled backup picker as cancellation and preserves the library",
   expect(useSongLibrary.getState().error).toBe("");
 });
 it("refreshes restored copies without loading a song or arming MIDI, and reports failures without clearing the index", async () => {
+  api.inspectBackup.mockResolvedValue({ fileName: "demo.tar.gz", songs: 1, playlists: 1, duplicates: 0 });
   api.restoreBackup.mockResolvedValueOnce({ songs: 1, playlists: 1, fileName: "demo.tar.gz" });
   await useSongLibrary.getState().restoreBackup();
+  expect(api.restoreBackup).toHaveBeenCalledWith("copy");
   expect(useSongLibrary.getState()).toMatchObject({ index: { songs: [saved] }, queue: [], midiSession: null, playlistPlaying: false });
   expect(useSong.getState().source).toBeNull();
   const index = useSongLibrary.getState().index;
@@ -214,4 +218,22 @@ it("reports a clear error for a song that is still being converted", async () =>
   await useSongLibrary.getState().load(saved.id);
   expect(useSongLibrary.getState().error).toContain("still being converted");
   expect(fetchFile).not.toHaveBeenCalled();
+});
+it("asks before restoring when the backup holds songs that are already saved, and restores with the chosen mode", async () => {
+  const preview = { fileName: "demo.tar.gz", songs: 3, playlists: 1, duplicates: 2 };
+  api.inspectBackup.mockResolvedValue(preview);
+  await useSongLibrary.getState().restoreBackup();
+  expect(useSongLibrary.getState().backupPreview).toEqual(preview);
+  expect(api.restoreBackup).not.toHaveBeenCalled();
+  api.restoreBackup.mockResolvedValueOnce({ songs: 1, playlists: 0, skipped: 2, fileName: "demo.tar.gz" });
+  await useSongLibrary.getState().finishRestore("skip");
+  expect(api.restoreBackup).toHaveBeenCalledWith("skip");
+  expect(useSongLibrary.getState()).toMatchObject({ backupPreview: null, notice: expect.stringContaining("Skipped 2 songs") });
+});
+it("cancelling the duplicate prompt restores nothing", async () => {
+  api.inspectBackup.mockResolvedValue({ fileName: "demo.tar.gz", songs: 1, playlists: 0, duplicates: 1 });
+  await useSongLibrary.getState().restoreBackup();
+  await useSongLibrary.getState().finishRestore(null);
+  expect(api.restoreBackup).not.toHaveBeenCalled();
+  expect(useSongLibrary.getState()).toMatchObject({ backupPreview: null, notice: "Backup restore cancelled." });
 });

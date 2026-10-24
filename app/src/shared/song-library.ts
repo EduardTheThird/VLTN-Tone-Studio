@@ -42,7 +42,19 @@ export interface LibraryTransferResult {
   songs: number;
   playlists: number;
   fileName: string;
+  /** Songs left out of a restore because their audio was already in the library. */
+  skipped?: number;
 }
+/** What a backup holds, shown before the user chooses how to restore it. */
+export interface LibraryBackupPreview {
+  fileName: string;
+  songs: number;
+  playlists: number;
+  /** Songs whose source audio is already in the library. */
+  duplicates: number;
+}
+/** "skip" leaves out songs already in the library; "copy" imports everything as new songs. */
+export type RestoreMode = "skip" | "copy";
 export interface LibraryPreflightSong {
   id: string;
   song?: LibrarySong;
@@ -51,7 +63,10 @@ export interface LibraryPreflightSong {
 export interface SongLibraryApi {
   preflight(ids: string[]): Promise<LibraryPreflightSong[]>;
   exportBackup(): Promise<LibraryTransferResult | null>;
-  restoreBackup(): Promise<LibraryTransferResult | null>;
+  /** Opens the file picker and reads the chosen backup's index. Null when cancelled. The path stays in the main process. */
+  inspectBackup(): Promise<LibraryBackupPreview | null>;
+  /** Restores the backup chosen by `inspectBackup`. */
+  restoreBackup(mode: RestoreMode): Promise<LibraryTransferResult>;
   onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;
   index(): Promise<SongLibrary>;
   save(song: LibrarySong, assets: { name: string; bytes: Uint8Array }[]): Promise<void>;
@@ -59,7 +74,8 @@ export interface SongLibraryApi {
   audioUrls(id: string): Promise<Record<string, string>>;
   playlists(playlists: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;
-  settings(id: string, values: Record<string, string>): Promise<void>;
+  /** Merges the changed entries into a saved song's settings; an empty value removes one. */
+  updateSettings(id: string, patch: Record<string, string>): Promise<void>;
 }
 export const emptyLibrary = (): SongLibrary => ({ version: 2, songs: [], playlists: [] });
 export const validId = (id: string): boolean => /^[a-f0-9-]{36}$/.test(id);

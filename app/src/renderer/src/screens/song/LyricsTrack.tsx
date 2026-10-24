@@ -4,6 +4,7 @@ import type { PcmAudio } from "@/song/types";
 import { cancelLyrics, generateLyrics, useLyricsJobs } from "@/song/performance/lyrics-jobs";
 import { hasSignal } from "@/song/performance/sources";
 import { LYRIC_LANGUAGES, lyricsOptions, type LyricsLanguage } from "@/song/performance/lyrics-options";
+import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
 import { host } from "@/host";
 import { useActiveIndex } from "@/song/performance/playback-clock";
 
@@ -19,14 +20,7 @@ export function LyricsTrack({
   follow?: boolean;
 }) {
   const [language, setLanguage] = useState(() => lyricsOptions(storageKey).language);
-  const key = storageKey + ":lyrics";
-  const [text, setText] = useState(() => {
-    try {
-      return localStorage.getItem(key) ?? "";
-    } catch {
-      return "";
-    }
-  });
+  const [text, setText] = useState(() => getSetting(storageKey, ":lyrics"));
   const job = useLyricsJobs((s) => s.jobs[storageKey]);
   const status = job?.status ?? "";
   const busy = job?.busy ?? false;
@@ -55,20 +49,20 @@ export function LyricsTrack({
     setText(value);
     if (job) useLyricsJobs.setState((s) => ({ jobs: { ...s.jobs, [storageKey]: { ...s.jobs[storageKey], text: value } } }));
     try {
-      localStorage.setItem(key, value);
+      setSetting(storageKey, ":lyrics", value);
     } catch {
       setError("Could not save lyrics locally. Export them to keep a copy.");
     }
   };
   useEffect(() => {
     try {
-      setText(localStorage.getItem(key) ?? "");
+      setText(getSetting(storageKey, ":lyrics"));
     } catch {
       setText("");
     }
     setError("");
     setLanguage(lyricsOptions(storageKey).language);
-  }, [key, storageKey]);
+  }, [storageKey]);
   useEffect(() => {
     if (job?.text !== undefined) setText(job.text);
   }, [job?.text]);
@@ -100,8 +94,7 @@ export function LyricsTrack({
               const next = e.target.value as LyricsLanguage;
               setLanguage(next);
               try {
-                const options = JSON.parse(localStorage.getItem(storageKey + ":options") || "{}");
-                localStorage.setItem(storageKey + ":options", JSON.stringify({ ...options, lyricsLanguage: next }));
+                setSetting(storageKey, ":options", JSON.stringify({ ...readOptions(storageKey, {}), lyricsLanguage: next }));
               } catch {
                 setError("Could not save language preference.");
               }

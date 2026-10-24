@@ -2,10 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LyricsTrack } from "./LyricsTrack";
 import { useLyricsJobs, cancelLyrics, migrateLyricsJob } from "@/song/performance/lyrics-jobs";
+import { clearSettingsCache, setSetting } from "@/song/performance/settings";
 import { setClockPosition } from "@/song/performance/playback-clock";
 
 const saveSettings = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock("@/host", () => ({ host: { song: { saveFiles: vi.fn(), library: { settings: saveSettings } } } }));
+vi.mock("@/host", () => ({ host: { song: { saveFiles: vi.fn(), library: { updateSettings: saveSettings } } } }));
 class FakeWorker {
   static current: FakeWorker;
   onmessage?: (e: { data: unknown }) => void;
@@ -23,6 +24,7 @@ beforeEach(() => {
   useLyricsJobs.setState({ jobs: {} });
   FakeWorker.current = undefined!;
   localStorage.clear();
+  clearSettingsCache();
   vi.stubGlobal("Worker", FakeWorker);
   vi.stubGlobal(
     "OfflineAudioContext",
@@ -115,7 +117,7 @@ it("keeps edited lyrics when returning to the tab", async () => {
 it("keeps a running job when a song is saved to the library and persists the finished lyrics", async () => {
   const view = render(<LyricsTrack audio={audio} storageKey="file" />);
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
-  localStorage.setItem("vltn.song:saved", "[00:00] [C]");
+  setSetting("vltn.song:saved", "", "[00:00] [C]");
   act(() => migrateLyricsJob("file", "vltn.song:saved"));
   view.unmount();
   await act(async () => FakeWorker.current.onmessage?.({ data: { segments: [{ time: 0, text: "Saved words" }] } }));

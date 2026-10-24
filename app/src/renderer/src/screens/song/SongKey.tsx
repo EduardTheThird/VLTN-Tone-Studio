@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
 import { KEY_NAMES, SONG_KEYS, keyAudio, type KeyEstimate } from "@/song/performance/key";
-import { readOptions } from "@/song/performance/settings";
+import { readOptions, setSetting } from "@/song/performance/settings";
 
 interface KeySettings {
   songKey: string;
@@ -58,8 +58,9 @@ export function SongKey({ stems, original, storageKey, shift = 0 }: { stems: Ste
   }, [input]);
   useEffect(() => {
     try {
-      localStorage.setItem(
-        storageKey + ":options",
+      setSetting(
+        storageKey,
+        ":options",
         JSON.stringify({ ...readOptions(storageKey, {}), songKey: override, detectedKey: estimate, keyAudioSource: analysisSource }),
       );
     } catch {

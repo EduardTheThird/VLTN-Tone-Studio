@@ -6,7 +6,7 @@ import { parseChart } from "@/song/performance/chart";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession } from "@/song/performance/session";
 import { type StemName } from "@/song/types";
-import { performanceKey, readOptions } from "@/song/performance/settings";
+import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { useBluetooth } from "@/bluetooth/connection";
@@ -18,14 +18,9 @@ import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup"
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { StageView } from "./StageView";
 
-function readNumber(key: string, fallback: number, min: number, max: number): number {
-  try {
-    const raw = localStorage.getItem(key);
-    const n = raw === null ? NaN : Number(raw);
-    return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
-  } catch {
-    return fallback;
-  }
+function readNumber(raw: string, fallback: number, min: number, max: number): number {
+  const n = raw === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
 let sessionId = 0;
@@ -61,14 +56,8 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   );
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState("");
-  const [chart, setChart] = useState(() => {
-    try {
-      return localStorage.getItem(key) ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [bpm, setBpm] = useState(() => readNumber(key + ":bpm", 120, 30, 300)),
+  const [chart, setChart] = useState(() => getSetting(key, ""));
+  const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
     [beats, setBeats] = useState(options.beats),
     [shift, setShift] = useState(options.shift);
   const [volume, setVolume] = useState(options.volume);
@@ -147,14 +136,14 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     session.pause();
     setChart(value);
     try {
-      localStorage.setItem(key, value);
+      setSetting(key, "", value);
     } catch (e) {
       session.fail(e);
     }
   };
   useEffect(() => {
     try {
-      localStorage.setItem(key + ":bpm", String(bpm));
+      setSetting(key, ":bpm", String(bpm));
     } catch (e) {
       session.fail(e);
     }
@@ -167,8 +156,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   }, [player, mix]);
   useEffect(() => {
     try {
-      localStorage.setItem(
-        key + ":options",
+      setSetting(
+        key,
+        ":options",
         JSON.stringify({
           ...readOptions(key, {}),
           firstBeat,

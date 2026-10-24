@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { clearSettingsCache, setSetting } from "@/song/performance/settings";
 import { PerformancePanel } from "./PerformancePanel";
 import { readMidiConfiguration, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import type { SchedulerConfig, ScheduledMessage } from "@/song/performance/midi-scheduler";
@@ -40,6 +41,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
 });
 beforeEach(() => {
   localStorage.clear();
+  clearSettingsCache();
   useMidiConfiguration.setState(readMidiConfiguration());
   HTMLElement.prototype.scrollTo = vi.fn();
 });
@@ -204,8 +206,8 @@ it("replaces a playlist worker without replaying old-song cues and invalidates c
   playlist.pausePlaylist.mockImplementation(() => {
     playlist.playlistPlaying = false;
   });
-  localStorage.setItem("vltn.song:a", "[00:00] {midi:pc 1 1}\n[00:00.20] {midi:pc 1 2}");
-  localStorage.setItem("vltn.song:b", "[00:00] {midi:pc 1 3}");
+  setSetting("vltn.song:a", "", "[00:00] {midi:pc 1 1}\n[00:00.20] {midi:pc 1 2}");
+  setSetting("vltn.song:b", "", "[00:00] {midi:pc 1 3}");
   mocks.source = { ...mocks.source, libraryId: "a" };
   let view: ReturnType<typeof render>;
   await act(async () => {

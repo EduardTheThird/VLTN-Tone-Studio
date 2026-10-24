@@ -21,7 +21,7 @@ import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { songSaveFilters } from './song-save-options';
 import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
-import type { LibrarySong, LibraryTransferProgress, Playlist } from '@shared/song-library';
+import type { LibrarySong, LibraryTransferProgress, Playlist, RestoreMode } from '@shared/song-library';
 
 // The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
 // userData/models, resumed from a `.part` file after an interrupted download, checked against its pinned SHA-256
@@ -131,7 +131,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:abort', (_e, token: string) => library.abort(token));
   handle('song:library:audioUrls', (_e, id: string) => library.audioUrls(id));
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
-  handle('song:library:settings', (_e, id: string, values: Record<string, string>) => library.settings(id, values));
+  handle('song:library:updateSettings', (_e, id: string, patch: Record<string, string>) => library.updateSettings(id, patch));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
   const transferProgress = (value: LibraryTransferProgress) => getWindow()?.webContents.send('song:library:progress', value);
   handle('song:library:exportBackup', async () => {
@@ -145,17 +145,31 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     const result = await library.exportBackup(selection.filePath, transferProgress);
     return { ...result, fileName: basename(selection.filePath) };
   });
-  handle('song:library:restoreBackup', async () => {
+  // The renderer never names a path: the backup it inspected is the one it restores.
+  let chosenBackup: string | null = null;
+  handle('song:library:inspectBackup', async () => {
     const selection = await showOpenDialog(getWindow(), {
-      title: 'Restore song library as new copies',
+      title: 'Restore song library',
       properties: ['openFile'],
       filters: [{ name: 'Portable song library', extensions: ['gz', 'tgz'] }],
     });
+    chosenBackup = null;
     if (selection.canceled || !selection.filePaths[0]) return null;
     const path = selection.filePaths[0];
-    const result = await library.restoreBackup(path, transferProgress);
+    const preview = await library.inspectBackup(path);
+    chosenBackup = path;
+    return { ...preview, fileName: basename(path) };
+  });
+  handle('song:library:restoreBackup', async (_e, mode: RestoreMode) => {
+    if (!chosenBackup) throw new HostError('invalid', 'Choose a backup to restore first.');
+    if (mode !== 'skip' && mode !== 'copy') throw new HostError('invalid', 'Unknown restore mode.');
+    const path = chosenBackup;
+    chosenBackup = null;
+    const result = await library.restoreBackup(path, transferProgress, mode);
     return { ...result, fileName: basename(path) };
   });
+  library.startSweeping();
+  app.once('will-quit', () => library.stopSweeping());
   // Songs saved by an earlier version are converted to FLAC in the background; the song list shows them as soon as they have finished.
   void library.migrate(transferProgress).catch((e) => console.error('Song library conversion failed', e));
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.

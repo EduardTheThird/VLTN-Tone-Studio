@@ -17,6 +17,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 - **Bluetooth link resilience.** Bluetooth MIDI now packs messages that fall within a few milliseconds into one packet (stamped with their intended send time), so a busy stream no longer needs a write per message. If the pedal goes out of range or drops the link, the app reconnects on its own with a growing delay, without the device chooser; the song stays disarmed until you rearm it. **Stop reconnecting** is next to the status.
 
+- **Library hygiene.** Restoring a backup can skip songs that are already in the library, so restoring twice no longer duplicates songs or playlists. A saved song's chart, BPM, lyrics and options now live only in the library, no longer also in local storage, and earlier copies are moved over. Leftover folders from interrupted saves are cleaned up automatically. See [Song library](SONG-LIBRARY.md).
+
 ### Changed
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 

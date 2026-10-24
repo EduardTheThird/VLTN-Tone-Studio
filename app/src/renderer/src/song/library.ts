@@ -2,10 +2,19 @@ import { create } from "zustand";
 import { host } from "@/host";
 import { useSong } from "./store";
 import { useNav } from "@/state/nav";
-import { emptyLibrary, flacName, type LibraryAudio, type LibrarySong, type Playlist, type SongLibrary } from "@shared/song-library";
+import {
+  emptyLibrary,
+  flacName,
+  type LibraryAudio,
+  type LibraryBackupPreview,
+  type LibrarySong,
+  type Playlist,
+  type RestoreMode,
+  type SongLibrary,
+} from "@shared/song-library";
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
-import { performanceKey, readSettings, writeSettings } from "./performance/settings";
+import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, Stems } from "./types";
 
 interface LibraryState {
@@ -15,7 +24,12 @@ interface LibraryState {
   notice: string;
   transfer: string;
   exportBackup(): Promise<void>;
+  /** The backup waiting for the user to choose how to restore it, when some of its songs are already in the library. */
+  backupPreview: LibraryBackupPreview | null;
+  /** Picks a backup. Restores it at once when nothing in it is already saved; otherwise sets `backupPreview` for the dialog. */
   restoreBackup(): Promise<void>;
+  /** Answers the dialog: restore with the chosen mode, or null to cancel. */
+  finishRestore(mode: RestoreMode | null): Promise<void>;
   queue: string[];
   position: number;
   playlistPlaying: boolean;
@@ -44,6 +58,13 @@ async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
     throw new Error(`Missing or damaged ${track.name} audio.`);
   return audio;
 }
+/** Reads the index after moving any settings an earlier version left in localStorage into the library. */
+async function readIndex(): Promise<SongLibrary> {
+  const index = await api().index();
+  // A failed move leaves the localStorage copies for the next start; it must not hide the library.
+  await migrateLocalSettings(index.songs).catch((e) => console.error("Could not move song settings into the library", e));
+  return index;
+}
 const api = () => {
   if (!host.song.library) throw new Error("Saved songs are available in the desktop app.");
   return host.song.library;
@@ -61,12 +82,34 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       set({ busy: false });
     }
   };
+  const restore = async (mode: RestoreMode) => {
+    const service = api();
+    set({ transfer: "Checking library backup…" });
+    const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
+    try {
+      const result = await service.restoreBackup(mode);
+      set({
+        index: await service.index(),
+        queue: [],
+        position: -1,
+        playlistPlaying: false,
+        midiSession: null,
+        notice:
+          mode === "skip"
+            ? `Restored ${result.songs} songs and ${result.playlists} playlists. Skipped ${result.skipped ?? 0} songs already in the library.`
+            : `Restored ${result.songs} songs and ${result.playlists} playlists as new copies. Existing songs were kept.`,
+      });
+    } finally {
+      unsubscribe();
+      set({ transfer: "" });
+    }
+  };
   const load = async (id: string, queue: string[], position: number, playlist: boolean) => {
     const generation = ++loadGeneration;
     if (!playlist) set({ playlistPlaying: false, midiSession: null });
-    const current = useSong.getState().source;
-    if (current?.libraryId) await api().settings(current.libraryId, readSettings(performanceKey(current)));
-    const index = await api().index(),
+    // Switching songs mid-set must not wait on a failed write; the edits stay queued and are retried.
+    await flushSettings().catch((e) => console.error("Could not save song settings", e));
+    const index = await readIndex(),
       song = index.songs.find((s) => s.id === id);
     if (!song) throw new Error("Song is missing from the library.");
     // Keep the performance controls visible while advancing; Stop can cancel an in-flight load.
@@ -77,7 +120,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     if (generation !== loadGeneration) return;
     const tracks: Record<string, PcmAudio> = Object.fromEntries(loaded);
     const source = { name: song.sourceName, libraryId: song.id, audio: tracks.source };
-    writeSettings(performanceKey(source), song.settings);
+    seedSettings(song.id, song.settings);
     const stems = Object.fromEntries(Object.entries(tracks).filter(([name]) => name !== "source")) as Stems;
     set({ index, queue: [...queue], position, playlistPlaying: playlist, notice: `${song.title} ready.` });
     useSong.setState({ source, stems: Object.keys(stems).length ? stems : null, lastSplit: null, status: { kind: "idle" } });
@@ -99,8 +142,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         set({ transfer: "Preparing library backup…" });
         const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
         try {
-          const source = useSong.getState().source;
-          if (source?.libraryId) await service.settings(source.libraryId, readSettings(performanceKey(source)));
+          await flushSettings();
           const result = await service.exportBackup();
           set({ notice: result ? `Exported ${result.songs} songs and ${result.playlists} playlists to ${result.fileName}.` : "Backup export cancelled." });
         } finally {
@@ -108,27 +150,29 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           set({ transfer: "" });
         }
       }),
+    backupPreview: null,
     restoreBackup: () =>
       run(async () => {
         const service = api();
-        set({ transfer: "Checking library backup…" });
-        const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
-        try {
-          const result = await service.restoreBackup();
-          if (result)
-            set({
-              index: await service.index(),
-              queue: [],
-              position: -1,
-              playlistPlaying: false,
-              midiSession: null,
-              notice: `Restored ${result.songs} songs and ${result.playlists} playlists as new copies. Existing songs were kept.`,
-            });
-          else set({ notice: "Backup restore cancelled." });
-        } finally {
-          unsubscribe();
-          set({ transfer: "" });
+        const preview = await service.inspectBackup();
+        if (!preview) {
+          set({ notice: "Backup restore cancelled." });
+          return;
         }
+        if (preview.duplicates) {
+          set({ backupPreview: preview });
+          return;
+        }
+        await restore("copy");
+      }),
+    finishRestore: (mode) =>
+      run(async () => {
+        set({ backupPreview: null });
+        if (!mode) {
+          set({ notice: "Backup restore cancelled." });
+          return;
+        }
+        await restore(mode);
       }),
     rememberMidi: (midiSession) => set({ midiSession }),
     pausePlaylist: () => {
@@ -163,7 +207,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       }),
     refresh: () =>
       run(async () => {
-        set({ index: await api().index() });
+        set({ index: await readIndex() });
       }),
     save: (title, artist) =>
       run(async () => {
@@ -206,10 +250,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           // Background transcription/key analysis can finish while audio is being copied.
           // Promote the latest settings, not the snapshot taken before the async save.
           const latest = readSettings(performanceKey(source));
+          seedSettings(id, song.settings);
           writeSettings(performanceKey(saved), latest);
           migrateLyricsJob(performanceKey(source), performanceKey(saved));
           if (!source.libraryId) useSong.setState({ source: saved });
-          if (JSON.stringify(latest) !== JSON.stringify(song.settings)) await api().settings(id, latest);
+          await flushSettings();
         }
         set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
       }),
@@ -221,11 +266,14 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       }),
     remove: (id) =>
       run(async () => {
-        await api().remove(id);
         const source = useSong.getState().source;
-        if (source?.libraryId === id) {
+        // A song that is still open keeps its settings, now as an unsaved song.
+        const kept = source?.libraryId === id ? readSettings(performanceKey(source)) : null;
+        await api().remove(id);
+        forgetSettings(id);
+        if (source && kept) {
           const detached = { ...source, libraryId: undefined };
-          writeSettings(performanceKey(detached), readSettings(performanceKey(source)));
+          writeSettings(performanceKey(detached), kept);
           useSong.setState({ source: detached });
         }
         set({

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { formatTime } from "@/song/stems/mix";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlaylistPreflight } from "./PlaylistPreflight";
 import { host } from "@/host";
 
@@ -77,14 +78,31 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
             disabled={library.busy || ["splitting", "model", "decoding"].includes(status.kind)}
             onClick={() => void library.restoreBackup()}
           >
-            Restore backup as new copies…
+            Restore backup…
           </Button>
         </div>
         <p className="text-xs text-silkscreen-3">
-          Restore adds new songs and playlists, keeping your existing library. Importing the same backup again creates duplicates. MIDI ports, cue arming and
-          account settings are not included.
+          Restore adds songs and playlists and keeps your existing library. If some songs are already saved, you can skip them or import copies. MIDI ports, cue
+          arming and account settings are not included.
         </p>
       </section>
+      <Dialog open={!!library.backupPreview} onOpenChange={(open) => !open && void library.finishRestore(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Some songs are already in your library</DialogTitle>
+            <DialogDescription>
+              {library.backupPreview?.fileName} holds {library.backupPreview?.songs} songs and {library.backupPreview?.playlists} playlists.{" "}
+              {library.backupPreview?.duplicates} of the songs match audio you have already saved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => void library.finishRestore("copy")}>
+              Import as copies
+            </Button>
+            <Button onClick={() => void library.finishRestore("skip")}>Skip songs already in the library ({library.backupPreview?.duplicates})</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {library.busy && <p role="status">{library.transfer || "Working with saved songs…"}</p>}
       {library.busy && library.playlistPlaying && (
         <Button variant="outline" onClick={() => library.pausePlaylist()}>

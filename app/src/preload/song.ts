@@ -7,7 +7,8 @@ export const songApi: SongHostApi = {
   library: {
     preflight: ids => invoke('song:library:preflight', ids),
     exportBackup: () => invoke('song:library:exportBackup'),
-    restoreBackup: () => invoke('song:library:restoreBackup'),
+    inspectBackup: () => invoke('song:library:inspectBackup'),
+    restoreBackup: mode => invoke('song:library:restoreBackup', mode),
     onTransferProgress(callback) {
       const listener=(_event:IpcRendererEvent,progress:import('@shared/song-library').LibraryTransferProgress)=>callback(progress);
       ipcRenderer.on('song:library:progress',listener);
@@ -16,7 +17,7 @@ export const songApi: SongHostApi = {
     index: () => invoke('song:library:index'),
     audioUrls: id => invoke('song:library:audioUrls', id),
     playlists: playlists => invoke('song:library:playlists', playlists),
-    settings: (id, values) => invoke('song:library:settings', id, values),
+    updateSettings: (id, patch) => invoke('song:library:updateSettings', id, patch),
     remove: id => invoke('song:library:remove', id),
     async save(song, assets) {
       const token = await invoke<string>('song:library:begin', song);
