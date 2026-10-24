@@ -13,7 +13,7 @@ interface Voice {
   source: AudioBufferSourceNode | null;
 }
 
-export interface MetronomeSettings { enabled: boolean; bpm: number; beats: number; volume: number }
+export interface MetronomeSettings { enabled: boolean; bpm: number; beats: number; volume: number; firstBeat?: number }
 
 export class StemPlayer {
   readonly duration: number;
@@ -124,14 +124,17 @@ export class StemPlayer {
 
   private startMetronome(): void {
     const { enabled, bpm, beats, volume } = this.metronome;
+    const firstBeat = Number.isFinite(this.metronome.firstBeat) && this.metronome.firstBeat! >= 0 ? this.metronome.firstBeat! : 0;
     if (!enabled || !Number.isFinite(bpm) || bpm <= 0 || !Number.isInteger(beats) || beats < 1) return;
     const interval = 60 / bpm;
-    let beat = Math.max(0, Math.ceil((this.ctx.currentTime - this.startedAt) / interval - 1e-7));
+    // Never schedule a beat before the requested seek position during audio pre-roll.
+    const nextBeat = () => Math.max(0, Math.ceil((Math.max(this.offset, this.ctx.currentTime - this.startedAt) - firstBeat) / interval - 1e-7));
+    let beat = nextBeat();
     const fill = () => {
       // Skip missed beats instead of playing a burst when the window resumes.
-      beat = Math.max(beat, Math.ceil((this.ctx.currentTime - this.startedAt) / interval - 1e-7));
-      while (this.startedAt + beat * interval < this.ctx.currentTime + 0.1 && beat * interval < this.duration) {
-        const when = Math.max(this.ctx.currentTime, this.startedAt + beat * interval);
+      beat = Math.max(beat, nextBeat());
+      while (this.startedAt + firstBeat + beat * interval < this.ctx.currentTime + 0.1 && firstBeat + beat * interval < this.duration) {
+        const when = Math.max(this.ctx.currentTime, this.startedAt + firstBeat + beat * interval);
         const down = beat % beats === 0;
         const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
         osc.frequency.setValueAtTime(down ? 1500 : 1000, when);

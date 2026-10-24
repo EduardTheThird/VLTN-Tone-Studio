@@ -420,3 +420,22 @@ it('keeps stage mode active when a new playlist song replaces the source',()=>{
  expect(screen.getByRole('dialog',{name:'Stage mode'})).toBeTruthy();
  expect((screen.getByLabelText('Expanded song position') as HTMLInputElement).disabled).toBe(true);
 });
+
+it('saves the first downbeat per song and locks alignment during playback', async () => {
+  const key='vltn.performance.v1:clock-test.wav:44100:44100';
+  const view=render(<PerformancePanel/>);
+  mocks.position=1.25;
+  fireEvent.click(screen.getByText('Set first beat here'));
+  expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({firstBeat:1.25});
+  expect(JSON.parse(localStorage.getItem(key+':options')!).firstBeat).toBe(1.25);
+  view.unmount();
+  render(<PerformancePanel/>);
+  expect((screen.getByLabelText('First beat (seconds)') as HTMLInputElement).value).toBe('1.25');
+  await act(async()=>{fireEvent.click(screen.getByText('Play song'));});
+  expect((screen.getByLabelText('First beat (seconds)') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByText('Set first beat here') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('Pause'));
+  fireEvent.click(screen.getByText('Reset first beat'));
+  expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({firstBeat:0});
+  expect(mocks.send).not.toHaveBeenCalled();
+});

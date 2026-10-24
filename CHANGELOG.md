@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
+- Per-song metronome first-beat alignment, with a position shortcut and reset; preserves beat/bar phase on pause and seek without moving MIDI cues.
 - Stage mode with large transport/lyrics, locked seeking and editors, visible MIDI status/Panic, and renewable desktop sleep prevention during playback.
 - Whole-playlist preflight with per-entry saved audio, chart, tempo and MIDI warnings, without loading tracks or sending commands.
 - Dedicated MIDI scheduler worker with audio checkpoints, advisory cue/channel preflight and bounded timing diagnostics.

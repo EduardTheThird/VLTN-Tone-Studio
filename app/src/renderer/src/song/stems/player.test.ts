@@ -57,3 +57,45 @@ it('can resume after pausing during the audio start pre-roll', async () => {
   expect(Context.instances[0].sources.at(-1)!.start).toHaveBeenCalledWith(10.02,0);
   await player.dispose();
 });
+
+it('anchors the first downbeat after an intro and preserves its phase through pause and seek', async () => {
+  vi.useFakeTimers(); vi.stubGlobal('AudioContext', Context);
+  const player = new StemPlayer({other:{sampleRate:100,channels:[new Float32Array(1000)]}});
+  player.setMetronome({enabled:true,bpm:120,beats:4,volume:0.25,firstBeat:1.25});
+  await player.play();
+  const ctx=Context.instances[0];
+  expect(ctx.oscillators).toHaveLength(0);
+  ctx.currentTime=11.2; vi.advanceTimersByTime(25);
+  expect(ctx.oscillators[0].start.mock.calls[0][0]).toBeCloseTo(11.27);
+  expect(ctx.oscillators[0].frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
+  ctx.currentTime=11.4; player.pause();
+  const count=ctx.oscillators.length;
+  ctx.currentTime=12; await player.play();
+  expect(ctx.oscillators).toHaveLength(count);
+  ctx.currentTime=12.35; vi.advanceTimersByTime(25);
+  expect(ctx.oscillators.at(-1)!.start.mock.calls[0][0]).toBeCloseTo(12.39);
+  expect(ctx.oscillators.at(-1)!.frequency.setValueAtTime.mock.calls[0][0]).toBe(1000);
+  await player.seek(3.2);
+  expect(ctx.oscillators.at(-1)!.start.mock.calls[0][0]).toBeCloseTo(12.42);
+  expect(ctx.oscillators.at(-1)!.frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
+  await player.dispose();
+});
+
+it('does not replay the beat just before a seek or burst missed clicks after a stall', async () => {
+  vi.useFakeTimers(); vi.stubGlobal('AudioContext', Context);
+  const player = new StemPlayer({other:{sampleRate:100,channels:[new Float32Array(1000)]}});
+  player.setMetronome({enabled:true,bpm:120,beats:4,volume:0.25,firstBeat:1.25});
+  await player.seek(1.26); await player.play();
+  const ctx=Context.instances[0];
+  expect(ctx.oscillators).toHaveLength(0);
+  ctx.currentTime=13.2; vi.advanceTimersByTime(25);
+  expect(ctx.oscillators).toHaveLength(0);
+  ctx.currentTime=13.45; vi.advanceTimersByTime(25);
+  expect(ctx.oscillators).toHaveLength(1);
+  expect(ctx.oscillators[0].start.mock.calls[0][0]).toBeCloseTo(13.51);
+  await player.seek(9.9);
+  const count=ctx.oscillators.length;
+  ctx.currentTime=14; vi.advanceTimersByTime(25);
+  expect(ctx.oscillators).toHaveLength(count);
+  await player.dispose();
+});

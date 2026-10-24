@@ -48,12 +48,13 @@ function PerformanceSession({stage,setStage}:{stage:boolean;setStage:(value:bool
   const library = useSongLibrary();
   const queued = !!source?.libraryId && library.queue[library.position] === source.libraryId;
   const [midiSession] = useState(() => queued && library.playlistPlaying ? library.midiSession : null);
-  const options = useMemo(() => readOptions(key, { beats: 4, shift: 0, clock: false, volume: 0.25, mix: defaultMix(), chordChoice: '' as StemName | '', lyricsLanguage: 'auto' }), [key]);
+  const options = useMemo(() => readOptions(key, { firstBeat: 0, beats: 4, shift: 0, clock: false, volume: 0.25, mix: defaultMix(), chordChoice: '' as StemName | '', lyricsLanguage: 'auto' }), [key]);
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState('');
   const [chart, setChart] = useState(() => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } });
   const [bpm, setBpm] = useState(() => readNumber(key + ':bpm', 120, 30, 300)), [beats, setBeats] = useState(options.beats), [shift, setShift] = useState(options.shift);
   const [volume, setVolume] = useState(options.volume);
+  const [firstBeat, setFirstBeat] = useState(() => typeof options.firstBeat === 'number' && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0);
   const [metronome, setMetronome] = useState(() => { try { return localStorage.getItem('vltn.performance.metronome') === 'true'; } catch { return false; } });
   const [player, setPlayer] = useState<StemPlayer | null>(null), [playing, setPlaying] = useState(false), [time, setTime] = useState(0);
   const [mix, setMix] = useState(options.mix);
@@ -194,7 +195,7 @@ function PerformanceSession({stage,setStage}:{stage:boolean;setStage:(value:bool
   useEffect(() => {
     if (queued && library.playlistPlaying && !library.busy) library.rememberMidi({ access, portId, inputId, armed, output });
   }, [queued, library.playlistPlaying, library.busy, access, portId, inputId, armed, output]);
-  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ ...readOptions(key, {}), beats, shift, clock, volume, mix, chordChoice, lyricsLanguage: readOptions(key, { lyricsLanguage: 'auto' }).lyricsLanguage })); } catch (e) { fail(e); } }, [key, beats, shift, clock, volume, mix, chordChoice]);
+  useEffect(() => { try { localStorage.setItem(key + ':options', JSON.stringify({ ...readOptions(key, {}), firstBeat, beats, shift, clock, volume, mix, chordChoice, lyricsLanguage: readOptions(key, { lyricsLanguage: 'auto' }).lyricsLanguage })); } catch (e) { fail(e); } }, [key, firstBeat, beats, shift, clock, volume, mix, chordChoice]);
   useEffect(() => {
     setChords([]); setAnalysing(false);
     const audio = chordSource ? stems?.[chordSource] : undefined;
@@ -206,7 +207,7 @@ function PerformanceSession({stage,setStage}:{stage:boolean;setStage:(value:bool
     worker.postMessage(audio);
     return () => worker.terminate();
   }, [stems, chordSource]);
-  useEffect(() => { player?.setMetronome({ enabled: metronome, bpm, beats, volume }); }, [player, metronome, bpm, beats, volume]);
+  useEffect(() => { player?.setMetronome({ enabled: metronome, bpm, beats, volume, firstBeat }); }, [player, metronome, bpm, beats, volume, firstBeat]);
   useEffect(() => { try { localStorage.setItem('vltn.performance.metronome', String(metronome)); } catch (e) { fail(e); } }, [metronome]);
   // Transport lifecycle is separate from tempo-dependent scheduling.
   useEffect(() => {
@@ -336,6 +337,10 @@ function PerformanceSession({stage,setStage}:{stage:boolean;setStage:(value:bool
         <label><input type="checkbox" checked={metronome} onChange={e => setMetronome(e.target.checked)} /> Metronome</label>
         <details className="relative"><summary className="cursor-pointer">Metronome settings</summary><div className="absolute right-0 z-20 mt-2 w-72 space-y-3 rounded-xl border border-seam bg-background p-4 shadow-xl">
           <p>Follows song playback. On/off is remembered for all songs.</p>
+          <label className="block">First beat (seconds) <input aria-label="First beat (seconds)" className={field + ' w-24'} type="number" min="0" step="0.001" disabled={playing} value={firstBeat} onChange={e => { const n=Number(e.target.value); if(Number.isFinite(n) && n>=0)setFirstBeat(n); }} /></label>
+          <Button variant="outline" disabled={!player || playing} onClick={()=>setFirstBeat(Math.round(Math.max(0,player?.position ?? 0)*1000)/1000)}>Set first beat here</Button>
+          <Button variant="outline" disabled={playing || firstBeat===0} onClick={()=>setFirstBeat(0)}>Reset first beat</Button>
+          <p className="text-xs">While stopped, seek to the first downbeat and set it here. Clicks begin there; song audio and MIDI cue timestamps stay unchanged.</p>
           <label className="block">Beats <select aria-label="Beats" className={field} value={beats} onChange={e => setBeats(Number(e.target.value))}>{[2,3,4,5,6,7].map(n => <option key={n}>{n}</option>)}</select></label>
           <label className="block">Metronome volume <input aria-label="Metronome volume" type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(Number(e.target.value))} /></label>
           <p>Set BPM to match the recording. Beat one is at the start of the audio; this does not detect tempo or stretch audio.</p>

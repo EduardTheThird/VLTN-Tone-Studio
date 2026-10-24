@@ -43,7 +43,9 @@ This is Tone Studio syntax. MIDI channels are 1–16, PC/CC/note data are 0–12
 
 MIDI Clock emits 24 pulses per beat at the chosen BPM with transport messages. The top-right **Send MIDI Clock** setting is remembered per song and is disabled while automatic one-time GP-180 tempo is enabled. Clock only runs during song playback with MIDI output armed. Disabling clock sends Stop and cancels pending clock messages without stopping the audio. Set the recording BPM while stopped; the BPM field is locked during playback. External transport input accepts Start/Continue/Stop or CC 80 with value 64–127 (any channel). Configure a GP-180 MIDI-command footswitch to send CC 80 to use it as play/pause. USB ports use Web MIDI; **Connect Bluetooth MIDI** provides standard BLE-MIDI input/output. See [Bluetooth and hardware evidence](BLUETOOTH.md). RTP-MIDI is not implemented. Do not loop output back to input.
 
-The top-right **Metronome** switch is remembered globally. The metronome starts and stops with song playback and shares the stems' AudioContext and time origin. Pause, rewind and seek preserve the beat grid relative to the recording. There is no separate rhythm transport. **Metronome settings** contains beats per bar and click volume; stem volume controls sit above the reader. Metronome and MIDI Clock are independent switches.
+The top-right **Metronome** switch is remembered globally. The metronome starts and stops with song playback and shares the stems' AudioContext and time origin. Pause, rewind and seek preserve the beat grid relative to the recording. There is no separate rhythm transport. **Metronome settings** contains first-beat alignment, beats per bar and click volume; stem volume controls sit above the reader. Metronome and MIDI Clock are independent switches.
+
+To align a recording with an intro, pause playback, seek to its first downbeat, then choose **Metronome settings → Set first beat here**. Fine-tune **First beat (seconds)** if needed; **Reset first beat** restores zero. The first click is accented and no clicks play before it. Subsequent accents follow beats per bar, including after pause or seek. Alignment is saved per song in performance options and included in library saves/backups. It changes only click timing, not audio speed, lyrics, MIDI cues or MIDI Clock. The recording still needs the correct BPM; a fixed grid cannot follow a recording with changing tempo.
 
 ### MIDI reliability during a set
 
@@ -117,7 +119,7 @@ The scheduler checks prepared-worker health again at playback start and requires
 4. Enable **Send cues** in Performance, then use its **Play playlist** button. Starting again from the library's **Play playlist** starts a new, disarmed MIDI session.
 5. After a disconnect or timing fault, pause and check the pedals' actual state. Reconnect/select the output and explicitly rearm before resuming. The app does not replay missed commands or reconstruct all prior pedal settings after a seek.
 
-The metronome on/off preference is global; song BPM, beats and metronome volume are stored with the song. A solo selected in Stems also affects the shared mix; clear it in Stems when preparing the full backing track. Playlist transitions load sequentially and are not gapless. Complete analysis and backups before starting the set.
+The metronome on/off preference is global; song BPM, first-beat position, beats and metronome volume are stored with the song. A solo selected in Stems also affects the shared mix; clear it in Stems when preparing the full backing track. Playlist transitions load sequentially and are not gapless. Complete analysis and backups before starting the set.
 
 ## Whole-playlist preflight
 
