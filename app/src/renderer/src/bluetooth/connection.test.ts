@@ -202,6 +202,20 @@ describe("Bluetooth connection lifecycle", () => {
     connection.close();
     expect(useBluetooth.getState().diagnostics).toMatchObject({ device: "GP-180", writes: 1, notifications: 2, messages: 1, clockTiming: { pulses: 1 } });
   });
+  it("coalesces the timing counters recorded before a write into one store update", async () => {
+    const f = fixture(),
+      connection = await BleMidiConnection.open(f.device);
+    const updates = vi.fn();
+    const stop = useBluetooth.subscribe(updates);
+    connection.send([0xf8]);
+    connection.send([192, 1]);
+    await flush();
+    stop();
+    expect(useBluetooth.getState().diagnostics).toMatchObject({ writes: 1 });
+    // Performance and clock timing are recorded together before the write; the write count follows after it completes.
+    expect(updates.mock.calls.length).toBeLessThanOrEqual(2);
+    connection.close();
+  });
   it("rejects a connection lost while enabling notifications and allows another attempt", async () => {
     const f = fixture();
     f.characteristic.startNotifications.mockImplementationOnce(async () => {

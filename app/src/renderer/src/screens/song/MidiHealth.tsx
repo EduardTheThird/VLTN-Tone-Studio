@@ -5,6 +5,9 @@ import { PEDAL_PROFILES } from "@/song/performance/pedal-profiles";
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { useBluetooth, resetBluetoothTiming } from "@/bluetooth/connection";
+/** How often the counters on screen may refresh. The scheduler and Bluetooth writes update their stores far more often than that. */
+const REFRESH_MS = 500;
+
 export function MidiHealth({
   cues,
   duration,
@@ -35,11 +38,21 @@ export function MidiHealth({
   const [timing, setTiming] = useState(() => useMidiDiagnostics.getState());
   const [ble, setBle] = useState(() => useBluetooth.getState().diagnostics);
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      timer = undefined;
       setTiming(useMidiDiagnostics.getState());
       setBle(useBluetooth.getState().diagnostics);
-    }, 250);
-    return () => clearInterval(timer);
+    };
+    // Throttle on change instead of polling: nothing renders while the stores are quiet.
+    const schedule = () => {
+      timer ??= setTimeout(refresh, REFRESH_MS);
+    };
+    const unsubscribe = [useMidiDiagnostics.subscribe(schedule), useBluetooth.subscribe(schedule)];
+    return () => {
+      clearTimeout(timer);
+      unsubscribe.forEach((stop) => stop());
+    };
   }, []);
   return (
     <details className="rounded border border-seam p-3" aria-label="MIDI health">

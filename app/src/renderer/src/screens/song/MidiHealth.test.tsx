@@ -9,6 +9,17 @@ afterEach(() => {
   vi.useRealTimers();
   useMidiDiagnostics.getState().reset();
 });
+it("refreshes the counters at most every 500 ms however often they change", () => {
+  vi.useFakeTimers();
+  render(<MidiHealth cues={[]} duration={10} clock={false} parseError="" />);
+  act(() => {
+    for (let i = 0; i < 50; i++) useMidiDiagnostics.getState().record({ label: "Cue", bytes: [192, 1], intended: 100, queued: 101, lateMs: 1 });
+    vi.advanceTimersByTime(499);
+  });
+  expect(screen.getByLabelText("MIDI timing totals").textContent).toContain("Queued: 0");
+  act(() => vi.advanceTimersByTime(1));
+  expect(screen.getByLabelText("MIDI timing totals").textContent).toContain("Queued: 50");
+});
 it("shows advisory preflight and bounded timing data without changing cue sending", () => {
   vi.useFakeTimers();
   useMidiDiagnostics.getState().reset();
@@ -17,7 +28,7 @@ it("shows advisory preflight and bounded timing data without changing cue sendin
   expect(screen.getByText(/No MIDI output selected/)).toBeTruthy();
   act(() => {
     useMidiDiagnostics.getState().record({ label: "Opening patch", bytes: [192, 2], intended: 100, queued: 112, lateMs: 12 });
-    vi.advanceTimersByTime(250);
+    vi.advanceTimersByTime(500);
   });
   expect(screen.getByLabelText("MIDI timing totals").textContent).toContain("Worst dispatch lateness: 12.0 ms");
   expect(screen.getByText("Opening patch")).toBeTruthy();

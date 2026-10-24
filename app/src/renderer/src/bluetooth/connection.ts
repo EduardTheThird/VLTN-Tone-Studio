@@ -84,6 +84,9 @@ export class BleMidiConnection {
   private generation = 0;
   private decoder = new BleMidiDecoder();
   private diagnostics: BluetoothDiagnostics;
+  /** The object last put in the store; a newer session replaces it, and then this one stops publishing. */
+  private published: BluetoothDiagnostics;
+  private publishQueued = false;
   private timingGeneration = 0;
   private lastClockWrite: number | null = null;
   private hasClockInterval = false;
@@ -95,13 +98,23 @@ export class BleMidiConnection {
     this.diagnostics = previous
       ? { ...previous, device: this.name, reconnects: previous.reconnects + 1 }
       : { device: this.name, writes: 0, notifications: 0, messages: 0, dropped: 0, reconnects: 0 };
+    this.published = this.diagnostics;
     useBluetooth.setState({ diagnostics: this.diagnostics });
   }
-  private record(counts: Partial<Pick<BluetoothDiagnostics, "writes" | "notifications" | "messages" | "dropped" | "clockTiming" | "performanceTiming">>) {
-    const previous = this.diagnostics;
-    this.diagnostics = { ...previous, ...counts };
+  private record(counts: Partial<Pick<BluetoothDiagnostics, "writes" | "notifications" | "messages" | "dropped" | "clockTiming" | "performanceTiming">>, immediately = false) {
+    this.diagnostics = { ...this.diagnostics, ...counts };
+    if (immediately) return this.publish();
+    // One flush records several counters back to back; publish them together so subscribers render once.
+    if (this.publishQueued) return;
+    this.publishQueued = true;
+    queueMicrotask(() => this.publish());
+  }
+  private publish() {
+    this.publishQueued = false;
     // Keep the last session's evidence after cleanup without overwriting a newer session.
-    if (useBluetooth.getState().diagnostics === previous) useBluetooth.setState({ diagnostics: this.diagnostics });
+    if (useBluetooth.getState().diagnostics !== this.published) return;
+    this.published = this.diagnostics;
+    useBluetooth.setState({ diagnostics: this.diagnostics });
   }
   /** Open the GATT link and MIDI characteristic. `previous` carries the counters over when restoring a lost link. */
   static async open(device: BleDevice, previous?: BluetoothDiagnostics): Promise<BleMidiConnection> {
@@ -153,6 +166,8 @@ export class BleMidiConnection {
   private teardown({ reconnect, radioLost = false }: { reconnect: boolean; radioLost?: boolean }) {
     if (this.closed) return;
     this.closed = true;
+    // Publish what a queued flush would have, so the closed session's counters are not lost.
+    if (this.publishQueued) this.publish();
     this.clear();
     this.pending = [];
     this.pendingBytes = 0;
@@ -332,7 +347,7 @@ export class BleMidiConnection {
     this.timingGeneration++;
     this.lastClockWrite = null;
     this.hasClockInterval = false;
-    this.record({ performanceTiming: undefined, clockTiming: undefined });
+    this.record({ performanceTiming: undefined, clockTiming: undefined }, true);
   }
   /** Cancel scheduled and buffered performance messages; editor requests and a SysEx already being written are kept. */
   clear() {
