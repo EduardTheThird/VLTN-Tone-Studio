@@ -1,4 +1,5 @@
 import type { Cue } from "./chart";
+import { CHASE_LEAD_MS, computeChaseState } from "./midi-chase";
 
 export interface ScheduledMessage {
   bytes: number[];
@@ -60,6 +61,8 @@ export class MidiSchedule {
   private stopped = false;
   private tempo: number[][] | null;
   private cues: Cue[];
+  /** Starting after the first cue means the pedals have to be brought to the state they would be in. */
+  private chasePending = true;
   constructor(
     config: SchedulerConfig,
     now: number,
@@ -158,6 +161,17 @@ export class MidiSchedule {
         if (action === "send") messages.push(message);
         else if (action === "drop") dropped.push(message);
       }
+    }
+    // Dropped patch or controller changes leave the pedals in the wrong state, so they are replayed as a chase too.
+    const lostState = dropped.some((m) => m.bytes[0] >= 176 && m.bytes[0] < 208) || dropped.some((m) => m.bytes[0] === 240);
+    if (this.chasePending || lostState) {
+      const chasePosition = this.chasePending ? this.config.position : position;
+      this.chasePending = false;
+      const sent = new Set(messages.map((m) => m.bytes.join(",")));
+      const chase = computeChaseState(this.cues, chasePosition)
+        .filter((m) => !sent.has(m.bytes.join(",")))
+        .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.config.origin + chasePosition * 1000 - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
+      messages.unshift(...chase);
     }
     if (messages.length || dropped.length) this.emit({ type: "batch", messages, ...(dropped.length ? { dropped } : {}) });
   }

@@ -53,7 +53,14 @@ it.each([0, 10])("preserves cues at the requested %s-second offset after a delay
   await act(async () => {
     fireEvent.click(screen.getByText("Play song"));
   });
-  expect(mocks.send.mock.calls.map((c) => c[0])).toEqual([[192, offset === 0 ? 7 : 8]]);
+  expect(mocks.send.mock.calls.map((c) => c[0])).toEqual(
+    offset === 0
+      ? [[192, 7]]
+      : [
+          [192, 7],
+          [192, 8],
+        ],
+  ); // starting at 10 s chases the earlier patch first
 });
 it("drops an opening cue that is overdue at start without disarming the session", async () => {
   mocks.playAdvance = 0.3;
@@ -213,7 +220,7 @@ it("replaces a playlist worker without replaying old-song cues and invalidates c
   expect(playlist.midiSession?.armed).not.toBe(true);
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
 });
-it("drops stale patch changes after a renderer stall and keeps the session armed", async () => {
+it("drops stale patch changes after a renderer stall, chases the latest one and keeps the session armed", async () => {
   vi.useFakeTimers();
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
   localStorage.setItem("vltn.performance.v1:clock-test.wav:44100:44100", "[00:00.04] {midi:pc 1 1}\n[00:00.40] {midi:pc 1 2}\n[00:00.60] {midi:pc 1 3}");
@@ -226,7 +233,8 @@ it("drops stale patch changes after a renderer stall and keeps the session armed
   mocks.clear.mockClear();
   mocks.position = 2;
   act(() => vi.advanceTimersByTime(60));
-  expect(mocks.send.mock.calls.filter((c) => c[0][0] === 192)).toHaveLength(0);
+  // Only the latest dropped patch is replayed (chase), so the pedal ends on patch 3 without stepping through patch 2.
+  expect(mocks.send.mock.calls.filter((c) => c[0][0] === 192).map((c) => c[0])).toEqual([[192, 3]]);
   expect(mocks.clear).not.toHaveBeenCalled();
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
   expect(screen.getByText(/2 late MIDI commands dropped at 0:00 \(resynced\)/)).toBeTruthy();

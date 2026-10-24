@@ -7,6 +7,8 @@ export interface MidiAction {
   description?: string;
   value?: { label: string; min: number; max: number; default: number };
   assignment?: string;
+  /** A trigger (looper, tap tempo, footswitch press, patch step) rather than a lasting state. Never replayed when starting mid-song. */
+  momentary?: boolean;
 }
 export interface PedalProfile {
   version: 1;
@@ -40,6 +42,7 @@ function assigned(id: string, label: string, setting: string, switchControl = fa
     id,
     label,
     assignment: setting,
+    ...(switchControl ? { momentary: true } : {}),
     description: `On the pedal, assign ${setting} to the same CC number selected here. This is a configurable control, not a fixed CC mapping.${switchControl ? " Press and release values are sent in order; test the configured switch behaviour on your pedal." : ""}`,
     commands: switchControl ? ["cc $channel $cc 127", "cc $channel $cc 0"] : ["cc $channel $cc $value"],
     ...(!switchControl ? { value: { label: "MIDI value", min: 0, max: 127, default: 64 } } : {}),
@@ -278,6 +281,35 @@ PEDAL_PROFILES.push({
   notes: gp180Profile.notes.replaceAll("GP-180", "GP-150") + " Shared GP-150/GP-180 command set; physical validation to date used GP-180.",
 });
 
+/** Triggers that must not be replayed by the state chase. Ids match the actions above; the GP-150 copy shares the GP-180 action objects. */
+const MOMENTARY_IDS: Record<string, string[]> = {
+  "strymon-timeline": ["tap", "phase", "record", "play", "stop", "reverse", "speed", "undo", "redo", "placement", "footswitch-a", "footswitch-b"],
+  "valeton-gp180": [
+    "loop-play",
+    "loop-stop",
+    "drums-play",
+    "drums-stop",
+    "tap",
+    "previous",
+    "next",
+    "tuner",
+    "loop-menu",
+    "loop-record",
+    "auto-record",
+    "delete-loop",
+    "quick-0-down",
+    "quick-0-up",
+    "quick-1-down",
+    "quick-1-up",
+    "quick-2-down",
+    "quick-2-up",
+  ],
+};
+for (const [profileId, ids] of Object.entries(MOMENTARY_IDS)) {
+  const profile = PEDAL_PROFILES.find((p) => p.id === profileId)!;
+  for (const action of profile.actions) if (ids.includes(action.id)) action.momentary = true;
+}
+
 export function actionCommands(action: MidiAction, channel: number, value = action.value?.default ?? 0, assignedCC?: number): string[] {
   if (!Number.isInteger(channel) || channel < 1 || channel > 16) throw new Error("Choose a MIDI channel from 1 to 16.");
   if (action.value && (!Number.isInteger(value) || value < action.value.min || value > action.value.max))
@@ -327,6 +359,7 @@ export function parsePedalProfile(text: string): PedalProfile {
       a.commands.length > 16 ||
       a.commands.some((c) => typeof c !== "string" || c.length > 300) ||
       (a.assignment !== undefined && !string(a.assignment, 300)) ||
+      (a.momentary !== undefined && typeof a.momentary !== "boolean") ||
       (a.description !== undefined && !string(a.description, 1000))
     )
       throw new Error("Invalid or duplicate action in pedal definition.");

@@ -49,10 +49,10 @@ it("fills on-time cues without duplication and never emits after stop", () => {
   f.schedule.tick(2040);
   expect(f.messages()).toHaveLength(2);
 });
-it("does not replay cues before a seek or beyond the song end", () => {
+it("does not replay cues before a seek as cues, only as chased state, and ignores cues beyond the song end", () => {
   const f = fixture({ position: 0.5, origin: 500, duration: 0.9 });
   f.schedule.tick(1000);
-  expect(f.messages()).toEqual([]);
+  expect(f.messages().map((m) => [m.bytes, m.label])).toEqual([[[192, 1], "Chase state"]]);
 });
 it.each([90, 120, 180])("keeps 24 PPQN at %i BPM despite checkpoint jitter", (bpm) => {
   const f = fixture({ bpm, clock: true, cues: [], duration: 10 });
@@ -98,7 +98,11 @@ it("keeps the session running through a frozen renderer: stale patch changes are
     [192, 2],
     [192, 3],
   ]);
-  expect(f.messages().map((m) => m.bytes)).toEqual([[192, 4]]);
+  // The dropped changes are replayed as one chase (only the latest patch), then the later cue fires.
+  expect(f.messages().map((m) => m.bytes)).toEqual([
+    [192, 3],
+    [192, 4],
+  ]);
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
   expect(f.replies.some((r) => r.type === "resync")).toBe(true);
 });
@@ -135,4 +139,26 @@ it("does not apply the start tempo late: it is dropped and the session carries o
   schedule.tick(1500);
   expect(replies.some((r) => r.type === "fault")).toBe(false);
   expect(replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : [])).map((m) => m.bytes)).toEqual([[191, 74, 120]]);
+});
+const chaseCues = "[00:00] {midi:cc 1 0 0} {midi:pc 1 1}\n[00:40] {midi:pc 1 2}\n[01:10] {midi:cc 1 0 0} {midi:pc 1 3}\n[01:40] {midi:pc 1 9}";
+it("chases the patch in force when starting at 1:30, before the start tempo, 30 ms ahead of the start", () => {
+  const f = fixture({ cues: parseChart(chaseCues), position: 90, origin: 1000 - 90_000, duration: 200, tempo: [[191, 74, 120]] });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => m.bytes)).toEqual([[176, 0, 0], [192, 3], [191, 74, 120]]);
+  expect(f.messages()[0].due).toBe(1000);
+  f.schedule.tick(1020);
+  expect(f.messages()).toHaveLength(3);
+});
+it("does not chase when starting from the beginning", () => {
+  const f = fixture();
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => m.bytes)).toEqual([[192, 1]]);
+});
+it("replays dropped patch changes as a chase after a stall instead of leaving the pedal on the old patch", () => {
+  const f = fixture({ cues: parseChart("[00:00.30] {midi:pc 1 2}\n[00:01.00] {midi:pc 1 4}"), duration: 5 });
+  f.schedule.tick(1000);
+  f.schedule.sync(0.7, 1700, 1700);
+  f.schedule.tick(1700);
+  expect(f.replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : [])).map((m) => m.bytes)).toEqual([[192, 2]]);
+  expect(f.messages().map((m) => m.bytes)).toEqual([[192, 2]]);
 });

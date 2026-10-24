@@ -11,6 +11,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **Stage mode.** Large lyrics and transport, locked editing and seeking, always-visible MIDI status with a Panic button, and sleep prevention during playback.
 - **GP-150 and GP-180 performance MIDI** with setup presets that cover both models.
 
+- **Pedal state on mid-song start.** Starting or seeking into a song, or recovering from a stall, now sets each pedal to the patch and controller values in force at that point. Trigger controls such as looper and tap tempo are left out, and `{chase}` / `{nochase}` on a cue override the defaults.
+
 ### Changed
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 

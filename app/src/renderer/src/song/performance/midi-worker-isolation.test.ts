@@ -5,12 +5,19 @@ import { stripTypeScriptTypes } from "node:module";
 import { Worker } from "node:worker_threads";
 
 it("runs the production scheduler in a separate thread while the host thread is blocked", async () => {
-  const engine = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8"), { mode: "transform" });
+  const engine = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
+    /import[^;]+from ['"]\.\/midi-chase['"];?/,
+    "",
+  );
+  const chase = stripTypeScriptTypes(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
+    /import[^;]+from ['"]\.\/chart['"];?/,
+    "",
+  );
   const entry = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler-worker.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
     /import[^;]+from ['"]\.\/midi-scheduler['"];?/,
     "",
   );
-  const source = `import {parentPort} from 'node:worker_threads';const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};parentPort.on('message',data=>self.onmessage({data}));\n${engine}\n${entry}\nparentPort.postMessage({ready:true});`;
+  const source = `import {parentPort} from 'node:worker_threads';const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};parentPort.on('message',data=>self.onmessage({data}));\n${chase}\n${engine}\n${entry}\nparentPort.postMessage({ready:true});`;
   const worker = new Worker(new URL("data:text/javascript," + encodeURIComponent(source)));
   const messages: { reply?: { type: string; messages?: unknown[] }; at: number }[] = [];
   try {

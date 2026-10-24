@@ -48,3 +48,10 @@ it.each(["GP-150", "GP-180"])("recognizes %s for shared tempo and clock advice",
   expect(result.issues.some((i) => i.code === "tempo-channel")).toBe(false);
   expect(result.issues.some((i) => i.code === "clock")).toBe(true);
 });
+it("warns when a press and release CC would be replayed when starting mid-song, unless it is marked {nochase}", () => {
+  const options = { duration: 100, clock: false, outputName: "Out", pedals: [] };
+  const warned = (text: string) => midiPreflight(parseChart(text), options).issues.some((i) => i.code === "chase-momentary");
+  expect(warned("[00:10] {midi:cc 1 20 127}\n[00:10.2] {midi:cc 1 20 0}")).toBe(true);
+  expect(warned("[00:10] {nochase} {midi:cc 1 20 127}\n[00:10.2] {nochase} {midi:cc 1 20 0}")).toBe(false);
+  expect(warned("[00:10] {midi:cc 1 20 127}\n[00:40] {midi:cc 1 20 0}")).toBe(false);
+});

@@ -3,6 +3,8 @@ export interface Cue {
   text: string;
   messages: number[][];
   label?: string;
+  /** `{chase}` forces this cue's PC/CC/SysEx to be replayed when starting mid-song; `{nochase}` never replays them. Unset uses the defaults. */
+  chase?: boolean;
 }
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitch = (n: string) => ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 })[n[0]]! + (n[1] === "#" ? 1 : n[1] === "b" ? -1 : 0);
@@ -44,6 +46,9 @@ export function parseChart(text: string): Cue[] {
         label = value.trim().slice(0, 400);
         return "";
       });
+      const hasChase = /\{chase\}/.test(content),
+        hasNoChase = /\{nochase\}/.test(content);
+      if (hasChase && hasNoChase) throw new Error(`Line ${index + 1}: use either {chase} or {nochase}, not both.`);
       const timestamps = [...content.matchAll(/\[(\d+):([0-5]\d(?:\.\d+)?)\]/g)];
       if (!timestamps.length) {
         if (/\{midi:/.test(content)) throw new Error(`Line ${index + 1}: MIDI needs a [mm:ss] timestamp.`);
@@ -52,13 +57,16 @@ export function parseChart(text: string): Cue[] {
       const messages: number[][] = [];
       const body = content
         .replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, "")
+        .replace(/\{(?:no)?chase\}/g, "")
         .replace(/\{midi:([^}]+)\}/g, (_, cmd: string) => {
           messages.push(midiCommand(cmd));
           return "";
         })
         .trim();
       if (body.includes("{midi:")) throw new Error(`Line ${index + 1}: MIDI commands need nonempty contents and a closing brace.`);
-      return timestamps.map((t) => ({ time: Number(t[1]) * 60 + Number(t[2]), text: body, messages, ...(label ? { label } : {}) }));
+      return timestamps.map((t) => ({ time: Number(t[1]) * 60 + Number(t[2]), text: body, messages, ...(label ? { label } : {}),
+        ...(hasChase || hasNoChase ? { chase: hasChase } : {}),
+      }));
     })
     .sort((a, b) => a.time - b.time);
 }

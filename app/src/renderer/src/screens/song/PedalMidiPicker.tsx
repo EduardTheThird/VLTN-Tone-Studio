@@ -59,7 +59,7 @@ export function PedalMidiPicker({
       if (send) messages.forEach(onTest);
       else {
         const label = `${profile.name}: ${action.label}${action.value ? ` — ${action.value.label} ${value}` : ""} (ch ${channel})`.replace(/[{}\r\n]/g, " ");
-        onAdd(`${lrcTime(time)} {label:${label}} ${commands.map((c) => `{midi:${c}}`).join(" ")}`);
+        onAdd(`${lrcTime(time)} {label:${label}}${action.momentary ? " {nochase}" : ""} ${commands.map((c) => `{midi:${c}}`).join(" ")}`);
       }
       setError("");
     } catch (e) {

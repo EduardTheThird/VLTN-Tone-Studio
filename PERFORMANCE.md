@@ -64,7 +64,9 @@ Empty or incomplete tokens are rejected instead of being dropped silently.
 To send cues, pick an output, then switch on **Send cues**. This is called arming, and it is never saved with a song. Reopening a song starts disarmed.
 
 - Pause, seek, leaving Performance or changing the output clears anything queued.
-- Seeking pauses; pressing Play starts cues from the new position. Earlier cues are skipped, and the app does not replay them or work out what the pedals should be set to.
+- Seeking pauses; pressing Play starts cues from the new position. Earlier cues are not played as cues, but the pedals are brought to the state they would be in: just before the song starts, the app sends the latest bank select and program change for each channel, then the latest value of each controller. It does the same if a stall drops a patch or controller change.
+- Looper, tap tempo, footswitch and similar trigger controllers are never replayed this way. Notes and clock are not either, and SysEx is replayed only when the cue has `{chase}`.
+- Add `{chase}` to a cue to always replay its commands, or `{nochase}` to never replay them. Cues built from a pedal's trigger commands get `{nochase}` automatically. Preflight warns about a controller that is pressed and released within half a second without `{nochase}`.
 - Removing the port disarms.
 - Cues past the end of the audio are not scheduled.
 

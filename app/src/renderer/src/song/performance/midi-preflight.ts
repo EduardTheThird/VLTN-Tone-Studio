@@ -1,4 +1,5 @@
 import type { Cue } from "./chart";
+import { isChased } from "./midi-chase";
 export interface PreflightOptions {
   duration: number;
   tempoChannel?: number;
@@ -40,6 +41,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     windowBytes = 0,
     dense = false;
   const conflicts = new Map<string, string>();
+  const pressed = new Map<string, { time: number; value: number }>();
+  let warnedMomentary = false;
   for (let i = 0; i < events.length; i++) {
     const cue = events[i];
     if (!Number.isFinite(cue.time) || cue.time < 0) add("time", "A MIDI cue has an invalid timestamp.");
@@ -76,6 +79,19 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
             `${previous === value ? "Repeated" : "Conflicting"} ${kind === 192 ? "program change" : "CC" + bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s. Verify intentional trigger/order.`,
           );
         conflicts.set(id, value);
+      }
+      if (kind === 176 && isChased(cue, bytes) && !warnedMomentary) {
+        // A press followed by a release within half a second looks like a button, which should not be replayed when starting mid-song.
+        const key = `${channel}:${bytes[1]}`,
+          last = pressed.get(key);
+        if (last && cue.time - last.time <= 0.5 && last.value !== bytes[2] && (last.value === 0 || bytes[2] === 0)) {
+          add(
+            "chase-momentary",
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s looks like a press and release but would be replayed when starting mid-song. Add {nochase} to the cue.`,
+          );
+          warnedMomentary = true;
+        }
+        pressed.set(key, { time: cue.time, value: bytes[2] });
       }
       if (cue.label) {
         const pedal = options.pedals.find((p) => cue.label!.startsWith(p.name + ":"));
