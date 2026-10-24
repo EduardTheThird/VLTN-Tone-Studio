@@ -1,0 +1,711 @@
+import { createStore, type StoreApi } from "zustand/vanilla";
+import { useStore } from "zustand";
+import { StemPlayer } from "@/song/stems/player";
+import { useSong } from "@/song/store";
+import { useSongLibrary } from "@/song/library";
+import type { SongSource, Stems } from "@/song/types";
+import type { Cue } from "@/song/performance/chart";
+import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
+import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
+import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD } from "@/song/performance/midi-scheduler";
+import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
+import { rememberedPort, type PortChoice } from "@/song/performance/midi-configuration";
+import type { BleMidiConnection } from "@/bluetooth/connection";
+
+/*
+ * Everything that keeps a song's MIDI cues, transport and remote input running during a performance, without React.
+ * The component tree renders `state` and calls the methods; it never owns the scheduler, the arming binding or the
+ * panic path. Timing-critical lifecycle code lives in `effects`, which mirror the dependency-array semantics the
+ * panel used before: each effect re-runs when one of its inputs changes and its cleanup runs first.
+ */
+
+export type MidiOutput = MIDIOutput | BleMidiConnection;
+export const BLUETOOTH_PORT_ID = "bluetooth-midi";
+
+export interface LateNotice {
+  dropped: number;
+  position: number;
+  resynced: boolean;
+  at: number;
+}
+
+/** What a playlist carries from one song to the next so arming survives the transition. */
+export interface CarriedMidi {
+  access: MIDIAccess | null;
+  portId: string;
+  inputId: string;
+  armed: boolean;
+  output: unknown;
+}
+
+export interface SessionState {
+  player: StemPlayer | null;
+  playing: boolean;
+  access: MIDIAccess | null;
+  portId: string;
+  inputId: string;
+  /** Arming belongs to this exact connection object, never just a reusable port ID. */
+  armedOutput: MidiOutput | null;
+  clock: boolean;
+  midiStatus: string;
+  error: string;
+  lateNotice: LateNotice | null;
+  portsVersion: number;
+  /** Inputs owned by other parts of the app, pushed in with `update()`. */
+  bluetooth: BleMidiConnection | null;
+  tempoOnStart: boolean;
+  tempoChannel: number;
+  savedOutput: PortChoice | null;
+  savedInput: PortChoice | null;
+  queued: boolean;
+  playlistPlaying: boolean;
+  busy: boolean;
+  cues: Cue[];
+  parseError: string;
+  bpm: number;
+}
+
+export type SessionInputs = Pick<
+  SessionState,
+  "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
+>;
+
+export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {
+  return (s.portId === BLUETOOTH_PORT_ID ? s.bluetooth : s.access?.outputs.get(s.portId)) ?? undefined;
+}
+
+export function selectArmed(s: Pick<SessionState, "portId" | "bluetooth" | "access" | "armedOutput">): boolean {
+  const output = selectOutput(s);
+  return !!s.armedOutput && s.armedOutput === output && output?.state === "connected";
+}
+
+/** The values `panic` needs, captured when a stop is scheduled rather than when it runs. */
+interface PanicContext {
+  output: MidiOutput | undefined;
+  armed: boolean;
+  clock: boolean;
+}
+
+interface Effect {
+  deps: (s: SessionState) => unknown[];
+  run: (s: SessionState) => void | (() => void);
+  last?: unknown[];
+  cleanup?: void | (() => void);
+}
+
+export interface SessionOptions {
+  initial: SessionInputs;
+  /** Arming handed over by the previous playlist song. */
+  carried: CarriedMidi | null;
+  initialClock: boolean;
+}
+
+export class PerformanceSession {
+  readonly store: StoreApi<SessionState>;
+  private effects: Effect[];
+  private bound = false;
+  private flushing = false;
+  private dirty = false;
+  private batchDepth = 0;
+  private unsubscribe: (() => void) | null = null;
+  private scheduler: ReturnType<typeof startMidiScheduler> | null = null;
+  private prepared: ReturnType<typeof prepareMidiScheduler> | null = null;
+  private readyWorker: Worker | null = null;
+  private clearedOutput: MidiOutput | undefined;
+  private playRequest = 0;
+  private playPending = false;
+  private startTempo: number[][] | null = null;
+  private startPosition: number | null = null;
+  private noteChannels = new Set<number>();
+  private previousBluetooth: BleMidiConnection | null;
+
+  constructor(options: SessionOptions) {
+    const { initial, carried } = options;
+    const bluetooth = initial.bluetooth;
+    const portId =
+      carried?.portId ?? (initial.savedOutput?.transport === "system" ? initial.savedOutput.id : bluetooth?.state === "connected" ? bluetooth.id : "");
+    const access = carried?.access ?? null;
+    const first = selectOutput({ portId, bluetooth, access });
+    this.previousBluetooth = bluetooth;
+    this.store = createStore<SessionState>(() => ({
+      player: null,
+      playing: false,
+      access,
+      portId,
+      inputId: carried?.inputId ?? (initial.savedInput?.transport === "bluetooth" ? BLUETOOTH_PORT_ID : ""),
+      armedOutput: carried?.armed && carried.output === first && first?.state === "connected" ? first : null,
+      clock: options.initialClock,
+      midiStatus: "",
+      error: "",
+      lateNotice: null,
+      portsVersion: 0,
+      ...initial,
+    }));
+    this.effects = this.createEffects();
+  }
+
+  get state(): SessionState {
+    return this.store.getState();
+  }
+
+  /** The audio engine's position, for callers that need it outside of rendering. */
+  get position(): number {
+    return this.state.player?.position ?? 0;
+  }
+
+  get output(): MidiOutput | undefined {
+    return selectOutput(this.state);
+  }
+
+  get armed(): boolean {
+    return selectArmed(this.state);
+  }
+
+  // ---- lifecycle -----------------------------------------------------------------------------------------------
+
+  /** Creates the audio player for the song. Returns the cleanup, which leaves the playlist running if the source is merely replaced. */
+  loadSong(source: SongSource | null, stems: Stems | null): () => void {
+    if (!source) return () => {};
+    const player = new StemPlayer(stems ?? { other: source.audio });
+    player.onEnded = () => {
+      this.batch(() => {
+        this.set({ playing: false });
+        setClockPosition(player.duration);
+        const library = useSongLibrary.getState();
+        if (library.playlistPlaying && library.queue[library.position] === source.libraryId) void library.advancePlaylist();
+      });
+    };
+    this.batch(() => {
+      this.set({ player, playing: false });
+      setClockPosition(0);
+    });
+    return () => {
+      this.playRequest++;
+      this.terminateWorker();
+      void player.dispose();
+      // Leaving Performance pauses the set; replacing its source during advance does not.
+      if (useSong.getState().source === source && useSongLibrary.getState().playlistPlaying) useSongLibrary.getState().pausePlaylist();
+    };
+  }
+
+  /** Starts the effects. Safe to call again after `dispose()`. */
+  bind() {
+    this.bound = true;
+    this.unsubscribe = this.store.subscribe(() => this.flush());
+    this.flush();
+  }
+
+  /** Runs every effect cleanup, which stops the scheduler and sends the final panic. */
+  dispose() {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    for (const effect of this.effects) {
+      effect.cleanup?.();
+      effect.cleanup = undefined;
+      effect.last = undefined;
+    }
+    this.bound = false;
+  }
+
+  /** Pushes values owned by other stores. Only changed values cause effects to re-run. */
+  update(inputs: Partial<SessionInputs>) {
+    const changed = (Object.keys(inputs) as (keyof SessionInputs)[]).some((key) => !Object.is(this.state[key], inputs[key]));
+    if (changed) this.set(inputs);
+  }
+
+  // ---- state helpers -------------------------------------------------------------------------------------------
+
+  private set(patch: Partial<SessionState>) {
+    this.store.setState(patch);
+  }
+
+  /** Several state changes made together run the effects once afterwards, as one render did. */
+  private batch<T>(fn: () => T): T {
+    this.batchDepth++;
+    try {
+      return fn();
+    } finally {
+      this.batchDepth--;
+      this.flush();
+    }
+  }
+
+  private flush() {
+    if (!this.bound || this.batchDepth > 0) return;
+    if (this.flushing) {
+      this.dirty = true;
+      return;
+    }
+    this.flushing = true;
+    try {
+      do {
+        this.dirty = false;
+        for (const effect of this.effects) {
+          const deps = effect.deps(this.state);
+          if (effect.last && deps.every((value, i) => Object.is(value, effect.last?.[i]))) continue;
+          effect.cleanup?.();
+          effect.last = deps;
+          effect.cleanup = effect.run(this.state);
+        }
+      } while (this.dirty);
+    } finally {
+      this.flushing = false;
+    }
+  }
+
+  private context(): PanicContext {
+    return { output: this.output, armed: this.armed, clock: this.state.clock };
+  }
+
+  private terminateWorker() {
+    this.readyWorker?.terminate();
+    this.readyWorker = null;
+  }
+
+  fail = (e: unknown) => this.set({ error: e instanceof Error ? e.message : String(e) });
+
+  setMidiStatus = (midiStatus: string) => this.set({ midiStatus });
+  setClock = (clock: boolean) => this.set({ clock });
+  setPortId = (portId: string) => this.set({ portId });
+  setInputId = (inputId: string) => this.set({ inputId });
+  setAccess = (access: MIDIAccess | null) => this.set({ access });
+  setArmed = (value: boolean) => this.set({ armedOutput: value ? (this.output ?? null) : null });
+
+  /** Stops the scheduler and releases anything this session started. A second call for one stop does nothing. */
+  panic = (context: PanicContext = this.context()) => {
+    this.startPosition = null;
+    this.scheduler?.stop();
+    this.scheduler = null;
+    const { output, armed, clock } = context;
+    if (!output || this.clearedOutput === output) return;
+    // Pause handlers and lifecycle cleanup can both run for one stop.
+    // A second clear would cancel the BLE note releases queued by the first.
+    this.clearedOutput = output;
+    try {
+      (output as { clear?: () => void }).clear?.();
+      if (!armed || output.state !== "connected") {
+        this.noteChannels.clear();
+        return;
+      }
+      // CC64 is sustain on synths but looper Stop on the GP-150 / GP-180. Release only
+      // channels where this session actually queued note messages.
+      for (const ch of this.noteChannels)
+        for (const bytes of [
+          [176 + ch, 64, 0],
+          [176 + ch, 123, 0],
+        ]) {
+          output.send(bytes);
+          this.recordQueued(bytes, undefined, "Note cleanup");
+        }
+      this.noteChannels.clear();
+      if (clock) {
+        output.send([252]);
+        this.recordQueued([252], undefined, "Transport Stop");
+      }
+    } catch (e) {
+      useMidiDiagnostics.getState().fault(String(e));
+      this.fail(e);
+    }
+  };
+
+  private recordQueued(bytes: number[], timestamp?: number, label = "Manual / transport") {
+    const queued = midiNow(),
+      intended = (timestamp ?? performance.now()) + performance.timeOrigin;
+    useMidiDiagnostics.getState().record({ label, intended, queued, lateMs: Math.max(0, queued - intended), bytes });
+  }
+
+  sendPerformance = (bytes: number[], timestamp?: number, label = "Manual / transport") => {
+    this.clearedOutput = undefined;
+    this.output?.send(bytes, timestamp);
+    this.recordQueued(bytes, timestamp, label);
+    if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) this.noteChannels.add(bytes[0] & 15);
+  };
+
+  private degraded = (event: SchedulerDegraded) => {
+    const diagnostics = useMidiDiagnostics.getState(),
+      now = midiNow();
+    if (event.resynced) diagnostics.resync();
+    if (event.dropped.length)
+      diagnostics.drop(event.dropped.map((m) => ({ label: m.label, intended: m.due, queued: now, lateMs: Math.max(0, now - m.due), bytes: m.bytes })));
+    // Events from one stall arrive separately (resync, then drops); show them as one notice.
+    const n = this.state.lateNotice;
+    const recent = n !== null && now - n.at < 2000;
+    this.set({
+      lateNotice: {
+        dropped: (recent ? n.dropped : 0) + event.dropped.length,
+        position: event.position,
+        resynced: (recent && n.resynced) || event.resynced,
+        at: now,
+      },
+    });
+  };
+
+  // ---- transport -----------------------------------------------------------------------------------------------
+
+  pause = () => {
+    this.batch(() => {
+      const { player } = this.state;
+      const wasRunning = player?.isPlaying || this.playPending;
+      this.playRequest++;
+      player?.pause();
+      this.set({ playing: false });
+      // A pedal/THRU path can echo our Stop back into the selected input.
+      // Repeated Stop while already stopped must not transmit another Stop.
+      if (wasRunning) this.panic();
+      if (this.state.playlistPlaying) useSongLibrary.getState().pausePlaylist();
+    });
+  };
+
+  play = async () => {
+    const { player } = this.state;
+    if (!player || this.state.parseError || this.playPending || player.isPlaying) return;
+    const request = ++this.playRequest;
+    this.playPending = true;
+    const armed = this.armed,
+      output = this.output;
+    try {
+      const { tempoOnStart, tempoChannel, bpm } = this.state;
+      let tempoMessages: number[][] | null = null;
+      if (armed && tempoOnStart && output?.state === "connected") {
+        if (bpm < 40 || bpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
+        const tempo = Math.round(bpm),
+          status = 0xb0 + tempoChannel - 1;
+        tempoMessages = [
+          [status, 73, tempo >> 7],
+          [status, 74, tempo & 127],
+        ];
+      }
+      if (armed) {
+        const warm = this.prepared ?? prepareMidiScheduler();
+        this.prepared = warm;
+        await warm.ready;
+        if (request !== this.playRequest) return;
+        this.readyWorker = warm.worker;
+        this.prepared = null;
+      }
+      const requestedPosition = player.position >= player.duration ? 0 : Math.max(0, player.position);
+      await player.play();
+      if (request !== this.playRequest) {
+        player.pause();
+        this.terminateWorker();
+        return;
+      }
+      this.startTempo = tempoMessages;
+      this.startPosition = armed ? requestedPosition : null;
+      this.set({ playing: true });
+    } catch (e) {
+      this.terminateWorker();
+      if (request === this.playRequest) {
+        this.batch(() => {
+          if (armed) {
+            useMidiDiagnostics.getState().fault(String(e));
+            this.setArmed(false);
+            if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
+          }
+          this.fail(e);
+          if (this.state.playlistPlaying) useSongLibrary.getState().pausePlaylist();
+        });
+      }
+    } finally {
+      this.playPending = false;
+    }
+  };
+
+  seek = async (value: number) => {
+    this.pause();
+    await this.state.player?.seek(value);
+    setClockPosition(value);
+  };
+
+  /** Play, or start the whole playlist when the queue is at its end. */
+  startPlayback = () => {
+    const library = useSongLibrary.getState();
+    const { player, queued } = this.state;
+    if (queued && library.queue.length > 1) {
+      if (player && player.position >= player.duration) {
+        if (library.position === library.queue.length - 1) void library.playPlaylist(library.queue);
+        else {
+          library.resumePlaylist();
+          void library.advancePlaylist();
+        }
+        return;
+      }
+      library.resumePlaylist();
+    }
+    void this.play();
+  };
+
+  skip = (offset: number) => {
+    this.batch(() => {
+      this.playRequest++;
+      this.state.player?.pause();
+      this.set({ playing: false });
+      this.panic();
+      void useSongLibrary.getState().skipPlaylist(offset);
+    });
+  };
+
+  /** Stop playback, release the output and disarm. */
+  panicAndDisarm = () => {
+    this.batch(() => {
+      this.pause();
+      this.panic();
+      this.setArmed(false);
+      if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
+    });
+  };
+
+  connectMidi = async () => {
+    this.set({ midiStatus: "Opening USB / system MIDI…" });
+    try {
+      const next = await navigator.requestMIDIAccess({ sysex: true });
+      const connectedOutputs = [...next.outputs.values()].filter((p) => p.state === "connected");
+      this.set({
+        access: next,
+        midiStatus: connectedOutputs.length
+          ? `USB / system MIDI ready: ${connectedOutputs.map((p) => p.name || p.id).join(", ")}. Select an output and enable Send cues.`
+          : "USB / system MIDI is enabled, but no outputs are available. Connect the pedal and close other MIDI apps, then try again.",
+      });
+    } catch (e) {
+      this.set({ midiStatus: "USB / system MIDI could not be opened." });
+      this.fail(e);
+    }
+  };
+
+  // ---- effects -------------------------------------------------------------------------------------------------
+
+  private createEffects(): Effect[] {
+    const armedOf = (s: SessionState) => selectArmed(s);
+    return [
+      // A playlist song starts itself once it is the current one and nothing is loading.
+      {
+        deps: (s) => [s.player, s.queued, s.playlistPlaying, s.busy],
+        run: (s) => {
+          if (!s.queued || !s.playlistPlaying || s.busy || !s.player) return;
+          if (s.parseError) {
+            this.fail(s.parseError);
+            useSongLibrary.getState().pausePlaylist();
+            return;
+          }
+          void this.play();
+        },
+      },
+      // Stopping the playlist from elsewhere stops this song.
+      {
+        deps: (s) => [s.playlistPlaying],
+        run: (s) => {
+          if (!s.playlistPlaying && s.player?.isPlaying && s.queued) {
+            this.playRequest++;
+            s.player.pause();
+            this.set({ playing: false });
+            this.panic();
+          }
+        },
+      },
+      // Carry arming to the next playlist song.
+      {
+        deps: (s) => [s.queued, s.playlistPlaying, s.busy, s.access, s.portId, s.inputId, armedOf(s), selectOutput(s)],
+        run: (s) => {
+          if (s.queued && s.playlistPlaying && !s.busy)
+            useSongLibrary.getState().rememberMidi({ access: s.access, portId: s.portId, inputId: s.inputId, armed: armedOf(s), output: selectOutput(s) });
+        },
+      },
+      // Transport lifecycle is separate from tempo-dependent scheduling.
+      {
+        deps: (s) => [s.playing, armedOf(s), selectOutput(s), s.clock],
+        run: (s) => {
+          if (!s.playing) return;
+          const context = this.context();
+          if (context.armed && s.clock) {
+            try {
+              this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251]);
+            } catch (e) {
+              this.fail(e);
+              this.setArmed(false);
+            }
+          }
+          return () => this.panic(context);
+        },
+      },
+      // Warm the scheduler worker while armed and stopped, so Play does not wait for it.
+      {
+        deps: (s) => [armedOf(s), s.playing, s.player, selectOutput(s)],
+        run: (s) => {
+          if (!armedOf(s) || s.playing || !s.player) return;
+          try {
+            const warm = this.prepared ?? prepareMidiScheduler();
+            this.prepared = warm;
+            return () => {
+              if (this.prepared === warm) {
+                warm.cancel();
+                this.prepared = null;
+              }
+            };
+          } catch (e) {
+            useMidiDiagnostics.getState().fault(String(e));
+            this.setArmed(false);
+            this.fail(e);
+          }
+        },
+      },
+      // Mirror the audio position into the display clock.
+      {
+        deps: (s) => [s.playing, s.player],
+        run: (s) => {
+          const player = s.player;
+          if (!s.playing || !player) return;
+          return startPlaybackClock(() => player.position);
+        },
+      },
+      // The MIDI scheduler itself.
+      {
+        deps: (s) => [s.playing, s.player, armedOf(s), selectOutput(s), s.clock, s.bpm, s.cues],
+        run: (s) => this.runScheduler(s),
+      },
+      // A USB output that goes away or is replaced disarms the session.
+      {
+        deps: (s) => [s.access, s.portId, s.armedOutput],
+        run: (s) => {
+          const access = s.access;
+          if (!access) return;
+          const update = () => {
+            const { portId, armedOutput } = this.state;
+            this.set({ portsVersion: this.state.portsVersion + 1 });
+            if (
+              portId !== BLUETOOTH_PORT_ID &&
+              armedOutput &&
+              (access.outputs.get(portId)?.state !== "connected" || access.outputs.get(portId) !== armedOutput)
+            ) {
+              useMidiDiagnostics.getState().fault("System MIDI output disconnected or replaced. Cues disarmed.");
+              this.setArmed(false);
+            }
+          };
+          access.addEventListener("statechange", update);
+          return () => access.removeEventListener("statechange", update);
+        },
+      },
+      // Restore remembered ports when they appear.
+      {
+        deps: (s) => [s.access, s.portsVersion],
+        run: (s) => {
+          const access = s.access;
+          if (!access) return;
+          if (!access.outputs.get(s.portId) && s.savedOutput?.transport === "system") {
+            const saved = rememberedPort([...access.outputs.values()], s.savedOutput);
+            if (saved) this.setPortId(saved.id);
+          }
+          if (!s.inputId && s.savedInput?.transport === "system") {
+            const saved = rememberedPort([...access.inputs.values()], s.savedInput);
+            if (saved) this.setInputId(saved.id);
+          }
+        },
+      },
+      // Arming never survives a change of output object.
+      {
+        deps: (s) => [s.armedOutput, selectOutput(s)],
+        run: (s) => {
+          if (s.armedOutput && s.armedOutput !== selectOutput(s)) this.setArmed(false);
+        },
+      },
+      {
+        deps: (s) => [s.bluetooth, s.portId, s.armedOutput],
+        run: (s) => {
+          if (this.previousBluetooth !== s.bluetooth && s.portId === BLUETOOTH_PORT_ID) {
+            if (s.armedOutput && s.armedOutput === this.previousBluetooth)
+              useMidiDiagnostics.getState().fault("Bluetooth output disconnected or replaced. Cues disarmed.");
+            this.setArmed(false);
+          }
+          this.previousBluetooth = s.bluetooth;
+        },
+      },
+      // Remote transport input: Start/Continue/Stop, or CC80 >= 64 toggles playback.
+      {
+        deps: (s) => [s.access, s.inputId, s.bluetooth],
+        run: (s) => {
+          const receive = (data: Uint8Array) => {
+            if (data[0] === 250 || data[0] === 251) this.startPlayback();
+            if (data[0] === 252) this.pause();
+            if ((data[0] & 240) === 176 && data[1] === 80 && data[2] >= 64) {
+              if (this.state.player?.isPlaying) this.pause();
+              else this.startPlayback();
+            }
+          };
+          if (s.inputId === BLUETOOTH_PORT_ID) return s.bluetooth?.subscribe(receive);
+          const input = s.access?.inputs.get(s.inputId);
+          if (!input) return;
+          const handler = (e: MIDIMessageEvent) => {
+            if (e.data) receive(e.data);
+          };
+          input.addEventListener("midimessage", handler);
+          return () => input.removeEventListener("midimessage", handler);
+        },
+      },
+    ];
+  }
+
+  private runScheduler(s: SessionState): void | (() => void) {
+    const player = s.player;
+    if (!s.playing || !player) return;
+    const output = selectOutput(s);
+    if (!this.armed || output?.state !== "connected") {
+      this.startPosition = null;
+      this.startTempo = null;
+      this.terminateWorker();
+      return;
+    }
+    const context = this.context();
+    const fault = (message: string) => {
+      useMidiDiagnostics.getState().fault(message);
+      this.batch(() => {
+        this.panic(context);
+        this.setArmed(false);
+        this.fail(message);
+        if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
+      });
+    };
+    this.set({ lateNotice: null });
+    try {
+      const position = player.position;
+      // Select opening cues from the requested offset, not a later render.
+      // Keep the live audio clock as the origin so overdue starts still fault.
+      const cuePosition = this.startPosition ?? position;
+      this.startPosition = null;
+      const handle = startMidiScheduler(
+        {
+          cues: s.cues,
+          position: cuePosition,
+          duration: player.duration,
+          origin: midiNow() - position * 1000,
+          bpm: s.bpm,
+          clock: s.clock,
+          tempo: this.startTempo,
+          lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
+        },
+        (message) => {
+          this.sendPerformance(message.bytes, message.due - performance.timeOrigin, message.label);
+        },
+        fault,
+        this.readyWorker ?? undefined,
+        this.degraded,
+      );
+      this.readyWorker = null;
+      this.startTempo = null;
+      this.scheduler = handle;
+      // Audio position is a checkpoint, not the scheduling clock. A missing or
+      // frozen checkpoint makes the worker stop producing new batches.
+      const timer = setInterval(() => handle.sync(player.position), 50);
+      return () => {
+        clearInterval(timer);
+        handle.stop();
+        if (this.scheduler === handle) this.scheduler = null;
+      };
+    } catch (e) {
+      fault(e instanceof Error ? e.message : String(e));
+    }
+  }
+}
+
+/** Subscribes a component to the session state. */
+export function useSession<T>(session: PerformanceSession, select: (state: SessionState) => T): T {
+  return useStore(session.store, select);
+}
