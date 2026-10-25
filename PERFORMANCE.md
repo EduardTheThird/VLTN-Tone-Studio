@@ -3,11 +3,16 @@
 Play a song or a whole set from one screen: stems, a metronome, lyrics and chords, and timed MIDI commands for your GP-150 or GP-180 and the pedals behind it.
 
 - [Prepare a song](#prepare-a-song)
+- [Multitrack import](#multitrack-import)
+- [Audio outputs](#audio-outputs)
+- [Speed and pitch](#speed-and-pitch)
 - [Lyrics and chords](#lyrics-and-chords)
 - [MIDI cues](#midi-cues)
 - [Pedal commands](#pedal-commands)
 - [Bluetooth](#bluetooth)
+- [Sections](#sections)
 - [Playlists](#playlists)
+- [Gapless and crossfade](#gapless-and-crossfade)
 - [Stage mode](#stage-mode)
 - [Troubleshooting](#troubleshooting)
 - [Limits](#limits)
@@ -21,7 +26,7 @@ Everything here works in the desktop app. The browser build can play a song and 
 ## Prepare a song
 
 1. Load the audio in **Stems** and split it if you want the stems.
-2. Set **Song BPM** to the recording's tempo while stopped. It is a label for the metronome and tempo commands, not a speed control, and the app does not detect it for you.
+2. Set **Song BPM** to the recording's tempo while stopped. The metronome, count-in and tempo commands start from it, and [speed](#speed-and-pitch) scales that tempo during playback. The app does not detect it for you.
 3. Add lyrics, chords and MIDI cues (below).
 4. Enter a title and artist and choose **Save song to library**. Use **Save song changes** after later edits.
 
@@ -32,6 +37,63 @@ Everything here works in the desktop app. The browser build can play a song and 
 **Count-in, pre-roll and start delay.** In **Metronome settings**, a count-in of one or two bars clicks before the audio starts, and a pre-roll starts the audio a few beats before the current position so you can re-enter a passage. A start delay of up to 10 seconds comes before both; press Play again while it waits to cancel. The count-in, pre-roll and start delay are saved for each song. A song without its own value uses the global default, set under **Defaults for songs without their own** in **Metronome settings**. The count-in shows as a countdown on the beat light, and the stage view can flash its edge on each beat.
 
 **Tap tempo.** Press **Tap tempo** or the **T** key to set the Song BPM by tapping. It averages the last four taps, and a pause of two seconds starts again. Taps set the BPM only while stopped. The beat light next to the transport shows song beats, not count-in beats.
+
+## Multitrack import
+
+Add tracks beyond the split stems. **Add tracks…** picks audio files, **Add folder…** takes the audio files in a folder, and dropping audio files onto the panel works too. A song can hold up to 32 imported tracks, each with its own row in the mixer. They are saved with the song, so choose **Save song changes** after adding them.
+
+Name a file to set its options before it imports. Options go in brackets or parentheses, and a leading track number is dropped:
+
+```text
+01 Keys L [bus=Aux1] (color=blue) (group=1,2).wav
+```
+
+- `bus=` is `Main`, `Click`, `Aux1` or `Aux2`.
+- `gain=` is 0 to 2, and `pan=` is −1 to 1.
+- `pitch=yes` or `pitch=no` sets whether the track follows pitch.
+- `group=` lists mute groups 1–6, separated by commas.
+- `color=` is a colour name or a `#rrggbb` value.
+
+An unknown or bad option is ignored, and the file still imports with its defaults.
+
+**Lengths.** Each track is compared with the median length of the set:
+
+- within 0.5 s, it is padded with silence and nothing is shown;
+- from 0.5 s to 5 s, it is padded or cut, and the app tells you;
+- more than 5 s out, it is refused.
+
+**Track settings.** Each track in the mixer has gain, pan, solo, mute, a bus, **Follows pitch** and mute groups 1–6. Unmuting or soloing a track in a group mutes the other tracks in that group. A track whose name contains *click*, *metronome* or *guide* starts on the **Click** bus and does not follow pitch. At a speed other than 100%, a click track is still stretched, and a notice says so.
+
+**Loudness.** **Normalise song volume to −14 LUFS** measures the song once, in the background, then applies one gain to every track. The gain is limited to +6 dB. Load the song before you turn it on.
+
+**Similar songs.** **Apply track settings to similar songs** copies this song's track settings to saved songs whose imported tracks have exactly the same names, in the same order. No audio is copied.
+
+**Limits.** Adding tracks is disabled while a song or playlist plays, and the panel says "Stop playback to add tracks." If a track's file cannot be read when the song loads, that track is skipped with a notice, and the song plays on without it. Files over 300 MB, tracks longer than 15 minutes, and imports that would pass 1 GiB of decoded audio are refused. Folders go through **Add folder…**; dropping a folder onto the panel is not supported.
+
+## Audio outputs
+
+Open **Audio outputs** in Performance to choose where each bus goes. There are four buses: **Main**, **Click**, **Aux 1** and **Aux 2**. Each has an output pair, a gain and a **Test** button that plays a short tone on that bus alone.
+
+- **Main device** carries the main mix. The pairs offered come from its channel count, such as 1–2 or 3–4.
+- **Click device** is **Same as main** by default. Pick another device to send the **Click** bus to outputs 1–2 of that device. Only one separate click device is supported.
+- Each track's **Bus** choice in the mixer decides which bus it plays through.
+
+Devices and layouts are remembered on this computer. A change re-routes the playing song without stopping it. If a saved device is missing or no longer has the channels, that output falls back to **System default** and a warning stays on screen. A device change that leaves the chosen device and layout as they were does not re-route anything.
+
+## Speed and pitch
+
+Use **Speed & pitch** in Performance.
+
+- **Speed** runs from 50% to 150%. It applies when you release the slider, and resetting returns it to 100%.
+- **Pitch** shifts by up to ±6 semitones, with a fine tune of ±50 cents.
+- **Follows pitch** is set per track in the mixer. A track with it off gets the speed change only, so it keeps its pitch. Drums start off.
+- **Apply pitch to chords** transposes the chord names in the reader by the pitch.
+- **Capo** sets the fret. The reader shows the chord names and shapes as played with a capo. It changes the chords shown, not the audio.
+- **Plays at N BPM** shows the effective tempo. The metronome, count-in and tempo commands use it. **Song BPM** stays the recording's tempo.
+
+**Changes while playing.** Speed and pitch are rendered in the background, and **Rendering…** shows how many tracks are done. The current audio keeps playing. The new version starts on the next beat, at the same point in the song. A change made during a render replaces it. While stopped, changes apply at once. MIDI cues keep their song time, and MIDI clock follows the new tempo.
+
+**Limits.** The stretch uses SoundTouch, an open-source library under LGPL-2.1, and is not yet tested on hardware. In a test on click trains, the median error was 1 to 4 ms and the worst was about 8 ms, so not every click lands within 5 ms. A transient can be dropped at extreme settings; in the test this happened at 125%, 150% and −3 semitones. The shorter analysis windows used for alignment can sound rougher on low notes than the defaults. The built-in metronome is not stretched: it runs on the effective tempo. A render briefly holds a second copy of a long song in memory, and changes swap only at beats, not bars.
 
 ## Lyrics and chords
 
@@ -151,7 +213,7 @@ Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; 
 
 Under **Song → Songs & playlists**, make a playlist from saved songs. Entries can repeat, and edits save at once. Choose **Check playlist** to review every entry before the set (it reads saved songs, so save first), **Load set paused** to prepare, or **Play playlist** / **Play from here** to go.
 
-The set loads and starts each next song, then stops after the last one. Performance shows the position, the next title, **Previous song / Next song** and **Stop playlist**. Songs load one after another, so there is a short gap between them.
+The set loads and starts each next song, then stops after the last one. Performance shows the position, the next title, **Previous song / Next song** and **Stop playlist**. Each next song loads in the background while the current one plays, so most joins are gapless. See [Gapless and crossfade](#gapless-and-crossfade).
 
 An armed MIDI output stays armed across songs while the same device stays connected. For cues from the first second, choose **Load set paused**, connect and switch on **Send cues**, then press **Play playlist** in Performance. Starting a playlist again from the library starts a new disarmed session.
 
@@ -164,6 +226,23 @@ Before a set:
 5. After a disconnect or timing fault, pause, check what the pedals are actually set to, reconnect, rearm and choose where to resume.
 
 Finish analysis and backups before you start. Heavy work during playback can hurt timing.
+
+## Gapless and crossfade
+
+While a song plays, the next one in the playlist loads in the background. If it is ready in time, the join is gapless: the next song starts on the same clock, with no silence. If it is not ready, the set plays a short gap and shows a notice.
+
+- **Crossfade (s)** in the playlist controls sets how long the outgoing song fades out while the next fades in. It runs from 0 to 10 seconds, and 0 gives a gapless join with no overlap. The setting is kept on this computer.
+- **Crossfade to next** starts the next song now and fades this one out over the crossfade length. It needs the next song to be loaded.
+- A count-in on the next song turns the crossfade off. Its clicks start when the outgoing song ends, and the audio follows.
+- The next song starts at its trimmed start. Pre-roll does nothing across a join.
+
+For each song, the **Song shape** controls in the Performance setup set how it starts and ends:
+
+- **Trim start (s)** and **Trim end (s)** cut the ends of the song. **Auto** trims to the audible part above −60 dBFS, and **Clear trim** removes both values.
+- **Fade in (s)** and **Fade out (s)** run from 0 to 10 seconds. A change applies from the song's next start, not mid-play.
+- **At the end** chooses what follows: **Play the next song**, **Stop the playlist**, which pauses the set at that song's end, or **Loop the song**, which repeats it without moving on.
+
+Trim changes while a song plays move its stop at once. Looping jumps back to the trimmed start a second before the end, so the loop has no gap. Sections are cut to the trimmed range, and preflight warns about cues or sections outside it, which will not play.
 
 ## Stage mode
 
@@ -193,7 +272,9 @@ On the desktop, playback in stage mode keeps the computer and display awake. It 
 
 - Timing is best effort. The cue scheduler runs in its own worker. USB and system MIDI cues are handed to Web MIDI up to a second ahead with exact timestamps, so a busy window cannot delay them; Bluetooth cues are held about 120 ms ahead because Bluetooth cannot timestamp on the receiving side. Delivery still goes through Web MIDI or Bluetooth and the operating system, and delivery goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
 - The app cannot read a pedal's channel, routing or state. Missed commands are never reconstructed.
-- Playlists are not gapless. Audio is never stretched or pitch-shifted.
+- Playlist joins are gapless only when the next song is ready in time. Otherwise there is a short gap, and a notice says so.
+- Audio is stretched or pitch-shifted only by [speed and pitch](#speed-and-pitch). The metronome is never stretched.
+- Audio outputs, speed and pitch, gapless joins and multitrack import are not yet tested on hardware.
 - Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.
 - Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
 - Bluetooth editor management and RTP-MIDI are not supported.
