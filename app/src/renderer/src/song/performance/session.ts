@@ -49,11 +49,24 @@ import {
   normaliseKey,
   stopLearn,
   useRemoteLearn,
+  type ActionLearnTarget,
   type Binding,
+  type BankTracker,
   type LearnStep,
-  type LearnTarget,
+  type MidiEvent,
   type Route,
+  type SongHit,
 } from "./bindings";
+import {
+  bindingClaiming,
+  describeTrigger,
+  songEntries,
+  songForEvent,
+  songLearnStep,
+  songsInScope,
+  triggerClashes,
+  type SongEntry,
+} from "./song-triggers";
 
 /*
  * Everything that keeps a song's MIDI cues, transport and remote input running during a performance, without React.
@@ -269,6 +282,10 @@ export class PerformanceSession {
   private startPlay: number[][] | null = null;
   /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
   private loadedPlayer: StemPlayer | null = null;
+  /** The library id of the song loaded, when it is saved. A song trigger for this song does nothing. */
+  private loadedSongId: string | undefined;
+  /** Set when a MIDI trigger asked for the loaded song to start: it starts once its player is ready and the library is idle */
+  private autoplayPending = false;
   /** Decides what each incoming MIDI message and key press runs, and recognises our own output coming back */
   private readonly remote = new RemoteRouter();
   /** The view actions, which the performance screen supplies (see `setView`) */
@@ -395,6 +412,8 @@ export class PerformanceSession {
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     const handover = this.claimHandover(source);
     if (!source) return () => {};
+    this.loadedSongId = source.libraryId;
+    this.autoplayPending = useSongLibrary.getState().takeAutoplay(source.libraryId);
     const options = getSetting(performanceKey(source), ":options");
     const shape = playerShape(shapeFromOptions(options));
     const speed = speedFromOptions(options);
@@ -1256,13 +1275,102 @@ export class PerformanceSession {
     return true;
   };
 
-  /** One message from the selected input: learned while Learn is open, otherwise it runs the bindings. */
+  /** One message from the selected input: learned while Learn is open, otherwise it runs the bindings or selects a song. */
   private receiveMidi = (data: Uint8Array): void => {
     const learn = useRemoteLearn.getState().target;
-    if (learn?.source === "midi") this.learnFromMidi(data, learn);
+    if (learn?.source === "song") this.learnSong(data, learn.songId);
+    else if (learn?.source === "midi") this.learnFromMidi(data, learn);
     // While a key is being learned, a pedal message does nothing, for the same reason as a key during MIDI Learn.
-    else if (!learn) this.runRoutes(this.remote.midi(data, this.state.bindings));
+    else if (!learn) this.runInput(data);
   };
+
+  /** One message that no Learn is taking: a binding that claims it runs; otherwise a song trigger may select a song. Never throws. */
+  private runInput(data: Uint8Array): void {
+    try {
+      const { routes, song } = this.remote.receive(data, this.state.bindings, (event, bank) => this.songSelectedBy(event, bank));
+      this.runRoutes(routes);
+      if (song) this.loadSongFromMidi(song);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** The song a message selects, when song triggers are switched on. Only a program change or Song Select can select one. */
+  private songSelectedBy(event: MidiEvent, bank: BankTracker): SongHit<SongEntry> | null {
+    const { listen, scope } = useMidiConfiguration.getState().songTriggers;
+    if (!listen || (event.status !== 0xc0 && event.status !== 0xf3)) return null;
+    const library = useSongLibrary.getState();
+    const song = songForEvent(songsInScope(songEntries(library.index.songs), library.queue, scope), event, bank);
+    return song ? { key: song.id, value: song } : null;
+  }
+
+  /**
+   * Loads the song a trigger selected. A song that is already loaded is left alone. While a song plays, the trigger follows its
+   * while-playing option: ignored (the default), armed as next in the set, or used to stop and load the song now. A song in the set
+   * moves the set to it. A song outside the set loads on its own and pauses the set, with a notice. Autoplay starts the loaded song.
+   */
+  private loadSongFromMidi(song: SongEntry): void {
+    if (song.id === this.loadedSongId) return;
+    const library = useSongLibrary.getState();
+    const { whilePlaying, autoplay } = useMidiConfiguration.getState().songTriggers;
+    if (library.busy) {
+      showToast({ tone: "info", title: `${song.title} was not loaded`, body: "A song is still loading." });
+      return;
+    }
+    const playing = this.state.playing || this.playPending;
+    if (playing && whilePlaying === "ignore") {
+      showToast({ tone: "info", title: `${song.title} was not loaded`, body: "Stop the song to load it, or change the song trigger option while playing." });
+      return;
+    }
+    if (playing && whilePlaying === "next") {
+      this.armNextFromMidi(song);
+      return;
+    }
+    // Read before a stop pauses the set, so the notice can say the set was left.
+    const wasInSet = library.playlistPlaying;
+    if (playing) this.pause();
+    if (autoplay) library.requestAutoplay(song.id);
+    const at = library.queue.indexOf(song.id);
+    const loading = at >= 0 ? library.skipPlaylist(at - library.position) : library.load(song.id);
+    void Promise.resolve(loading)
+      .then(() => {
+        if (wasInSet && at < 0) useSongLibrary.setState({ notice: `${song.title} loaded by MIDI. The playlist is paused.` });
+      })
+      .catch((e) => this.fail(e));
+  }
+
+  /** Arms a song as next in the playing set. A chained song is undone first, so the one armed here is the one that plays at the join. */
+  private armNextFromMidi(song: SongEntry): void {
+    if (!this.state.queued) {
+      showToast({ tone: "info", title: `${song.title} was not loaded`, body: "Arm as next needs a playlist. Stop the song to load it." });
+      return;
+    }
+    this.dropChained();
+    const hint = useSongLibrary.getState().armNext(song.id);
+    showToast(hint ? { tone: "info", title: hint } : { tone: "info", title: `${song.title} plays next` });
+  }
+
+  /** One message while a song's trigger is being learned: a program change (with its bank) or Song Select is saved for that song. */
+  private learnSong(data: Uint8Array, songId: string): void {
+    const event = this.remote.readInput(data);
+    if (!event) return;
+    const step = songLearnStep(event, this.remote.bank);
+    useRemoteLearn.setState({ seen: step.seen });
+    if (step.kind !== "match") return;
+    try {
+      useSongLibrary.getState().setSongTrigger(songId, step.trigger);
+      const songs = songEntries(useSongLibrary.getState().index.songs);
+      const title = songs.find((song) => song.id === songId)?.title ?? "The song";
+      const notes = [`${title} loads on ${describeTrigger(step.trigger)}.`];
+      const clashes = triggerClashes(songs, songId);
+      if (clashes.length) notes.push(`Same trigger as ${clashes.map((song) => song.title).join(", ")}; the first in the library loads.`);
+      const bound = bindingClaiming(step.trigger, this.state.bindings);
+      if (bound) notes.push(`${describeBinding(bound)} already runs an action, so the song will not load.`);
+      stopLearn(notes.join(" "));
+    } catch (e) {
+      stopLearn(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   /** Runs what the bindings matched. A first press of a double press says so, so the performer knows it is waiting for the second. */
   private runRoutes(routes: Route[]): void {
@@ -1281,14 +1389,14 @@ export class PerformanceSession {
     return { ...this.sessionActions, ...this.view };
   }
 
-  private learnFromMidi(data: Uint8Array, target: LearnTarget): void {
+  private learnFromMidi(data: Uint8Array, target: ActionLearnTarget): void {
     const step: LearnStep | null = this.remote.learnMidi(data);
     if (!step) return;
     useRemoteLearn.setState({ seen: step.seen });
     if (step.kind === "match") this.capture({ ...this.learnedBase(target), source: "midi", match: step.match });
   }
 
-  private learnKey(e: KeyboardEvent, target: LearnTarget): void {
+  private learnKey(e: KeyboardEvent, target: ActionLearnTarget): void {
     if (e.key === "Escape") {
       stopLearn("Learn cancelled.");
       return;
@@ -1306,7 +1414,7 @@ export class PerformanceSession {
     this.capture({ ...this.learnedBase(target), source: "key", match: { key } });
   }
 
-  private learnedBase(target: LearnTarget): { action: LearnTarget["action"]; index?: number } {
+  private learnedBase(target: ActionLearnTarget): { action: ActionLearnTarget["action"]; index?: number } {
     return target.index === undefined ? { action: target.action } : { action: target.action, index: target.index };
   }
 
@@ -1369,6 +1477,15 @@ export class PerformanceSession {
   private createEffects(): Effect[] {
     const armedOf = (s: SessionState) => selectArmed(s);
     return [
+      // A song a MIDI trigger loaded starts once its player is ready and the library is no longer loading.
+      {
+        deps: (s) => [s.player, s.busy],
+        run: (s) => {
+          if (!this.autoplayPending || !s.player || s.busy) return;
+          this.autoplayPending = false;
+          void this.play();
+        },
+      },
       // A playlist song starts itself once it is the current one and nothing is loading.
       {
         deps: (s) => [s.player, s.queued, s.playlistPlaying, s.busy],

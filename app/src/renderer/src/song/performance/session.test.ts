@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
+import { SONG_TRIGGER_DEFAULTS, type SongTriggerSettings } from "./song-triggers";
 import { defaultBindings, startLearn, stopLearn, useRemoteLearn, type Binding } from "./bindings";
 import { useMidiConfiguration } from "./midi-configuration";
 import { parseChart } from "./chart";
@@ -35,7 +36,26 @@ const mocks = vi.hoisted(() => ({
     pausePlaylist: vi.fn(),
     rememberMidi: vi.fn(),
     advancePlaylist: vi.fn(),
-    skipPlaylist: vi.fn(),
+    skipPlaylist: vi.fn(async () => {}),
+    busy: false,
+    notice: "",
+    index: { songs: [] as { id: string; title: string; settings: Record<string, string> }[] },
+    load: vi.fn(async () => {}),
+    armNext: vi.fn((): string | null => null),
+    autoplayId: null as string | null,
+    requestAutoplay(id: string) {
+      this.autoplayId = id;
+    },
+    takeAutoplay(id: string | undefined) {
+      if (!id || this.autoplayId !== id) return false;
+      this.autoplayId = null;
+      return true;
+    },
+    // Keeps the index in step, as the library does, so a learned trigger is seen by the next message.
+    setSongTrigger: vi.fn((id: string, trigger: unknown) => {
+      const song = mocks.library.index.songs.find((s) => s.id === id);
+      if (song) song.settings[":options"] = JSON.stringify(trigger ? { midiTrigger: trigger } : {});
+    }),
     preparedNext: (): unknown => null,
     advanceToPrepared: vi.fn((): boolean => false),
     resumePlaylist: vi.fn(),
@@ -143,7 +163,9 @@ vi.mock("@/song/audio/render-queue", () => ({
   },
   isPlainSpeed: (speed: { rate: number; semitones: number; cents: number }) => speed.rate === 1 && speed.semitones === 0 && speed.cents === 0,
 }));
-vi.mock("@/song/library", () => ({ useSongLibrary: { getState: () => mocks.library } }));
+vi.mock("@/song/library", () => ({
+  useSongLibrary: { getState: () => mocks.library, setState: (patch: object) => Object.assign(mocks.library, patch) },
+}));
 vi.mock("@/song/performance/midi-scheduler-client", () => ({
   midiNow: () => performance.timeOrigin + performance.now(),
   prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
@@ -857,6 +879,222 @@ describe("remote actions", () => {
     for (let i = 0; i < 20; i++) session.keyDown(press("-"));
     expect(session.state.speed.rate).toBe(0.5);
     expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "Speed is at its minimum." });
+    session.dispose();
+  });
+});
+
+describe("song triggers", () => {
+  type Song = { id: string; title: string; settings: Record<string, string> };
+  const song = (id: string, title: string, trigger?: object): Song => ({
+    id,
+    title,
+    settings: { ":options": JSON.stringify(trigger ? { midiTrigger: trigger } : {}) },
+  });
+  const library = (songs: Song[]) => Object.assign(mocks.library, { index: { songs } });
+  const pc = (channel: number, program: number) => ({ type: "pc", channel, program });
+  const message = (data: number[]) => Object.assign(new Event("midimessage"), { data: Uint8Array.from(data) });
+  const now = () => performance.now();
+
+  /** A session on the selected input, with the song triggers switched as given. */
+  function triggerSession(triggers: Partial<SongTriggerSettings> = {}, patch: Partial<SessionInputs> = {}, from = source) {
+    useMidiConfiguration.getState().update({ songTriggers: { ...SONG_TRIGGER_DEFAULTS, listen: true, ...triggers } });
+    const input = Object.assign(new EventTarget(), { id: "in", state: "connected" });
+    const access = Object.assign(new EventTarget(), { outputs: new Map(), inputs: new Map([["in", input]]) }) as unknown as MIDIAccess;
+    const session = new PerformanceSession({
+      initial: inputs(patch),
+      carried: { access, portId: "", inputId: "in", armed: false, output: undefined },
+      initialClock: false,
+    });
+    session.loadSong(from, null);
+    session.bind();
+    return { session, input, send: (data: number[]) => input.dispatchEvent(message(data)) };
+  }
+
+  beforeEach(() => {
+    stopLearn();
+    useMidiConfiguration.getState().update({ bindings: defaultBindings() });
+    Object.assign(mocks.library, { busy: false, playlistPlaying: false, queue: [], position: 0, autoplayId: null, notice: "" });
+    library([song("a", "Song A"), song("b", "Song B", pc(2, 9)), song("c", "Song C", pc(2, 10))]);
+    mocks.library.load.mockClear();
+    mocks.library.skipPlaylist.mockClear();
+    mocks.library.armNext.mockClear();
+  });
+
+  it("loads the song that a program change selects, on the selected input", () => {
+    const { session, send } = triggerSession();
+    send([0xc1, 9]);
+    expect(mocks.library.load).toHaveBeenCalledWith("b");
+    session.dispose();
+  });
+
+  it("does nothing with a program change while song triggers are off, and with a program no song uses", () => {
+    const off = triggerSession({ listen: false });
+    off.send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    off.session.dispose();
+    const on = triggerSession();
+    on.send([0xc1, 99]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    expect(on.session.state.error).toBe("");
+    expect(mocks.toasts.at(-1)).not.toMatchObject({ title: expect.stringContaining("not loaded") });
+    on.session.dispose();
+  });
+
+  it("in the playlist scope, a song outside the playlist is not selected, and one in it moves the set to it", () => {
+    mocks.library.queue = ["a", "c"];
+    const { session, send } = triggerSession({ scope: "playlist" }, { queued: true });
+    send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    expect(mocks.library.skipPlaylist).not.toHaveBeenCalled();
+    send([0xc1, 10]);
+    expect(mocks.library.skipPlaylist).toHaveBeenCalledWith(1);
+    session.dispose();
+  });
+
+  it("a binding that claims the program change keeps the song from loading", () => {
+    const { session, send } = triggerSession();
+    session.update({ bindings: [{ action: "section.next", source: "midi", match: { status: 0xc0, channel: 2, data1: 9 } }] });
+    send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    session.dispose();
+  });
+
+  it("our own program change or Song Select coming back through THRU does not load a song", () => {
+    const { session, send } = triggerSession();
+    const t = now();
+    const clock = vi.spyOn(performance, "now").mockReturnValue(t);
+    // Scheduled for 500 ms ahead, and echoed back 5 ms after it went out.
+    session.sendPerformance([0xc1, 9], t + 500);
+    clock.mockReturnValue(t + 505);
+    send([0xc1, 9]);
+    session.sendPerformance([0xf3, 12], t + 500);
+    send([0xf3, 12]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    clock.mockRestore();
+    session.dispose();
+  });
+
+  it("a program change that arrives before our scheduled one goes out is a press, and loads the song", () => {
+    const { session, send } = triggerSession();
+    const t = now();
+    const clock = vi.spyOn(performance, "now").mockReturnValue(t);
+    session.sendPerformance([0xc1, 9], t + 500);
+    send([0xc1, 9]);
+    expect(mocks.library.load).toHaveBeenCalledWith("b");
+    clock.mockRestore();
+    session.dispose();
+  });
+
+  it("a pedal that sends the same change twice loads once", () => {
+    const { session, send } = triggerSession();
+    send([0xc1, 9]);
+    send([0xc1, 9]);
+    expect(mocks.library.load).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
+  it("while a song plays, the default ignores a trigger and says so", async () => {
+    const { session, send } = triggerSession();
+    void session.play();
+    await vi.waitFor(() => expect(session.state.playing).toBe(true));
+    send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    expect(session.state.playing).toBe(true);
+    expect(mocks.toasts.at(-1)).toMatchObject({ title: "Song B was not loaded" });
+    session.dispose();
+  });
+
+  it("with arm as next, a triggered song is armed while the set plays, and nothing stops", async () => {
+    mocks.library.playlistPlaying = true;
+    const { session, send } = triggerSession({ whilePlaying: "next" }, { queued: true, playlistPlaying: true });
+    void session.play();
+    await vi.waitFor(() => expect(session.state.playing).toBe(true));
+    send([0xc1, 9]);
+    expect(mocks.library.armNext).toHaveBeenCalledWith("b");
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    expect(session.state.playing).toBe(true);
+    session.dispose();
+  });
+
+  it("with stop and load now, a playing song stops and the triggered one loads", async () => {
+    const { session, send } = triggerSession({ whilePlaying: "now" });
+    void session.play();
+    await vi.waitFor(() => expect(session.state.playing).toBe(true));
+    send([0xc1, 9]);
+    expect(session.state.playing).toBe(false);
+    expect(mocks.library.load).toHaveBeenCalledWith("b");
+    session.dispose();
+  });
+
+  it("autoplay asks for the loaded song to start, and that song starts once it is ready", async () => {
+    const { session, send } = triggerSession({ autoplay: true });
+    send([0xc1, 9]);
+    expect(mocks.library.autoplayId).toBe("b");
+    session.dispose();
+    const loaded = triggerSession({}, {}, { ...source, libraryId: "b" });
+    await vi.waitFor(() => expect(loaded.session.state.playing).toBe(true));
+    expect(mocks.library.autoplayId).toBeNull();
+    loaded.session.dispose();
+  });
+
+  it("a trigger while a song is still loading is not loaded, and says so", () => {
+    mocks.library.busy = true;
+    const { session, send } = triggerSession();
+    send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    expect(mocks.toasts.at(-1)).toMatchObject({ title: "Song B was not loaded", body: "A song is still loading." });
+    session.dispose();
+  });
+
+  it("a song that is already loaded is left alone", () => {
+    library([song("a", "Song A", pc(2, 9))]);
+    const { session, send } = triggerSession();
+    send([0xc1, 9]);
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    session.dispose();
+  });
+
+  it("learns a song's trigger from a program change with its bank, names the clash, and saves it", () => {
+    library([song("a", "Song A"), song("b", "Song B"), song("d", "Song D", pc(2, 9))]);
+    const { session, send } = triggerSession();
+    startLearn({ source: "song", songId: "b" });
+    send([0xb1, 0, 0]);
+    send([0xb1, 32, 1]);
+    expect(useRemoteLearn.getState().target).not.toBeNull();
+    send([0xc1, 9]);
+    expect(mocks.library.setSongTrigger).toHaveBeenCalledWith("b", { type: "pc", channel: 2, program: 9, bankMsb: 0, bankLsb: 1 });
+    expect(useRemoteLearn.getState().target).toBeNull();
+    expect(useRemoteLearn.getState().result).toBe("Song B loads on Ch 2 · Program 9 · bank 0/1. Same trigger as Song D; the first in the library loads.");
+    expect(mocks.library.load).not.toHaveBeenCalled();
+    session.dispose();
+  });
+
+  it("learns Song Select as a song's trigger", () => {
+    const { session, send } = triggerSession();
+    startLearn({ source: "song", songId: "b" });
+    send([0xf3, 42]);
+    expect(mocks.library.setSongTrigger).toHaveBeenCalledWith("b", { type: "songselect", number: 42 });
+    expect(useRemoteLearn.getState().result).toBe("Song B loads on Song Select 42.");
+    session.dispose();
+  });
+
+  it("says why a controller cannot be learned as a song's trigger, and learns nothing", () => {
+    const { session, send } = triggerSession();
+    startLearn({ source: "song", songId: "b" });
+    send([0xb0, 80, 127]);
+    expect(useRemoteLearn.getState().target).not.toBeNull();
+    expect(useRemoteLearn.getState().seen).toContain("Only a program change or Song Select selects a song.");
+    expect(mocks.library.setSongTrigger).not.toHaveBeenCalled();
+    stopLearn();
+    session.dispose();
+  });
+
+  it("says a learned trigger that a binding already answers will not load the song", () => {
+    const { session, send } = triggerSession();
+    session.update({ bindings: [{ action: "section.next", source: "midi", match: { status: 0xc0, channel: 2, data1: 9 } }] });
+    startLearn({ source: "song", songId: "b" });
+    send([0xc1, 9]);
+    expect(useRemoteLearn.getState().result).toContain("already runs an action, so the song will not load.");
     session.dispose();
   });
 });

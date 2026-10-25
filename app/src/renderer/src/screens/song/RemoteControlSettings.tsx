@@ -17,14 +17,21 @@ function clampNumber(action: ActionId, value: number): number {
 }
 
 /** The Learn state as a line for the performer: what is being learned, what was last seen, and what was decided last. */
-function LearnStatus() {
+export function LearnStatus() {
   const learn = useRemoteLearn();
-  if (learn.target) {
-    const what = actionLabel(learn.target.action, learn.target.index);
+  const target = learn.target;
+  if (target) {
+    const what = target.source === "song" ? "a song's trigger" : actionLabel(target.action, target.index);
+    const press =
+      target.source === "song"
+        ? "Press a program change or Song Select on the selected MIDI input."
+        : target.source === "midi"
+          ? "Press the pedal or controller on the selected MIDI input."
+          : "Press the key.";
     return (
       <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-seam p-3 text-[13px]">
         <span>
-          Learning {what}. {learn.target.source === "midi" ? "Press the pedal or controller on the selected MIDI input." : "Press the key."}
+          Learning {what}. {press}
         </span>
         <span className="text-silkscreen-2 tabular-nums">{learn.seen ? `Last message: ${learn.seen}` : "Waiting for a message."}</span>
         <Button variant="outline" size="sm" onClick={() => stopLearn()}>

@@ -497,11 +497,19 @@ export function sanitizeBindings(raw: unknown): Binding[] {
 }
 
 /** What Learn is binding: the source to learn from, and the action (with its number) the binding runs. */
-export interface LearnTarget {
+export interface ActionLearnTarget {
   source: "midi" | "key";
   action: ActionId;
   index?: number;
 }
+
+/** What Learn is setting: the MIDI trigger of one saved song (see song-triggers.ts). */
+export interface SongLearnTarget {
+  source: "song";
+  songId: string;
+}
+
+export type LearnTarget = ActionLearnTarget | SongLearnTarget;
 
 /** Learn's state: what is being learned, and what was last seen or decided. Not stored. */
 export interface LearnState {
