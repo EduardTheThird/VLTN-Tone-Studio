@@ -54,7 +54,10 @@ vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null 
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     static async create() {
-      return new this();
+      // A prepared player is not one of the songs the test plays, so it is not recorded as one.
+      const player = new this();
+      mock.players.pop();
+      return player;
     }
     outputChannels = 2;
     setOutputs() {
