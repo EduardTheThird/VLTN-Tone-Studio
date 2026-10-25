@@ -201,3 +201,21 @@ it("clicks on its own grid while stopped, and stops the rehearsal when the song 
   expect(player.isPlaying).toBe(true);
   await player.dispose();
 });
+
+it("keeps the count-in when the metronome changes mid-count-in, and pause cancels it", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  player.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.25 });
+  await player.play({ countInBeats: 4 });
+  const ctx = Context.instances[0];
+  const countIn = ctx.oscillators.slice(0, 4);
+  // stop() with no argument is the cancel; the scheduled stop passes its end time.
+  const cancelled = (osc: (typeof countIn)[number]) => osc.stop.mock.calls.some((call) => call.length === 0);
+  ctx.currentTime = 10.2;
+  player.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.5 });
+  expect(countIn.some(cancelled)).toBe(false);
+  player.pause();
+  expect(countIn.every(cancelled)).toBe(true);
+  await player.dispose();
+});

@@ -30,6 +30,15 @@ export interface Lead {
   preRollBeats?: number;
 }
 
+/** Stops and forgets every click in `clicks`. */
+function silence(clicks: Set<OscillatorNode>): void {
+  for (const osc of clicks) {
+    osc.stop();
+    osc.disconnect();
+  }
+  clicks.clear();
+}
+
 export class StemPlayer {
   readonly duration: number;
   private ctx = new AudioContext({ sampleRate: 44100 });
@@ -44,6 +53,8 @@ export class StemPlayer {
   private metronome: MetronomeSettings = { mode: "off", bpm: 120, beats: 4, volume: 0.25 };
   private clickTimer: ReturnType<typeof setInterval> | null = null;
   private clicks = new Set<OscillatorNode>();
+  /** Count-in clicks have their own set: a metronome change restarts the grid and must not cut the count-in short. */
+  private countInClicks = new Set<OscillatorNode>();
   private meterBuffer = new Float32Array(2048);
   /** Called when playback reaches the end on its own */
   onEnded: (() => void) | null = null;
@@ -158,8 +169,8 @@ export class StemPlayer {
     return Number.isFinite(firstBeat) && firstBeat! >= 0 ? firstBeat! : 0;
   }
 
-  /** One click at `when`. Kept in `clicks`, so pause and stop cancel it. */
-  private click(when: number, down: boolean): void {
+  /** One click at `when`. Kept in `into`, so the set's owner can cancel it. */
+  private click(when: number, down: boolean, into: Set<OscillatorNode> = this.clicks): void {
     const volume = this.metronome.volume;
     const osc = this.ctx.createOscillator(),
       gain = this.ctx.createGain();
@@ -167,9 +178,9 @@ export class StemPlayer {
     gain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * (down ? 1 : 0.65), when);
     gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.04);
     osc.connect(gain).connect(this.ctx.destination);
-    this.clicks.add(osc);
+    into.add(osc);
     osc.onended = () => {
-      this.clicks.delete(osc);
+      into.delete(osc);
       osc.disconnect();
       gain.disconnect();
     };
@@ -179,7 +190,7 @@ export class StemPlayer {
 
   /** The count-in is always clicked, whatever the metronome mode: it is the lead-in the player asked for. */
   private scheduleCountIn(when: number, beats: number, interval: number): void {
-    for (let beat = 0; beat < beats; beat++) this.click(when + beat * interval, beat % this.metronome.beats === 0);
+    for (let beat = 0; beat < beats; beat++) this.click(when + beat * interval, beat % this.metronome.beats === 0, this.countInClicks);
   }
 
   /** Clicks on a grid: song time `firstBeat + n × interval` at audio time `anchor + …`, not earlier than `earliest()` seconds. */
@@ -220,11 +231,7 @@ export class StemPlayer {
   private stopMetronome(): void {
     if (this.clickTimer) clearInterval(this.clickTimer);
     this.clickTimer = null;
-    for (const osc of this.clicks) {
-      osc.stop();
-      osc.disconnect();
-    }
-    this.clicks.clear();
+    silence(this.clicks);
   }
 
   /** Current RMS level (0..1) of each stem after its gain */
@@ -248,6 +255,7 @@ export class StemPlayer {
 
   private stopSources() {
     this.stopMetronome();
+    silence(this.countInClicks);
     for (const name of this.names) {
       const v = this.voice(name);
       if (!v.source) continue;
