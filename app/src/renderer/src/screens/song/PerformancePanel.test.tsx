@@ -749,3 +749,13 @@ it("taps the tempo with T and sets the BPM from the taps", () => {
   expect((screen.getByLabelText("BPM") as HTMLInputElement).value).toBe("120");
   now.mockRestore();
 });
+
+it("shows the global lead-in defaults, and a song without its own count-in leaves the control on Default", () => {
+  localStorage.clear();
+  localStorage.setItem("vltn.performance.leadin.v1:options", JSON.stringify({ countInBars: 2, preRollBeats: 4, startDelay: 1 }));
+  render(<PerformancePanel />);
+  expect((screen.getByLabelText("Count-in") as HTMLSelectElement).value).toBe("");
+  expect((screen.getByLabelText("Default count-in") as HTMLSelectElement).value).toBe("2");
+  expect((screen.getByLabelText("Default pre-roll (beats)") as HTMLInputElement).value).toBe("4");
+  expect((screen.getByLabelText("Start delay (seconds)") as HTMLInputElement).value).toBe("");
+});

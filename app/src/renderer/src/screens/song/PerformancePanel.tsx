@@ -6,6 +6,7 @@ import { parseChart } from "@/song/performance/chart";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
+import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { useSongLibrary } from "@/song/library";
@@ -25,10 +26,6 @@ function readNumber(raw: string, fallback: number, min: number, max: number): nu
 }
 
 let sessionId = 0;
-/** A saved number, kept within its range; anything else gets the fallback. */
-const numberIn = (value: unknown, min: number, max: number, fallback: number): number =>
-  typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
-
 /** The metronome mode a song starts with when it has none of its own. Earlier builds stored the on/off toggle as "true" or "false". */
 function readGlobalMetronome(): MetronomeMode {
   try {
@@ -72,9 +69,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         chordChoice: "" as StemName | "",
         lyricsLanguage: "auto",
         metronomeMode: "",
-        countInBars: 0,
-        preRollBeats: 0,
-        startDelay: 0,
+        countInBars: "",
+        preRollBeats: "",
+        startDelay: "",
       }),
     [key],
   );
@@ -89,9 +86,24 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     typeof options.firstBeat === "number" && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0,
   );
   const [metronome, setMetronome] = useState<MetronomeMode>(() => (isMetronomeMode(options.metronomeMode) ? options.metronomeMode : readGlobalMetronome()));
-  const [countInBars, setCountInBars] = useState(() => numberIn(options.countInBars, 0, 2, 0));
-  const [preRollBeats, setPreRollBeats] = useState(() => numberIn(options.preRollBeats, 0, 16, 0));
-  const [startDelay, setStartDelay] = useState(() => numberIn(options.startDelay, 0, 10, 0));
+  // A song's own lead-in values; "" means the global default.
+  const [lead, setLead] = useState<LeadInOwn>(() => ({
+    countInBars: ownLeadIn("countInBars", options.countInBars),
+    preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats),
+    startDelay: ownLeadIn("startDelay", options.startDelay),
+  }));
+  const [leadDefaults, setLeadDefaults] = useState<LeadIn>(readLeadInDefaults);
+  const leadIn = useMemo(() => resolveLeadIn(lead, leadDefaults), [lead, leadDefaults]);
+  const setLeadOwn = (key: LeadInKey, value: number | "") => setLead((current) => ({ ...current, [key]: value }));
+  const setLeadDefault = (key: LeadInKey, value: number) => {
+    const next = { ...leadDefaults, [key]: value };
+    setLeadDefaults(next);
+    try {
+      saveLeadInDefaults(next);
+    } catch (e) {
+      session.fail(e);
+    }
+  };
   const [mix, setMix] = useState(options.mix);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
@@ -137,7 +149,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     return () => session.dispose();
   }, [session]);
   // Lead-in before a start. Memoised: the session compares inputs by identity, so a new object every render would re-run it every render.
-  const timing = useMemo<Timing>(() => ({ countInBars, beatsPerBar: beats, preRollBeats, startDelay }), [countInBars, beats, preRollBeats, startDelay]);
+  const timing = useMemo<Timing>(
+    () => ({ countInBars: leadIn.countInBars, beatsPerBar: beats, preRollBeats: leadIn.preRollBeats, startDelay: leadIn.startDelay }),
+    [leadIn, beats],
+  );
   // Tap tempo sets the song BPM only while stopped. The taps live in a ref so the key handler always sees the latest sequence.
   const tapsRef = useRef<number[]>([]);
   const tap = () => {
@@ -209,15 +224,15 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           chordChoice,
           lyricsLanguage: readOptions(key, { lyricsLanguage: "auto" }).lyricsLanguage,
           metronomeMode: metronome,
-          countInBars,
-          preRollBeats,
-          startDelay,
+          countInBars: lead.countInBars,
+          preRollBeats: lead.preRollBeats,
+          startDelay: lead.startDelay,
         }),
       );
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice, metronome, countInBars, preRollBeats, startDelay]);
+  }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice, metronome, lead]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -249,12 +264,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
             onBeats: setBeats,
             volume,
             onVolume: setVolume,
-            countInBars,
-            onCountInBars: setCountInBars,
-            preRollBeats,
-            onPreRollBeats: setPreRollBeats,
-            startDelay,
-            onStartDelay: setStartDelay,
+            lead,
+            onLead: setLeadOwn,
+            leadDefaults,
+            onLeadDefault: setLeadDefault,
           }}
           onTap={tap}
         />

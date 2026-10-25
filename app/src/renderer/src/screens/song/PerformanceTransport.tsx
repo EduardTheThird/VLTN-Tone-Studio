@@ -3,10 +3,20 @@ import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { isMetronomeMode, METRONOME_MODES, type MetronomeMode } from "@/song/performance/rhythm";
+import { LEAD_IN_LIMITS, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
 import { BeatIndicator } from "./BeatIndicator";
 
 const field = "rounded border border-seam bg-transparent p-2";
+
+/** A typed value kept within the key's range. Count-in and pre-roll are whole beats or bars. */
+const limit = (key: LeadInKey, text: string): number => {
+  const { min, max } = LEAD_IN_LIMITS[key];
+  const value = Number(text) || 0;
+  return Math.min(max, Math.max(min, key === "startDelay" ? value : Math.round(value)));
+};
+
+const bars = (count: number): string => (count === 0 ? "off" : `${count} bar${count === 1 ? "" : "s"}`);
 
 export interface MetronomeSettings {
   metronome: MetronomeMode;
@@ -17,12 +27,12 @@ export interface MetronomeSettings {
   onBeats: (value: number) => void;
   volume: number;
   onVolume: (value: number) => void;
-  countInBars: number;
-  onCountInBars: (value: number) => void;
-  preRollBeats: number;
-  onPreRollBeats: (value: number) => void;
-  startDelay: number;
-  onStartDelay: (value: number) => void;
+  /** A song's own count-in, pre-roll and start delay; "" uses the global default */
+  lead: LeadInOwn;
+  onLead: (key: LeadInKey, value: number | "") => void;
+  /** The global defaults, which a song without its own value uses */
+  leadDefaults: LeadIn;
+  onLeadDefault: (key: LeadInKey, value: number) => void;
 }
 
 /** Playlist controls, library messages, play/seek and the tempo and metronome settings. */
@@ -176,47 +186,95 @@ export function PerformanceTransport({
                   ))}
                 </select>
               </label>
-              <label className="block">
-                Count-in{" "}
-                <select
-                  aria-label="Count-in"
-                  className={field}
-                  disabled={playing}
-                  value={metronome.countInBars}
-                  onChange={(e) => metronome.onCountInBars(Number(e.target.value))}
-                >
-                  <option value={0}>Off</option>
-                  <option value={1}>1 bar</option>
-                  <option value={2}>2 bars</option>
-                </select>
-              </label>
-              <label className="block">
-                Pre-roll (beats){" "}
-                <input
-                  aria-label="Pre-roll (beats)"
-                  className={field + " w-20"}
-                  type="number"
-                  min="0"
-                  max="16"
-                  step="1"
-                  disabled={playing}
-                  value={metronome.preRollBeats}
-                  onChange={(e) => metronome.onPreRollBeats(Math.max(0, Math.min(16, Math.round(Number(e.target.value)) || 0)))}
-                />
-              </label>
-              <label className="block">
-                Start delay (seconds){" "}
-                <input
-                  aria-label="Start delay (seconds)"
-                  className={field + " w-20"}
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={metronome.startDelay}
-                  onChange={(e) => metronome.onStartDelay(Math.max(0, Math.min(10, Number(e.target.value) || 0)))}
-                />
-              </label>
+              <div className="space-y-2 rounded border border-seam p-2">
+                <p className="font-semibold">This song (empty uses the default)</p>
+                <label className="block">
+                  Count-in{" "}
+                  <select
+                    aria-label="Count-in"
+                    className={field}
+                    disabled={playing}
+                    value={metronome.lead.countInBars}
+                    onChange={(e) => metronome.onLead("countInBars", e.target.value === "" ? "" : limit("countInBars", e.target.value))}
+                  >
+                    <option value="">Default ({bars(metronome.leadDefaults.countInBars)})</option>
+                    <option value={0}>Off</option>
+                    <option value={1}>1 bar</option>
+                    <option value={2}>2 bars</option>
+                  </select>
+                </label>
+                <label className="block">
+                  Pre-roll (beats){" "}
+                  <input
+                    aria-label="Pre-roll (beats)"
+                    className={field + " w-20"}
+                    type="number"
+                    min="0"
+                    max="16"
+                    step="1"
+                    disabled={playing}
+                    placeholder={String(metronome.leadDefaults.preRollBeats)}
+                    value={metronome.lead.preRollBeats}
+                    onChange={(e) => metronome.onLead("preRollBeats", e.target.value === "" ? "" : limit("preRollBeats", e.target.value))}
+                  />
+                </label>
+                <label className="block">
+                  Start delay (seconds){" "}
+                  <input
+                    aria-label="Start delay (seconds)"
+                    className={field + " w-20"}
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    placeholder={String(metronome.leadDefaults.startDelay)}
+                    value={metronome.lead.startDelay}
+                    onChange={(e) => metronome.onLead("startDelay", e.target.value === "" ? "" : limit("startDelay", e.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="space-y-2 rounded border border-seam p-2">
+                <p className="font-semibold">Defaults for songs without their own</p>
+                <label className="block">
+                  Default count-in{" "}
+                  <select
+                    aria-label="Default count-in"
+                    className={field}
+                    value={metronome.leadDefaults.countInBars}
+                    onChange={(e) => metronome.onLeadDefault("countInBars", limit("countInBars", e.target.value))}
+                  >
+                    <option value={0}>Off</option>
+                    <option value={1}>1 bar</option>
+                    <option value={2}>2 bars</option>
+                  </select>
+                </label>
+                <label className="block">
+                  Default pre-roll (beats){" "}
+                  <input
+                    aria-label="Default pre-roll (beats)"
+                    className={field + " w-20"}
+                    type="number"
+                    min="0"
+                    max="16"
+                    step="1"
+                    value={metronome.leadDefaults.preRollBeats}
+                    onChange={(e) => metronome.onLeadDefault("preRollBeats", limit("preRollBeats", e.target.value))}
+                  />
+                </label>
+                <label className="block">
+                  Default start delay (seconds){" "}
+                  <input
+                    aria-label="Default start delay (seconds)"
+                    className={field + " w-20"}
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={metronome.leadDefaults.startDelay}
+                    onChange={(e) => metronome.onLeadDefault("startDelay", limit("startDelay", e.target.value))}
+                  />
+                </label>
+              </div>
               <label className="block">
                 Metronome volume{" "}
                 <input
