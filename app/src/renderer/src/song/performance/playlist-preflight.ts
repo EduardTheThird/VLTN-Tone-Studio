@@ -2,6 +2,7 @@ import type { LibraryPreflightSong } from "@shared/song-library";
 import { STEM_NAMES } from "@shared/host/song";
 import { parseChart } from "./chart";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
+import { parseSections } from "./sections";
 export interface PlaylistCheck {
   entry: number;
   id: string;
@@ -23,7 +24,7 @@ export function playlistPreflight(
     if (song) {
       if (config.tempoOnStart && !config.outputName)
         warnings.push("Automatic tempo is enabled but no MIDI output preference is saved. Select and arm the intended output before performing.");
-      let options: { clock?: boolean } = {};
+      let options: { clock?: boolean; sections?: unknown; beats?: unknown; firstBeat?: unknown } = {};
       try {
         const value = JSON.parse(song.settings[":options"] || "{}");
         if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
@@ -50,6 +51,10 @@ export function playlistPreflight(
           tempoChannel: config.tempoOnStart ? config.tempoChannel : undefined,
           outputName: config.outputName,
           pedals: config.pedals,
+          sections: parseSections(options.sections),
+          bpm,
+          beats: typeof options.beats === "number" ? options.beats : 4,
+          firstBeat: typeof options.firstBeat === "number" ? options.firstBeat : 0,
         });
         warnings.push(...report.issues.map((i) => i.text));
       } catch (error) {

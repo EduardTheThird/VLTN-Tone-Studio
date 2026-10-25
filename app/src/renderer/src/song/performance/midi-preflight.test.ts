@@ -55,3 +55,13 @@ it("warns when a press and release CC would be replayed when starting mid-song, 
   expect(warned("[00:10] {nochase} {midi:cc 1 20 127}\n[00:10.2] {nochase} {midi:cc 1 20 0}")).toBe(false);
   expect(warned("[00:10] {midi:cc 1 20 127}\n[00:40] {midi:cc 1 20 0}")).toBe(false);
 });
+
+it("warns about sections that are not on a bar line, past the audio, or overlapping", () => {
+  const sections = [
+    { id: "a", name: "Intro", start: 0, end: 8.5, mode: "continue" as const },
+    { id: "b", name: "Verse", start: 8, end: 40, mode: "loop" as const },
+  ];
+  const report = midiPreflight([], { duration: 30, clock: false, pedals: [], sections, bpm: 120, beats: 4, firstBeat: 0 });
+  const codes = report.issues.map((i) => i.code);
+  expect(codes).toEqual(expect.arrayContaining(["section-range", "section-overlap", "section-bar"]));
+});

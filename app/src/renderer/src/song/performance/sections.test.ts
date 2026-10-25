@@ -9,6 +9,7 @@ import {
   parseSections,
   pruneLive,
   releaseLoop,
+  saveLiveAsDefault,
   sectionIndexAt,
   sectionIssues,
   snapToBeat,
@@ -46,27 +47,27 @@ describe("nextBoundary by mode", () => {
     },
   ];
   it.each(cases)("$name", ({ mode, position, live = NO_LIVE, expect: wanted }) => {
-    const boundary = nextBoundary(song(mode), position, 32, live);
+    const boundary = nextBoundary(song(mode), position, live);
     expect(boundary).toMatchObject(wanted);
   });
 
   it("repeat-once repeats only once, then continues", () => {
-    const first = nextBoundary(song("repeat-once"), 10, 32, NO_LIVE)!;
+    const first = nextBoundary(song("repeat-once"), 10, NO_LIVE)!;
     expect(first.action).toEqual({ kind: "jump", to: 8, target: "verse" });
     // The jump's pass comes back to the same end; the repeat is already used up.
-    const second = nextBoundary(song("repeat-once"), 10, 32, first.live)!;
+    const second = nextBoundary(song("repeat-once"), 10, first.live)!;
     expect(second.action).toEqual({ kind: "continue" });
     expect(second.live.repeated).toEqual([]);
   });
 
   it("a skipped section is jumped over at its start", () => {
-    const boundary = nextBoundary(song("continue", "skip"), 10, 32, NO_LIVE)!;
+    const boundary = nextBoundary(song("continue", "skip"), 10, NO_LIVE)!;
     expect(boundary).toMatchObject({ at: 16, action: { kind: "jump", to: 24, target: null } });
   });
 
   it("a stored loop released by the performer stops repeating and forgets the release afterwards", () => {
     const released = releaseLoop(NO_LIVE, "verse");
-    const boundary = nextBoundary(song("loop"), 10, 32, released)!;
+    const boundary = nextBoundary(song("loop"), 10, released)!;
     expect(boundary.action).toEqual({ kind: "continue" });
     expect(boundary.live.released).toEqual([]);
   });
@@ -74,14 +75,14 @@ describe("nextBoundary by mode", () => {
 
 describe("live jumps and loops", () => {
   it("a pending jump is taken at the end of the section being played and consumed", () => {
-    const boundary = nextBoundary(song(), 10, 32, armJump(NO_LIVE, "chorus"))!;
+    const boundary = nextBoundary(song(), 10, armJump(NO_LIVE, "chorus"))!;
     expect(boundary).toMatchObject({ at: 16, action: { kind: "jump", to: 16, target: "chorus" } });
     expect(boundary.live.jump).toBeNull();
   });
 
   it("a jump wins over a loop of the section being left", () => {
     const live = startLoop(armJump(NO_LIVE, "outro"), "verse");
-    const boundary = nextBoundary(song(), 10, 32, live)!;
+    const boundary = nextBoundary(song(), 10, live)!;
     expect(boundary.action).toEqual({ kind: "jump", to: 24, target: "outro" });
     expect(boundary.live.loop).toBeNull();
   });
@@ -89,24 +90,24 @@ describe("live jumps and loops", () => {
   it("a live loop repeats the section every pass until it is released", () => {
     let live = startLoop(NO_LIVE, "verse");
     for (let pass = 0; pass < 3; pass++) {
-      const boundary = nextBoundary(song(), 10, 32, live)!;
+      const boundary = nextBoundary(song(), 10, live)!;
       expect(boundary.action).toEqual({ kind: "jump", to: 8, target: "verse" });
       live = boundary.live;
     }
     live = releaseLoop(live, "verse");
-    const after = nextBoundary(song(), 10, 32, live)!;
+    const after = nextBoundary(song(), 10, live)!;
     expect(after.action).toEqual({ kind: "continue" });
     expect(after.live.loop).toBeNull();
   });
 
   it("a jump armed between sections lands at the next section start", () => {
     const gapped = [section("a", 0, 4), section("b", 6, 8), section("c", 10, 12)];
-    const boundary = nextBoundary(gapped, 5, 12, armJump(NO_LIVE, "c"));
+    const boundary = nextBoundary(gapped, 5, armJump(NO_LIVE, "c"));
     expect(boundary).toMatchObject({ at: 6, action: { kind: "jump", to: 10, target: "c" } });
   });
 
   it("a jump to a section that was deleted is dropped", () => {
-    const boundary = nextBoundary(song(), 10, 32, armJump(NO_LIVE, "gone"))!;
+    const boundary = nextBoundary(song(), 10, armJump(NO_LIVE, "gone"))!;
     expect(boundary.action).toEqual({ kind: "continue" });
     expect(boundary.live.jump).toBeNull();
   });
@@ -117,8 +118,8 @@ describe("live jumps and loops", () => {
   });
 
   it("returns no boundary when nothing lies ahead", () => {
-    expect(nextBoundary([], 0, 10, NO_LIVE)).toBeNull();
-    expect(nextBoundary(song(), 32, 32, NO_LIVE)).toBeNull();
+    expect(nextBoundary([], 0, NO_LIVE)).toBeNull();
+    expect(nextBoundary(song(), 32, NO_LIVE)).toBeNull();
   });
 });
 
@@ -208,5 +209,18 @@ describe("pruneLive", () => {
   it("drops live state that names deleted sections", () => {
     const live: SectionLive = { loop: "gone", jump: "verse", repeated: ["gone", "verse"], released: ["gone"] };
     expect(pruneLive(live, song())).toEqual({ loop: null, jump: "verse", repeated: ["verse"], released: [] });
+  });
+});
+
+describe("saveLiveAsDefault", () => {
+  it("stores a live loop as the section's loop mode, and a released loop as continue", () => {
+    const sections = [section("a", 0, 8), section("b", 8, 16, "loop"), section("c", 16, 24, "pause")];
+    const live = { ...startLoop(NO_LIVE, "a"), released: ["b"] };
+    expect(saveLiveAsDefault(sections, live).map((s) => s.mode)).toEqual(["loop", "continue", "pause"]);
+  });
+
+  it("does not store a pending jump", () => {
+    const sections = [section("a", 0, 8)];
+    expect(saveLiveAsDefault(sections, armJump(NO_LIVE, "a"))).toEqual(sections);
   });
 });

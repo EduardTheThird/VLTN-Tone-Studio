@@ -98,6 +98,8 @@ export interface SessionState {
   sections: Section[];
   /** What the performer has asked for about sections since the song started */
   sectionLive: SectionLive;
+  /** The decided boundary that is still to take effect: a jump (to `target`) or a pause, and the song time it lands at */
+  sectionNext: { kind: "jump" | "pause"; target: string | null; at: number } | null;
 }
 
 export type SessionInputs = Pick<
@@ -201,6 +203,7 @@ export class PerformanceSession {
       starting: false,
       sections: [],
       sectionLive: NO_LIVE,
+      sectionNext: null,
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -639,7 +642,10 @@ export class PerformanceSession {
       };
     }
     this.sendPlan();
-    this.set({ sectionLive: boundary.live });
+    this.set({
+      sectionLive: boundary.live,
+      sectionNext: action.kind === "continue" ? null : { kind: action.kind, target: action.kind === "jump" ? action.target : null, at: boundary.at },
+    });
   }
 
   /**
@@ -652,7 +658,7 @@ export class PerformanceSession {
     if (plan.kind === "jump" && !this.state.player?.cancelJump()) return false;
     this.section = null;
     this.sendPlan();
-    this.set({ sectionLive: plan.before });
+    this.set({ sectionLive: plan.before, sectionNext: null });
     return true;
   }
 
@@ -661,7 +667,7 @@ export class PerformanceSession {
     const plan = this.section;
     if (!plan) return;
     this.section = null;
-    this.set({ sectionLive: plan.before });
+    this.set({ sectionLive: plan.before, sectionNext: null });
   }
 
   /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
@@ -677,11 +683,12 @@ export class PerformanceSession {
         }
         if (player.audioNow < plan.ctxAt) return;
         this.section = null;
+        this.set({ sectionNext: null });
         if (plan.kind === "pause") this.pause();
         return;
       }
       if (!sections.length || player.position < 0) return;
-      const boundary = nextBoundary(sections, player.position, player.duration, this.state.sectionLive);
+      const boundary = nextBoundary(sections, player.position, this.state.sectionLive);
       if (boundary && boundary.at - player.position <= DECISION_LEAD_S) this.commitBoundary(boundary);
     } catch (e) {
       this.cancelSectionPlan();

@@ -176,7 +176,7 @@ function leave(live: SectionLive, id: string): SectionLive {
  * A pending jump is consumed by the boundary that takes it. Loops and repeats are decided here, so a loop that is released
  * before its boundary simply does not repeat.
  */
-export function nextBoundary(sections: readonly Section[], position: number, duration: number, live: SectionLive): SectionBoundary | null {
+export function nextBoundary(sections: readonly Section[], position: number, live: SectionLive): SectionBoundary | null {
   const ordered = sortedSections(sections);
   if (!ordered.length) return null;
   // A jump to a section that has since been deleted cannot be taken, so it is dropped rather than left armed.
@@ -253,4 +253,16 @@ export function pruneLive(live: SectionLive, sections: readonly Section[]): Sect
     repeated: live.repeated.filter((x) => ids.has(x)),
     released: live.released.filter((x) => ids.has(x)),
   };
+}
+
+/**
+ * "Save as default": writes the live loop and release choices into the sections' stored modes. A live loop becomes the section's
+ * loop mode; a released loop becomes continue. A pending jump is not a mode and is not saved.
+ */
+export function saveLiveAsDefault(sections: readonly Section[], live: SectionLive): Section[] {
+  return sections.map((section) => {
+    if (live.loop === section.id && section.mode !== "loop") return { ...section, mode: "loop" };
+    if (live.released.includes(section.id) && section.mode === "loop") return { ...section, mode: "continue" };
+    return section;
+  });
 }

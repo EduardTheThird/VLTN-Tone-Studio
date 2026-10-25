@@ -1,11 +1,17 @@
 import type { Cue } from "./chart";
 import { isChased } from "./midi-chase";
+import { sectionIssues, type Section } from "./sections";
 export interface PreflightOptions {
   duration: number;
   tempoChannel?: number;
   clock: boolean;
   outputName?: string;
   pedals: { name: string; channel: number }[];
+  /** The song's sections, checked against its tempo grid when a tempo is given */
+  sections?: Section[];
+  bpm?: number;
+  beats?: number;
+  firstBeat?: number;
 }
 export interface PreflightIssue {
   code: string;
@@ -100,6 +106,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
       }
     }
   }
+  for (const issue of sectionIssues(options.sections ?? [], { duration: options.duration, bpm: options.bpm, beats: options.beats, firstBeat: options.firstBeat }))
+    add(issue.code, issue.text);
   for (const [note, time] of notes)
     add("note-off", `Note ${note.split(":")[1]} on channel ${note.split(":")[0]} at ${time.toFixed(2)} s has no later note-off before the audio ends.`);
   return { issues, channels: [...channels].sort((a, b) => a[0] - b[0]), commands: events.reduce((n, c) => n + c.messages.length, 0) };
