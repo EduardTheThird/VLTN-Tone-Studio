@@ -1,6 +1,7 @@
 import type { Cue } from "./chart";
 import { CHASE_LEAD_MS, computeChaseState } from "./midi-chase";
 import { clampRate } from "./speed";
+import { cycleFrames, framesAt, fullFrame, quarterFrame, type TimecodeRate } from "./timecode";
 
 export interface ScheduledMessage {
   bytes: number[];
@@ -26,6 +27,11 @@ export interface SchedulerConfig {
   lookahead?: number;
   /** The `{midi@play}` trigger messages. They are sent once, with the start tempo, and never again on a jump or loop. */
   playTriggers?: number[][];
+  /**
+   * MIDI Time Code. `offset` is the frame count at song position zero (see timecode.ts). Quarter frames follow song time, and a
+   * jump, seek or rate change restarts them with a full frame. Nothing is sent before song position zero, so a count-in is silent.
+   */
+  timecode?: { fps: TimecodeRate; offset: number };
 }
 /** A planned jump: from clock time `at` the song is at `position`. */
 export interface SchedulerJump {
@@ -59,10 +65,21 @@ const RESYNC_WINDOW_MS = 5000;
 /** The audio position must advance at least this often while playing. */
 const AUDIO_STALL_MS = 1000;
 
-/** What to do with a message that is already past STALE_MS. Note-offs are always sent so notes cannot hang. */
+/** A full-frame timecode SysEx: the only timecode message worth sending late, since it is what sets the receiver's position. */
+export function isFullFrame(bytes: number[]): boolean {
+  return bytes[0] === 240 && bytes[1] === 127 && bytes[2] === 127 && bytes[3] === 1 && bytes[4] === 1;
+}
+
+/**
+ * What to do with a message that is already past STALE_MS. Note-offs are always sent so notes cannot hang. A late full frame is sent,
+ * because it is one message that sets the position. Late quarter frames are dropped, never sent in a burst: the next piece is due a
+ * fraction of a frame later and carries the current value.
+ */
 export function lateAction(bytes: number[]): "send" | "drop" | "ignore" {
   const status = bytes[0] & 240;
   if (bytes[0] === 248) return "ignore";
+  if (bytes[0] === 241) return "drop";
+  if (isFullFrame(bytes)) return "send";
   if (status === 128 || (status === 144 && bytes[2] === 0)) return "send";
   return "drop";
 }
@@ -95,6 +112,8 @@ export class MidiSchedule {
   private pendingJump: SchedulerJump | null = null;
   /** Checkpoints taken before this clock time were taken before the last jump, so they describe the old passage. */
   private jumpAt = -Infinity;
+  /** The timecode stream: quarter frame `next` is due at `anchor.time` plus its share of a quarter at the current rate. */
+  private timecode: { anchor: { time: number; frames: number }; next: number; fullPending: boolean } | null = null;
   constructor(
     config: SchedulerConfig,
     now: number,
@@ -115,6 +134,13 @@ export class MidiSchedule {
     this.lastPosition = config.position;
     this.lastAdvance = now;
     this.tempo = config.tempo;
+    if (config.timecode) this.restartTimecode(this.clockAt(Math.max(0, config.position)), config.position);
+  }
+  /** Starts the timecode from a song position at a clock time: a full frame there, then quarter frames from piece 0. */
+  private restartTimecode(at: number, position: number) {
+    if (!this.config.timecode) return;
+    const { fps, offset } = this.config.timecode;
+    this.timecode = { anchor: { time: at, frames: framesAt(position, offset, fps) }, next: 0, fullPending: true };
   }
   stop() {
     this.stopped = true;
@@ -158,6 +184,7 @@ export class MidiSchedule {
       const shift = at - this.clockAt(position);
       this.config.origin += shift;
       this.pulseAnchor.time += shift;
+      if (this.timecode) this.timecode.anchor.time += shift;
       this.resync(now, position);
     }
   }
@@ -198,6 +225,34 @@ export class MidiSchedule {
     this.lastAdvance = jump.at;
     this.jumpAt = jump.at;
     this.chasePending = true;
+    // Timecode follows song time, so a jump, loop wrap or rate change starts it again: a full frame at the new position, then piece 0.
+    this.restartTimecode(jump.at, jump.position);
+  }
+  /**
+   * Quarter frames due before `limit` (clock time). Frames are two-frame cycles of eight pieces. Stale quarter frames are skipped
+   * without being sent. One summary entry is returned for them, so the notice counts the stall once.
+   */
+  private timecodeMessages(now: number, limit: number, candidates: ScheduledMessage[]): ScheduledMessage | null {
+    const tc = this.timecode;
+    if (!tc || !this.config.timecode || tc.anchor.time >= limit) return null;
+    const { fps } = this.config.timecode;
+    if (tc.fullPending) {
+      candidates.push({ bytes: fullFrame(tc.anchor.frames, fps), due: tc.anchor.time, label: "MIDI timecode", time: this.config.position });
+      tc.fullPending = false;
+    }
+    let skipped: ScheduledMessage | null = null;
+    for (;;) {
+      const due = tc.anchor.time + (tc.next * 1000) / (4 * fps * this.rate);
+      if (due >= limit) break;
+      const bytes = quarterFrame(tc.next, cycleFrames(tc.next, tc.anchor.frames), fps);
+      tc.next++;
+      if (due < now - STALE_MS) {
+        skipped = { bytes, due, label: "MIDI timecode (late)" };
+        continue;
+      }
+      candidates.push({ bytes, due, label: "MIDI timecode" });
+    }
+    return skipped;
   }
   /** Clock time of song position `song` (seconds), so a rated song reads its position off the clock at `rate` times the song's pace. */
   private clockAt(song: number): number {
@@ -240,13 +295,17 @@ export class MidiSchedule {
       for (const bytes of this.playTriggers) candidates.push({ bytes, due, label: "Song play trigger", time: Math.max(0, this.config.position) });
       this.playTriggers = [];
     }
-    if (this.config.clock) {
+    // Clock and timecode are exclusive: a receiver gets one source of time, so clock is ignored when timecode is on.
+    if (this.config.clock && !this.config.timecode) {
       // The clock runs on its own clock time, not on the song's, so a jump does not change its phase.
       const horizon = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration));
       while (this.pulseDue(this.pulse) < horizon) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
     }
+    // Quarter frames stop at a pending jump (the old passage ends there) and at the cap, and never run before song position zero.
+    const timecodeLimit = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration), this.clockAt(this.cap), this.pendingJump?.at ?? Infinity);
+    const skippedTimecode = this.timecodeMessages(now, timecodeLimit, candidates);
     const messages: ScheduledMessage[] = [],
-      dropped: ScheduledMessage[] = [];
+      dropped: ScheduledMessage[] = skippedTimecode ? [skippedTimecode] : [];
     for (const message of candidates) {
       if (now - message.due <= STALE_MS) messages.push(message);
       else {
