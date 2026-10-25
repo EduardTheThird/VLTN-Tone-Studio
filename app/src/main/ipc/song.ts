@@ -135,6 +135,10 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:updateSettings', (_e, id: string, patch: Record<string, string>) => library.updateSettings(id, patch));
   handle('song:library:applyTrackSettings', (_e, id: string) => library.applyTrackSettings(id));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
+  handle('song:library:attachChart', (_e, id: string, bytes: Uint8Array) => library.attachChart(id, bytes));
+  handle('song:library:removeChart', (_e, id: string) => library.removeChart(id));
+  handle('song:library:saveAnnotations', (_e, id: string, json: string) => library.saveAnnotations(id, json));
+  handle('song:library:chartUrls', (_e, id: string) => library.chartUrls(id));
   const transferProgress = (value: LibraryTransferProgress) => getWindow()?.webContents.send('song:library:progress', value);
   handle('song:library:exportBackup', async () => {
     const stamp = new Date().toISOString().slice(0, 10);

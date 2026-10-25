@@ -1,12 +1,20 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { exportBackup, readBackup, readBackupIndex } from "./song-library-backup";
 import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
 import {
+  CHART_ANNOTATIONS_FILE,
+  CHART_ANNOTATIONS_MAX_BYTES,
+  CHART_FILE,
+  CHART_PDF_MAX_BYTES,
   LIBRARY_VERSION,
   assetName,
+  chartFiles,
   emptyLibrary,
+  isChartFileName,
+  isPdfBytes,
+  validateChart,
   flacName,
   isFlacTrack,
   isIsoTime,
@@ -23,6 +31,8 @@ import {
   validateSong,
   validateSongPatch,
   type LibraryChange,
+  type ChartUrls,
+  type LibraryChart,
   type LibraryFolder,
   type LibrarySong,
   type Playlist,
@@ -37,6 +47,7 @@ import { HISTORY_MAX, type HistoryEntry } from "@shared/song-library";
 import { appendPlay, withoutSong } from "@shared/library-history";
 import { removeEntry } from "@shared/playlist-sets";
 import { isStringList } from "@shared/library-filter";
+import { validateAnnotations } from "@shared/chart-annotations";
 
 export type DiskIndex = SongLibrary & { revisions: Record<string, string> };
 /** A save session or staging folder older than this is abandoned: the renderer crashed or the user gave up. */
@@ -66,7 +77,18 @@ function applyMetaPatch(song: LibrarySong, patch: SongMetaPatch, updated: string
 }
 
 /** Fields a saved song carries that the renderer's save does not send back. A re-save keeps them rather than dropping them. */
-const KEPT_ON_SAVE = ["key", "year", "color", "notes", "folderId", "keywords", "playCount", "lastPlayed"] as const;
+const KEPT_ON_SAVE = ["key", "year", "color", "notes", "folderId", "keywords", "playCount", "lastPlayed", "chart"] as const;
+
+const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+const CHART_TOO_LARGE = "This PDF is larger than 50 MB. Choose a smaller file, or export the chart to a smaller PDF.";
+
+/**
+ * Copies a song's chart files from one revision folder to another. A re-save or a format conversion builds a new revision folder, so the
+ * PDF and its annotations are carried across here. A missing file throws, so a save never drops a chart silently.
+ */
+async function carryChart(from: string, to: string, chart: LibraryChart | undefined): Promise<void> {
+  for (const { file } of chartFiles(chart)) await copyFile(join(from, file), join(to, file));
+}
 
 /**
  * The song being saved, with the details it does not carry (the library's own counts and notes) taken from the saved copy. The creation
@@ -244,6 +266,7 @@ export class SongLibraryStore {
       const saved = index.songs.find((s) => s.id === song.id);
       const kept = keepSavedDetails(saved, song, new Date().toISOString());
       validateSong(kept);
+      if (old && validId(old)) await carryChart(join(this.root, old), join(this.root, token), kept.chart);
       index.songs = [...index.songs.filter((s) => s.id !== song.id), kept];
       index.revisions[song.id] = token;
       await this.publish(index);
@@ -517,6 +540,7 @@ export class SongLibraryStore {
           now = index.songs.find((s) => s.id === id);
         // The song may have been replaced or removed while it was being converted. Settings edits are kept; only the audio changes.
         if (!now || index.revisions[id] !== revision) throw new Error("Song changed during conversion.");
+        await carryChart(join(this.root, revision), join(this.root, target), now.chart);
         index.songs = index.songs.map((s) => (s.id === id ? { ...now, audio } : s));
         index.revisions[id] = target;
         await this.publish(index);
@@ -529,6 +553,108 @@ export class SongLibraryStore {
     } finally {
       this.converting.delete(target);
     }
+  }
+  /**
+   * Attaches a PDF chart to a saved song. The PDF is staged in the revision folder and renamed into place, so an earlier PDF is put back if
+   * the index cannot be published. The song's annotations belonged to the earlier PDF, so they are removed.
+   */
+  async attachChart(id: string, bytes: Uint8Array): Promise<void> {
+    if (!validId(id)) throw new Error("Saved song not found.");
+    if (!ArrayBuffer.isView(bytes) || !bytes.byteLength) throw new Error("Choose a PDF file.");
+    if (bytes.byteLength > CHART_PDF_MAX_BYTES) throw new Error(CHART_TOO_LARGE);
+    if (!isPdfBytes(bytes)) throw new Error("This file is not a PDF.");
+    const chart: LibraryChart = { bytes: bytes.byteLength, sha256: sha256Hex(bytes) };
+    validateChart(chart);
+    return this.serial(async () => {
+      const index = await this.read(),
+        rev = index.revisions[id];
+      if (!index.songs.some((s) => s.id === id) || !validId(rev ?? "")) throw new Error("Saved song not found.");
+      const dir = join(this.root, rev),
+        staged = join(dir, `chart-${randomUUID()}.tmp`),
+        previous = join(dir, `chart-previous-${randomUUID()}.tmp`);
+      await writeFile(staged, bytes);
+      const hadPdf = await rename(join(dir, CHART_FILE), previous).then(
+        () => true,
+        () => false,
+      );
+      try {
+        await rename(staged, join(dir, CHART_FILE));
+        index.songs = index.songs.map((s) => (s.id === id ? { ...s, chart } : s));
+        await this.publish(index);
+      } catch (e) {
+        await rm(join(dir, CHART_FILE), { force: true }).catch(() => {});
+        if (hadPdf) await rename(previous, join(dir, CHART_FILE)).catch(() => {});
+        throw e;
+      } finally {
+        await rm(staged, { force: true }).catch(() => {});
+      }
+      await rm(previous, { force: true }).catch(() => {});
+      await rm(join(dir, CHART_ANNOTATIONS_FILE), { force: true }).catch(() => {});
+    });
+  }
+  /** Removes a song's PDF and its annotations. The index is published first, so the song never points at a file that is gone. */
+  async removeChart(id: string): Promise<void> {
+    if (!validId(id)) throw new Error("Saved song not found.");
+    return this.serial(async () => {
+      const index = await this.read(),
+        song = index.songs.find((s) => s.id === id),
+        rev = index.revisions[id];
+      if (!song) throw new Error("Saved song not found.");
+      if (!song.chart) return;
+      index.songs = index.songs.map((s) => {
+        if (s.id !== id) return s;
+        const { chart: _, ...rest } = s;
+        return rest;
+      });
+      await this.publish(index);
+      if (validId(rev ?? ""))
+        for (const { file } of chartFiles(song.chart)) await rm(join(this.root, rev, file), { force: true }).catch(() => {});
+    });
+  }
+  /**
+   * Saves the annotations of a song's PDF. The text is checked before anything is written, and it is refused without a PDF. The index holds
+   * the file's size and digest, so a backup can check it like any other saved file.
+   */
+  async saveAnnotations(id: string, json: string): Promise<void> {
+    if (!validId(id) || typeof json !== "string") throw new Error("Saved song not found.");
+    const bytes = Buffer.from(json, "utf8");
+    if (bytes.length > CHART_ANNOTATIONS_MAX_BYTES) throw new Error("The annotations are too large to save.");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      throw new Error("Invalid chart annotations.");
+    }
+    validateAnnotations(parsed);
+    return this.serial(async () => {
+      const index = await this.read(),
+        song = index.songs.find((s) => s.id === id),
+        rev = index.revisions[id];
+      if (!song || !validId(rev ?? "")) throw new Error("Saved song not found.");
+      if (!song.chart) throw new Error("Attach a PDF chart before annotating it.");
+      const temp = join(this.root, rev, `annotations-${randomUUID()}.tmp`);
+      await writeFile(temp, bytes);
+      await rename(temp, join(this.root, rev, CHART_ANNOTATIONS_FILE)).catch(async (e) => {
+        await rm(temp, { force: true }).catch(() => {});
+        throw e;
+      });
+      index.songs = index.songs.map((s) => (s.id === id ? { ...s, chart: { ...s.chart!, annotations: { bytes: bytes.length, sha256: sha256Hex(bytes) } } } : s));
+      await this.publish(index);
+    });
+  }
+  /** The protocol URLs of a song's PDF and its annotations. Null when the song has no PDF. */
+  async chartUrls(id: string): Promise<ChartUrls | null> {
+    if (!validId(id)) return null;
+    return this.serial(async () => {
+      const index = await this.read(),
+        song = index.songs.find((s) => s.id === id),
+        rev = index.revisions[id];
+      if (!song?.chart || !validId(rev ?? "")) return null;
+      return {
+        pdf: `app://library/${rev}/${CHART_FILE}`,
+        ...(song.chart.annotations ? { annotations: `app://library/${rev}/${CHART_ANNOTATIONS_FILE}` } : {}),
+      };
+    });
   }
   async remove(id: string): Promise<void> {
     return this.serial(async () => {
@@ -553,6 +679,7 @@ export class SongLibraryStore {
 export function libraryFilePath(root: string, url: string): string | null {
   const parsed = new URL(url),
     [, revision, file, ...rest] = decodeURIComponent(parsed.pathname).split("/");
-  if (parsed.host !== "library" || rest.length || !validId(revision ?? "") || !isTrackFileName(file ?? "")) return null;
+  if (parsed.host !== "library" || rest.length || !validId(revision ?? "")) return null;
+  if (!isTrackFileName(file ?? "") && !isChartFileName(file ?? "")) return null;
   return join(root, revision, file);
 }

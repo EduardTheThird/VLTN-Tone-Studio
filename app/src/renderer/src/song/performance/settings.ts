@@ -1,12 +1,13 @@
 import { host } from "@/host";
 import type { SongSource } from "../types";
+import { SETTING_SUFFIXES } from "@shared/song-library";
 
 /**
  * A song's chart, tempo, lyrics and options. A saved song keeps them in the library, which is the only copy: they are read from a cache that
  * loading the song fills, and edits go back to the library after a short pause. A song that has not been saved keeps them in localStorage.
  */
 export const LIBRARY_PREFIX = "vltn.song:";
-export const settingSuffixes = ["", ":bpm", ":lyrics", ":options"] as const;
+export const settingSuffixes = SETTING_SUFFIXES;
 /** Edits arrive on every keystroke; the library is written once typing stops. */
 export const SETTINGS_DEBOUNCE_MS = 500;
 

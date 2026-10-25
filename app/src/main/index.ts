@@ -12,6 +12,7 @@ import { registerDeviceIpc } from "./ipc/device";
 import { registerSnapToneIpc } from "./ipc/snaptone";
 import { libraryRoot, registerSongIpc } from "./ipc/song";
 import { libraryFilePath } from "./ipc/song-library-store";
+import { CHART_ANNOTATIONS_FILE, CHART_FILE } from "@shared/song-library";
 import { registerUpdateIpc } from "./ipc/update";
 import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
 import { registerLogIpc } from "./ipc/log";
@@ -36,7 +37,14 @@ const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inli
 // TONE3000 images, which send no Cross-Origin-Resource-Policy, still load (without cookies).
 const ISOLATION = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "credentialless" } as const;
 
-/** app://library/<revision>/<track>.flac → a saved song's audio. Only that exact shape resolves, so no other path is reachable. */
+/** The media type of a saved file: the chart's PDF or annotation JSON, or a FLAC track. Only those names resolve (see libraryFilePath). */
+function contentType(file: string): string {
+  if (file.endsWith("/" + CHART_FILE)) return "application/pdf";
+  if (file.endsWith("/" + CHART_ANNOTATIONS_FILE)) return "application/json";
+  return "audio/flac";
+}
+
+/** app://library/<revision>/<track>.flac or <chart>.pdf → a saved song's file. Only that exact shape resolves, so no other path is reachable. */
 async function serveLibrary(req: Request): Promise<Response> {
   if (req.method !== "GET") return new Response(null, { status: 405 });
   const file = libraryFilePath(libraryRoot(), req.url);
@@ -45,7 +53,7 @@ async function serveLibrary(req: Request): Promise<Response> {
   const headers = new Headers(res.headers);
   // The dev renderer is served from http://localhost, which makes this a cross-origin fetch.
   headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Content-Type", "audio/flac");
+  headers.set("Content-Type", contentType(file));
   headers.set("Cache-Control", "no-store");
   return new Response(res.body, { status: res.status, headers });
 }
