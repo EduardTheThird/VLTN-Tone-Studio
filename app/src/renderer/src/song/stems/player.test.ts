@@ -564,3 +564,42 @@ it("cancels a hand-over when the outgoing song is paused, and the next song stop
   await incoming.dispose();
   await engine.close();
 });
+
+it("builds the buffers a channel at a time, yielding after each channel", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const stems = {
+    drums: { sampleRate: 100, channels: [new Float32Array(10), new Float32Array(10)] },
+    other: { sampleRate: 100, channels: [new Float32Array(10)] },
+  } as Stems;
+  const pause = vi.fn(async () => {});
+  const player = await StemPlayer.create(stems, undefined, {}, pause);
+  expect(pause).toHaveBeenCalledTimes(3);
+  expect(player.names).toEqual(["drums", "other"]);
+  await player.dispose();
+});
+
+it("applies a new trim while the song plays by moving its stop", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: pcm(1000) });
+  await player.play();
+  const ctx = Context.instances[0];
+  player.setShape({ trimEnd: 4 });
+  expect(player.duration).toBe(4);
+  expect(ctx.sources[0].stop).toHaveBeenLastCalledWith(14.02);
+  await player.dispose();
+});
+
+it("loops a song by jumping back to its trimmed start just before the end, with no gap", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: pcm(1000) }, undefined, { trimStart: 2, trimEnd: 8, endBehaviour: "loop" });
+  await player.play();
+  const ctx = Context.instances[0];
+  expect(player.behaviour).toBe("loop");
+  // The pass ends at 10.02 + 6 = 16.02. Within a second of that the next pass is scheduled from the start.
+  ctx.currentTime = 15.2;
+  vi.advanceTimersByTime(50);
+  expect(ctx.sources[1].start).toHaveBeenCalledWith(16.02, 2);
+  await player.dispose();
+  vi.useRealTimers();
+});

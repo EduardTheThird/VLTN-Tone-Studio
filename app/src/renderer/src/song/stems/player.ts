@@ -1,7 +1,8 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
 import { audioTimeOf, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
-import { equalPowerCurve, playRange } from "../performance/transition";
+import { equalPowerCurve, playRange, CROSSFADE_MAX_S, type PlayRange } from "../performance/transition";
+import type { EndBehaviour, SongShape } from "../performance/song-shape";
 import { createPlaybackEngine, type PlaybackEngine } from "../audio/playback-engine";
 import { stemGains, type Mix } from "./mix";
 import { type BusName, type OutputConfig } from "../audio/outputs";
@@ -30,8 +31,9 @@ const RAMP_S = 0.015;
 const JUMP_MIN_S = 0.05;
 /** A jump can be cancelled until this long before it takes effect. The metronome reads this far ahead, so a cancel must come first. */
 const JUMP_CANCEL_S = 0.15;
-/** A song's fade in and fade out can be at most this long, in seconds */
-const FADE_MAX_S = 10;
+/** While a song loops, the next pass is scheduled once the current one is this close to its end */
+const LOOP_AHEAD_S = 1;
+const LOOP_CHECK_MS = 50;
 
 interface Voice {
   buffer: AudioBuffer;
@@ -61,17 +63,7 @@ export interface Lead {
   preRollBeats?: number;
 }
 
-/** The part of a song's file that plays, and the fades at its ends. Song time is the file's own time, so cues line up without shifting. */
-export interface SongShape {
-  /** Song time in seconds where the song starts. Default 0. */
-  trimStart?: number;
-  /** Song time in seconds where the song ends. Default the end of the file. */
-  trimEnd?: number;
-  /** Seconds to fade in from silence at each start. Default 0. */
-  fadeIn?: number;
-  /** Seconds to fade out before the end. Default 0. */
-  fadeOut?: number;
-}
+export type { SongShape };
 
 /** When the next song starts and when this one stops, both on the audio clock. A fade of `fadeLength` runs between them. */
 export interface Join {
@@ -98,27 +90,39 @@ function beatInterval(bpm: number): number {
 
 /** A fade length the player can ramp: finite, not negative, and not longer than a fade may be. */
 function fadeSeconds(value: number | undefined): number {
-  return Number.isFinite(value) ? Math.max(0, Math.min(FADE_MAX_S, value!)) : 0;
+  return Number.isFinite(value) ? Math.max(0, Math.min(CROSSFADE_MAX_S, value!)) : 0;
+}
+
+/**
+ * Fills a song's buffers and yields between one channel and the next, so that a long copy does not hold the renderer. Uses the
+ * scheduler where the page has one, and a timer otherwise.
+ */
+export function yieldToMain(): Promise<void> {
+  const scheduler = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (scheduler?.yield) return scheduler.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export class StemPlayer {
-  /** Song time where the playable range ends. Trim and the file's length both set it. */
-  readonly duration: number;
-  /** Song time where the playable range starts */
-  readonly start: number;
+  /** The playable range, in song seconds. Trim and the file's length both set it. */
+  private range: PlayRange;
+  /** The file's length in seconds, before any trim */
+  private readonly fileLength: number;
   /** The split's stems, STEM_NAMES order */
   readonly names: StemName[];
   private readonly engine: PlaybackEngine;
   private readonly ownsEngine: boolean;
   private readonly ctx: AudioContext;
   private readonly router: PlaybackEngine["router"];
-  private readonly fadeIn: number;
-  private readonly fadeOut: number;
+  private fadeIn: number;
+  private fadeOut: number;
+  private endBehaviour: EndBehaviour = "next";
+  private loopTimer: ReturnType<typeof setInterval> | null = null;
   private voices: Partial<Record<StemName, Voice>>;
   /** The song's timeline on the audio clock. A jump appends a segment. Empty until something has been started. */
   private segments: Segment[] = [];
   private prepared: PreparedJump | null = null;
-  private offset: number;
+  private offset = 0;
   /** The position the last start asked for. A pause during the count-in returns here, not to the pre-roll start. */
   private resumeAt = 0;
   private playing = false;
@@ -144,16 +148,16 @@ export class StemPlayer {
    * `engine` is the context and outputs this song plays on. Without one the player makes its own and closes it on dispose; a session
    * passes the shared engine so that songs in a set play on one clock.
    */
-  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}) {
+  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now") {
     this.names = STEM_NAMES.filter((name) => stems[name]);
     if (!this.names.length) throw new Error("There are no stems to play.");
     const first = stems[this.names[0]]!;
-    const range = playRange(first.channels[0].length / first.sampleRate, shape);
-    this.start = range.start;
-    this.duration = range.end;
-    this.offset = range.start;
+    this.fileLength = first.channels[0].length / first.sampleRate;
+    this.range = playRange(this.fileLength, shape);
+    this.offset = this.range.start;
     this.fadeIn = fadeSeconds(shape.fadeIn);
     this.fadeOut = fadeSeconds(shape.fadeOut);
+    this.endBehaviour = shape.endBehaviour ?? "next";
     this.ownsEngine = !engine;
     this.engine = engine ?? createPlaybackEngine();
     this.ctx = this.engine.ctx;
@@ -163,7 +167,7 @@ export class StemPlayer {
       this.names.map((name) => {
         const pcm = stems[name]!;
         const buffer = this.ctx.createBuffer(pcm.channels.length, pcm.channels[0].length, pcm.sampleRate);
-        pcm.channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
+        if (fill === "now") pcm.channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
         const gain = this.ctx.createGain();
         const fade = this.ctx.createGain();
         const analyser = this.ctx.createAnalyser();
@@ -176,9 +180,61 @@ export class StemPlayer {
     );
   }
 
+  /**
+   * Builds a player whose buffers are filled a channel at a time, yielding between channels, so a long song does not block the
+   * renderer. The player is not used until the returned promise resolves.
+   */
+  static async create(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, pause: () => Promise<void> = yieldToMain): Promise<StemPlayer> {
+    const player = new StemPlayer(stems, engine, shape, "later");
+    for (const name of player.names) {
+      const pcm = stems[name]!;
+      const buffer = player.voice(name).buffer;
+      for (let c = 0; c < pcm.channels.length; c++) {
+        buffer.copyToChannel(pcm.channels[c] as Float32Array<ArrayBuffer>, c);
+        await pause();
+      }
+    }
+    return player;
+  }
+
   private voice(name: StemName): Voice {
     return this.voices[name]!;
   }
+
+  /** Song time where the playable range ends. Trim and the file's length both set it. */
+  get duration(): number {
+    return this.range.end;
+  }
+
+  /** Song time where the playable range starts */
+  get start(): number {
+    return this.range.start;
+  }
+
+  /** What the song does at its end. The session reads it to decide whether the playlist goes on. */
+  get behaviour(): EndBehaviour {
+    return this.endBehaviour;
+  }
+
+  /**
+   * Applies a new trim, fades and end behaviour. A trim change while the song plays moves its stop at once. Fades apply from the next
+   * start, because the ramps of a playing song are already scheduled.
+   */
+  setShape(shape: SongShape): void {
+    const duration = this.duration;
+    this.range = playRange(this.fileLength, shape);
+    this.fadeIn = fadeSeconds(shape.fadeIn);
+    this.fadeOut = fadeSeconds(shape.fadeOut);
+    this.endBehaviour = shape.endBehaviour ?? "next";
+    if (this.offset >= this.duration || this.offset < this.start) this.offset = this.start;
+    if (this.playing && this.duration !== duration) {
+      this.segments[this.segments.length - 1].songEnd = this.duration;
+      const end = audioTimeOf(this.segments, this.duration);
+      for (const name of this.names) this.voice(name).source?.stop(end);
+    }
+    if (this.playing) this.updateLoop();
+  }
+
 
   get isPlaying(): boolean {
     return this.playing;
@@ -235,6 +291,27 @@ export class StemPlayer {
     this.playing = true;
     if (lead.countInBeats) this.scheduleCountIn(clickAt, lead.countInBeats, interval);
     this.startPlayingGrid();
+    this.updateLoop();
+  }
+
+  /** Keeps the loop timer running while a looping song plays, and stops it otherwise. */
+  private updateLoop(): void {
+    const wanted = this.playing && this.endBehaviour === "loop";
+    if (wanted && !this.loopTimer) this.loopTimer = setInterval(() => this.keepLooping(), LOOP_CHECK_MS);
+    else if (!wanted && this.loopTimer) {
+      clearInterval(this.loopTimer);
+      this.loopTimer = null;
+    }
+  }
+
+  /**
+   * Schedules the next pass of a looping song once the current one is close to its end: a jump back to the trimmed start, placed on
+   * the audio clock, so the loop has no gap.
+   */
+  private keepLooping(): void {
+    if (!this.playing || this.next || this.prepared || this.endBehaviour !== "loop" || this.duration <= this.start) return;
+    const remaining = this.audioTimeOf(this.duration) - this.ctx.currentTime;
+    if (remaining <= LOOP_AHEAD_S && remaining >= JUMP_MIN_S) this.prepareJump(this.start, this.duration);
   }
 
   /** Ramps every stem's fade for a start at `start` from song time `from`: a crossfade's curve in, or the song's own fades. */
@@ -570,6 +647,10 @@ export class StemPlayer {
 
   private stopSources() {
     this.stopMetronome();
+    if (this.loopTimer) {
+      clearInterval(this.loopTimer);
+      this.loopTimer = null;
+    }
     silence(this.countInClicks);
     for (const name of this.names) {
       const v = this.voice(name);
