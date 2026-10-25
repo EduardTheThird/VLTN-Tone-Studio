@@ -18,6 +18,7 @@ import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
 import { registerLogIpc } from "./ipc/log";
 import type { AppEvent } from "@shared/ipc";
 import { installBluetoothChooser } from './bluetooth';
+import { isAudienceContents, registerDisplayIpc } from "./ipc/display";
 
 // One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -80,6 +81,7 @@ const ENCLOSURE = "#08080a";
 const MIN = { width: 1180, height: 760 };
 let win: BrowserWindow | null = null;
 const getWindow = () => win;
+let displayIpc: ReturnType<typeof registerDisplayIpc> | null = null;
 const boundsPath = () => join(app.getPath("userData"), "window.json");
 const OPENABLE = /\.(prst|nam|wav)$/i;
 queueOpenedFiles(process.argv.slice(1).filter((a) => OPENABLE.test(a)));
@@ -137,14 +139,16 @@ async function createWindow() {
       : { titleBarOverlay: { color: ENCLOSURE, symbolColor: "#c2c2c2", height: 52 } }),
     ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
     webPreferences: {
-      preload: join(import.meta.dirname, "../preload/index.mjs"),
+      preload: join(import.meta.dirname, "../preload/index.cjs"),
       contextIsolation: true,
-      sandbox: false, // ESM preload needs sandbox: false; nodeIntegration stays off and only the typed bridge is exposed
+      sandbox: false, // unchanged by spec 43 (the audience window is sandboxed, see ipc/display.ts); nodeIntegration stays off and only the typed bridge is exposed
       nodeIntegration: false,
       backgroundThrottling: false, // backups and writes must not be throttled
     },
   });
   installBluetoothChooser(win);
+  // The audience window (spec 43) belongs to this window: when it closes, the audience window closes too.
+  win.once("closed", () => displayIpc?.close());
   win.once("ready-to-show", () => {
     if (maximized) win?.maximize();
     win?.show();
@@ -195,16 +199,18 @@ app.whenReady().then(async () => {
   // WebMIDI with SysEx in the renderer (src/renderer/src/gp5/), plus audio-only capture for the capture editor's
   // NAM audition (audio interface input). Nothing else is granted; video is always denied.
   const allowed = new Set(["midi", "midiSysex"]);
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => {
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+    if (isAudienceContents(wc)) return cb(false);
     if (permission === "media") {
       const types = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
       return cb(types.length > 0 && types.every((t) => t === "audio"));
     }
     cb(allowed.has(permission));
   });
-  session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) =>
-    permission === "media" ? details.mediaType === "audio" : allowed.has(permission),
-  );
+  session.defaultSession.setPermissionCheckHandler((wc, permission, _origin, details) => {
+    if (isAudienceContents(wc)) return false;
+    return permission === "media" ? details.mediaType === "audio" : allowed.has(permission);
+  });
   session.defaultSession.setBluetoothPairingHandler((details, callback) => {
     if (!win || details.frame !== win.webContents.mainFrame) return callback({ confirmed: false });
     if (details.pairingKind === 'providePin') {
@@ -239,6 +245,8 @@ app.whenReady().then(async () => {
   registerSongIpc(getWindow);
   registerUpdateIpc(getWindow);
   registerGp200CatalogIpc(getWindow);
+  displayIpc = registerDisplayIpc(getWindow);
+  app.once("will-quit", () => displayIpc?.dispose());
   buildMenu(getWindow);
   await createWindow();
 

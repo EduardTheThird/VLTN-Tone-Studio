@@ -6,7 +6,17 @@ import { pdfjsAssets } from "./scripts/pdfjs-assets";
 
 export default defineConfig({
   main: { plugins: [externalizeDepsPlugin()], resolve: { alias: { "@shared": resolve("src/shared") } } },
-  preload: { plugins: [externalizeDepsPlugin()], resolve: { alias: { "@shared": resolve("src/shared") } } },
+  // Both preloads are CommonJS: the audience window is sandboxed, and a sandboxed preload cannot be an ES module.
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+    resolve: { alias: { "@shared": resolve("src/shared") } },
+    build: {
+      rollupOptions: {
+        input: { index: resolve("src/preload/index.ts"), "audience-window": resolve("src/preload/audience-window.ts") },
+        output: { format: "cjs", entryFileNames: "[name].cjs" },
+      },
+    },
+  },
   renderer: {
     resolve: { alias: { "@": resolve("src/renderer/src"), "@shared": resolve("src/shared") } },
     plugins: [react(), tailwindcss(), pdfjsAssets()],
