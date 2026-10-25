@@ -34,7 +34,10 @@ const mocks = vi.hoisted(() => ({
     queue: [] as string[],
     position: 0,
     pausePlaylist: vi.fn(),
-    rememberMidi: vi.fn(),
+    rememberMidi: vi.fn((session: unknown) => {
+      mocks.library.midiSession = session as never;
+    }),
+    midiSession: null as null | { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown },
     holdChain: vi.fn(),
     recordPlay: vi.fn(),
     playingSet: null as string | null,
@@ -469,6 +472,54 @@ it("keeps the next playlist song waiting when none is ready, so the join is a ga
   mocks.audioNow = 16;
   vi.advanceTimersByTime(1000);
   expect(mocks.players).toHaveLength(1);
+  vi.useRealTimers();
+});
+
+it("hands a set on to a next song that was not chained without a MIDI Stop, and keeps the output armed", async () => {
+  vi.useFakeTimers();
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => null;
+  const { session, out } = armedSession(output(), { queued: true, playlistPlaying: true });
+  session.setClock(true);
+  await vi.advanceTimersByTimeAsync(10);
+  expect(session.state.playing).toBe(true);
+  out.send.mockClear();
+  mocks.position = 75;
+  mocks.audioNow = 75;
+  session.state.player!.onEnded!();
+  await vi.advanceTimersByTimeAsync(10);
+  expect(mocks.library.advancePlaylist).toHaveBeenCalled();
+  expect(out.send.mock.calls.some(([bytes]) => bytes?.[0] === 252)).toBe(false);
+  expect(session.armed).toBe(true);
+  vi.useRealTimers();
+});
+
+it("carries the armed output into the next song's session after an unchained join", async () => {
+  vi.useFakeTimers();
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => null;
+  mocks.library.midiSession = null;
+  const { session, out, access, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  session.state.player!.onEnded!();
+  await vi.advanceTimersByTimeAsync(10);
+  // The view is re-created for the next song: the outgoing session is let go, and the new one takes the carried output.
+  unload();
+  session.dispose();
+  expect(mocks.library.midiSession).toMatchObject({ portId: "usb", armed: true, output: out });
+  const next = new PerformanceSession({
+    initial: inputs({ queued: true, playlistPlaying: true }),
+    carried: { access, portId: "usb", inputId: "", armed: true, output: out },
+    initialClock: false,
+  });
+  const unloadNext = next.loadSong({ ...source, libraryId: "b", name: "b.wav" }, null);
+  next.bind();
+  expect(next.state.portId).toBe("usb");
+  expect(next.armed).toBe(true);
+  unloadNext();
+  next.dispose();
   vi.useRealTimers();
 });
 

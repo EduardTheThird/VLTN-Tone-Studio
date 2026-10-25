@@ -284,6 +284,8 @@ export class PerformanceSession {
   private handingOver: string | null = null;
   /** Set when a hand-over starts this session's song on a set that is already running: the set's Start went out with its first song */
   private joining = false;
+  /** Set while a song that ends hands the set on to the next song: the set goes on, so the outgoing song sends no transport Stop */
+  private endingIntoSet = false;
   /** The stems at 100%, which every render is made from */
   private baseStems: Stems | null = null;
   /** The settings key of the song loaded, under which its speed is stored */
@@ -515,8 +517,13 @@ export class PerformanceSession {
           library.pausePlaylist();
           return;
         }
-        if (library.playlistPlaying && library.queue[library.position] === source.libraryId) void library.advancePlaylist();
+        if (library.playlistPlaying && library.queue[library.position] === source.libraryId) {
+          // The effects run when the batch ends, so the flag is read by the transport cleanup below before it is cleared.
+          this.endingIntoSet = true;
+          void library.advancePlaylist();
+        }
       });
+      this.endingIntoSet = false;
     };
     return stopOutputs;
   }
@@ -1640,7 +1647,7 @@ export class PerformanceSession {
           }
           // A song handed over stays on the set's transport, so leaving this session does not stop it.
           return () => {
-            if (!this.passing) this.panic(context);
+            if (!this.passing) this.panic(this.endingIntoSet ? { ...context, clock: false } : context);
           };
         },
       },
