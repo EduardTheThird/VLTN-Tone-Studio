@@ -27,7 +27,7 @@ describe("track import", () => {
   it("from a folder, passes on only the audio files and skips the rest without a notice", async () => {
     addTracks.mockResolvedValueOnce([]);
     const { container } = render(<TrackImport />);
-    const folder = container.querySelector('input[webkitdirectory]') as HTMLInputElement;
+    const folder = container.querySelector("input[webkitdirectory]") as HTMLInputElement;
     const audio = new File([new Uint8Array(4)], "Bass.flac");
     const text = new File(["notes"], ".DS_Store");
     fireEvent.change(folder, { target: { files: [audio, text] } });

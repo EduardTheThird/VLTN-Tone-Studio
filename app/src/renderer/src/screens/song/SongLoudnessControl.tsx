@@ -44,7 +44,13 @@ export function SongLoudnessControl({
   return (
     <section aria-label="Song loudness" className="flex flex-wrap items-center gap-3 text-sm">
       <label className="flex items-center gap-2">
-        <input type="checkbox" aria-label="Normalise song volume" checked={value.normalise} disabled={measuring} onChange={(e) => void toggle(e.target.checked)} />
+        <input
+          type="checkbox"
+          aria-label="Normalise song volume"
+          checked={value.normalise}
+          disabled={measuring}
+          onChange={(e) => void toggle(e.target.checked)}
+        />
         Normalise song volume to {TARGET_LUFS} LUFS
       </label>
       <span className="opacity-70">

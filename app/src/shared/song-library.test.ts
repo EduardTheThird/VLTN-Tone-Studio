@@ -36,7 +36,9 @@ describe("v2 to v3 migration", () => {
     const after = v3.songs[0].audio;
     expect(after.map((t) => t.name)).toEqual(before.map((t) => t.name));
     expect(after.map((t) => t.file)).toEqual(before.map((t) => t.file));
-    expect(after.map((t) => [t.bytes, t.sha256, t.frames, t.sampleRate, t.channels])).toEqual(before.map((t) => [t.bytes, t.sha256, t.frames, t.sampleRate, t.channels]));
+    expect(after.map((t) => [t.bytes, t.sha256, t.frames, t.sampleRate, t.channels])).toEqual(
+      before.map((t) => [t.bytes, t.sha256, t.frames, t.sampleRate, t.channels]),
+    );
     expect(after.map((t) => t.kind)).toEqual(["source", "stem", "stem", "stem", "stem", "stem", "stem"]);
   });
 
@@ -136,7 +138,11 @@ describe("applying track settings to similar songs", () => {
     file: userFileName(index),
     ...extra,
   });
-  const from = song([flacTrack("source"), imported("Click", 0, { bus: "click", transpose: false, muteGroups: [1] }), imported("Keys L", 1, { gain: 0.6, pan: -0.4 })]);
+  const from = song([
+    flacTrack("source"),
+    imported("Click", 0, { bus: "click", transpose: false, muteGroups: [1] }),
+    imported("Keys L", 1, { gain: 0.6, pan: -0.4 }),
+  ]);
 
   it("lists a song's imported track names, sorted", () => {
     expect(userTrackNames(from)).toEqual(["Click", "Keys L"]);

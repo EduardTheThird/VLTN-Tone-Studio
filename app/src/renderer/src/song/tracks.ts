@@ -65,12 +65,20 @@ export function mixDefaults(tracks: Readonly<Record<string, TrackInfo>>): Mix {
 
 /** The bus each track starts on, where the track saved one. */
 export function busDefaults(tracks: Readonly<Record<string, TrackInfo>>): Partial<Record<string, BusName>> {
-  return Object.fromEntries(Object.entries(tracks).filter(([, info]) => info.bus !== undefined).map(([key, info]) => [key, info.bus]));
+  return Object.fromEntries(
+    Object.entries(tracks)
+      .filter(([, info]) => info.bus !== undefined)
+      .map(([key, info]) => [key, info.bus]),
+  );
 }
 
 /** Whether each track follows the pitch shift, where the track saved a choice. */
 export function pitchDefaults(tracks: Readonly<Record<string, TrackInfo>>): Record<string, boolean> {
-  return Object.fromEntries(Object.entries(tracks).filter(([, info]) => info.transpose !== undefined).map(([key, info]) => [key, info.transpose!]));
+  return Object.fromEntries(
+    Object.entries(tracks)
+      .filter(([, info]) => info.transpose !== undefined)
+      .map(([key, info]) => [key, info.transpose!]),
+  );
 }
 
 /**

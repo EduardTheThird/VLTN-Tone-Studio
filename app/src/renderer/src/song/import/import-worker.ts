@@ -23,7 +23,12 @@ self.onmessage = (event: MessageEvent<AlignRequest>) => {
   const { id, frames, mix, tracks } = event.data;
   try {
     const aligned = tracks.map((track) => ({ key: track.key, channels: alignChannels(track.channels, frames) }));
-    const sum = mix ? mixDown(aligned.map((track) => track.channels), frames) : null;
+    const sum = mix
+      ? mixDown(
+          aligned.map((track) => track.channels),
+          frames,
+        )
+      : null;
     const transfer = [...aligned.flatMap((track) => track.channels.map((channel) => channel.buffer)), ...(sum ?? []).map((channel) => channel.buffer)];
     self.postMessage({ id, tracks: aligned, mix: sum } satisfies AlignReply, transfer);
   } catch (error) {

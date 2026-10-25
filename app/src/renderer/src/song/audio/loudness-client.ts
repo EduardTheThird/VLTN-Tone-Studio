@@ -20,6 +20,9 @@ export function measureLoudnessInWorker(pcm: PcmAudio): Promise<number> {
     };
     const copy: PcmAudio = { sampleRate: pcm.sampleRate, channels: pcm.channels.map((channel) => channel.slice()) };
     const request: LoudnessRequest = { id: 0, pcm: copy };
-    worker.postMessage(request, copy.channels.map((channel) => channel.buffer));
+    worker.postMessage(
+      request,
+      copy.channels.map((channel) => channel.buffer),
+    );
   });
 }

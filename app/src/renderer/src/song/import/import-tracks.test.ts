@@ -25,7 +25,15 @@ function run(files: [string, number][], options: Partial<ImportOptions> = {}) {
     },
     align: async ({ frames, mix, tracks }) => {
       const aligned = tracks.map((track) => ({ key: track.key, channels: alignChannels(track.channels, frames) }));
-      return { tracks: aligned, mix: mix ? mixDown(aligned.map((t) => t.channels), frames) : null };
+      return {
+        tracks: aligned,
+        mix: mix
+          ? mixDown(
+              aligned.map((t) => t.channels),
+              frames,
+            )
+          : null,
+      };
     },
     ...options,
   });
@@ -71,13 +79,18 @@ describe("importing files", () => {
   });
 
   it("reports a file that will not decode and imports the rest", async () => {
-    const outcome = await run([
-      ["Broken.wav", 10],
-      ["Pads.wav", 10],
-    ], { decode: async (file) => {
-      if (file.name === "Broken.wav") throw new Error("Couldn't read Broken.wav. Use a WAV, MP3, FLAC, M4A or OGG file.");
-      return pcm(10);
-    } });
+    const outcome = await run(
+      [
+        ["Broken.wav", 10],
+        ["Pads.wav", 10],
+      ],
+      {
+        decode: async (file) => {
+          if (file.name === "Broken.wav") throw new Error("Couldn't read Broken.wav. Use a WAV, MP3, FLAC, M4A or OGG file.");
+          return pcm(10);
+        },
+      },
+    );
     expect(outcome.tracks).toHaveLength(1);
     expect(outcome.notices).toEqual(["Couldn't read Broken.wav. Use a WAV, MP3, FLAC, M4A or OGG file."]);
   });
