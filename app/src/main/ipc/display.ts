@@ -232,6 +232,19 @@ export function writeDisplayId(path: string, displayId: number | null): void {
   }
 }
 
+const publishListeners = new Set<(update: AudienceUpdate) => void>();
+
+/**
+ * Calls `listener` with every checked audience update, whether or not the audience window is open. Band sync (spec 44) uses this to
+ * send the same model and clock to its followers. Returns the function that stops the listening.
+ */
+export function onAudiencePublish(listener: (update: AudienceUpdate) => void): () => void {
+  publishListeners.add(listener);
+  return () => {
+    publishListeners.delete(listener);
+  };
+}
+
 /** The id of the audience window's page, so the app can refuse it permissions and never treat it as the performance window. */
 let audienceContents: number | null = null;
 
@@ -335,7 +348,9 @@ export function registerDisplayIpc(getWindow: () => BrowserWindow | null): { clo
   });
   handle("audience:publish", (event, update: unknown) => {
     mainOnly(event);
-    controller.publish(parseAudienceUpdate(update));
+    const checked = parseAudienceUpdate(update);
+    controller.publish(checked);
+    for (const listener of publishListeners) listener(checked);
   });
   const changed = () => {
     controller.displaysChanged();

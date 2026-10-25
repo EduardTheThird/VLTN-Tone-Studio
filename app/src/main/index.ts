@@ -19,6 +19,7 @@ import { registerLogIpc } from "./ipc/log";
 import type { AppEvent } from "@shared/ipc";
 import { installBluetoothChooser } from './bluetooth';
 import { isAudienceContents, registerDisplayIpc } from "./ipc/display";
+import { registerBandSyncIpc } from "./ipc/band-sync";
 
 // One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -82,6 +83,7 @@ const MIN = { width: 1180, height: 760 };
 let win: BrowserWindow | null = null;
 const getWindow = () => win;
 let displayIpc: ReturnType<typeof registerDisplayIpc> | null = null;
+let bandSyncIpc: ReturnType<typeof registerBandSyncIpc> | null = null;
 const boundsPath = () => join(app.getPath("userData"), "window.json");
 const OPENABLE = /\.(prst|nam|wav)$/i;
 queueOpenedFiles(process.argv.slice(1).filter((a) => OPENABLE.test(a)));
@@ -148,7 +150,11 @@ async function createWindow() {
   });
   installBluetoothChooser(win);
   // The audience window (spec 43) belongs to this window: when it closes, the audience window closes too.
-  win.once("closed", () => displayIpc?.close());
+  // Band sync (spec 44) belongs to this window too: followers lose the sync when the performer closes the app.
+  win.once("closed", () => {
+    displayIpc?.close();
+    bandSyncIpc?.stop();
+  });
   win.once("ready-to-show", () => {
     if (maximized) win?.maximize();
     win?.show();
@@ -246,7 +252,12 @@ app.whenReady().then(async () => {
   registerUpdateIpc(getWindow);
   registerGp200CatalogIpc(getWindow);
   displayIpc = registerDisplayIpc(getWindow);
-  app.once("will-quit", () => displayIpc?.dispose());
+  // The follower page is the renderer build's second entry (follower.html), served only from RENDERER_DIR.
+  bandSyncIpc = registerBandSyncIpc(getWindow, RENDERER_DIR);
+  app.once("will-quit", () => {
+    displayIpc?.dispose();
+    bandSyncIpc?.dispose();
+  });
   buildMenu(getWindow);
   await createWindow();
 
