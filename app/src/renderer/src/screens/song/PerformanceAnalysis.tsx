@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { lrcTime, transpose, type Cue } from "@/song/performance/chart";
@@ -8,6 +8,9 @@ import { CAPO_MAX } from "@/song/performance/speed";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { STEM_NAMES, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
+
+// The chart editor is loaded when this panel first renders it, so the CodeMirror code is kept out of the main bundle.
+const ChartCodeEditor = lazy(() => import("./ChartCodeEditor"));
 
 const field = "rounded border border-seam bg-transparent p-2";
 
@@ -171,13 +174,18 @@ export function PerformanceAnalysis({
         <LyricsTrack audio={stems?.vocals} storageKey={storageKey} onTextChange={onLyrics} follow={false} />
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <textarea
-              aria-label="Lyrics and MIDI chart"
-              className={field + " min-h-64 w-full font-mono text-sm"}
-              value={chart}
-              onChange={(e) => onSaveChart(e.target.value)}
-              placeholder={"[00:00.00] [C]Verse\n[00:10.00] [Am]Your lyrics {midi:pc 1 0}\n[00:20.00] [F]Chorus {midi:cc 1 64 127}"}
-            />
+            <Suspense
+              fallback={
+                <textarea aria-label="Lyrics and MIDI chart" className={field + " min-h-64 w-full font-mono text-sm"} value={chart} readOnly />
+              }
+            >
+              <ChartCodeEditor
+                label="Lyrics and MIDI chart"
+                value={chart}
+                onChange={onSaveChart}
+                hint={"[00:00.00] [C]Verse\n[00:10.00] [Am]Your lyrics {midi:pc 1 0}\n[00:20.00] [F]Chorus {midi:cc 1 64 127}"}
+              />
+            </Suspense>
             <p className="text-sm text-silkscreen-3">
               Saved locally for this audio filename and length. LRC timestamps enable scrolling and MIDI. Chords use [Am] or [C/G]. MIDI: pc, cc, note, off,
               sysex. Note cues need a matching off cue. Transpose changes the chart only.
