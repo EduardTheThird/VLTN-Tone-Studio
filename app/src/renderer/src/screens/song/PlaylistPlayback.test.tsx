@@ -319,6 +319,45 @@ it("resumes a set loaded paused when Play is pressed in Performance, and the set
   expect(mock.send.mock.calls.some((c) => c[0][0] === 252)).toBe(false);
 });
 
+it("keeps a USB output armed and selected across an unprepared join, with clock on and no MIDI Stop", async () => {
+  mock.fetch.mockImplementationOnce(async () => file());
+  mock.fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+  const gp180Send = vi.fn();
+  const access = Object.assign(new EventTarget(), {
+    outputs: new Map([["gp180", { id: "gp180", name: "GP-180", state: "connected", send: gp180Send, clear: vi.fn() }]]),
+    inputs: new Map(),
+  });
+  const realNavigator = navigator;
+  vi.stubGlobal("navigator", { requestMIDIAccess: async () => access });
+  try {
+    await useSongLibrary.getState().load(first.id, [first.id, second.id]);
+    render(<PerformancePanel />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Enable USB / system MIDI"));
+    });
+    fireEvent.change(screen.getByLabelText("MIDI output"), { target: { value: "gp180" } });
+    fireEvent.click(screen.getByLabelText("Send cues"));
+    // Song A's own options turn the clock on, so the set runs with clock on.
+    expect((screen.getByLabelText("MIDI Clock (24 PPQN)") as HTMLInputElement).checked).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Play playlist"));
+    });
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    gp180Send.mockClear();
+    await act(async () => {
+      mock.players.at(-1)!.end();
+    });
+    await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    expect(gp180Send.mock.calls.some((c) => c[0][0] === 252)).toBe(false);
+    expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("MIDI output") as HTMLSelectElement).value).toBe("gp180");
+    expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+  } finally {
+    vi.stubGlobal("navigator", realNavigator);
+  }
+});
+
 it("hands the chained song over to the session for the next song, which adopts it instead of starting it again", async () => {
   await useSongLibrary.getState().playPlaylist([first.id, second.id]);
   render(<PerformancePanel />);
