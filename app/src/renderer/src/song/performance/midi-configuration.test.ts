@@ -45,3 +45,11 @@ it("keeps song triggers off until they are switched on, and reads a bad value as
   localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ songTriggers: { listen: "yes", whilePlaying: "load" } }));
   expect(readMidiConfiguration().songTriggers).toEqual({ listen: false, scope: "library", autoplay: false, whilePlaying: "ignore" });
 });
+
+it("keeps timecode off by default, and falls back to 25 fps for a rate that is not offered", () => {
+  expect(readMidiConfiguration().timecode).toEqual({ enabled: false, fps: 25 });
+  localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ timecode: { enabled: true, fps: 29.97 } }));
+  expect(readMidiConfiguration().timecode).toEqual({ enabled: true, fps: 25 });
+  localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ timecode: { enabled: "yes", fps: 30 } }));
+  expect(readMidiConfiguration().timecode).toEqual({ enabled: false, fps: 30 });
+});

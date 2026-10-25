@@ -34,7 +34,10 @@ export const useMidiDiagnostics = create<
       queued: s.queued + 1,
       late: s.late + (event.lateMs > 5 ? 1 : 0),
       maxLateMs: Math.max(s.maxLateMs, event.lateMs),
-      recent: event.bytes[0] === 248 ? s.recent : [{ ...event, bytes: event.bytes.slice(0, 32), byteCount: event.bytes.length }, ...s.recent].slice(0, 30),
+      recent:
+        event.bytes[0] === 248 || event.bytes[0] === 241
+          ? s.recent
+          : [{ ...event, bytes: event.bytes.slice(0, 32), byteCount: event.bytes.length }, ...s.recent].slice(0, 30),
     }));
   },
   drop(events) {

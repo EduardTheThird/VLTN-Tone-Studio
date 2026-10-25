@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { macroProblems, type MidiMacro } from "./midi-macros";
 import { defaultBindings, sanitizeBindings, type Binding } from "./bindings";
 import { SONG_TRIGGER_DEFAULTS, sanitizeTriggerSettings, type SongTriggerSettings } from "./song-triggers";
+import { DEFAULT_TIMECODE_RATE, isTimecodeRate, type TimecodeRate } from "./timecode";
 
 export const MIDI_CONFIG_KEY = "vltn.performance.midi.v1";
 export interface PortChoice {
@@ -25,6 +26,8 @@ export interface MidiConfiguration {
   bindings: Binding[];
   /** Whether the selected input may load songs, and how (see song-triggers.ts). Off until switched on. */
   songTriggers: SongTriggerSettings;
+  /** Whether MIDI timecode is sent, and at which rate. Off by default; the song's offset is in its options (see timecode.ts). */
+  timecode: { enabled: boolean; fps: TimecodeRate };
 }
 const defaults: MidiConfiguration = {
   preset: "cues",
@@ -38,6 +41,7 @@ const defaults: MidiConfiguration = {
   macros: [],
   bindings: defaultBindings(),
   songTriggers: SONG_TRIGGER_DEFAULTS,
+  timecode: { enabled: false, fps: DEFAULT_TIMECODE_RATE },
 };
 /** The stored shape of a macro. Whether its commands are valid is checked by `macroProblems`, so a bad one can still be shown and removed. */
 function isMacroShape(value: unknown): value is MidiMacro {
@@ -73,6 +77,10 @@ export function readMidiConfiguration(): MidiConfiguration {
       macros: Array.isArray(data.macros) ? data.macros.filter(isMacroShape) : [],
       bindings: data.bindings === undefined ? defaultBindings() : sanitizeBindings(data.bindings),
       songTriggers: sanitizeTriggerSettings(data.songTriggers),
+      timecode: {
+        enabled: data.timecode?.enabled === true,
+        fps: isTimecodeRate(data.timecode?.fps) ? data.timecode.fps : DEFAULT_TIMECODE_RATE,
+      },
     };
   } catch {
     return { ...defaults };

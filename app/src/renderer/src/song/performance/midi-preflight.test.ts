@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseChart } from "./chart";
 import { midiPreflight } from "./midi-preflight";
 const options = { duration: 10, clock: false, pedals: [], outputName: "Test MIDI" };
@@ -92,4 +92,30 @@ it("keeps triggers off the timeline, so a trigger at the start is not counted as
   const report = midiPreflight(parseChart("{midi@end: pc 1 9}\n[00:11] {midi:pc 1 1}"), options);
   expect(report.issues.map((i) => i.code)).toEqual(["past-end"]);
   expect(report.commands).toBe(1);
+});
+
+describe("MIDI timecode preflight", () => {
+  const cues = parseChart("[00:00] {midi:pc 1 1}");
+  const base = { duration: 10, clock: false, pedals: [] };
+
+  it("is silent while timecode is off", () => {
+    expect(midiPreflight(cues, base).issues.filter((i) => i.code.startsWith("timecode"))).toEqual([]);
+  });
+
+  it("warns over Bluetooth, and not over USB", () => {
+    const ble = midiPreflight(cues, { ...base, timecode: { fps: 25, offset: "", bluetooth: true } });
+    expect(ble.issues.map((i) => i.code)).toContain("timecode-bluetooth");
+    const usb = midiPreflight(cues, { ...base, timecode: { fps: 25, offset: "", bluetooth: false } });
+    expect(usb.issues.map((i) => i.code)).not.toContain("timecode-bluetooth");
+  });
+
+  it("refuses an offset whose frame field is not below the rate", () => {
+    const report = midiPreflight(cues, { ...base, timecode: { fps: 24, offset: "00:00:00:24", bluetooth: false } });
+    expect(report.issues).toContainEqual({ code: "timecode-offset", text: "Timecode offset: Frames must be 0 to 23 at 24 fps." });
+  });
+
+  it("flags app clock sent alongside timecode", () => {
+    const report = midiPreflight(cues, { ...base, clock: true, timecode: { fps: 25, offset: "", bluetooth: false } });
+    expect(report.issues.map((i) => i.code)).toContain("timecode-clock");
+  });
 });

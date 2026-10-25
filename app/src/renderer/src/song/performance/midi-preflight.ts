@@ -1,6 +1,7 @@
 import { timedCues, type Cue } from "./chart";
 import { isChased } from "./midi-chase";
 import { sectionIssues, type Section } from "./sections";
+import { parseOffset, type TimecodeRate } from "./timecode";
 export interface PreflightOptions {
   duration: number;
   tempoChannel?: number;
@@ -14,6 +15,8 @@ export interface PreflightOptions {
   bpm?: number;
   beats?: number;
   firstBeat?: number;
+  /** Set only while MIDI timecode is on: the rate, the song's offset text, and whether the output is Bluetooth */
+  timecode?: { fps: TimecodeRate; offset: string; bluetooth: boolean };
 }
 export interface PreflightIssue {
   code: string;
@@ -48,6 +51,17 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     if (names.length > 1) add("channel-collision", `Configured channel ${channel} is shared by ${names.join(", ")}. Verify physical receive settings.`);
   if (options.tempoChannel && referenced.some((p) => p.channel === options.tempoChannel && !/GP-?(150|180)/i.test(p.name)))
     add("tempo-channel", "Automatic GP-150 / GP-180 tempo shares a configured downstream pedal channel. Its CC73/74 may affect that pedal.");
+  if (options.timecode) {
+    const { fps, offset, bluetooth } = options.timecode;
+    if (bluetooth)
+      add(
+        "timecode-bluetooth",
+        "MIDI timecode over Bluetooth is not recommended: quarter frames come every few milliseconds and BLE cannot keep them steady. Use USB, or turn timecode off.",
+      );
+    const parsed = parseOffset(offset || "00:00:00:00", fps);
+    if ("error" in parsed) add("timecode-offset", `Timecode offset: ${parsed.error}`);
+    if (options.clock) add("timecode-clock", "MIDI timecode and app MIDI clock are exclusive. Timecode is sent and clock is ignored; turn clock off.");
+  }
   if (options.clock && /GP.?(150|180)/i.test(options.outputName || ""))
     add("clock", "Continuous app clock failed the GP-180 hardware test. Use one-time tempo with the pedal’s internal clock.");
   let windowStart = 0,

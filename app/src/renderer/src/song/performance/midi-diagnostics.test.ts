@@ -28,3 +28,10 @@ it("counts dropped commands and resyncs, keeps the dropped bytes for a later cha
   state.reset();
   expect(useMidiDiagnostics.getState()).toMatchObject({ dropped: 0, resyncs: 0, droppedMessages: [] });
 });
+
+it("keeps quarter frames out of the recent list, which is for notes and commands", () => {
+  useMidiDiagnostics.getState().reset();
+  useMidiDiagnostics.getState().record({ label: "MIDI timecode", intended: 0, queued: 0, lateMs: 0, bytes: [0xf1, 0x72] });
+  expect(useMidiDiagnostics.getState().queued).toBe(1);
+  expect(useMidiDiagnostics.getState().recent).toEqual([]);
+});

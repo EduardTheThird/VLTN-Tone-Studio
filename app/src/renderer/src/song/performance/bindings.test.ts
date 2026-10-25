@@ -421,3 +421,32 @@ describe("receive", () => {
     expect(finder).not.toHaveBeenCalled();
   });
 });
+
+describe("timecode and clock coming back through THRU", () => {
+  it("never fires a binding or selects a song: timecode is dropped before the song matcher is asked", () => {
+    const router = new RemoteRouter(() => 0);
+    const askedSong = vi.fn(() => ({ key: "any", value: 1 }));
+    const timecode = [
+      [0xf1, 0x72], // quarter frame
+      [0xf0, 0x7f, 0x7f, 0x01, 0x01, 0x21, 0x02, 0x03, 0x04, 0xf7], // full frame
+    ];
+    for (const bytes of timecode) {
+      expect(router.receive(bytes, defaultBindings(), askedSong)).toEqual({ routes: [], song: null });
+    }
+    expect(askedSong).not.toHaveBeenCalled();
+  });
+
+  it("does not fire on the clock, and the song matcher answers only for Song Select and program change", () => {
+    const router = new RemoteRouter(() => 0);
+    expect(router.receive([0xf8], defaultBindings(), () => null)).toEqual({ routes: [], song: null });
+    expect(router.midi([0xf8], defaultBindings())).toEqual([]);
+  });
+
+  it("ignores our own timecode when it is recorded and comes back", () => {
+    let time = 0;
+    const router = new RemoteRouter(() => time);
+    router.echo.record([0xf1, 0x72], 0);
+    time = 10;
+    expect(router.readInput([0xf1, 0x72])).toBeNull();
+  });
+});

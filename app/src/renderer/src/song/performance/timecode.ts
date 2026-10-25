@@ -91,3 +91,23 @@ export function quarterFrame(index: number, frames: number, fps: TimecodeRate): 
 export function cycleFrames(index: number, anchorFrames: number): number {
   return anchorFrames + 2 * Math.floor(index / 8);
 }
+
+/** The timecode choice the session plays with: whether it is on (saved with the MIDI setup), its rate, and the song's offset text. */
+export interface TimecodeSetting {
+  enabled: boolean;
+  fps: TimecodeRate;
+  /** `HH:MM:SS:FF` from the song's options. Empty means 00:00:00:00. */
+  offset: string;
+}
+export const NO_TIMECODE: TimecodeSetting = { enabled: false, fps: DEFAULT_TIMECODE_RATE, offset: "" };
+
+/**
+ * The frame count the scheduler starts from, or null when timecode is off. Throws when the offset is not valid at the rate, so a
+ * Play with timecode on fails with the reason rather than sending a wrong position.
+ */
+export function timecodeOffsetFrames(setting: TimecodeSetting): number | null {
+  if (!setting.enabled) return null;
+  const parsed = parseOffset(setting.offset || "00:00:00:00", setting.fps);
+  if ("error" in parsed) throw new Error(`MIDI timecode offset: ${parsed.error}`);
+  return parsed.frames;
+}

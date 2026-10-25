@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleFrames, formatOffset, framesAt, fullFrame, parseOffset, quarterFrame, splitFrames } from "./timecode";
+import { cycleFrames, formatOffset, framesAt, fullFrame, parseOffset, quarterFrame, splitFrames, timecodeOffsetFrames } from "./timecode";
 
 /* 01:02:03:04 at 25 fps is (1 * 3600 + 2 * 60 + 3) * 25 + 4 = 93079 frames. Its pieces, worked by hand:
  *   piece 0 frame low 4 -> 04; piece 1 frame high 0 -> 10; piece 2 seconds low 3 -> 23; piece 3 seconds high 0 -> 30;
@@ -85,5 +85,20 @@ describe("quarter frames", () => {
     // Frame 20 at 25 fps: low nibble 4, high nibble 1.
     expect(quarterFrame(0, 20, 25)).toEqual([0xf1, 0x04]);
     expect(quarterFrame(1, 20, 25)).toEqual([0xf1, 0x11]);
+  });
+});
+
+describe("the session's timecode choice", () => {
+  it("is null while timecode is off, whatever the offset text", () => {
+    expect(timecodeOffsetFrames({ enabled: false, fps: 25, offset: "99:99:99:99" })).toBeNull();
+  });
+
+  it("reads the offset at the rate, and an empty offset as zero", () => {
+    expect(timecodeOffsetFrames({ enabled: true, fps: 25, offset: "01:02:03:04" })).toBe(ONE_TWO_THREE_FOUR);
+    expect(timecodeOffsetFrames({ enabled: true, fps: 30, offset: "" })).toBe(0);
+  });
+
+  it("throws the reason when the offset is not valid at the rate", () => {
+    expect(() => timecodeOffsetFrames({ enabled: true, fps: 24, offset: "00:00:00:24" })).toThrow("MIDI timecode offset: Frames must be 0 to 23 at 24 fps.");
   });
 });
