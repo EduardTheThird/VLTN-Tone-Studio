@@ -20,13 +20,15 @@ import type { AppEvent } from "@shared/ipc";
 import { installBluetoothChooser } from './bluetooth';
 import { isAudienceContents, registerDisplayIpc } from "./ipc/display";
 import { registerBandSyncIpc } from "./ipc/band-sync";
+import { APP_SCHEME_PRIVILEGES } from "./app-scheme";
 
 // One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // The packaged renderer is served from app://bundle/ instead of file://, so fetch() and
 // AudioWorklet.addModule() of bundled assets (NAM engine wasm, worklet, audio clips) work and 'self' is a real origin.
-protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }]);
+// The renderer fetches app://library cross-origin (from http://localhost in dev and app://bundle when packaged), which needs corsEnabled.
+protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: APP_SCHEME_PRIVILEGES }]);
 const RENDERER_DIR = resolve(import.meta.dirname, "../renderer");
 const RENDERER_URL = "app://bundle/index.html";
 // CSP: tone service, pinned OpenMIDI data and Hugging Face model downloads; transcription audio stays local.
