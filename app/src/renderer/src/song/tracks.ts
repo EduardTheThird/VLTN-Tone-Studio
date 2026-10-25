@@ -242,3 +242,16 @@ export function silenceGroupmates(mix: Mix, groups: Readonly<Record<string, read
   }
   return next;
 }
+
+/**
+ * Mutes the tracks of mute group `group`, or unmutes them when every one is muted already. For the remote actions: a pedal toggles a
+ * group without the mixer. Returns a hint, and no mix, when no track is in the group.
+ */
+export function toggleMuteGroup(mix: Mix, tracks: Readonly<Record<string, TrackInfo>>, group: number): { mix: Mix } | { hint: string } {
+  const members = Object.keys(tracks).filter((key) => tracks[key].muteGroups?.includes(group));
+  if (!members.length) return { hint: `No track is in mute group ${group}.` };
+  const muted = !members.every((key) => mix[key]?.mute);
+  const next: Mix = { ...mix };
+  for (const key of members) next[key] = { ...defaultStemMix(), ...mix[key], mute: muted };
+  return { mix: next };
+}

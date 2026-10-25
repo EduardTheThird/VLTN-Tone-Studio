@@ -8,6 +8,7 @@ import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceEditor } from "./PerformanceEditor";
 import { performanceLines } from "@/song/performance/reader";
 import { useActiveIndex } from "@/song/performance/playback-clock";
+import { READER_TEXT, useReaderText } from "@/song/performance/reader-text";
 import { ClockText } from "./PlaybackDisplay";
 
 function formatted(text: string) {
@@ -81,7 +82,7 @@ export function PerformanceReader({
   }, [chart, lyrics, chords, showCommands, macros]);
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
-    [size, setSize] = useState(28);
+    size = useReaderText((s) => s.size);
   const viewport = useRef<HTMLDivElement>(null),
     current = useRef<HTMLDivElement>(null),
     expandButton = useRef<HTMLButtonElement>(null);
@@ -140,10 +141,10 @@ export function PerformanceReader({
           <input type="checkbox" checked={showCommands} onChange={(e) => useMidiConfiguration.getState().update({ showCommands: e.target.checked })} /> Show
           MIDI commands
         </label>
-        <Button variant="outline" aria-label="Smaller performance text" disabled={size <= 20} onClick={() => setSize((n) => n - 4)}>
+        <Button variant="outline" aria-label="Smaller performance text" disabled={size <= READER_TEXT.min} onClick={() => useReaderText.getState().step(-1)}>
           A−
         </Button>
-        <Button variant="outline" aria-label="Larger performance text" disabled={size >= 48} onClick={() => setSize((n) => n + 4)}>
+        <Button variant="outline" aria-label="Larger performance text" disabled={size >= READER_TEXT.max} onClick={() => useReaderText.getState().step(1)}>
           A+
         </Button>
         {stage ? (
@@ -186,6 +187,7 @@ export function PerformanceReader({
       ) : (
         <div
           ref={viewport}
+          data-reader-scroll
           tabIndex={0}
           aria-label="Combined lyrics and chords"
           className={

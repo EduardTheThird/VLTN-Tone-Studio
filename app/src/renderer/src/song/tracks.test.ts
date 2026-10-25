@@ -16,6 +16,7 @@ import {
   orderedKeys,
   parseTrackName,
   silenceGroupmates,
+  toggleMuteGroup,
 } from "./tracks";
 
 describe("track order", () => {
@@ -196,5 +197,38 @@ describe("track defaults", () => {
     expect(JSON.parse(mergeTrackDefaults("", tracks))).toEqual({ followsPitch: { track0: false, track1: true } });
     expect(JSON.parse(mergeTrackDefaults("{broken", tracks))).toEqual({ followsPitch: { track0: false, track1: true } });
     expect(mergeTrackDefaults('{"shift":1}', { drums: { kind: "stem", name: "drums" } })).toBe('{"shift":1}');
+  });
+});
+
+describe("toggleMuteGroup", () => {
+  const tracks = {
+    kick: { kind: "drums", name: "Kick", muteGroups: [1] },
+    keys: { kind: "keys", name: "Keys", muteGroups: [1, 2] },
+    bass: { kind: "bass", name: "Bass" },
+  } as unknown as Parameters<typeof toggleMuteGroup>[1];
+
+  it("mutes the members of a group that is audible", () => {
+    const result = toggleMuteGroup(defaultMix(["kick", "keys", "bass"]), tracks, 1);
+    expect("mix" in result && result.mix).toEqual({
+      kick: { volume: 1, mute: true, solo: false },
+      keys: { volume: 1, mute: true, solo: false },
+      bass: { volume: 1, mute: false, solo: false },
+    });
+  });
+
+  it("unmutes the members when they are all muted already", () => {
+    const muted = { ...defaultMix(["kick", "keys", "bass"]), kick: { volume: 1, mute: true, solo: false }, keys: { volume: 1, mute: true, solo: false } };
+    const result = toggleMuteGroup(muted, tracks, 1);
+    expect("mix" in result && result.mix.kick.mute).toBe(false);
+    expect("mix" in result && result.mix.keys.mute).toBe(false);
+  });
+
+  it("leaves the other groups alone", () => {
+    const result = toggleMuteGroup(defaultMix(["kick", "keys", "bass"]), tracks, 2);
+    expect("mix" in result && result.mix).toMatchObject({ keys: { mute: true }, kick: { mute: false }, bass: { mute: false } });
+  });
+
+  it("says so, and changes nothing, when no track is in the group", () => {
+    expect(toggleMuteGroup(defaultMix(["kick"]), tracks, 6)).toEqual({ hint: "No track is in mute group 6." });
   });
 });
