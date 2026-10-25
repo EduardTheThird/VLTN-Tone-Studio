@@ -4,7 +4,8 @@ import { useSong } from "@/song/store";
 import { defaultMix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { parseChart } from "@/song/performance/chart";
-import { chordDisplayTranspose, clampCapo } from "@/song/performance/speed";
+import { chordDisplayTranspose, clampCapo, effectiveBpm } from "@/song/performance/speed";
+import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
@@ -34,6 +35,14 @@ function readNumber(raw: string, fallback: number, min: number, max: number): nu
 }
 
 let sessionId = 0;
+/** What the stage view says when the song is not at its own speed or pitch. Null when it is. */
+function speedNote(speed: { rate: number; semitones: number; cents: number }): string | null {
+  if (speed.rate === 1 && speed.semitones === 0 && speed.cents === 0) return null;
+  const signed = (value: number) => (value > 0 ? "+" : "") + value;
+  const parts = [`Speed ${Math.round(speed.rate * 100)}%`];
+  if (speed.semitones || speed.cents) parts.push(`Pitch ${signed(speed.semitones)} st${speed.cents ? ` ${signed(speed.cents)} ct` : ""}`);
+  return parts.join(" · ");
+}
 /** The metronome mode a song starts with when it has none of its own. Earlier builds stored the on/off toggle as "true" or "false". */
 function readGlobalMetronome(): MetronomeMode {
   try {
@@ -95,8 +104,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     [beats, setBeats] = useState(options.beats),
     [shift, setShift] = useState(options.shift),
     [capo, setCapo] = useState(() => clampCapo(options.capo));
-  // The chord names and shapes on screen. The capo lowers the shapes the player plays. The pitch shift is 0 until it is rendered.
-  const shapeShift = shift + chordDisplayTranspose(0, capo, false);
+
   const [volume, setVolume] = useState(options.volume);
   const [firstBeat, setFirstBeat] = useState(() =>
     typeof options.firstBeat === "number" && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0,
@@ -157,6 +165,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   );
   const player = useSession(session, (s) => s.player);
   const clock = useSession(session, (s) => s.clock);
+  const speed = useSession(session, (s) => s.speed);
+  // The chord names and shapes on screen: the chart transpose, plus the pitch when the chords follow it, less the capo.
+  const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   const { chords, analysing } = useChordAnalysis(session, stems, chordSource);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
@@ -305,6 +316,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onTap={tap}
         />
         <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
+        <SpeedControls session={session} bpm={bpm} />
         <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
@@ -335,7 +347,8 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         chords={chords}
         shift={shapeShift}
         onSaveChart={saveChart}
-        beat={{ bpm, beats, firstBeat }}
+        beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat }}
+        speedNote={speedNote(speed)}
       />
       <div style={{ display: stage ? "none" : "contents" }}>
         <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} />

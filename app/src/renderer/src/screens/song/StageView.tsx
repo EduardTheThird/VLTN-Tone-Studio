@@ -22,6 +22,7 @@ export function StageView({
   shift,
   onSaveChart,
   beat,
+  speedNote,
 }: {
   session: PerformanceSession;
   stage: boolean;
@@ -33,6 +34,8 @@ export function StageView({
   onSaveChart: (chart: string) => void;
   /** The song's beat grid, for the beat light and the edge flash */
   beat: BeatGrid;
+  /** Shown beside the beat light when the song is not at its own speed or pitch */
+  speedNote: string | null;
 }) {
   const library = useSongLibrary();
   const source = useSong((s) => s.source);
@@ -96,6 +99,7 @@ export function StageView({
               Rewind
             </Button>
             <BeatIndicator large {...beat} />
+            {speedNote && <span className="rounded-md border border-seam px-2 py-1 text-sm tabular-nums">{speedNote}</span>}
             {stage && (
               <Button variant="outline" aria-pressed={edgeFlash} onClick={() => setEdgeFlash(!edgeFlash)}>
                 {edgeFlash ? "Edge flash on" : "Edge flash off"}
