@@ -24,6 +24,8 @@ export interface SchedulerConfig {
   tempoAt?: number;
   /** Seconds of cues to emit ahead of the audio position. Defaults to the Bluetooth value. */
   lookahead?: number;
+  /** The `{midi@play}` trigger messages. They are sent once, with the start tempo, and never again on a jump or loop. */
+  playTriggers?: number[][];
 }
 /** A planned jump: from clock time `at` the song is at `position`. */
 export interface SchedulerJump {
@@ -84,6 +86,7 @@ export class MidiSchedule {
   private lastAdvance: number;
   private stopped = false;
   private tempo: number[][] | null;
+  private playTriggers: number[][];
   private cues: Cue[];
   /** Starting after the first cue means the pedals have to be brought to the state they would be in. */
   private chasePending = true;
@@ -100,7 +103,10 @@ export class MidiSchedule {
     // A resync moves the origin, so keep the caller's object untouched.
     this.config = { ...config };
     this.rate = clampRate(config.rate ?? 1);
-    this.cues = config.cues.filter((c) => c.messages.length && c.time <= config.duration).sort((a, b) => a.time - b.time);
+    this.cues = config.cues
+      .filter((c) => c.messages.length && !c.trigger && c.time <= config.duration)
+      .sort((a, b) => a.time - b.time);
+    this.playTriggers = config.playTriggers ?? [];
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
     this.pulseAnchor = { time: config.origin, index: 0 };
@@ -228,6 +234,12 @@ export class MidiSchedule {
         });
       this.tempo = null;
     }
+    if (this.playTriggers.length) {
+      // Sent once per start, after the tempo, so a jump or a loop that passes the start does not send them again.
+      const due = this.config.tempoAt ?? this.clockAt(Math.max(0, this.config.position));
+      for (const bytes of this.playTriggers) candidates.push({ bytes, due, label: "Song play trigger", time: Math.max(0, this.config.position) });
+      this.playTriggers = [];
+    }
     if (this.config.clock) {
       // The clock runs on its own clock time, not on the song's, so a jump does not change its phase.
       const horizon = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration));
@@ -244,7 +256,7 @@ export class MidiSchedule {
       }
     }
     // Dropped patch or controller changes leave the pedals in the wrong state, so they are replayed as a chase too.
-    const lostState = dropped.some((m) => m.bytes[0] >= 176 && m.bytes[0] < 208) || dropped.some((m) => m.bytes[0] === 240);
+    const lostState = dropped.some((m) => (m.bytes[0] >= 176 && m.bytes[0] < 208) || m.bytes[0] === 240 || m.bytes[0] === 243);
     if (this.chasePending || lostState) {
       const chasePosition = this.chasePending ? this.config.position : position;
       this.chasePending = false;

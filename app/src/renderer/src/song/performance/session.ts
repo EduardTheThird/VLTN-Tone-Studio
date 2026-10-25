@@ -9,7 +9,7 @@ import { useSongLibrary, type PreparedSong } from "@/song/library";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
 import type { SongSource, Stems } from "@/song/types";
-import type { Cue } from "@/song/performance/chart";
+import type { Cue, MidiTrigger } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
@@ -235,6 +235,10 @@ export class PerformanceSession {
   private pendingRender: RenderedBuffers | null = null;
   /** A render swap that is on its way: the song time it takes effect at, and the audio time, which is also the MIDI jump */
   private renderSwap: { at: number; ctxAt: number; rate: number } | null = null;
+  /** The `{midi@play}` messages of the start that the next scheduler sends. Cleared by any scheduler run, so a start sends them once. */
+  private startPlay: number[][] | null = null;
+  /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
+  private loadedPlayer: StemPlayer | null = null;
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
@@ -353,6 +357,11 @@ export class PerformanceSession {
         void player.seek(player.start).then(() => this.play());
         return;
       }
+      // The song has reached its end, so its end and stop triggers go out before the playlist moves on.
+      if (this.state.playing) {
+        this.sendTriggers("end");
+        this.sendTriggers("stop");
+      }
       this.batch(() => {
         this.set({ playing: false });
         setClockPosition(player.duration);
@@ -391,6 +400,7 @@ export class PerformanceSession {
       this.startTempo = null;
     }
     this.startPosition = armed ? chained.player.start : null;
+    this.startPlay = this.triggerBytes("play");
     this.countInMs = chained.countInMs;
   }
 
@@ -419,6 +429,26 @@ export class PerformanceSession {
   update(inputs: Partial<SessionInputs>) {
     const changed = (Object.keys(inputs) as (keyof SessionInputs)[]).some((key) => !Object.is(this.state[key], inputs[key]));
     if (changed) this.set(inputs);
+  }
+
+  // ---- triggers ------------------------------------------------------------------------------------------------
+
+  /** The messages of the song's triggers of one kind, in chart order. */
+  private triggerBytes(kind: MidiTrigger): number[][] {
+    return this.state.cues.filter((cue) => cue.trigger === kind).flatMap((cue) => cue.messages);
+  }
+
+  /**
+   * Sends the song's `{midi@…}` messages of one kind, once each. Nothing is sent unless the session is armed, and a failed send is reported
+   * rather than thrown, because a trigger must never stop the transport.
+   */
+  private sendTriggers(kind: MidiTrigger, cues: Cue[] = this.state.cues): void {
+    if (!this.armed) return;
+    try {
+      for (const cue of cues) if (cue.trigger === kind) for (const bytes of cue.messages) this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
+    } catch (e) {
+      this.fail(e);
+    }
   }
 
   // ---- state helpers -------------------------------------------------------------------------------------------
@@ -591,6 +621,8 @@ export class PerformanceSession {
     this.batch(() => {
       const { player } = this.state;
       const wasRunning = player?.isPlaying || this.playPending;
+      // A stop trigger belongs to a start whose play trigger was sent, so a pause during a count-in sends none.
+      const wasPlaying = this.state.playing;
       this.cancelPendingStart();
       this.dropSectionPlan();
       this.dropChained();
@@ -604,6 +636,7 @@ export class PerformanceSession {
       // A pedal/THRU path can echo our Stop back into the selected input.
       // Repeated Stop while already stopped must not transmit another Stop.
       if (wasRunning) this.panic();
+      if (wasPlaying) this.sendTriggers("stop");
       if (this.state.playlistPlaying) useSongLibrary.getState().pausePlaylist();
     });
   };
@@ -641,6 +674,7 @@ export class PerformanceSession {
         return;
       }
       this.startTempo = tempoMessages;
+      this.startPlay = this.triggerBytes("play");
       // Cues start from where the audio really starts: a pre-roll puts that before the requested position.
       this.startPosition = armed ? preRollStart(requestedPosition, timing.preRollBeats, bpm) : null;
       this.set({ playing: true });
@@ -695,9 +729,11 @@ export class PerformanceSession {
       this.cancelPendingStart();
       this.dropSectionPlan();
       this.dropChained();
+      const wasPlaying = this.state.playing;
       this.state.player?.pause();
       this.set({ playing: false });
       this.panic();
+      if (wasPlaying) this.sendTriggers("stop");
       void useSongLibrary.getState().skipPlaylist(offset);
     });
   };
@@ -791,6 +827,9 @@ export class PerformanceSession {
     }
     outgoing.detachNext();
     this.handingOver = chained.id;
+    // The outgoing song ends at the join: its end and stop go out before the next song's load and play.
+    this.sendTriggers("end");
+    this.sendTriggers("stop");
     library.advanceToPrepared(chained.id);
   };
 
@@ -1120,6 +1159,7 @@ export class PerformanceSession {
             s.player.pause();
             this.set({ playing: false });
             this.panic();
+            this.sendTriggers("stop");
           }
         },
       },
@@ -1185,6 +1225,19 @@ export class PerformanceSession {
           if (!s.playing || !s.player) return;
           const timer = setInterval(this.tickSections, 50);
           return () => clearInterval(timer);
+        },
+      },
+      // A song's load triggers go out when it is loaded while armed, and again each time the session arms for it.
+      {
+        deps: (s) => [armedOf(s), s.player],
+        run: (s) => {
+          if (!armedOf(s) || !s.player) {
+            this.loadedPlayer = null;
+            return;
+          }
+          if (this.loadedPlayer === s.player) return;
+          this.loadedPlayer = s.player;
+          this.sendTriggers("load", s.cues);
         },
       },
       // The MIDI scheduler itself.
@@ -1281,6 +1334,7 @@ export class PerformanceSession {
     if (!this.armed || output?.state !== "connected") {
       this.startPosition = null;
       this.startTempo = null;
+      this.startPlay = null;
       this.terminateWorker();
       return;
     }
@@ -1303,6 +1357,8 @@ export class PerformanceSession {
       this.startPosition = null;
       const rate = player.playbackRate;
       const origin = midiNow() - (position * 1000) / rate;
+      const playTriggers = this.startPlay ?? [];
+      this.startPlay = null;
       const handle = startMidiScheduler(
         {
           cues: s.cues,
@@ -1314,6 +1370,7 @@ export class PerformanceSession {
           rate,
           clock: s.clock,
           tempo: this.startTempo,
+          playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
         },
         (message) => {

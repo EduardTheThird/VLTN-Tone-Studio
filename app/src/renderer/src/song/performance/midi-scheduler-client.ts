@@ -124,7 +124,7 @@ export function startMidiScheduler(
       fault(started ? "MIDI scheduler stopped responding. Cues disarmed." : "MIDI scheduler did not acknowledge playback. Cues disarmed.");
   }, 50);
   try {
-    worker.postMessage({ type: "start", config: { ...config, cues: config.cues.filter((c) => c.messages.length).map((c) => ({ ...c, text: "" })) } });
+    worker.postMessage({ type: "start", config: { ...config, cues: config.cues.filter((c) => c.messages.length && !c.trigger).map((c) => ({ ...c, text: "" })) } });
   } catch (error) {
     stop();
     throw error;

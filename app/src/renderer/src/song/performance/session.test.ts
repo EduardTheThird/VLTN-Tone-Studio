@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
+import { parseChart } from "./chart";
 import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
@@ -20,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   rate: 1,
   swaps: [] as unknown[],
   applied: [] as unknown[],
-  configs: [] as { rate?: number; tempo: number[][] | null }[],
+  configs: [] as { rate?: number; tempo: number[][] | null; playTriggers?: number[][] }[],
   swapAt: 2.5,
   swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
@@ -588,5 +589,80 @@ describe("speed", () => {
       [176, 74, 60],
     ]);
     session.pause();
+  });
+});
+
+describe("MIDI triggers", () => {
+  const sent = (out: { send: { mock: { calls: unknown[][] } } }) => out.send.mock.calls.map(([bytes]) => bytes);
+  const chartA = "{midi@load: pc 1 1}\n{midi@play: cc 1 80 127}\n{midi@stop: cc 1 81 127}\n{midi@end: pc 1 9}";
+  const chartB = "{midi@load: pc 2 5}\n{midi@play: cc 2 80 127}\n{midi@stop: cc 2 81 127}\n{midi@end: pc 2 6}";
+  const playTriggersOf = () => mocks.configs.filter((config) => config.playTriggers?.length).map((config) => config.playTriggers);
+
+  it("sends load once on arm, and sends play with each start and stop on pause", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    expect(sent(out)).toEqual([[192, 1]]);
+    session.update({ cues: parseChart(chartA) });
+    expect(sent(out)).toEqual([[192, 1]]);
+    await session.play();
+    expect(playTriggersOf()).toEqual([[[176, 80, 127]]]);
+    session.pause();
+    expect(sent(out)).toEqual([
+      [192, 1],
+      [176, 81, 127],
+    ]);
+    await session.play();
+    expect(playTriggersOf()).toHaveLength(2);
+  });
+
+  it("sends load again when the session disarms and arms for the same song", () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    session.setArmed(false);
+    session.setArmed(true);
+    expect(sent(out)).toEqual([[192, 1], [192, 1]]);
+  });
+
+  it("sends end and then stop when the song reaches its end, and not when nothing was playing", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    session.state.player?.onEnded?.();
+    expect(sent(out)).toEqual([[192, 1]]);
+    await session.play();
+    session.state.player?.onEnded?.();
+    expect(sent(out)).toEqual([[192, 1], [192, 9], [176, 81, 127]]);
+  });
+
+  it("sends each trigger once across a gapless hand-over: A's end and stop, then B's load, and B's play with its start", async () => {
+    vi.useFakeTimers();
+    const incoming = new StemPlayer({} as Stems);
+    const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: incoming };
+    mocks.library.playlistPlaying = true;
+    mocks.library.queue = ["a", "b"];
+    mocks.library.preparedNext = () => next as never;
+    mocks.library.advanceToPrepared = vi.fn(() => true);
+    const { session, out, unload } = armedSession(output(), { queued: true, playlistPlaying: true, cues: parseChart(chartA) });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(session.state.playing).toBe(true);
+    expect(sent(out)).toEqual([[192, 1]]);
+    mocks.position = 56;
+    mocks.audioNow = 16;
+    vi.advanceTimersByTime(4000);
+    expect(mocks.library.advanceToPrepared).toHaveBeenCalledWith("b");
+    expect(sent(out)).toEqual([
+      [192, 1],
+      [192, 9],
+      [176, 81, 127],
+    ]);
+    unload();
+    session.update({ cues: parseChart(chartB) });
+    session.loadSong({ ...next.source }, null);
+    expect(session.state.player).toBe(incoming);
+    expect(session.state.playing).toBe(true);
+    expect(sent(out)).toEqual([
+      [192, 1],
+      [192, 9],
+      [176, 81, 127],
+      [193, 5],
+    ]);
+    expect(playTriggersOf().at(-1)).toEqual([[177, 80, 127]]);
+    vi.useRealTimers();
   });
 });

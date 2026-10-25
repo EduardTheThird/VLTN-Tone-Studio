@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BLUETOOTH_LOOKAHEAD, MidiSchedule, SYSTEM_LOOKAHEAD, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
 import { parseChart } from "./chart";
 const config = (patch: Partial<SchedulerConfig> = {}): SchedulerConfig => ({
@@ -343,4 +343,40 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   const after = clocks.filter((t) => t > 4100);
   for (let i = 1; i < before.length; i++) expect(before[i] - before[i - 1]).toBeCloseTo(60000 / (24 * 120), 3);
   for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120 * 0.5), 3);
+});
+
+describe("MIDI triggers and file cues in the schedule", () => {
+  it("sends play triggers once with the start, and not again when a loop jumps back over the start", () => {
+    const f = fixture({ cues: [], duration: 10, playTriggers: [[177, 80, 127]] });
+    f.schedule.tick(1000);
+    f.schedule.plan(null, { at: 1500, position: 0 });
+    for (let t = 1020; t <= 2600; t += 20) {
+      f.schedule.sync((t - 1000) / 1000, t, t);
+      f.schedule.tick(t);
+    }
+    const plays = f.messages().filter((m) => m.label === "Song play trigger");
+    expect(plays.map((m) => m.bytes)).toEqual([[177, 80, 127]]);
+  });
+  it("never schedules a trigger cue by its time", () => {
+    const cues = parseChart("{midi@load: pc 1 5}\n{midi@end: pc 1 6}\n[00:00.50] {midi:pc 1 7}");
+    const f = fixture({ cues, duration: 2 });
+    f.schedule.tick(1000);
+    f.schedule.tick(1600);
+    expect(f.messages().map((m) => m.bytes)).toEqual([[192, 7]]);
+  });
+  it("plays a file cue at the song rate, so a 125% song reaches its cue sooner on the clock", () => {
+    const f = fixture({ cues: [{ time: 1, text: "", messages: [[192, 9]], fromFile: true }], rate: 1.25, duration: 5 });
+    f.schedule.tick(1000);
+    f.schedule.tick(1700);
+    expect(f.messages().map((m) => [m.bytes, m.due])).toEqual([[[192, 9], 1800]]);
+  });
+  it("replays the latest song select as state when starting mid-song", () => {
+    const cues = parseChart("[00:00.20] {midi:songselect 1}\n[00:00.60] {midi:songselect 4} {midi:pc 1 2}\n[00:01.00] {midi:start}");
+    const f = fixture({ cues, position: 1.5, origin: 500, duration: 5 });
+    f.schedule.tick(1000);
+    expect(f.messages().map((m) => [m.bytes, m.label])).toEqual([
+      [[243, 4], "Chase state"],
+      [[192, 2], "Chase state"],
+    ]);
+  });
 });
