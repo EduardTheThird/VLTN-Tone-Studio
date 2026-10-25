@@ -270,7 +270,7 @@ On the desktop, playback in stage mode keeps the computer and display awake. It 
 
 ## Limits
 
-- Timing is best effort. The cue scheduler runs in its own worker. USB and system MIDI cues are handed to Web MIDI up to a second ahead with exact timestamps, so a busy window cannot delay them; Bluetooth cues are held about 120 ms ahead because Bluetooth cannot timestamp on the receiving side. Delivery still goes through Web MIDI or Bluetooth and the operating system, and delivery goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
+- Timing is best effort. The cue scheduler runs in its own worker. USB and system MIDI cues are handed to Web MIDI up to a second ahead with exact timestamps, so a busy window cannot delay them; Bluetooth cues are held about 120 ms ahead because Bluetooth cannot timestamp on the receiving side. Delivery still goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
 - The app cannot read a pedal's channel, routing or state. Missed commands are never reconstructed.
 - Playlist joins are gapless only when the next song is ready in time. Otherwise there is a short gap, and a notice says so.
 - Audio is stretched or pitch-shifted only by [speed and pitch](#speed-and-pitch). The metronome is never stretched.
