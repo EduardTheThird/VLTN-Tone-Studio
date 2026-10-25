@@ -1,13 +1,14 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
 import { stemGains, type Mix } from "./mix";
+import { OutputRouter, type OutputConfig } from "../audio/outputs";
 
 // Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → an analyser
-// (level meter) → the output. Pausing or seeking restarts the sources at the new position.
+// (level meter) → the main output bus. Pausing or seeking restarts the sources at the new position.
 //
 // The metronome is one grid of clicks. While the song plays it is anchored to the audio start, so a count-in (clicks before the audio)
 // and a pre-roll (audio that starts before the requested position) keep the same bar phase. While stopped, a rehearsal grid starts from
-// the moment it is switched on and never touches the song.
+// the moment it is switched on and never touches the song. Clicks go to the click bus, which can be sent to its own output.
 
 const RAMP_S = 0.015;
 
@@ -56,14 +57,18 @@ export class StemPlayer {
   /** Count-in clicks have their own set: a metronome change restarts the grid and must not cut the count-in short. */
   private countInClicks = new Set<OscillatorNode>();
   private meterBuffer = new Float32Array(2048);
+  private router: OutputRouter;
   /** Called when playback reaches the end on its own */
   onEnded: (() => void) | null = null;
+  /** Called when an output cannot be used and audio falls back to the default output */
+  onOutputWarning: ((message: string) => void) | null = null;
 
   constructor(stems: Stems) {
     this.names = STEM_NAMES.filter((name) => stems[name]);
     if (!this.names.length) throw new Error("There are no stems to play.");
     const first = stems[this.names[0]]!;
     this.duration = first.channels[0].length / first.sampleRate;
+    this.router = new OutputRouter(this.ctx, (message) => this.onOutputWarning?.(message));
     this.voices = Object.fromEntries(
       this.names.map((name) => {
         const pcm = stems[name]!;
@@ -72,7 +77,7 @@ export class StemPlayer {
         const gain = this.ctx.createGain();
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = this.meterBuffer.length;
-        gain.connect(analyser).connect(this.ctx.destination);
+        gain.connect(analyser).connect(this.router.buses.main);
         return [name, { buffer, gain, analyser, source: null }];
       }),
     );
@@ -177,7 +182,7 @@ export class StemPlayer {
     osc.frequency.setValueAtTime(down ? 1500 : 1000, when);
     gain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * (down ? 1 : 0.65), when);
     gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.04);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.router.buses.click);
     into.add(osc);
     osc.onended = () => {
       into.delete(osc);
@@ -247,9 +252,15 @@ export class StemPlayer {
     );
   }
 
+  /** Sends the tracks and the click to the outputs in `config`. Never stops playback: a missing output falls back to the default. */
+  setOutputs(config: OutputConfig): Promise<void> {
+    return this.router.apply(config);
+  }
+
   async dispose(): Promise<void> {
     this.playing = false;
     this.stopSources();
+    this.router.dispose();
     await this.ctx.close();
   }
 

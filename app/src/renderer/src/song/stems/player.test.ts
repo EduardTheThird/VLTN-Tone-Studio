@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
+import type { OutputConfig } from "../audio/outputs";
+import type { Stems } from "../types";
 import { StemPlayer } from "./player";
 
 class Context {
@@ -217,5 +219,123 @@ it("keeps the count-in when the metronome changes mid-count-in, and pause cancel
   expect(countIn.some(cancelled)).toBe(false);
   player.pause();
   expect(countIn.every(cancelled)).toBe(true);
+  await player.dispose();
+});
+
+/** A Context whose destination reports a device's channel count, and which records the output nodes it creates. */
+class OutputContext extends Context {
+  destination: { maxChannelCount?: number; channelCount?: number; channelInterpretation?: string } = { maxChannelCount: 4, channelCount: 2 };
+  gains: ReturnType<Context["node"]>[] = [];
+  merger: ReturnType<Context["node"]> | null = null;
+  sinkIds: string[] = [];
+  /** How many of the next setSinkId calls reject */
+  sinkFailures = 0;
+  createGain() {
+    const gain = super.createGain();
+    this.gains.push(gain);
+    return gain;
+  }
+  createChannelMerger() {
+    this.merger = this.node();
+    return this.merger;
+  }
+  async setSinkId(sinkId: string) {
+    this.sinkIds.push(sinkId);
+    if (this.sinkFailures > 0) {
+      this.sinkFailures--;
+      throw new Error("NotFoundError");
+    }
+  }
+}
+
+function oneStem(): Stems {
+  return { other: { sampleRate: 100, channels: [new Float32Array(1000)] } } as Stems;
+}
+
+function interface4(click: [number, number]): OutputConfig {
+  return {
+    deviceId: "usb-4",
+    label: "Interface",
+    buses: { main: { channels: [0, 1], gain: 1 }, click: { channels: click, gain: 1 } },
+  };
+}
+
+it("sends the click to outputs 3 and 4 and the tracks to 1 and 2 on a four-output interface", async () => {
+  vi.stubGlobal("AudioContext", OutputContext);
+  const player = new StemPlayer(oneStem());
+  const ctx = Context.instances[0] as OutputContext;
+  await player.setOutputs(interface4([2, 3]));
+  expect(ctx.sinkIds).toEqual(["usb-4"]);
+  expect(ctx.merger).not.toBeNull();
+  expect(ctx.destination.channelCount).toBe(4);
+  expect(ctx.destination.channelInterpretation).toBe("discrete");
+  // The first two gains are the main and click buses, created before any voice.
+  const [main, click] = ctx.gains;
+  expect(main.connect).toHaveBeenCalledWith(ctx.merger, 0, 0);
+  expect(main.connect).toHaveBeenCalledWith(ctx.merger, 1, 1);
+  expect(click.connect).toHaveBeenCalledWith(ctx.merger, 0, 2);
+  expect(click.connect).toHaveBeenCalledWith(ctx.merger, 1, 3);
+  await player.dispose();
+});
+
+it("falls back to the default output and warns when the device cannot be selected", async () => {
+  vi.stubGlobal("AudioContext", OutputContext);
+  const player = new StemPlayer(oneStem());
+  const warnings: string[] = [];
+  player.onOutputWarning = (message) => warnings.push(message);
+  const ctx = Context.instances[0] as OutputContext;
+  ctx.sinkFailures = 1;
+  await player.setOutputs(interface4([2, 3]));
+  expect(ctx.sinkIds).toEqual(["usb-4", ""]);
+  expect(ctx.merger).toBeNull();
+  expect(ctx.gains[0].connect).toHaveBeenCalledWith(ctx.destination);
+  expect(ctx.gains[1].connect).toHaveBeenCalledWith(ctx.destination);
+  expect(warnings).toHaveLength(1);
+  await player.dispose();
+});
+
+it("keeps both buses on outputs 1 and 2 and warns when the device has no pair for the click", async () => {
+  vi.stubGlobal("AudioContext", OutputContext);
+  const player = new StemPlayer(oneStem());
+  const warnings: string[] = [];
+  player.onOutputWarning = (message) => warnings.push(message);
+  const ctx = Context.instances[0] as OutputContext;
+  ctx.destination.maxChannelCount = 2;
+  await player.setOutputs(interface4([2, 3]));
+  expect(ctx.merger).toBeNull();
+  expect(ctx.gains[1].connect).toHaveBeenCalledWith(ctx.destination);
+  expect(warnings).toHaveLength(1);
+  await player.dispose();
+});
+
+it("moves to the default output when the device disappears, and back when it returns", async () => {
+  const listeners: Array<() => void> = [];
+  let devices = [{ deviceId: "usb-4", label: "Interface", kind: "audiooutput" }];
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      enumerateDevices: async () => devices,
+      addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
+      removeEventListener: vi.fn(),
+    },
+  });
+  vi.stubGlobal("AudioContext", OutputContext);
+  const player = new StemPlayer(oneStem());
+  const warnings: string[] = [];
+  player.onOutputWarning = (message) => warnings.push(message);
+  const ctx = Context.instances[0] as OutputContext;
+  await player.setOutputs(interface4([2, 3]));
+  expect(ctx.merger).not.toBeNull();
+
+  devices = [];
+  listeners[0]();
+  await vi.waitFor(() => expect(ctx.sinkIds).toEqual(["usb-4", ""]));
+  expect(ctx.gains[1].connect).toHaveBeenLastCalledWith(ctx.destination);
+  expect(warnings).toHaveLength(1);
+  expect(player.isPlaying).toBe(false);
+
+  devices = [{ deviceId: "usb-4", label: "Interface", kind: "audiooutput" }];
+  listeners[0]();
+  await vi.waitFor(() => expect(ctx.sinkIds).toEqual(["usb-4", "", "usb-4"]));
+  expect(ctx.merger).not.toBeNull();
   await player.dispose();
 });
