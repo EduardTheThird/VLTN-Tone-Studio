@@ -94,7 +94,7 @@ export interface SongLibraryApi {
   onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;
   index(): Promise<SongLibrary>;
   save(song: LibrarySong, assets: { name: string; bytes: Uint8Array }[]): Promise<void>;
-  /** `app://library/...` URLs of the song's files, keyed by track name. The renderer fetches them directly. */
+  /** `app://library/...` URLs of the song's files, keyed by track key (see `trackKey`). The renderer fetches them directly. */
   audioUrls(id: string): Promise<Record<string, string>>;
   playlists(playlists: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;

@@ -11,6 +11,7 @@ import {
   isLegacySong,
   isTrackFileName,
   trackFiles,
+  trackKey,
   upgradeIndex,
   validId,
   validatePlaylists,
@@ -184,7 +185,7 @@ export class SongLibraryStore {
         rev = index.revisions[id];
       if (!song || !rev || !validId(rev)) throw new Error("Song audio not found.");
       if (isLegacySong(song)) throw new Error("This song is still being converted to the compact library format. Try again in a moment.");
-      return Object.fromEntries(song.audio.map((a) => [a.name, `app://library/${rev}/${a.file}`]));
+      return Object.fromEntries(song.audio.map((a) => [trackKey(a), `app://library/${rev}/${a.file}`]));
     });
   }
   async playlists(playlists: Playlist[]): Promise<void> {
