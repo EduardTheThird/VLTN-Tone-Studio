@@ -99,3 +99,50 @@ describe("gridStart", () => {
     expect(gridStart([{ ctxStart: 12, songStart: 0, songEnd: Infinity }], 10, 0, 0.5)).toEqual({ segment: 0, beat: 0 });
   });
 });
+
+describe("playback rate", () => {
+  // Plays song 0–4 at 50% from audio 10: a song second takes two audio seconds.
+  const slow: Segment[] = [{ ctxStart: 10, songStart: 0, songEnd: 4, rate: 0.5 }];
+  // Plays song 0–4 at 50% from audio 10 (ends at 18), then song 4 onward at full speed from 18.
+  const mixed: Segment[] = [
+    { ctxStart: 10, songStart: 0, songEnd: 4, rate: 0.5 },
+    { ctxStart: 18, songStart: 4, songEnd: Infinity, rate: 1 },
+  ];
+
+  it("maps song time through the rate", () => {
+    expect(songTimeAt(slow, 12)).toBeCloseTo(1);
+    expect(songTimeAt(slow, 18)).toBeCloseTo(4);
+    expect(songTimeAt(mixed, 20)).toBeCloseTo(6);
+  });
+
+  it("maps a song time to the audio time it plays at", () => {
+    expect(audioTimeOf(slow, 4)).toBeCloseTo(18);
+    expect(audioTimeOf(mixed, 6)).toBeCloseTo(20);
+  });
+
+  it("runs a count-in backwards at the rate", () => {
+    expect(songTimeAt([{ ctxStart: 12, songStart: 0, songEnd: Infinity, rate: 0.5 }], 10)).toBeCloseTo(-1);
+  });
+
+  it("clicks each song beat at its rated audio time", () => {
+    // Beats every song second, from song 0: at 50% they land every two audio seconds.
+    const { clicks } = gridClicks(slow, { segment: 0, beat: 0 }, 10, 18, 0, 1);
+    expect(clicks).toEqual([
+      { when: 10, beat: 0 },
+      { when: 12, beat: 1 },
+      { when: 14, beat: 2 },
+      { when: 16, beat: 3 },
+    ]);
+  });
+
+  it("does not click past a rated segment's end until the audio reaches it", () => {
+    const { clicks } = gridClicks(slow, { segment: 0, beat: 0 }, 10, 17, 0, 1);
+    expect(clicks.map((c) => c.when)).toEqual([10, 12, 14, 16]);
+  });
+
+  it("keeps the beat phase when a rated song hands over to a full-speed one", () => {
+    const { clicks } = gridClicks(mixed, { segment: 0, beat: 0 }, 10, 20, 0, 1);
+    expect(clicks.map((c) => c.beat)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(clicks.at(-1)!.when).toBeCloseTo(20);
+  });
+});
