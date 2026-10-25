@@ -114,6 +114,19 @@ export function isLanAddress(address: string): boolean {
   return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
 }
 
+/**
+ * The host (and port) an Origin header names, or null when it is missing, the literal `null` that sandboxed and file pages send, or not a
+ * URL at all. It never throws: a bad Origin is a refused connection, not an error in the app's main process.
+ */
+export function originHost(origin: unknown): string | null {
+  if (typeof origin !== "string") return null;
+  try {
+    return new URL(origin).host || null;
+  } catch {
+    return null;
+  }
+}
+
 /** The private IPv4 addresses on this computer, with their interface names. Loopback and public addresses are never listed. */
 export function lanAddresses(interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces()): LanAddress[] {
   const found: LanAddress[] = [];
@@ -196,6 +209,15 @@ export class BandSyncServer {
     http.maxConnections = 64;
     const socketServer = new WebSocketServer({ noServer: true, maxPayload: BAND_SYNC_LIMITS.frameBytes, perMessageDeflate: false });
     http.on("upgrade", (req, socket, head) => this.upgrade(req, socket, head, socketServer));
+    // A malformed request, or a connection the client resets, closes only that connection. Nothing here may reach the main process.
+    http.on("clientError", (error, socket) => {
+      this.log("client", error);
+      socket.on("error", () => socket.destroy());
+      if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+      else socket.destroy();
+    });
+    http.on("error", (error) => this.log("server", error));
+    socketServer.on("error", (error) => this.log("socket server", error));
     await new Promise<void>((resolve, reject) => {
       const fail = (e: NodeJS.ErrnoException) => {
         if (e.code === "EADDRINUSE") reject(new HostError("invalid", `Port ${port} is already in use. Choose another port.`));
@@ -282,6 +304,15 @@ export class BandSyncServer {
   }
 
   private serve(req: IncomingMessage, res: ServerResponse): void {
+    try {
+      this.answer(req, res);
+    } catch (error) {
+      this.log("request", error);
+      res.destroy();
+    }
+  }
+
+  private answer(req: IncomingMessage, res: ServerResponse): void {
     const head = req.method === "HEAD";
     if (req.method !== "GET" && !head) {
       res.writeHead(405, { ...SECURITY_HEADERS, Allow: "GET, HEAD" }).end();
@@ -306,22 +337,29 @@ export class BandSyncServer {
   }
 
   private upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, socketServer: WebSocketServer): void {
+    // A client that resets the connection during the handshake raises an error on the raw socket. Without a listener that is fatal.
+    socket.on("error", () => socket.destroy());
     const refuse = (status: string) => {
       socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
       socket.destroy();
     };
-    let path: string;
     try {
-      path = new URL(req.url ?? "/", "http://band.sync").pathname;
-    } catch {
-      return refuse("400 Bad Request");
+      let path: string;
+      try {
+        path = new URL(req.url ?? "/", "http://band.sync").pathname;
+      } catch {
+        return refuse("400 Bad Request");
+      }
+      if (path !== SOCKET_PATH) return refuse("404 Not Found");
+      // A browser page on another site cannot open this socket: its origin is not this server's. A missing Origin is a program, not a page.
+      const origin = req.headers.origin;
+      if (origin !== undefined && originHost(origin) !== (req.headers.host ?? null)) return refuse("403 Forbidden");
+      if (this.peers.size >= BAND_SYNC_LIMITS.followers + BAND_SYNC_LIMITS.pending) return refuse("503 Service Unavailable");
+      socketServer.handleUpgrade(req, socket, head, (ws) => this.accept(ws, req.socket.remoteAddress ?? "unknown"));
+    } catch (error) {
+      this.log("upgrade", error);
+      socket.destroy();
     }
-    if (path !== SOCKET_PATH) return refuse("404 Not Found");
-    // A browser page on another site cannot open this socket: its origin is not this server's.
-    const origin = req.headers.origin;
-    if (origin !== undefined && (typeof origin !== "string" || new URL(origin).host !== req.headers.host)) return refuse("403 Forbidden");
-    if (this.peers.size >= BAND_SYNC_LIMITS.followers + BAND_SYNC_LIMITS.pending) return refuse("503 Service Unavailable");
-    socketServer.handleUpgrade(req, socket, head, (ws) => this.accept(ws, req.socket.remoteAddress ?? "unknown"));
   }
 
   private accept(socket: WebSocket, address: string): void {
@@ -335,19 +373,42 @@ export class BandSyncServer {
     peer.timer = setTimeout(() => {
       if (!peer.signedIn) socket.close(1008, "sign in first");
     }, BAND_SYNC_LIMITS.signInMs);
-    socket.on("message", (data, isBinary) => this.receive(peer, data.toString(), isBinary));
-    // Without a listener an error on a socket would end the app. A broken socket is simply dropped.
-    socket.on("error", () => {});
-    socket.on("close", () => {
-      if (peer.timer) clearTimeout(peer.timer);
-      const wasSignedIn = peer.signedIn;
-      this.peers.delete(peer);
-      if (wasSignedIn) this.options.onChange();
-    });
+    socket.on("message", (data, isBinary) => this.guard(peer, "message", () => this.receive(peer, data.toString(), isBinary)));
+    // Without a listener an error on a socket would end the app. A broken socket is logged and dropped; its close follows.
+    socket.on("error", (error) => this.log("socket", error));
+    socket.on("close", () => this.guard(peer, "close", () => this.forget(peer)));
+  }
+
+  private forget(peer: Peer): void {
+    if (peer.timer) clearTimeout(peer.timer);
+    const wasSignedIn = peer.signedIn;
+    this.peers.delete(peer);
+    if (wasSignedIn) this.options.onChange();
+  }
+
+  /** Runs one connection's handler. An error in it ends that connection only, and is logged. */
+  private guard(peer: Peer, where: string, run: () => void): void {
+    try {
+      run();
+    } catch (error) {
+      this.log(where, error);
+      peer.socket.terminate();
+    }
+  }
+
+  private log(where: string, error: unknown): void {
+    console.warn(`[band-sync] ${where}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   private receive(peer: Peer, text: string, isBinary: boolean): void {
     if (isBinary) return this.refuse(peer, "Messages must be text.");
+    // A frame that is not JSON is not a band follower. That connection is closed; others are not affected.
+    try {
+      JSON.parse(text);
+    } catch {
+      peer.socket.close(1008, "not JSON");
+      return;
+    }
     let message: ClientMessage;
     try {
       message = parseClientMessage(text);

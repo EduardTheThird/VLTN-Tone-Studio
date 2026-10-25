@@ -2,6 +2,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { connect as netConnect, type Socket } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import type { AudienceClock, AudienceModel } from "@shared/audience";
@@ -16,7 +17,7 @@ vi.mock("electron", () => ({
   screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: () => {}, removeListener: () => {} },
 }));
 
-import { BandSyncServer, followerFiles, isLanAddress, lanAddresses, parseSettings, parseStartOptions } from "./band-sync";
+import { BandSyncServer, followerFiles, isLanAddress, lanAddresses, originHost, parseSettings, parseStartOptions } from "./band-sync";
 
 const MODEL: AudienceModel = {
   songKey: "A",
@@ -356,6 +357,57 @@ describe("signing in", () => {
     same.ws.close();
   });
 
+  it("refuses an Origin of null, the value sandboxed and file pages send", async () => {
+    const { port } = await started();
+    await expect(connect(port, { origin: "null" })).rejects.toThrow(/403/);
+  });
+
+  it("refuses an Origin that is not a URL, and the server keeps running", async () => {
+    const { port, pin } = await started();
+    await expect(connect(port, { origin: "::::" })).rejects.toThrow(/403/);
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    await signedIn(port, pin);
+  });
+
+  it("parses an Origin without ever throwing", () => {
+    expect(originHost("http://127.0.0.1:8787")).toBe("127.0.0.1:8787");
+    expect(originHost("null")).toBeNull();
+    expect(originHost("::::")).toBeNull();
+    expect(originHost("")).toBeNull();
+    expect(originHost(undefined)).toBeNull();
+    expect(originHost(["http://a"])).toBeNull();
+  });
+
+  it("survives a client that resets the connection in the middle of the handshake", async () => {
+    const { port, pin } = await started();
+    // A complete upgrade request, then a reset: the server's upgrade handler is running when the socket errors.
+    const raw: Socket = netConnect(port, "127.0.0.1");
+    await new Promise((resolve) => raw.once("connect", resolve));
+    const handshake = ["GET /ws HTTP/1.1", "Host: 127.0.0.1", "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13"];
+    raw.write(handshake.join("\r\n") + "\r\n\r\n");
+    raw.resetAndDestroy();
+    // A request cut off part-way, reset as well.
+    const partial: Socket = netConnect(port, "127.0.0.1");
+    await new Promise((resolve) => partial.once("connect", resolve));
+    partial.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nUpg");
+    partial.resetAndDestroy();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    const { inbox } = await signedIn(port, pin);
+    expect(inbox.messages.some((m) => m.type === "hello")).toBe(true);
+  });
+
+  it("closes a malformed HTTP request on its own, and the server keeps serving", async () => {
+    const { port } = await started();
+    const garbage: Socket = netConnect(port, "127.0.0.1");
+    await new Promise((resolve) => garbage.once("connect", resolve));
+    garbage.on("error", () => {});
+    garbage.resume();
+    garbage.write("\x00\x01 not http at all\r\n\r\n");
+    await new Promise((resolve) => garbage.once("close", resolve));
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+  });
+
   it("refuses a socket path that is not the sync's", async () => {
     const { port } = await started();
     await expect(connect(port, { path: "/elsewhere" })).rejects.toThrow(/404/);
@@ -396,11 +448,21 @@ describe("messages from a signed-in follower", () => {
   it("answers each message it cannot use, and closes the connection after a few", async () => {
     const { port, pin } = await started();
     const { ws, inbox } = await signedIn(port, pin);
-    ws.send("{not json");
     ws.send(JSON.stringify({ type: "loadSong" }));
     ws.send(JSON.stringify({ type: "control", action: "transport.panic" }));
+    ws.send(JSON.stringify({ type: "hello" }));
     expect(await inbox.close).toBe(1008);
     expect(inbox.messages.filter((m) => m.type === "error").length).toBe(3);
+  });
+
+  it("closes a peer that sends a frame that is not JSON, and leaves the other followers alone", async () => {
+    const { port, pin } = await started();
+    const bad = await signedIn(port, pin);
+    const good = await signedIn(port, pin);
+    bad.ws.send("{not json");
+    expect(await bad.inbox.close).toBe(1008);
+    good.ws.send(JSON.stringify({ type: "ping", seq: 7, t0: 1 }));
+    expect(await until(good.inbox, "pong")).toMatchObject({ seq: 7 });
   });
 
   it("refuses a binary frame", async () => {
