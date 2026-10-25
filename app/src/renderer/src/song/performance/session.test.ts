@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
 import { useMidiDiagnostics } from "./midi-diagnostics";
+import { useOutputSettings } from "@/song/audio/output-settings";
+import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 
 const mocks = vi.hoisted(() => ({
   position: 0,
+  outputs: [] as { player: unknown; config: unknown }[],
+  toasts: [] as unknown[],
+  players: [] as { onOutputWarning: ((message: string) => void) | null }[],
   lead: undefined as unknown,
   faults: [] as ((message: string) => void)[],
   sends: [] as ((message: { bytes: number[]; due: number; label: string }) => void)[],
@@ -18,11 +23,20 @@ const mocks = vi.hoisted(() => ({
     resumePlaylist: vi.fn(),
   },
 }));
+vi.mock("@/app/notify", () => ({ showToast: (spec: unknown) => mocks.toasts.push(spec) }));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     duration = 60;
     isPlaying = false;
     onEnded?: () => void;
+    onOutputWarning: ((message: string) => void) | null = null;
+    constructor() {
+      mocks.players.push(this);
+    }
+    setOutputs(config: unknown) {
+      mocks.outputs.push({ player: this, config });
+      return Promise.resolve();
+    }
     get position() {
       return mocks.position;
     }
@@ -81,6 +95,9 @@ function armedSession(out = output(), patch: Partial<SessionInputs> = {}) {
 
 beforeEach(() => {
   mocks.position = 0;
+  mocks.outputs.length = 0;
+  mocks.toasts.length = 0;
+  mocks.players.length = 0;
   mocks.faults.length = 0;
   mocks.sends.length = 0;
   mocks.library.playlistPlaying = false;
@@ -272,4 +289,23 @@ it("waits out the start delay, cancels it with a second Play press, and starts w
   session.pause();
   unload();
   vi.useRealTimers();
+});
+
+it("applies the saved outputs to a new player, again when they change, and shows a warning as a toast", () => {
+  const session = new PerformanceSession({ initial: inputs(), carried: null, initialClock: false });
+  const unload = session.loadSong(source, null);
+  const player = mocks.players.at(-1);
+  // Earlier tests leave their sessions bound, so only this player's calls count.
+  const applied = () => mocks.outputs.filter((call) => call.player === player).map((call) => call.config);
+  expect(applied()).toEqual([DEFAULT_OUTPUTS]);
+  useOutputSettings.getState().update({ ...DEFAULT_OUTPUTS, deviceId: "usb-4", label: "Interface" });
+  expect(applied()).toHaveLength(2);
+  expect(applied()[1]).toMatchObject({ deviceId: "usb-4" });
+
+  mocks.players.at(-1)!.onOutputWarning?.("The interface is not available.");
+  expect(mocks.toasts).toEqual([expect.objectContaining({ tone: "fault", body: "The interface is not available." })]);
+
+  unload();
+  useOutputSettings.getState().update(DEFAULT_OUTPUTS);
+  expect(applied()).toHaveLength(2);
 });

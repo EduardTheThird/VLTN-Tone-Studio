@@ -3,6 +3,8 @@ import { useStore } from "zustand";
 import { StemPlayer } from "@/song/stems/player";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
+import { useOutputSettings } from "@/song/audio/output-settings";
+import { showToast } from "@/app/notify";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
@@ -189,6 +191,13 @@ export class PerformanceSession {
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     if (!source) return () => {};
     const player = new StemPlayer(stems ?? { other: source.audio });
+    player.onOutputWarning = (message) => showToast({ tone: "fault", title: "Audio output changed", body: message });
+    // Outputs are applied now, and again whenever the saved outputs change. Playback keeps going through either.
+    const applyOutputs = () => void player.setOutputs(useOutputSettings.getState().config);
+    applyOutputs();
+    const stopOutputs = useOutputSettings.subscribe((state, previous) => {
+      if (state.config !== previous.config) applyOutputs();
+    });
     player.onEnded = () => {
       this.batch(() => {
         this.set({ playing: false });
@@ -202,6 +211,7 @@ export class PerformanceSession {
       setClockPosition(0);
     });
     return () => {
+      stopOutputs();
       this.cancelPendingStart();
       this.terminateWorker();
       void player.dispose();

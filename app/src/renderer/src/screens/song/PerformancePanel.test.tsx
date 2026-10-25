@@ -153,6 +153,12 @@ vi.mock("./MidiHealth", () => ({
 }));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
+    outputChannels = 2;
+    setOutputs() {
+      return Promise.resolve();
+    }
+    setTrackBuses() {}
+    testTone() {}
     names = ["other"];
     duration = 60;
     get position() {
