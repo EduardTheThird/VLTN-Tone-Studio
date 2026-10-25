@@ -132,6 +132,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:audioUrls', (_e, id: string) => library.audioUrls(id));
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
   handle('song:library:updateSettings', (_e, id: string, patch: Record<string, string>) => library.updateSettings(id, patch));
+  handle('song:library:applyTrackSettings', (_e, id: string) => library.applyTrackSettings(id));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
   const transferProgress = (value: LibraryTransferProgress) => getWindow()?.webContents.send('song:library:progress', value);
   handle('song:library:exportBackup', async () => {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrackImport } from "./TrackImport";
 
 const addTracks = vi.hoisted(() => vi.fn());
+vi.mock("@/song/library", () => ({ useSongLibrary: { getState: () => ({ applyTrackSettings: vi.fn() }) } }));
 vi.mock("@/song/store", () => ({
   useSong: Object.assign((select: (s: unknown) => unknown) => select({ status: { kind: "idle" } }), { getState: () => ({ addTracks }) }),
 }));

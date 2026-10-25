@@ -100,6 +100,8 @@ export interface SongLibraryApi {
   remove(id: string): Promise<void>;
   /** Merges the changed entries into a saved song's settings; an empty value removes one. */
   updateSettings(id: string, patch: Record<string, string>): Promise<void>;
+  /** Copies the saved track settings of song `id` onto every song with the same imported tracks. Resolves with how many songs changed. */
+  applyTrackSettings(id: string): Promise<number>;
 }
 export const emptyLibrary = (): SongLibrary => ({ version: 3, songs: [], playlists: [] });
 export const validId = (id: string): boolean => /^[a-f0-9-]{36}$/.test(id);
@@ -131,6 +133,36 @@ export function withTrackKind(track: LibraryAudio): LibraryAudio {
 export function upgradeIndex<T extends SongLibrary>(index: T): T {
   if (index.version === 3) return index;
   return { ...index, version: 3, songs: index.songs.map((song) => ({ ...song, audio: song.audio.map(withTrackKind) })) };
+}
+
+/** The track settings a song saves per track, which "apply to similar songs" copies. */
+const COPIED_SETTINGS = ["color", "bus", "transpose", "gain", "pan", "muteGroups"] as const;
+
+/** The names of a song's imported tracks, sorted. Two songs with the same names are similar. */
+export const userTrackNames = (song: LibrarySong): string[] =>
+  song.audio
+    .filter((track) => trackKindOf(track) === "user")
+    .map((track) => track.name)
+    .sort();
+
+/**
+ * The song `to` with the track settings of `from` copied onto its imported tracks, matched by name in order. Audio and names are left as
+ * they are. Null when `to` does not have exactly the same imported track names, so nothing is copied onto a different arrangement.
+ */
+export function copyTrackSettings(from: LibrarySong, to: LibrarySong): LibrarySong | null {
+  const names = userTrackNames(from);
+  if (!names.length || names.join("\n") !== userTrackNames(to).join("\n")) return null;
+  const available = from.audio.filter((track) => trackKindOf(track) === "user");
+  const audio = to.audio.map((track) => {
+    if (trackKindOf(track) !== "user") return track;
+    const at = available.findIndex((candidate) => candidate.name === track.name);
+    const source = available.splice(at, 1)[0];
+    const next: LibraryAudio = { ...track };
+    for (const key of COPIED_SETTINGS) delete next[key];
+    for (const key of COPIED_SETTINGS) if (source[key] !== undefined) Object.assign(next, { [key]: source[key] });
+    return next;
+  });
+  return { ...to, audio };
 }
 
 /** The files that make up one track and the size each must have. */

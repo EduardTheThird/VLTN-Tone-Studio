@@ -18,6 +18,7 @@ export const songApi: SongHostApi = {
     audioUrls: id => invoke('song:library:audioUrls', id),
     playlists: playlists => invoke('song:library:playlists', playlists),
     updateSettings: (id, patch) => invoke('song:library:updateSettings', id, patch),
+    applyTrackSettings: id => invoke('song:library:applyTrackSettings', id),
     remove: id => invoke('song:library:remove', id),
     async save(song, assets) {
       const token = await invoke<string>('song:library:begin', song);

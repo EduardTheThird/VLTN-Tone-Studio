@@ -3,11 +3,11 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import { decodeFlac, quantize } from "@shared/flac";
+import { createHash, randomUUID } from "node:crypto";
+import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
 import { isLegacySong } from "@shared/song-library";
 import { SongLibraryStore, libraryFilePath } from "./song-library-store";
-import { flacSong, legacySong, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
+import { FRAMES, flacSong, legacySong, pcm, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
 
 let root: string, store: SongLibraryStore;
 beforeEach(async () => {
@@ -221,4 +221,45 @@ it("rejects settings patches for unknown songs, unknown keys and non-string valu
   await expect(store.updateSettings(fixture.song.id, { ":other": "x" })).rejects.toThrow("Invalid song settings.");
   await expect(store.updateSettings(fixture.song.id, { ":bpm": 90 as unknown as string })).rejects.toThrow("Invalid song settings.");
   await expect(store.updateSettings("../x", { ":bpm": "90" })).rejects.toThrow("Invalid song settings.");
+});
+
+/** A saved song with one imported track named `label`, stored as track0. */
+async function songWithTrack(seed: number, label: string, settings: Record<string, unknown>): Promise<FixtureSong> {
+  const fixture = await flacSong(seed),
+    bytes = await encodeFlac({ sampleRate: 44100, channels: pcm(1, seed + 10) });
+  fixture.files["track0.flac"] = bytes;
+  fixture.song.audio.push({
+    name: label,
+    sampleRate: 44100,
+    frames: FRAMES,
+    channels: 1,
+    file: "track0.flac",
+    codec: "flac",
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    kind: "user",
+    ...settings,
+  } as FixtureSong["song"]["audio"][number]);
+  return fixture;
+}
+
+it("applies a song's track settings to the other songs with the same imported tracks, and leaves their audio alone", async () => {
+  const source = await songWithTrack(1, "Click", { bus: "click", transpose: false, muteGroups: [1] });
+  const similar = await songWithTrack(2, "Click", { bus: "main" });
+  const different = await songWithTrack(3, "Bass", { bus: "main" });
+  for (const fixture of [source, similar, different]) await saveFlacSong(store, fixture);
+  const before = (await store.index()).songs.find((s) => s.id === similar.song.id)!;
+  expect(await store.applyTrackSettings(source.song.id)).toBe(1);
+  const index = await store.index();
+  const copied = index.songs.find((s) => s.id === similar.song.id)!;
+  expect(copied.audio.find((a) => a.name === "Click")).toMatchObject({ bus: "click", transpose: false, muteGroups: [1] });
+  expect(copied.audio.map((a) => [a.file, a.sha256])).toEqual(before.audio.map((a) => [a.file, a.sha256]));
+  expect(index.songs.find((s) => s.id === different.song.id)!.audio.find((a) => a.name === "Bass")).toMatchObject({ bus: "main" });
+  const track = await decodeFlac(await readSaved(root, similar.song.id, "track0.flac"));
+  expect(track.channels[0].length).toBe(FRAMES);
+});
+
+it("refuses to apply the settings of a song that is not saved", async () => {
+  await expect(store.applyTrackSettings(randomUUID())).rejects.toThrow("Saved song not found.");
+  await expect(store.applyTrackSettings("not-an-id")).rejects.toThrow("Saved song not found.");
 });

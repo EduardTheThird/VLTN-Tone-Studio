@@ -9,6 +9,7 @@ import {
   flacName,
   isFlacTrack,
   isLegacySong,
+  copyTrackSettings,
   isTrackFileName,
   trackFiles,
   trackKey,
@@ -194,6 +195,31 @@ export class SongLibraryStore {
       validatePlaylists(playlists, index.songs);
       index.playlists = playlists;
       await this.publish(index);
+    });
+  }
+  /**
+   * Copies the track settings of song `id` onto every other song with the same imported tracks. Only the saved settings change, never the
+   * audio, so this publishes one index and no files. Resolves with how many songs changed.
+   */
+  async applyTrackSettings(id: string): Promise<number> {
+    if (!validId(id)) throw new Error("Saved song not found.");
+    return this.serial(async () => {
+      const index = await this.read(),
+        from = index.songs.find((s) => s.id === id);
+      if (!from) throw new Error("Saved song not found.");
+      const now = new Date().toISOString();
+      let changed = 0;
+      index.songs = index.songs.map((song) => {
+        if (song.id === id) return song;
+        const copied = copyTrackSettings(from, song);
+        if (!copied) return song;
+        changed++;
+        const updated = { ...copied, updated: now };
+        validateSong(updated);
+        return updated;
+      });
+      if (changed) await this.publish(index);
+      return changed;
     });
   }
   /** Merges the changed entries into the song's settings. An empty value removes the entry. */

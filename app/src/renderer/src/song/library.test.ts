@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   index: vi.fn(),
   save: vi.fn(),
   audioUrls: vi.fn(),
+  applyTrackSettings: vi.fn(),
   playlists: vi.fn(),
   remove: vi.fn(),
   updateSettings: vi.fn(),
@@ -240,4 +241,22 @@ it("cancelling the duplicate prompt restores nothing", async () => {
   await useSongLibrary.getState().finishRestore(null);
   expect(api.restoreBackup).not.toHaveBeenCalled();
   expect(useSongLibrary.getState()).toMatchObject({ backupPreview: null, notice: "Backup restore cancelled." });
+});
+
+it("applies the open song's track settings, and says how many similar songs changed", async () => {
+  useSong.setState({ source: { name: "Open", libraryId: saved.id, audio } });
+  api.applyTrackSettings.mockResolvedValueOnce(2);
+  await useSongLibrary.getState().applyTrackSettings();
+  expect(api.applyTrackSettings).toHaveBeenCalledWith(saved.id);
+  expect(useSongLibrary.getState().notice).toBe("Applied the track settings to 2 similar songs.");
+});
+
+it("says so when no other saved song has the same imported tracks, and needs the song to be saved first", async () => {
+  useSong.setState({ source: { name: "Open", libraryId: saved.id, audio } });
+  api.applyTrackSettings.mockResolvedValueOnce(0);
+  await useSongLibrary.getState().applyTrackSettings();
+  expect(useSongLibrary.getState().notice).toBe("No other saved song has the same imported tracks.");
+  useSong.setState({ source: { name: "Unsaved", audio } });
+  await useSongLibrary.getState().applyTrackSettings();
+  expect(useSongLibrary.getState().error).toBe("Save the song before applying its track settings.");
 });

@@ -71,6 +71,8 @@ interface LibraryState {
   load(id: string, queue?: string[], position?: number): Promise<void>;
   playlists(value: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;
+  /** Copies the saved track settings of the open song onto the saved songs that have the same imported tracks. */
+  applyTrackSettings(): Promise<void>;
   /** The playlist's next song, loaded in the background. Null until it has loaded, or when there is none. */
   prepared: PreparedSong | null;
   /** The prepared song, when it is the one after the current song */
@@ -447,6 +449,16 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       run(async () => {
         await api().playlists(playlists);
         set({ index: await api().index(), notice: "Playlist saved." });
+      }),
+    applyTrackSettings: () =>
+      run(async () => {
+        const id = useSong.getState().source?.libraryId;
+        if (!id) throw new Error("Save the song before applying its track settings.");
+        const changed = await api().applyTrackSettings(id);
+        set({
+          index: await api().index(),
+          notice: changed ? `Applied the track settings to ${changed} similar song${changed === 1 ? "" : "s"}.` : "No other saved song has the same imported tracks.",
+        });
       }),
     remove: (id) =>
       run(async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
+import { useSongLibrary } from "@/song/library";
 import { AUDIO_ACCEPT, isAudioFileName } from "@/song/decode";
 
 /**
@@ -9,6 +10,8 @@ import { AUDIO_ACCEPT, isAudioFileName } from "@/song/decode";
  */
 export function TrackImport() {
   const status = useSong((s) => s.status.kind);
+  // Settings can be copied to other saved songs once this song is saved and has imported tracks.
+  const canApply = useSong((s) => !!s.source?.libraryId && Object.values(s.tracks ?? {}).some((track) => track.kind === "user"));
   const [notices, setNotices] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const files = useRef<HTMLInputElement>(null);
@@ -49,6 +52,11 @@ export function TrackImport() {
           Add folder…
         </Button>
         <span className="opacity-70">Drop audio files here. Imported tracks are saved with the song.</span>
+        {canApply && (
+          <Button size="sm" variant="outline" disabled={working} onClick={() => void useSongLibrary.getState().applyTrackSettings()}>
+            Apply track settings to similar songs
+          </Button>
+        )}
         <input
           ref={files}
           type="file"

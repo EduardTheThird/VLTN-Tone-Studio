@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  copyTrackSettings,
   flacName,
   isTrackFileName,
+  userTrackNames,
   trackKey,
   upgradeIndex,
   userFileName,
@@ -123,5 +125,55 @@ describe("validateSong with imported tracks", () => {
 
   it("refuses a song whose keys collide", () => {
     expect(() => validateSong(song([flacTrack("source"), imported(0), imported(0)]))).toThrow("Invalid song tracks.");
+  });
+});
+
+describe("applying track settings to similar songs", () => {
+  const imported = (name: string, index: number, extra: Partial<LibraryAudio> = {}): LibraryAudio => ({
+    ...flacTrack(name),
+    name,
+    kind: "user",
+    file: userFileName(index),
+    ...extra,
+  });
+  const from = song([flacTrack("source"), imported("Click", 0, { bus: "click", transpose: false, muteGroups: [1] }), imported("Keys L", 1, { gain: 0.6, pan: -0.4 })]);
+
+  it("lists a song's imported track names, sorted", () => {
+    expect(userTrackNames(from)).toEqual(["Click", "Keys L"]);
+  });
+
+  it("copies the settings onto a song with the same tracks, and keeps that song's audio and names", () => {
+    const to = { ...song([flacTrack("source"), imported("Keys L", 0), imported("Click", 1)]), id: "22222222-2222-3333-4444-555555555555" };
+    const copied = copyTrackSettings(from, to)!;
+    expect(copied.audio.map((a) => [a.name, a.file])).toEqual([
+      ["source", "source.flac"],
+      ["Keys L", "track0.flac"],
+      ["Click", "track1.flac"],
+    ]);
+    expect(copied.audio[1]).toMatchObject({ gain: 0.6, pan: -0.4 });
+    expect(copied.audio[2]).toMatchObject({ bus: "click", transpose: false, muteGroups: [1] });
+    expect(copied.id).toBe(to.id);
+  });
+
+  it("clears a setting the source does not have, so the defaults apply again", () => {
+    const to = song([flacTrack("source"), imported("Click", 0, { bus: "aux1", gain: 0.2 }), imported("Keys L", 1)]);
+    const copied = copyTrackSettings(from, to)!;
+    expect(copied.audio[1]).not.toHaveProperty("gain");
+    expect(copied.audio[1]).toMatchObject({ bus: "click" });
+  });
+
+  it("does not copy onto a song whose imported tracks are different", () => {
+    expect(copyTrackSettings(from, song([flacTrack("source"), imported("Click", 0)]))).toBeNull();
+    expect(copyTrackSettings(from, song([flacTrack("source"), imported("Click", 0), imported("Bass", 1)]))).toBeNull();
+  });
+
+  it("matches the tracks of a song with a repeated name in order", () => {
+    const twin = song([flacTrack("source"), imported("Click", 0, { bus: "click" }), imported("Click", 1, { bus: "aux2" })]);
+    const copied = copyTrackSettings(twin, song([flacTrack("source"), imported("Click", 0), imported("Click", 1)]))!;
+    expect(copied.audio.slice(1).map((a) => a.bus)).toEqual(["click", "aux2"]);
+  });
+
+  it("copies nothing from a song with no imported tracks", () => {
+    expect(copyTrackSettings(song([flacTrack("source")]), from)).toBeNull();
   });
 });
