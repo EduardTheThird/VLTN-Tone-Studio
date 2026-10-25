@@ -398,3 +398,4 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.
 - Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
 - Bluetooth editor management and RTP-MIDI are not supported.
+- The chart editor has no search and replace, no undo and redo, and no syntax highlighting.
