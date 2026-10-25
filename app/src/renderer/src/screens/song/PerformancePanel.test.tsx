@@ -166,6 +166,7 @@ vi.mock("@/song/stems/player", () => ({
     testTone() {}
     names = ["other"];
     duration = 60;
+    playbackRate = 1;
     get position() {
       return mocks.position;
     }

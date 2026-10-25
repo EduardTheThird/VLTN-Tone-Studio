@@ -10,7 +10,9 @@ import {
   effectiveBpm,
   followsPitch,
   pitchRatio,
-  storedSpeed,
+  speedFromOptions,
+  speedOptions,
+  clampSpeed,
   transposeChordName,
 } from "./speed";
 
@@ -102,11 +104,11 @@ describe("capo and chord transposition", () => {
 
 describe("stored speed settings", () => {
   it("reads defaults from an empty song", () => {
-    expect(storedSpeed({})).toEqual(DEFAULT_SPEED);
+    expect(clampSpeed({})).toEqual(DEFAULT_SPEED);
   });
 
   it("clamps what is stored and keeps only boolean track choices", () => {
-    const stored = storedSpeed({ speed: 3, semitones: 9.4, cents: -80, capo: 12, applyToChords: true, followsPitch: { bass: false, drums: "yes", Bad: true } });
+    const stored = clampSpeed({ speed: 3, semitones: 9.4, cents: -80, capo: 12, applyToChords: true, followsPitch: { bass: false, drums: "yes", Bad: true } });
     expect(stored).toEqual({ rate: 1.5, semitones: 6, cents: -50, capo: 7, applyToChords: true, followsPitch: { bass: false } });
   });
 
@@ -115,5 +117,14 @@ describe("stored speed settings", () => {
     expect(followsPitch(DEFAULT_SPEED, "vocals")).toBe(true);
     expect(followsPitch({ followsPitch: { drums: true, vocals: false } }, "drums")).toBe(true);
     expect(followsPitch({ followsPitch: { vocals: false } }, "vocals")).toBe(false);
+  });
+});
+
+describe("speed options", () => {
+  it("round-trips what is saved, and reads a broken JSON as the default", () => {
+    const speed = clampSpeed({ rate: 0.75, semitones: -2, cents: 20, applyToChords: true, followsPitch: { vocals: false } });
+    expect(speedFromOptions(JSON.stringify(speedOptions(speed)))).toEqual(speed);
+    expect(speedFromOptions("{not json")).toEqual(DEFAULT_SPEED);
+    expect(speedFromOptions("")).toEqual(DEFAULT_SPEED);
   });
 });

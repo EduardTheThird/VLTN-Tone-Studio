@@ -1,6 +1,8 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
-import { StemPlayer, type Lead } from "@/song/stems/player";
+import { StemPlayer, type Lead, type RenderedBuffers } from "@/song/stems/player";
+import { RenderQueue, isPlainSpeed } from "@/song/audio/render-queue";
+import { DEFAULT_SPEED, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { useSong } from "@/song/store";
 import { useSongLibrary, type PreparedSong } from "@/song/library";
@@ -12,7 +14,7 @@ import { setClockPosition, startPlaybackClock } from "@/song/performance/playbac
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
 import { readCrossfade } from "@/song/performance/crossfade";
-import { getSetting, performanceKey } from "@/song/performance/settings";
+import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
@@ -119,6 +121,10 @@ export interface SessionState {
   sections: Section[];
   /** What the performer has asked for about sections since the song started */
   sectionLive: SectionLive;
+  /** The song's speed and pitch, as the player plays them */
+  speed: SpeedSettings;
+  /** Tracks rendered out of the tracks in the render, while a render is being built */
+  rendering: { done: number; total: number } | null;
   /** The decided boundary that is still to take effect: a jump (to `target`) or a pause, and the song time it lands at */
   sectionNext: { kind: "jump" | "pause"; target: string | null; at: number } | null;
 }
@@ -173,6 +179,19 @@ export interface SessionOptions {
   initialClock: boolean;
 }
 
+/** A render swap waits at least this long (audio seconds) for its beat, so the MIDI schedule hears of it before it takes effect */
+const RENDER_SWAP_LEAD_S = 0.3;
+
+/** A song's options as an object. Anything that is not an object reads as empty. */
+function parseOptions(json: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(json || "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
   private effects: Effect[];
@@ -205,6 +224,17 @@ export class PerformanceSession {
   private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
   /** The id of the song being handed over to, from the moment the library moves on until the session adopts it */
   private handingOver: string | null = null;
+  /** The stems at 100%, which every render is made from */
+  private baseStems: Stems | null = null;
+  /** The settings key of the song loaded, under which its speed is stored */
+  private songSettingsKey = "";
+  private renders = new RenderQueue();
+  /** Counts speed requests, so a render that a newer request has overtaken is dropped */
+  private renderRequest = 0;
+  /** A built render waiting for the next beat of the song that is playing */
+  private pendingRender: RenderedBuffers | null = null;
+  /** A render swap that is on its way: the song time it takes effect at, and the audio time, which is also the MIDI jump */
+  private renderSwap: { at: number; ctxAt: number; rate: number } | null = null;
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
@@ -231,6 +261,8 @@ export class PerformanceSession {
       sections: [],
       sectionLive: NO_LIVE,
       sectionNext: null,
+      speed: DEFAULT_SPEED,
+      rendering: null,
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -262,18 +294,27 @@ export class PerformanceSession {
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     if (!source) return () => {};
     const handover = this.takeHandover(source);
-    const shape = playerShape(shapeFromOptions(getSetting(performanceKey(source), ":options")));
-    const player = handover?.player ?? new StemPlayer(stems ?? { other: source.audio }, sharedPlaybackEngine(), shape);
+    const options = getSetting(performanceKey(source), ":options");
+    const shape = playerShape(shapeFromOptions(options));
+    const speed = speedFromOptions(options);
+    this.baseStems = stems ?? { other: source.audio };
+    this.songSettingsKey = performanceKey(source);
+    this.renders.clear();
+    this.pendingRender = null;
+    this.renderSwap = null;
+    const player = handover?.player ?? new StemPlayer(this.baseStems, sharedPlaybackEngine(), shape);
     const stopWiring = handover ? handover.unwire : this.wirePlayer(player, source);
     if (handover) {
       this.startHandover(handover);
       // Playback carries on: the song is already running, so the transport stays as it is.
-      this.batch(() => this.set({ player }));
+      this.batch(() => this.set({ player, speed }));
     } else {
       this.batch(() => {
-        this.set({ player, playing: false });
+        this.set({ player, playing: false, speed });
         setClockPosition(0);
       });
+      // A song saved at another speed is rendered now. It plays at 100% until its render is in place.
+      if (!isPlainSpeed(speed)) void this.renderSpeed(speed);
     }
     return () => {
       stopWiring();
@@ -344,7 +385,7 @@ export class PerformanceSession {
   private startHandover(chained: Chained): void {
     const armed = this.armed;
     try {
-      this.startTempo = this.tempoMessages(armed, this.output);
+      this.startTempo = this.tempoMessages(armed, this.output, chained.player.playbackRate);
     } catch (e) {
       this.fail(e);
       this.startTempo = null;
@@ -553,7 +594,12 @@ export class PerformanceSession {
       this.cancelPendingStart();
       this.dropSectionPlan();
       this.dropChained();
+      if (this.renderSwap) {
+        this.renderSwap = null;
+        this.sendPlan();
+      }
       player?.pause();
+      this.applyPendingRender();
       this.set({ playing: false });
       // A pedal/THRU path can echo our Stop back into the selected input.
       // Repeated Stop while already stopped must not transmit another Stop.
@@ -586,7 +632,8 @@ export class PerformanceSession {
       const requestedPosition = player.position >= player.duration ? 0 : Math.max(0, player.position);
       // The count-in is clicked before the audio starts, so it begins with the tempo message.
       const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
-      this.countInMs = bpm > 0 ? countIn * beatSeconds(bpm) * 1000 : 0;
+      // The count-in is as long as the audio it leads: beats at the song tempo times the rate.
+      this.countInMs = bpm > 0 ? (countIn * beatSeconds(bpm) * 1000) / player.playbackRate : 0;
       await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats });
       if (request !== this.playRequest) {
         player.pause();
@@ -656,11 +703,13 @@ export class PerformanceSession {
   };
 
   /** The one-time tempo message a start sends, or null when it sends none. Throws when the tempo is out of range. */
-  private tempoMessages(armed: boolean, output: MidiOutput | undefined): number[][] | null {
+  private tempoMessages(armed: boolean, output: MidiOutput | undefined, rate = this.state.player?.playbackRate ?? 1): number[][] | null {
     const { tempoOnStart, tempoChannel, bpm } = this.state;
     if (!armed || !tempoOnStart || output?.state !== "connected") return null;
-    if (bpm < 40 || bpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
-    const tempo = Math.round(bpm),
+    // The pedal is sent the tempo the song plays at, so the range is checked on the effective BPM.
+    const tempoBpm = effectiveBpm(bpm, rate);
+    if (tempoBpm < 40 || tempoBpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
+    const tempo = Math.round(tempoBpm),
       status = 0xb0 + tempoChannel - 1;
     return [
       [status, 73, tempo >> 7],
@@ -720,7 +769,7 @@ export class PerformanceSession {
       unwire();
       return;
     }
-    const countInMs = bpm > 0 ? countInBeatsNow * beatSeconds(bpm) * 1000 : 0;
+    const countInMs = bpm > 0 ? (countInBeatsNow * beatSeconds(bpm) * 1000) / incoming.playbackRate : 0;
     this.chained = { id: next.id, player: incoming, countInMs, unwire };
     this.clearHandoverTimer();
     this.handoverTimer = setTimeout(this.handOver, Math.max(0, (plan.startAt - HANDOVER_LEAD_S - player.audioNow) * 1000));
@@ -815,18 +864,25 @@ export class PerformanceSession {
 
   /** Tells the scheduler the waiting plan. Called on each decision, and when a scheduler starts while a plan waits. */
   private sendPlan(): void {
-    const schedule = this.section?.schedule ?? null;
+    const schedule = this.section?.schedule ?? this.renderSchedule();
     // Without sections there is never a plan to send or to clear, so the scheduler is not touched.
     if (!schedule && !this.planSent) return;
     this.planSent = schedule !== null;
     this.scheduler?.plan(schedule?.cap ?? null, schedule?.jump ?? null);
   }
 
+  /** The MIDI plan of a render swap: cues are held after its song time, and the schedule takes the new rate at its audio time. */
+  private renderSchedule(): { cap: number; jump: SchedulerJump | null } | null {
+    const swap = this.renderSwap;
+    if (!swap) return null;
+    return { cap: swap.at, jump: { at: this.clockOf(swap.ctxAt), position: swap.at, rate: swap.rate } };
+  }
+
   /** Takes a boundary decided by the planner: the audio jump is scheduled now, the MIDI schedule is held up to it. */
   private commitBoundary(boundary: SectionBoundary): void {
     const { player, sectionLive } = this.state;
     const sections = this.playableSections;
-    if (!player) return;
+    if (!player || this.renderSwap) return;
     const { action } = boundary;
     if (action.kind === "jump") {
       const ctxAt = player.prepareJump(action.to, boundary.at);
@@ -882,6 +938,8 @@ export class PerformanceSession {
     const sections = this.playableSections;
     if (!player || !playing) return;
     try {
+      this.tickRender(player);
+      if (this.renderSwap) return;
       const plan = this.section;
       if (plan) {
         if (plan.sections !== sections) {
@@ -902,6 +960,79 @@ export class PerformanceSession {
       this.fail(e);
     }
   };
+
+  /**
+   * Carries a render through while the song plays: a built render is swapped in at the next beat, once no section jump is waiting,
+   * and the swap is cleared when its audio time passes. Sections wait for a swap to land.
+   */
+  private tickRender(player: StemPlayer): void {
+    const swap = this.renderSwap;
+    if (swap) {
+      if (player.audioNow >= swap.ctxAt) {
+        this.renderSwap = null;
+        this.sendPlan();
+      }
+      return;
+    }
+    if (!this.pendingRender || this.section) return;
+    const started = player.swapRender(this.pendingRender, RENDER_SWAP_LEAD_S);
+    if (!started) return;
+    this.renderSwap = { at: started.at, ctxAt: started.when, rate: this.pendingRender.rate };
+    this.pendingRender = null;
+    this.sendPlan();
+  }
+
+  /** Applies a render that is waiting for a beat, now. Used when the song stops, because a stopped song has no beat to wait for. */
+  private applyPendingRender(): void {
+    const render = this.pendingRender;
+    const player = this.state.player;
+    if (!render || !player) return;
+    this.pendingRender = null;
+    player.applyRender(render);
+  }
+
+  /**
+   * Sets the song's speed and pitch. The render is built in the background; the newest request wins. A built render is swapped in at
+   * the next beat while the song plays, and applied at once while it is stopped.
+   */
+  setSpeed = (requested: Partial<SpeedSettings>): void => {
+    const speed = clampSpeed({ ...this.state.speed, ...requested });
+    if (JSON.stringify(speed) === JSON.stringify(this.state.speed)) return;
+    this.set({ speed });
+    try {
+      const key = this.songSettingsKey;
+      const options = parseOptions(getSetting(key, ":options"));
+      setSetting(key, ":options", JSON.stringify({ ...options, ...speedOptions(speed) }));
+    } catch (e) {
+      this.fail(e);
+    }
+    void this.renderSpeed(speed);
+  };
+
+  /** Builds the render for `speed` from the stems at 100%, and hands it to the player. Stale results are dropped. */
+  private async renderSpeed(speed: SpeedSettings): Promise<void> {
+    const base = this.baseStems;
+    const player = this.state.player;
+    if (!base || !player) return;
+    const request = ++this.renderRequest;
+    this.set({ rendering: null });
+    try {
+      const stems = await this.renders.render(base, speed, (done, total) => {
+        if (request === this.renderRequest) this.set({ rendering: { done, total } });
+      });
+      if (!stems || request !== this.renderRequest || this.state.player !== player) return;
+      const render = await player.renderBuffers(stems, speed.rate);
+      if (request !== this.renderRequest || this.state.player !== player) return;
+      this.pendingRender = render;
+      if (!player.isPlaying) this.applyPendingRender();
+      this.set({ rendering: null });
+    } catch (e) {
+      if (request === this.renderRequest) {
+        this.set({ rendering: null });
+        this.fail(e);
+      }
+    }
+  }
 
   /** A tap arms a jump to the section for the next boundary. While stopped it moves the playhead to the section's start instead. */
   tapSection = (id: string) => {
@@ -1170,7 +1301,8 @@ export class PerformanceSession {
       // Keep the live audio clock as the origin so overdue starts still fault.
       const cuePosition = this.startPosition ?? position;
       this.startPosition = null;
-      const origin = midiNow() - position * 1000;
+      const rate = player.playbackRate;
+      const origin = midiNow() - (position * 1000) / rate;
       const handle = startMidiScheduler(
         {
           cues: s.cues,
@@ -1179,6 +1311,7 @@ export class PerformanceSession {
           origin,
           tempoAt: origin - this.countInMs,
           bpm: s.bpm,
+          rate,
           clock: s.clock,
           tempo: this.startTempo,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,

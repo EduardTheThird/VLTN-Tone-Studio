@@ -15,8 +15,14 @@ const mocks = vi.hoisted(() => ({
   plans: [] as { cap: number | null; jump: { at: number; position: number } | null }[],
   outputs: [] as { player: unknown; config: unknown }[],
   toasts: [] as unknown[],
-  players: [] as { onOutputWarning: ((message: string) => void) | null }[],
+  players: [] as { onOutputWarning: ((message: string) => void) | null; isPlaying: boolean }[],
   lead: undefined as unknown,
+  rate: 1,
+  swaps: [] as unknown[],
+  applied: [] as unknown[],
+  configs: [] as { rate?: number; tempo: number[][] | null }[],
+  swapAt: 2.5,
+  swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
   sends: [] as ((message: { bytes: number[]; due: number; label: string }) => void)[],
   library: {
@@ -52,6 +58,19 @@ vi.mock("@/song/stems/player", () => ({
     }
     get position() {
       return mocks.position;
+    }
+    get playbackRate() {
+      return mocks.rate;
+    }
+    renderBuffers(_stems: unknown, rate: number) {
+      return Promise.resolve({ rate, buffers: {} });
+    }
+    applyRender(render: unknown) {
+      mocks.applied.push(render);
+    }
+    swapRender(render: unknown) {
+      mocks.swaps.push(render);
+      return { at: mocks.swapAt, when: mocks.swapWhen };
     }
     async play(lead?: unknown) {
       mocks.lead = lead;
@@ -89,11 +108,22 @@ vi.mock("@/song/stems/player", () => ({
   },
 }));
 vi.mock("@/song/store", () => ({ useSong: { getState: () => ({ source: null }) } }));
+// Renders are built on the same thread here: the worker is tested in render-queue.test.ts
+vi.mock("@/song/audio/render-queue", () => ({
+  RenderQueue: class {
+    render(base: unknown) {
+      return Promise.resolve(base);
+    }
+    clear() {}
+  },
+  isPlainSpeed: (speed: { rate: number; semitones: number; cents: number }) => speed.rate === 1 && speed.semitones === 0 && speed.cents === 0,
+}));
 vi.mock("@/song/library", () => ({ useSongLibrary: { getState: () => mocks.library } }));
 vi.mock("@/song/performance/midi-scheduler-client", () => ({
   midiNow: () => performance.timeOrigin + performance.now(),
   prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
-  startMidiScheduler: (_config: unknown, send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
+  startMidiScheduler: (config: (typeof mocks.configs)[number], send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
+    mocks.configs.push(config);
     mocks.sends.push(send);
     mocks.faults.push(fault);
     return {
@@ -145,6 +175,10 @@ beforeEach(() => {
   mocks.sends.length = 0;
   mocks.library.playlistPlaying = false;
   mocks.library.queue = [];
+  mocks.rate = 1;
+  mocks.swaps.length = 0;
+  mocks.applied.length = 0;
+  mocks.configs.length = 0;
   useMidiDiagnostics.getState().reset();
 });
 afterEach(() => vi.clearAllMocks());
@@ -499,5 +533,60 @@ describe("sections", () => {
     session.releaseSectionLoop();
     expect(session.state.sectionLive.loop).toBeNull();
     expect(session.state.sectionLive.released).toEqual(["verse"]);
+  });
+});
+
+describe("speed", () => {
+  /** Lets the render promises settle, which the fake timers would not do. */
+  async function flush() {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("swaps a speed change in at the next beat while the song plays, and the MIDI plan carries the new rate", async () => {
+    const { session } = armedSession();
+    mocks.position = 2;
+    mocks.audioNow = 2;
+    session.store.setState({ playing: true });
+    mocks.players.at(-1)!.isPlaying = true;
+    session.setSpeed({ rate: 0.5 });
+    await flush();
+    // The render is ready, but the swap waits for the tick that carries it out
+    expect(mocks.swaps).toHaveLength(0);
+    vi.advanceTimersByTime(50);
+    expect(mocks.swaps).toHaveLength(1);
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 2.5, jump: { position: 2.5, rate: 0.5 } });
+    expect(session.state.speed.rate).toBe(0.5);
+    // When the swap takes effect the plan is cleared, and the song keeps playing
+    mocks.audioNow = 2.6;
+    mocks.position = 2.5;
+    vi.advanceTimersByTime(50);
+    expect(mocks.plans.at(-1)).toEqual({ cap: null, jump: null });
+    expect(session.state.playing).toBe(true);
+  });
+
+  it("applies a speed change at once while the song is stopped", async () => {
+    const { session } = armedSession();
+    session.setSpeed({ semitones: 2 });
+    await flush();
+    expect(mocks.applied).toHaveLength(1);
+    expect(mocks.swaps).toHaveLength(0);
+    expect(session.state.speed.semitones).toBe(2);
+  });
+
+  it("sends the effective BPM as the start tempo and gives the scheduler the rate", async () => {
+    mocks.rate = 0.5;
+    const { session } = armedSession(output(), { tempoOnStart: true, bpm: 120 });
+    await session.play();
+    await vi.advanceTimersByTimeAsync(100);
+    const config = mocks.configs.at(-1)!;
+    expect(config.rate).toBe(0.5);
+    // 120 BPM at 50% is 60 BPM: the tempo message carries 60
+    expect(config.tempo).toEqual([
+      [176, 73, 0],
+      [176, 74, 60],
+    ]);
+    session.pause();
   });
 });

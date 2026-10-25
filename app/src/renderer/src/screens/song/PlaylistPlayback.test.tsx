@@ -68,6 +68,7 @@ vi.mock("@/song/stems/player", () => ({
     testTone() {}
     names = ["other"];
     duration = 10;
+    playbackRate = 1;
     position = 0;
     isPlaying = false;
     onEnded: (() => void) | null = null;

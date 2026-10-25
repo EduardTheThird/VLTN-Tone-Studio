@@ -119,20 +119,36 @@ export function followsPitch(settings: Pick<SpeedSettings, "followsPitch">, trac
   return settings.followsPitch[track] ?? defaultFollowsPitch(track);
 }
 
-/** A song's stored speed settings. Missing or invalid values fall back to the defaults; the values are clamped; it never throws. */
-export function storedSpeed(raw: Record<string, unknown>): SpeedSettings {
+/** The speed settings with every value clamped. Anything missing or invalid falls back to the default; it never throws. */
+export function clampSpeed(raw: Partial<SpeedSettings> | Record<string, unknown>): SpeedSettings {
+  const source = raw as Record<string, unknown>;
   const followed: Record<string, boolean> = {};
-  if (raw.followsPitch && typeof raw.followsPitch === "object") {
-    for (const [track, value] of Object.entries(raw.followsPitch as Record<string, unknown>)) {
+  if (source.followsPitch && typeof source.followsPitch === "object") {
+    for (const [track, value] of Object.entries(source.followsPitch as Record<string, unknown>)) {
       if (typeof value === "boolean" && /^[a-z]{1,16}$/.test(track)) followed[track] = value;
     }
   }
   return {
-    rate: clampRate(raw.speed),
-    semitones: clampSemitones(raw.semitones),
-    cents: clampCents(raw.cents),
-    capo: clampCapo(raw.capo),
-    applyToChords: raw.applyToChords === true,
+    rate: clampRate(source.rate ?? source.speed),
+    semitones: clampSemitones(source.semitones),
+    cents: clampCents(source.cents),
+    capo: clampCapo(source.capo),
+    applyToChords: source.applyToChords === true,
     followsPitch: followed,
   };
+}
+
+/** A song's stored speed settings, read from its options. A missing or broken JSON is the default. */
+export function speedFromOptions(json: string): SpeedSettings {
+  try {
+    const parsed: unknown = JSON.parse(json || "{}");
+    return clampSpeed(parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {});
+  } catch {
+    return DEFAULT_SPEED;
+  }
+}
+
+/** The keys the speed settings are stored under in a song's options. The capo is stored by the performance panel under the same name. */
+export function speedOptions(speed: SpeedSettings): Record<string, unknown> {
+  return { speed: speed.rate, semitones: speed.semitones, cents: speed.cents, applyToChords: speed.applyToChords, followsPitch: speed.followsPitch };
 }
