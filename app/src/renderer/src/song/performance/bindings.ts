@@ -88,6 +88,8 @@ const isDataByte = (value: unknown): value is number => Number.isInteger(value) 
 export function parseMidi(data: ArrayLike<number>): MidiEvent | null {
   const status = data[0];
   if (!Number.isInteger(status)) return null;
+  // Song Select has a number and no channel. Bindings cannot name it; song triggers can (see song-triggers.ts).
+  if (status === 0xf3) return isDataByte(data[1]) ? { status, data1: data[1] } : null;
   if (status >= 0xf8) return { status };
   if (status < 0x80 || status >= 0xf0) return null;
   const type = status & 0xf0,
@@ -184,6 +186,18 @@ function modeFires(match: MidiMatch, event: MidiEvent, before: number | undefine
 
 export type Route = { kind: "fire"; binding: Binding } | { kind: "armed"; binding: Binding };
 
+/** What a message selects other than a binding: a key for bouncing it, and the value the session acts on. */
+export interface SongHit<T> {
+  key: string;
+  value: T;
+}
+
+/** What one message does: the routes it fires, and the song it selects (only when no binding claims the message). */
+export interface Received<T> {
+  routes: Route[];
+  song: T | null;
+}
+
 /** Decides what each message or key press runs. Holds the state the modes and the safety rules need, so one instance lives per session. */
 export class RemoteRouter {
   readonly echo: EchoFilter;
@@ -203,20 +217,44 @@ export class RemoteRouter {
 
   /** The routes a MIDI message fires. Our own echoed output, and anything unreadable, fires nothing. */
   midi(data: ArrayLike<number>, bindings: readonly Binding[]): Route[] {
-    if (this.echo.consume(data)) return [];
-    const event = parseMidi(data);
-    if (!event) return [];
-    this.bank.observe(event);
+    return this.receive(data, bindings, () => null).routes;
+  }
+
+  /**
+   * One message from the input, read once: the routes it fires, and the song it selects. A binding that answers the message keeps it,
+   * so a song trigger on the same message does not also fire. `findSong` is asked only for a message no binding claims, and its hit
+   * is bounced like a binding's, so a pedal that sends a change twice loads once. Never throws for a message it cannot read.
+   */
+  receive<T>(data: ArrayLike<number>, bindings: readonly Binding[], findSong: (event: MidiEvent, bank: BankTracker) => SongHit<T> | null): Received<T> {
+    const event = this.readInput(data);
+    if (!event) return { routes: [], song: null };
     const controller = event.status === 0xb0 && event.channel !== undefined && event.data1 !== undefined ? event.channel * 128 + event.data1 : -1;
     const before = controller >= 0 ? this.previous.get(controller) : undefined;
     if (controller >= 0) this.previous.set(controller, event.data2 ?? 0);
     const routes: Route[] = [];
-    bindings.forEach((binding, index) => {
-      if (binding.source !== "midi" || !matchesEvent(binding.match, event, this.bank) || !modeFires(binding.match, event, before)) return;
-      if (this.bounced(index, event)) return;
+    const where = `${event.channel ?? ""}:${event.data1 ?? ""}`;
+    let claimed = false;
+    for (const [index, binding] of bindings.entries()) {
+      if (binding.source !== "midi" || !matchesEvent(binding.match, event, this.bank) || !modeFires(binding.match, event, before)) continue;
+      claimed = true;
+      if (this.bounced(`${index}:${where}`)) continue;
       routes.push(this.press(binding, index));
-    });
-    return routes;
+    }
+    if (claimed) return { routes, song: null };
+    const hit = findSong(event, this.bank);
+    if (!hit || this.bounced(`song:${hit.key}:${where}`)) return { routes, song: null };
+    return { routes, song: hit.value };
+  }
+
+  /**
+   * One message read for the inputs: our own echo is dropped (null), anything that is not a readable message is null, and a bank select
+   * is noted for the program change that follows it. Every consumer reads a message through here, so an echo is used exactly once.
+   */
+  readInput(data: ArrayLike<number>): MidiEvent | null {
+    if (this.echo.consume(data)) return null;
+    const event = parseMidi(data);
+    if (event) this.bank.observe(event);
+    return event;
   }
 
   /** The routes a key press fires. Callers ignore repeats and typing; this only matches the key. */
@@ -231,16 +269,12 @@ export class RemoteRouter {
 
   /** What a message means for Learn: the match it would bind, a message to wait on, or nothing to learn. Null for echoes and junk. */
   learnMidi(data: ArrayLike<number>): LearnStep | null {
-    if (this.echo.consume(data)) return null;
-    const event = parseMidi(data);
-    if (!event) return null;
-    this.bank.observe(event);
-    return learnStep(event, this.bank);
+    const event = this.readInput(data);
+    return event ? learnStep(event, this.bank) : null;
   }
 
-  private bounced(index: number, event: MidiEvent): boolean {
-    const key = `${index}:${event.channel ?? ""}:${event.data1 ?? ""}`,
-      now = this.now(),
+  private bounced(key: string): boolean {
+    const now = this.now(),
       last = this.accepted.get(key);
     if (last !== undefined && now - last < BOUNCE_MS) return true;
     this.accepted.set(key, now);
@@ -330,6 +364,7 @@ export function defaultBindings(): Binding[] {
 export function describeEvent(event: MidiEvent): string {
   if (event.status in REALTIME) return REALTIME[event.status as keyof typeof REALTIME];
   if (event.status >= 0xf8) return "Real-time message";
+  if (event.status === 0xf3) return `Song Select ${event.data1 ?? 0}`;
   const channel = event.channel === undefined ? "" : `Ch ${event.channel + 1} · `,
     d1 = event.data1 ?? 0,
     d2 = event.data2 ?? 0;

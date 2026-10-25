@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BankTracker,
   BOUNCE_MS,
@@ -364,5 +364,60 @@ describe("saved bindings", () => {
   it("describes a binding for the list and for a clash", () => {
     expect(describeBinding(defaultBindings()[3])).toBe("Any channel · CC 80 64–127 · Momentary");
     expect(describeBinding({ action: "section.next", source: "key", match: { key: "PageDown" }, doublePress: true })).toBe("Key PageDown · double press");
+  });
+});
+
+describe("receive", () => {
+  const programBinding: Binding = { action: "section.next", source: "midi", match: { status: 0xc0, channel: 1, data1: 9 } };
+  const hitSong = (song: string) => () => ({ key: song, value: song });
+
+  it("gives a message no binding claims to the song finder, once within the bounce window", () => {
+    const c = clock();
+    const router = new RemoteRouter(c.now);
+    expect(router.receive([0xc0, 5], [], hitSong("song-a")).song).toBe("song-a");
+    // A pedal that sends the change twice loads once.
+    expect(router.receive([0xc0, 5], [], hitSong("song-a")).song).toBeNull();
+    c.advance(BOUNCE_MS);
+    expect(router.receive([0xc0, 5], [], hitSong("song-a")).song).toBe("song-a");
+  });
+
+  it("does not ask the song finder when a binding claims the message, and fires the binding", () => {
+    const router = new RemoteRouter(clock().now);
+    const finder = vi.fn(hitSong("song-a"));
+    const received = router.receive([0xc0, 9], [programBinding], finder);
+    expect(finder).not.toHaveBeenCalled();
+    expect(received.song).toBeNull();
+    expect(firedActions(received.routes)).toEqual(["section.next"]);
+  });
+
+  it("keeps a claimed message from a song trigger even when the binding is bounced", () => {
+    const c = clock();
+    const router = new RemoteRouter(c.now);
+    router.receive([0xc0, 9], [programBinding], hitSong("song-a"));
+    const again = router.receive([0xc0, 9], [programBinding], hitSong("song-a"));
+    expect(again.routes).toEqual([]);
+    expect(again.song).toBeNull();
+  });
+
+  it("does not select a song for our own echoed output, and does not ask the finder for it", () => {
+    const router = new RemoteRouter(clock().now);
+    router.echo.record([0xc0, 5]);
+    const finder = vi.fn(hitSong("song-a"));
+    expect(router.receive([0xc0, 5], [], finder)).toEqual({ routes: [], song: null });
+    expect(finder).not.toHaveBeenCalled();
+  });
+
+  it("reads Song Select with its number and no channel", () => {
+    expect(parseMidi([0xf3, 12])).toEqual({ status: 0xf3, data1: 12 });
+    expect(parseMidi([0xf3])).toBeNull();
+    expect(parseMidi([0xf3, 128])).toBeNull();
+  });
+
+  it("reads a message that is not a message as nothing, and never throws", () => {
+    const router = new RemoteRouter(clock().now);
+    const finder = vi.fn(hitSong("song-a"));
+    expect(router.receive([0x90], [], finder)).toEqual({ routes: [], song: null });
+    expect(router.receive([], [programBinding], finder)).toEqual({ routes: [], song: null });
+    expect(finder).not.toHaveBeenCalled();
   });
 });
