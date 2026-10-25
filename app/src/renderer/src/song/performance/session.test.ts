@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StemPlayer } from "@/song/stems/player";
+import type { Stems } from "@/song/types";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
 import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
@@ -36,6 +38,8 @@ vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     duration = 60;
     start = 0;
+    behaviour = "next";
+    disposed = false;
     isPlaying = false;
     onEnded?: () => void;
     onOutputWarning: ((message: string) => void) | null = null;
@@ -79,7 +83,9 @@ vi.mock("@/song/stems/player", () => ({
       return null;
     }
     cancelChain() {}
-    async dispose() {}
+    async dispose() {
+      this.disposed = true;
+    }
   },
 }));
 vi.mock("@/song/store", () => ({ useSong: { getState: () => ({ source: null }) } }));
@@ -288,7 +294,9 @@ it("refuses to seek while locked", async () => {
 
 it("chains the next playlist song near the end, takes it over at its join, and does not send Stop", async () => {
   vi.useFakeTimers();
-  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {} };
+  // The next song was prepared before the join, so its player already exists and is the one the session chains.
+  const incoming = new StemPlayer({} as Stems);
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: incoming };
   mocks.library.playlistPlaying = true;
   mocks.library.queue = ["a", "b"];
   mocks.library.preparedNext = () => next as never;
@@ -301,18 +309,36 @@ it("chains the next playlist song near the end, takes it over at its join, and d
   mocks.position = 56;
   mocks.audioNow = 16;
   vi.advanceTimersByTime(250);
-  expect(mocks.players).toHaveLength(2);
-  const incoming = mocks.players[1];
+  expect(session.state.player).not.toBe(incoming);
   // The hand-over is taken half a second before the join, which is at the outgoing song's end.
   vi.advanceTimersByTime(3500);
   expect(mocks.library.advanceToPrepared).toHaveBeenCalledWith("b");
   // The library's change arrives: the outgoing song is let go, and the chained song is adopted without a new player.
+  const outgoing = session.state.player!;
   unload();
+  expect((outgoing as unknown as { disposed: boolean }).disposed).toBe(true);
   session.loadSong({ ...next.source }, null);
   expect(session.state.player).toBe(incoming);
   expect(session.state.playing).toBe(true);
   expect(mocks.players).toHaveLength(2);
   expect(out.send.mock.calls.some(([bytes]) => bytes?.[0] === 252)).toBe(false);
+  vi.useRealTimers();
+});
+
+it("does not chain a song that is set to stop the playlist", async () => {
+  vi.useFakeTimers();
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: new StemPlayer({} as Stems) };
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => next as never;
+  armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  (mocks.players.at(-1) as unknown as { behaviour: string }).behaviour = "stop";
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(1000);
+  expect(mocks.library.advanceToPrepared).not.toHaveBeenCalled();
+  expect(mocks.players).toHaveLength(2);
   vi.useRealTimers();
 });
 

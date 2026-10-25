@@ -12,6 +12,8 @@ import { setClockPosition, startPlaybackClock } from "@/song/performance/playbac
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
 import { readCrossfade } from "@/song/performance/crossfade";
+import { getSetting, performanceKey } from "@/song/performance/settings";
+import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
 import {
@@ -258,7 +260,8 @@ export class PerformanceSession {
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     if (!source) return () => {};
     const handover = this.takeHandover(source);
-    const player = handover?.player ?? new StemPlayer(stems ?? { other: source.audio }, sharedPlaybackEngine());
+    const shape = playerShape(shapeFromOptions(getSetting(performanceKey(source), ":options")));
+    const player = handover?.player ?? new StemPlayer(stems ?? { other: source.audio }, sharedPlaybackEngine(), shape);
     const stopWiring = handover ? handover.unwire : this.wirePlayer(player, source);
     if (handover) {
       this.startHandover(handover);
@@ -300,10 +303,22 @@ export class PerformanceSession {
         this.handOver();
         return;
       }
+      // A looping song reaches its end only if its loop pass was missed. It then starts again from its trimmed start.
+      if (player.behaviour === "loop") {
+        this.set({ playing: false });
+        setClockPosition(player.start);
+        void player.seek(player.start).then(() => this.play());
+        return;
+      }
       this.batch(() => {
         this.set({ playing: false });
         setClockPosition(player.duration);
         const library = useSongLibrary.getState();
+        // A song set to stop the playlist ends it here, so the next song does not start on its own.
+        if (player.behaviour === "stop") {
+          library.pausePlaylist();
+          return;
+        }
         if (library.playlistPlaying && library.queue[library.position] === source.libraryId) void library.advancePlaylist();
       });
     };
@@ -318,10 +333,8 @@ export class PerformanceSession {
     this.handingOver = null;
     this.clearHandoverTimer();
     if (chained && handingOver === source.libraryId && chained.id === source.libraryId) return chained;
-    if (chained) {
-      chained.unwire();
-      void chained.player.dispose();
-    }
+    // The library owns a prepared song until it is taken over, so only its hook-up is undone here.
+    chained?.unwire();
     return null;
   }
 
@@ -675,7 +688,8 @@ export class PerformanceSession {
   /** Chains the next playlist song onto this one once its join is close, so the two play on one clock. Checked until it is chained. */
   private planNext(): void {
     const { player, queued, playlistPlaying } = this.state;
-    if (!player?.isPlaying || this.chained || !queued || !playlistPlaying) return;
+    // A song set to stop, or to loop, does not hand over to the next one.
+    if (!player?.isPlaying || player.behaviour !== "next" || this.chained || !queued || !playlistPlaying) return;
     const next = useSongLibrary.getState().preparedNext();
     if (!next) return;
     const now = player.audioNow;
@@ -695,13 +709,13 @@ export class PerformanceSession {
   private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, countIn: number): void {
     const { player, bpm } = this.state;
     if (!player) return;
-    const incoming = new StemPlayer(next.stems, sharedPlaybackEngine());
+    // The next song's buffers were built when it was prepared, so the join only starts them.
+    const incoming = next.player;
     const unwire = this.wirePlayer(incoming, next.source);
     const countInBeatsNow = plan.kind === "countIn" ? countIn : 0;
     const lead: Lead = { bpm, countInBeats: countInBeatsNow, preRollBeats: 0 };
     if (!player.chainNext(incoming, { startAt: plan.startAt, fadeLength: plan.fadeLength, stopAt: plan.stopAt, lead })) {
       unwire();
-      void incoming.dispose();
       return;
     }
     const countInMs = bpm > 0 ? countInBeatsNow * beatSeconds(bpm) * 1000 : 0;
@@ -735,9 +749,9 @@ export class PerformanceSession {
     const chained = this.chained;
     if (!chained) return;
     this.chained = null;
+    // The prepared song stays with the library: it is stopped here, and it can be chained again.
     this.state.player?.cancelChain();
     chained.unwire();
-    void chained.player.dispose();
   }
 
   private clearHandoverTimer(): void {
