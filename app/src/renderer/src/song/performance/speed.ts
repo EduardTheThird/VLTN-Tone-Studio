@@ -87,3 +87,52 @@ export function transposeChordName(name: string, semitones: number): string {
   const moved = transposeSymbol(symbol, semitones);
   return bass === undefined ? moved : `${moved}/${transposeSymbol(bass, semitones)}`;
 }
+
+/** A song's speed and pitch as the player and the reader use them. Stored in the song's options, next to its other performance options. */
+export interface SpeedSettings {
+  /** Playback rate, 0.5 to 1.5 */
+  rate: number;
+  /** Whole semitones of pitch shift */
+  semitones: number;
+  /** Fine tune in cents */
+  cents: number;
+  /** Capo position, 0 to 7. It lowers the chord shapes; it does not change the sound. */
+  capo: number;
+  /** Whether the chord names move with the pitch shift */
+  applyToChords: boolean;
+  /** Per-track choices where a track differs from its default (see `tracksFollowPitch`), keyed by track name */
+  followsPitch: Record<string, boolean>;
+}
+
+export const DEFAULT_SPEED: SpeedSettings = { rate: 1, semitones: 0, cents: 0, capo: 0, applyToChords: false, followsPitch: {} };
+
+/**
+ * Whether a track is shifted in pitch by default. Drums and other click-like stems keep their pitch, so the pitch shift changes the
+ * melodic tracks only. A track's own choice overrides this.
+ */
+export function defaultFollowsPitch(track: string): boolean {
+  return track !== "drums";
+}
+
+/** Whether `track` follows the pitch shift: its own choice when it has one, the default otherwise. */
+export function followsPitch(settings: Pick<SpeedSettings, "followsPitch">, track: string): boolean {
+  return settings.followsPitch[track] ?? defaultFollowsPitch(track);
+}
+
+/** A song's stored speed settings. Missing or invalid values fall back to the defaults; the values are clamped; it never throws. */
+export function storedSpeed(raw: Record<string, unknown>): SpeedSettings {
+  const followed: Record<string, boolean> = {};
+  if (raw.followsPitch && typeof raw.followsPitch === "object") {
+    for (const [track, value] of Object.entries(raw.followsPitch as Record<string, unknown>)) {
+      if (typeof value === "boolean" && /^[a-z]{1,16}$/.test(track)) followed[track] = value;
+    }
+  }
+  return {
+    rate: clampRate(raw.speed),
+    semitones: clampSemitones(raw.semitones),
+    cents: clampCents(raw.cents),
+    capo: clampCapo(raw.capo),
+    applyToChords: raw.applyToChords === true,
+    followsPitch: followed,
+  };
+}

@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { CAPO_MAX, chordDisplayTranspose, clampCapo, clampCents, clampRate, clampSemitones, effectiveBpm, pitchRatio, transposeChordName } from "./speed";
+import {
+  CAPO_MAX,
+  DEFAULT_SPEED,
+  chordDisplayTranspose,
+  clampCapo,
+  clampCents,
+  clampRate,
+  clampSemitones,
+  effectiveBpm,
+  followsPitch,
+  pitchRatio,
+  storedSpeed,
+  transposeChordName,
+} from "./speed";
 
 describe("clampRate", () => {
   it("keeps the rate between 50% and 150%", () => {
@@ -84,5 +97,23 @@ describe("capo and chord transposition", () => {
 
   it("leaves a name unchanged at no shift", () => {
     expect(transposeChordName("G#m", 0)).toBe("G#m");
+  });
+});
+
+describe("stored speed settings", () => {
+  it("reads defaults from an empty song", () => {
+    expect(storedSpeed({})).toEqual(DEFAULT_SPEED);
+  });
+
+  it("clamps what is stored and keeps only boolean track choices", () => {
+    const stored = storedSpeed({ speed: 3, semitones: 9.4, cents: -80, capo: 12, applyToChords: true, followsPitch: { bass: false, drums: "yes", Bad: true } });
+    expect(stored).toEqual({ rate: 1.5, semitones: 6, cents: -50, capo: 7, applyToChords: true, followsPitch: { bass: false } });
+  });
+
+  it("gives drums their own default and lets a track's choice override it", () => {
+    expect(followsPitch(DEFAULT_SPEED, "drums")).toBe(false);
+    expect(followsPitch(DEFAULT_SPEED, "vocals")).toBe(true);
+    expect(followsPitch({ followsPitch: { drums: true, vocals: false } }, "drums")).toBe(true);
+    expect(followsPitch({ followsPitch: { vocals: false } }, "vocals")).toBe(false);
   });
 });
