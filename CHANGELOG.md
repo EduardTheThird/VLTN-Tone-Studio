@@ -25,6 +25,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 - **Library hygiene.** Restoring a backup can skip songs that are already in the library, so restoring twice no longer duplicates songs or playlists. A saved song's chart, BPM, lyrics and options now live only in the library, no longer also in local storage, and earlier copies are moved over. Leftover folders from interrupted saves are cleaned up automatically. See [Song library](SONG-LIBRARY.md).
 
+- **MIDI triggers, macros and song MIDI files.** Charts can send commands on load, play, stop or end. Saved command lists (macros) are shared by every song, and a song can attach a standard MIDI file that plays with its cues at the song's speed. Cues also accept bank select, song select and Start/Continue/Stop. Preflight flags Start and Stop cues while app MIDI clock is on. See [MIDI pedal command presets](MIDI-PEDALS.md#triggers-macros-and-song-midi-files).
+
 ### Changed
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
