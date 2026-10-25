@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
 import { QUEUE_MAX, isEditable, upcoming } from "@/song/queue";
 import { formatTime } from "@/song/stems/mix";
+import { EntryOverrideControls } from "./EntryOverrideControls";
 import { runningSeconds } from "@/song/performance/running-time";
 
 const row = "flex flex-wrap items-center gap-2 rounded border border-seam p-2";
@@ -63,6 +64,12 @@ export function QueuePanel() {
               <span className="flex-1">
                 {i + 1}. {title(id)}
               </span>
+              <EntryOverrideControls
+                label={`Queue entry ${i + 1}`}
+                value={library.queueOverrides[index] ?? null}
+                disabled={busy}
+                onChange={(next) => edit(library.setQueueOverride(index, next))}
+              />
               <Button
                 variant="outline"
                 aria-label={`Move queue entry ${i + 1} up`}

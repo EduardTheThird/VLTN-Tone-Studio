@@ -6,6 +6,8 @@ import { formatTime } from "@/song/stems/mix";
 import { addSet, blockSummaries, deleteSet, moveEntry, removeEntry, renameSet } from "@shared/playlist-sets";
 import type { LibrarySong, Playlist } from "@shared/song-library";
 import { PlaylistPreflight } from "./PlaylistPreflight";
+import { EntryOverrideControls } from "./EntryOverrideControls";
+import { overridesFor, withOverride, type EntryOverride } from "@shared/entry-overrides";
 
 const field = "rounded border border-seam bg-transparent p-2";
 const row = "flex flex-wrap items-center gap-2 rounded border border-seam p-2";
@@ -22,13 +24,14 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
   const duration = blocks.reduce((sum, block) => sum + block.seconds, 0);
   // Editing the playlist never changes the queue that is playing, so only a save in progress holds the editor.
   const busy = library.busy;
-  const save = (change: Partial<Pick<Playlist, "songs" | "sets">>) => {
+  const overrides = overridesFor(playlist.songs.length, playlist.overrides);
+  const save = (change: Partial<Pick<Playlist, "songs" | "sets" | "overrides">>) => {
     setHint("");
     void library.updatePlaylist(playlist.id, change);
   };
   const title = (id: string) => byId.get(id)?.title ?? "Missing song";
-  const queueIds = (ids: string[]) => {
-    const reason = library.addToQueue(ids);
+  const queueIds = (ids: string[], entryOverrides: (EntryOverride | null)[]) => {
+    const reason = library.addToQueue(ids, entryOverrides);
     setHint(reason ?? (ids.length ? `Queued ${ids.length} song${ids.length === 1 ? "" : "s"}.` : ""));
   };
   const entries = (start: number, end: number) => playlist.songs.slice(start, end);
@@ -43,13 +46,17 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={!playlist.songs.length || busy} onClick={() => void library.playPlaylist([...playlist.songs])}>
+        <Button disabled={!playlist.songs.length || busy} onClick={() => void library.playPlaylist([...playlist.songs], 0, undefined, overrides)}>
           Play playlist
         </Button>
-        <Button variant="outline" disabled={!playlist.songs.length || busy} onClick={() => void library.load(playlist.songs[0], [...playlist.songs], 0)}>
+        <Button
+          variant="outline"
+          disabled={!playlist.songs.length || busy}
+          onClick={() => void library.load(playlist.songs[0], [...playlist.songs], 0, overrides)}
+        >
           Load set paused
         </Button>
-        <Button variant="outline" disabled={!playlist.songs.length || busy} onClick={() => queueIds(playlist.songs)}>
+        <Button variant="outline" disabled={!playlist.songs.length || busy} onClick={() => queueIds(playlist.songs, overrides)}>
           Queue all
         </Button>
       </div>
@@ -79,7 +86,7 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
                 <Button
                   variant="outline"
                   disabled={!block.count || busy}
-                  onClick={() => void library.playPlaylist(entries(block.start, block.end), 0, block.set!.id)}
+                  onClick={() => void library.playPlaylist(entries(block.start, block.end), 0, block.set!.id, overrides.slice(block.start, block.end))}
                 >
                   Play set
                 </Button>
@@ -97,13 +104,13 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
                   <span className="flex-1">
                     {i + 1}. {title(id)}
                   </span>
-                  <Button variant="outline" disabled={busy} onClick={() => void library.playPlaylist([...playlist.songs], i)}>
+                  <Button variant="outline" disabled={busy} onClick={() => void library.playPlaylist([...playlist.songs], i, undefined, overrides)}>
                     Play from here
                   </Button>
-                  <Button variant="outline" disabled={busy} onClick={() => void library.load(id, [...playlist.songs], i)}>
+                  <Button variant="outline" disabled={busy} onClick={() => void library.load(id, [...playlist.songs], i, overrides)}>
                     Load paused
                   </Button>
-                  <Button variant="outline" disabled={busy} onClick={() => queueIds(playlist.songs.slice(i))}>
+                  <Button variant="outline" disabled={busy} onClick={() => queueIds(playlist.songs.slice(i), overrides.slice(i))}>
                     Queue from here
                   </Button>
                   {!playlist.sets?.some((set) => set.start === i) && i > 0 && (
@@ -111,6 +118,12 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
                       Start a set here
                     </Button>
                   )}
+                  <EntryOverrideControls
+                    label={`Entry ${i + 1}`}
+                    value={overrides[i]}
+                    disabled={busy}
+                    onChange={(next) => save({ overrides: withOverride(overrides, i, next) })}
+                  />
                   <Button aria-label={`Move entry ${i + 1} up`} variant="outline" disabled={i === 0 || busy} onClick={() => moveTo(i, i - 1)}>
                     ↑
                   </Button>

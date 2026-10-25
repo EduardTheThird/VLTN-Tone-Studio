@@ -5,6 +5,7 @@ import { NO_BROWSE, browseSongs, folderRows, type BrowseState } from "@/song/lib
 import { formatTime } from "@/song/stems/mix";
 import { runningSeconds } from "@/song/performance/running-time";
 import { SORT_KEYS, SORT_LABELS, type SmartRules, type SortKey } from "@shared/library-filter";
+import { overridesFor } from "@shared/entry-overrides";
 import type { LibraryFolder, LibrarySong } from "@shared/song-library";
 import { FilterBuilder } from "./FilterBuilder";
 import { SongDetails, parseKeywords } from "./SongDetails";
@@ -175,8 +176,7 @@ export function LibraryBrowser() {
       {picked.length > 0 && (
         <section aria-label="Batch edit" className="space-y-2 rounded border border-seam p-3">
           <p className="text-sm">
-            {picked.length} selected ·{" "}
-            {formatTime(picked.reduce((sum, id) => sum + selectedSeconds(id), 0))}
+            {picked.length} selected · {formatTime(picked.reduce((sum, id) => sum + selectedSeconds(id), 0))}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -198,7 +198,12 @@ export function LibraryBrowser() {
               onClick={() =>
                 void runBatch(async () => {
                   const target = playlists.find((p) => p.id === batch.playlist);
-                  if (target) await library.updatePlaylist(target.id, { songs: [...target.songs, ...picked] });
+                  if (target) {
+                    await library.updatePlaylist(target.id, {
+                      songs: [...target.songs, ...picked],
+                      overrides: [...overridesFor(target.songs.length, target.overrides), ...picked.map(() => null)],
+                    });
+                  }
                   setMessage(`Added ${picked.length} songs to ${target?.name ?? "the playlist"}.`);
                 })
               }

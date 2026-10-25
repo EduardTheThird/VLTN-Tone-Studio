@@ -1,4 +1,5 @@
 import { validateSmartRules, type SmartRules } from "./library-filter";
+import { isEntryOverride, type EntryOverride } from "./entry-overrides";
 
 /** Where a saved track came from. Legacy entries carry none: the source track is `source` and every other one a `stem`. */
 export const TRACK_KINDS = ["source", "stem", "user"] as const;
@@ -104,6 +105,8 @@ export interface Playlist {
   sets?: PlaylistSet[];
   /** v4: a smart playlist's rules. A smart playlist holds no entries of its own; its songs are evaluated from the library. */
   smart?: SmartRules;
+  /** v4: per-entry overrides, lined up with `songs`. Missing means no entry has one. See entry-overrides.ts. */
+  overrides?: (EntryOverride | null)[];
 }
 export interface SongLibrary {
   /** 4 once any song has been saved with the v4 metadata; v1 to v3 indexes are still read and upgraded in memory. */
@@ -407,12 +410,21 @@ export function validatePlaylists(playlists: Playlist[], songs: LibrarySong[]): 
     if (!validId(p.id) || !p.name.trim() || p.name.length > 300 || p.songs.some((id) => !ids.has(id)))
       throw new Error("Playlist contains an invalid or missing song.");
     if (p.smart) {
-      if (p.songs.length || p.sets?.length) throw new Error("A smart playlist holds no entries of its own.");
+      if (p.songs.length || p.sets?.length || p.overrides?.length) throw new Error("A smart playlist holds no entries of its own.");
       validateSmartRules(p.smart);
       continue;
     }
+    validateOverrides(p);
     validateSets(p);
   }
+}
+
+/** The per-entry overrides of a static playlist: one for each entry, each well formed or null. */
+function validateOverrides(playlist: Playlist): void {
+  const overrides = playlist.overrides;
+  if (overrides === undefined) return;
+  if (!Array.isArray(overrides) || overrides.length !== playlist.songs.length || overrides.some((o) => o !== null && !isEntryOverride(o)))
+    throw new Error("Invalid playlist entry settings.");
 }
 
 /** The sets of a static playlist: unique ids, names, and starts that are in range, in order and not repeated. */

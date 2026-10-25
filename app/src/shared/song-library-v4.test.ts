@@ -229,3 +229,29 @@ describe("playlist validation: sets and smart playlists", () => {
     expect(() => validatePlaylists([{ id: FOLDER, name: "Bad", songs: [], smart: bad }], songs)).toThrow();
   });
 });
+
+describe("per-entry overrides in a playlist", () => {
+  const entries = ["00000001-0000-0000-0000-000000000000", "00000002-0000-0000-0000-000000000000"];
+  const withSongs = () => [song({ id: entries[0] }), song({ id: entries[1] })];
+  const gig = (overrides?: unknown): Playlist => ({ id: FOLDER, name: "Gig", songs: entries, overrides: overrides as Playlist["overrides"] });
+
+  it("accepts one override, or null, for each entry", () => {
+    expect(() => validatePlaylists([gig([{ endBehaviour: "loop" }, null])], withSongs())).not.toThrow();
+  });
+
+  it("refuses an override list that is not as long as the entries, or holds an unknown setting", () => {
+    expect(() => validatePlaylists([gig([null])], withSongs())).toThrow("Invalid playlist entry settings.");
+    expect(() => validatePlaylists([gig([{ endBehaviour: "repeat" }, null])], withSongs())).toThrow("Invalid playlist entry settings.");
+  });
+
+  it("refuses overrides on a smart playlist, which has no entries of its own", () => {
+    const smart: Playlist = { id: FOLDER, name: "Rules", songs: [], overrides: [null], smart: { match: "all", rules: [], sort: "title" } };
+    expect(() => validatePlaylists([smart], withSongs())).toThrow("A smart playlist holds no entries of its own.");
+  });
+
+  it("reads a playlist saved before overrides as having none on any entry", () => {
+    const old = upgradeIndex({ version: 3 as const, songs: withSongs(), playlists: [{ id: FOLDER, name: "Gig", songs: entries }] });
+    expect(old.playlists[0].overrides).toBeUndefined();
+    expect(() => validatePlaylists(old.playlists, old.songs)).not.toThrow();
+  });
+});

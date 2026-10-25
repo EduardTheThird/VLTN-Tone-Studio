@@ -15,7 +15,7 @@ import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhyt
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
 import { readCrossfade } from "@/song/performance/crossfade";
 import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
-import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
+import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
 import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
@@ -434,6 +434,8 @@ export class PerformanceSession {
     this.pendingRender = null;
     this.renderSwap = null;
     const player = handover?.player ?? new StemPlayer(this.baseStems, sharedPlaybackEngine(), shape);
+    // The song is now the playing entry, so its end behaviour is the entry's override, when it has one.
+    player.setEndBehaviour(this.behaviourOf(player));
     const stopWiring = this.wirePlayer(player, source);
     if (handover) {
       this.startHandover(handover);
@@ -484,7 +486,7 @@ export class PerformanceSession {
         return;
       }
       // A looping song reaches its end only if its loop pass was missed. It then starts again from its trimmed start.
-      if (player.behaviour === "loop") {
+      if (this.behaviourOf(player) === "loop") {
         this.set({ playing: false });
         setClockPosition(player.start);
         void player.seek(player.start).then(() => this.play());
@@ -500,7 +502,7 @@ export class PerformanceSession {
         setClockPosition(player.duration);
         const library = useSongLibrary.getState();
         // A song set to stop the playlist ends it here, so the next song does not start on its own.
-        if (player.behaviour === "stop") {
+        if (this.behaviourOf(player) === "stop") {
           library.pausePlaylist();
           return;
         }
@@ -917,8 +919,11 @@ export class PerformanceSession {
   private planNext(): void {
     const { player, queued, playlistPlaying } = this.state;
     // A song set to stop, or to loop, does not hand over to the next one.
-    if (!player?.isPlaying || player.behaviour !== "next" || this.chained || !queued || !playlistPlaying) return;
-    const next = useSongLibrary.getState().preparedNext();
+    if (!player?.isPlaying || this.behaviourOf(player) !== "next" || this.chained || !queued || !playlistPlaying) return;
+    const library = useSongLibrary.getState();
+    // An entry that waits for Play is not chained: it would start on the clock at the join.
+    if (library.queueOverrides[library.position + 1]?.autoplay === false) return;
+    const next = library.preparedNext();
     if (!next) return;
     const now = player.audioNow;
     const countIn = countInBeats(this.state.timing.countInBars, this.state.timing.beatsPerBar);
@@ -945,6 +950,15 @@ export class PerformanceSession {
     const library = useSongLibrary.getState();
     library.recordPlay(id, library.playlistPlaying ? (library.playingSet ?? undefined) : undefined);
   };
+
+  /**
+   * What the playing song does at its end: the playlist entry's override when it has one, otherwise the song's own. The entry playing
+   * is locked, so its override cannot change while it plays.
+   */
+  private behaviourOf(player: StemPlayer): EndBehaviour {
+    const library = useSongLibrary.getState();
+    return library.queueOverrides[library.position]?.endBehaviour ?? player.behaviour;
+  }
 
   /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. */
   private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, countIn: number): void {
@@ -1523,11 +1537,12 @@ export class PerformanceSession {
           void this.play();
         },
       },
-      // A playlist song starts itself once it is the current one and nothing is loading.
+      // A playlist song starts itself once it is the current one and nothing is loading, unless its entry asks to wait for Play.
       {
         deps: (s) => [s.player, s.queued, s.playlistPlaying, s.busy],
         run: (s) => {
           if (!s.queued || !s.playlistPlaying || s.busy || !s.player) return;
+          if (useSongLibrary.getState().queueOverrides[useSongLibrary.getState().position]?.autoplay === false) return;
           if (s.parseError) {
             this.fail(s.parseError);
             useSongLibrary.getState().pausePlaylist();

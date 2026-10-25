@@ -17,7 +17,8 @@ import {
   type SongMetaPatch,
 } from "@shared/song-library";
 import { songsFromHistory } from "@shared/library-history";
-import { playNext, addToQueue as queueAdd, removeFromQueue as queueRemove, moveInQueue as queueMove, type QueueEdit } from "./queue";
+import { playNext, addToQueue as queueAdd, removeFromQueue as queueRemove, moveInQueue as queueMove, setEntryOverride as queueOverride, type QueueEdit } from "./queue";
+import { overridesFor, type EntryOverride } from "@shared/entry-overrides";
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
 import { playerShape, shapeFromOptions } from "./performance/song-shape";
@@ -90,6 +91,8 @@ interface LibraryState {
   /** Answers the dialog: restore with the chosen mode, or null to cancel. */
   finishRestore(mode: RestoreMode | null): Promise<void>;
   queue: string[];
+  /** Per-entry overrides of the queue, aligned with `queue`: the autoplay and end behaviour each entry asks for. */
+  queueOverrides: (EntryOverride | null)[];
   position: number;
   playlistPlaying: boolean;
   /** The playlist set the playing queue was started from, or null. Recorded with each play. */
@@ -100,11 +103,13 @@ interface LibraryState {
   /** Puts `id` straight after the playing song. Returns the reason when the queue did not change. */
   playNextSong(id: string): string | null;
   /** Adds songs to the end of the queue. A single song loaded on its own starts a queue that then plays on. */
-  addToQueue(ids: string[]): string | null;
+  addToQueue(ids: string[], overrides?: (EntryOverride | null)[]): string | null;
   /** Removes an upcoming entry. The playing song and the songs before it cannot be removed. */
   removeFromQueue(index: number): string | null;
   /** Moves an upcoming entry. Targets before the playing song go just after it. */
   moveInQueue(from: number, to: number): string | null;
+  /** Sets how an upcoming entry starts and ends: whether it starts by itself, and its end behaviour. Null clears both. */
+  setQueueOverride(index: number, override: EntryOverride | null): string | null;
   /** Records a play to its halfway point. Never blocks loading: a failure is logged and the play is not counted. */
   recordPlay(songId: string, setId?: string): void;
   /** Applies one metadata patch to the songs in a single save. */
@@ -115,9 +120,9 @@ interface LibraryState {
   /** Creates a playlist from the songs played since `since`, in play order. */
   playlistFromHistory(name: string, since: string): Promise<void>;
   /** Changes a playlist's name, entries, sets or smart rules. */
-  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart">>): Promise<void>;
+  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<void>;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
-  playPlaylist(queue: string[], position?: number, setId?: string): Promise<void>;
+  playPlaylist(queue: string[], position?: number, setId?: string, overrides?: (EntryOverride | null)[]): Promise<void>;
   advancePlaylist(): Promise<void>;
   skipPlaylist(offset: number): Promise<void>;
   resumePlaylist(): void;
@@ -125,7 +130,7 @@ interface LibraryState {
   rememberMidi(session: LibraryState["midiSession"]): void;
   refresh(): Promise<void>;
   save(title: string, artist: string): Promise<void>;
-  load(id: string, queue?: string[], position?: number): Promise<void>;
+  load(id: string, queue?: string[], position?: number, overrides?: (EntryOverride | null)[]): Promise<void>;
   playlists(value: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;
   /** Copies the saved track settings of the open song onto the saved songs that have the same imported tracks. */
@@ -332,14 +337,16 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         if (generation === prefetchGeneration) prefetching = null;
       });
   };
+  /** The queue as the pure queue functions take it. */
+  const queueState = () => ({ queue: get().queue, position: get().position, overrides: get().queueOverrides });
   /** Applies a queue edit: the playing song is untouched, and the next song is prepared again when it has changed. */
   const queueEdit = (edit: QueueEdit, extra: Partial<LibraryState> = {}): string | null => {
     if (!edit.ok) return edit.reason;
-    set({ queue: edit.queue, position: edit.position, ...extra });
+    set({ queue: edit.queue, position: edit.position, queueOverrides: edit.overrides, ...extra });
     prefetchNext();
     return null;
   };
-  const load = async (id: string, queue: string[], position: number, playlist: boolean) => {
+  const load = async (id: string, queue: string[], position: number, playlist: boolean, overrides?: (EntryOverride | null)[]) => {
     // Loading a song replaces the set, so a song held for the next one of the old set is released.
     get().releaseHandover();
     const generation = ++loadGeneration;
@@ -358,6 +365,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     set({
       index,
       queue: [...queue],
+      queueOverrides: overridesFor(queue.length, overrides),
       position,
       playlistPlaying: playlist,
       playingSet: playlist ? get().playingSet : null,
@@ -380,6 +388,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     notice: "",
     transfer: "",
     queue: [],
+    queueOverrides: [],
     position: -1,
     playlistPlaying: false,
     playingSet: null,
@@ -402,7 +411,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       set({ index: { ...index, songs: index.songs.map((s) => (s.id === id ? { ...s, settings: { ...s.settings, ":options": options } } : s)) } });
     },
     armNext: (id) => {
-      const { index, queue, position, playlistPlaying } = get();
+      const { index, queue, position, playlistPlaying, queueOverrides } = get();
       if (!playlistPlaying) return "Arming a song as next needs a playlist that is playing.";
       const title = index.songs.find((s) => s.id === id)?.title ?? "That song";
       const result = armAsNext(queue, position, id);
@@ -413,7 +422,12 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           next: `${title} is already next.`,
         }[result.reason];
       }
-      set({ queue: result.queue, notice: `${title} plays next.` });
+      // The armed song takes its override with it, and the songs in between keep theirs.
+      const overrides = overridesFor(queue.length, queueOverrides);
+      const from = queue.indexOf(id);
+      const moved = overrides[from];
+      const rest = overrides.filter((_, i) => i !== from);
+      set({ queue: result.queue, queueOverrides: [...rest.slice(0, position + 1), moved, ...rest.slice(position + 1)], notice: `${title} plays next.` });
       prefetchNext();
       return null;
     },
@@ -496,24 +510,33 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       }),
     holdChain: (chainHold) => set({ chainHold }),
     playNextSong: (id) => {
-      const { queue, position } = get();
-      if (position < 0) return "Load a song first.";
-      return queueEdit(playNext({ queue, position }, id));
+      if (get().position < 0) return "Load a song first.";
+      return queueEdit(playNext(queueState(), id));
     },
-    addToQueue: (ids) => {
+    addToQueue: (ids, overrides) => {
       const { queue, position, playlistPlaying } = get();
       if (position < 0) return "Load a song first.";
       // One song loaded on its own starts the queue: the songs added after it play on when it ends.
       const starts = !playlistPlaying && queue.length === 1 && position === 0 && ids.length > 0;
-      return queueEdit(queueAdd({ queue, position }, ids), starts ? { playlistPlaying: true } : {});
+      return queueEdit(queueAdd(queueState(), ids, overrides), starts ? { playlistPlaying: true } : {});
     },
     removeFromQueue: (index) => {
-      const { queue, position } = get();
-      return queueEdit(queueRemove({ queue, position }, index));
+      return queueEdit(queueRemove(queueState(), index));
     },
     moveInQueue: (from, to) => {
-      const { queue, position } = get();
-      return queueEdit(queueMove({ queue, position }, from, to));
+      return queueEdit(queueMove(queueState(), from, to));
+    },
+    setQueueOverride: (index, override) => {
+      const edit = queueOverride(queueState(), index, override);
+      if (!edit.ok) return edit.reason;
+      set({ queueOverrides: edit.overrides });
+      // The next song's autoplay decides whether it may be chained onto the playing one, so a change to it undoes a chain already made.
+      const { chainHold, position } = get();
+      if (index === position + 1 && chainHold) {
+        set({ chainHold: null });
+        chainHold.release();
+      }
+      return null;
     },
     recordPlay: (songId, setId) => {
       // The count is written in the background, so a play never waits on the disk or blocks loading.
@@ -564,11 +587,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       if (!get().busy && get().queue.length) set({ playlistPlaying: true, error: "", notice: "" });
       prefetchNext();
     },
-    playPlaylist: (queue, position = 0, setId) =>
+    playPlaylist: (queue, position = 0, setId, overrides) =>
       run(async () => {
         if (!queue.length || !queue[position]) throw new Error("This playlist is empty.");
         set({ playlistPlaying: true, midiSession: null, playingSet: setId ?? null });
-        await load(queue[position], queue, position, true);
+        await load(queue[position], queue, position, true, overrides);
       }),
     advancePlaylist: () =>
       run(async () => {
@@ -581,7 +604,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const nextId = queue[position + 1];
         if (get().advanceToPrepared(nextId)) return;
         const loading = prefetching === nextId;
-        await load(nextId, queue, position + 1, true);
+        await load(nextId, queue, position + 1, true, get().queueOverrides);
         if (loading) set({ notice: "The next song was still loading, so it started after a gap." });
       }),
     skipPlaylist: (offset) =>
@@ -589,7 +612,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const { queue, position, playlistPlaying } = get(),
           next = position + offset;
         if (next < 0 || next >= queue.length) return;
-        await load(queue[next], queue, next, playlistPlaying);
+        await load(queue[next], queue, next, playlistPlaying, get().queueOverrides);
       }),
     refresh: () =>
       run(async () => {
@@ -650,7 +673,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         }
         set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
       }),
-    load: (id, queue = [id], position = 0) => run(() => load(id, queue, position, false)),
+    load: (id, queue = [id], position = 0, overrides) => run(() => load(id, queue, position, false, overrides)),
     playlists: (playlists) =>
       run(async () => {
         await api().playlists(playlists);
@@ -678,13 +701,14 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           writeSettings(performanceKey(detached), kept);
           useSong.setState({ source: detached });
         }
-        const { queue, position } = get();
+        const { queue, position, queueOverrides } = get();
         // Removing the song that is playing ends its queue, as before. Removing a song that is only queued drops it from the queue, and the
         // song that is playing, and the set, carry on.
         if (queue[position] === id || position < 0) {
           set({
             index: await api().index(),
             queue: [],
+            queueOverrides: [],
             position: -1,
             playlistPlaying: false,
             playingSet: null,
@@ -692,10 +716,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
             notice: "Song removed from the library and playlists.",
           });
         } else {
-          const kept = queue.filter((entry, i) => i <= position || entry !== id);
+          const keep = queue.map((entry, i) => i <= position || entry !== id);
           set({
             index: await api().index(),
-            queue: kept,
+            queue: queue.filter((_, i) => keep[i]),
+            queueOverrides: overridesFor(queue.length, queueOverrides).filter((_, i) => keep[i]),
             notice: "Song removed from the library and playlists.",
           });
         }

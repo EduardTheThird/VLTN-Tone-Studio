@@ -1,4 +1,5 @@
 import type { LibrarySong, Playlist, PlaylistSet } from "./song-library";
+import type { EntryOverride } from "./entry-overrides";
 
 /*
  * Playlist sets and entry edits (pure). A set header sits before the entry at its `start`; a set runs to the next header or the end.
@@ -45,18 +46,29 @@ export function blockSummaries(
 }
 
 /** Removes an entry at `index` and moves the set starts that come after it. A set that is left empty is dropped. */
-export function removeEntry(playlist: Playlist, index: number): Pick<Playlist, "songs" | "sets"> {
+export function removeEntry(playlist: Playlist, index: number): Pick<Playlist, "songs" | "sets" | "overrides"> {
   const songs = playlist.songs.filter((_, i) => i !== index);
   const sets = (playlist.sets ?? []).map((set) => (set.start > index ? { ...set, start: set.start - 1 } : set));
-  return { songs, sets: normaliseSets(sets, songs.length) };
+  const overrides = playlist.overrides?.filter((_, i) => i !== index);
+  return { songs, sets: normaliseSets(sets, songs.length), overrides };
 }
 
-/** Moves the entry at `from` to `to`. Set headers stay at their positions, so a set may gain or lose the song that moved. */
-export function moveEntry(playlist: Playlist, from: number, to: number): Pick<Playlist, "songs" | "sets"> {
+/**
+ * Moves the entry at `from` to `to`. Set headers stay at their positions, so a set may gain or lose the song that moved. The entry's
+ * overrides move with it.
+ */
+export function moveEntry(playlist: Playlist, from: number, to: number): Pick<Playlist, "songs" | "sets" | "overrides"> {
   const songs = [...playlist.songs];
   const [moved] = songs.splice(from, 1);
-  songs.splice(Math.min(Math.max(to, 0), songs.length), 0, moved);
-  return { songs, sets: normaliseSets(playlist.sets ?? [], songs.length) };
+  const target = Math.min(Math.max(to, 0), songs.length);
+  songs.splice(target, 0, moved);
+  let overrides: (EntryOverride | null)[] | undefined;
+  if (playlist.overrides) {
+    overrides = [...playlist.overrides];
+    const [movedOverride] = overrides.splice(from, 1);
+    overrides.splice(target, 0, movedOverride ?? null);
+  }
+  return { songs, sets: normaliseSets(playlist.sets ?? [], songs.length), overrides };
 }
 
 /** Adds a set header before the entry at `at`. Refused when one already starts there, or the position is out of range. */

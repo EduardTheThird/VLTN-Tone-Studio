@@ -63,11 +63,12 @@ it("round-trips song details, folders, history and smart rules, with new folder 
   await store.organise({ kind: "played", id: fixture.song.id, at: "2026-06-01T20:00:00.000Z" });
   await store.playlists([
     { id: randomUUID(), name: "Summer", songs: [], smart: { match: "all", rules: [{ field: "folder", op: "in", value: [gigs] }], sort: "title" } },
+    { id: randomUUID(), name: "Gig", songs: [fixture.song.id], overrides: [{ autoplay: false, endBehaviour: "stop" }] },
   ]);
   await store.exportBackup(archive);
 
   const restored = new SongLibraryStore(join(temp, "restored"));
-  expect(await restored.restoreBackup(archive)).toEqual({ songs: 1, playlists: 1 });
+  expect(await restored.restoreBackup(archive)).toEqual({ songs: 1, playlists: 2 });
   const index = await restored.index();
   const [song] = index.songs;
   const newGigs = index.folders.find((f) => f.name === "Gigs")!,
@@ -78,6 +79,7 @@ it("round-trips song details, folders, history and smart rules, with new folder 
   expect(song).toMatchObject({ keywords: ["encore"], color: "#22c55e", playCount: 1, lastPlayed: "2026-06-01T20:00:00.000Z" });
   expect(index.history).toEqual([{ songId: song.id, at: "2026-06-01T20:00:00.000Z" }]);
   expect(index.playlists[0].smart!.rules[0].value).toEqual([newGigs.id]);
+  expect(index.playlists.find((p) => p.name === "Gig")!.overrides).toEqual([{ autoplay: false, endBehaviour: "stop" }]);
 });
 
 it("in skip mode keeps the songs already in the library and brings back only the folders a restored song uses", async () => {

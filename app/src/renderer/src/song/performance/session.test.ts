@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
     holdChain: vi.fn(),
     recordPlay: vi.fn(),
     playingSet: null as string | null,
+    queueOverrides: [] as ({ autoplay?: boolean; endBehaviour?: string } | null)[],
     advancePlaylist: vi.fn(),
     skipPlaylist: vi.fn(async () => {}),
     busy: false,
@@ -99,6 +100,9 @@ vi.mock("@/song/stems/player", () => ({
     onOutputWarning: ((message: string) => void) | null = null;
     constructor() {
       mocks.players.push(this);
+    }
+    setEndBehaviour(behaviour: string) {
+      this.behaviour = behaviour;
     }
     setOutputs(config: unknown) {
       mocks.outputs.push({ player: this, config });
@@ -432,7 +436,14 @@ it("chains the next playlist song near the end, takes it over at its join, and d
 
 it("does not chain a song that is set to stop the playlist", async () => {
   vi.useFakeTimers();
-  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: new StemPlayer({} as Stems) };
+  const next = {
+    id: "b",
+    title: "B",
+    source: { name: "b.wav", libraryId: "b", audio: source.audio },
+    stems: {},
+    settings: {},
+    player: new StemPlayer({} as Stems),
+  };
   mocks.library.playlistPlaying = true;
   mocks.library.queue = ["a", "b"];
   mocks.library.preparedNext = () => next as never;
@@ -688,7 +699,10 @@ describe("MIDI triggers", () => {
     const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
     session.setArmed(false);
     session.setArmed(true);
-    expect(sent(out)).toEqual([[192, 1], [192, 1]]);
+    expect(sent(out)).toEqual([
+      [192, 1],
+      [192, 1],
+    ]);
   });
 
   it("sends end and then stop when the song reaches its end, and not when nothing was playing", async () => {
@@ -697,7 +711,11 @@ describe("MIDI triggers", () => {
     expect(sent(out)).toEqual([[192, 1]]);
     await session.play();
     session.state.player?.onEnded?.();
-    expect(sent(out)).toEqual([[192, 1], [192, 9], [176, 81, 127]]);
+    expect(sent(out)).toEqual([
+      [192, 1],
+      [192, 9],
+      [176, 81, 127],
+    ]);
   });
 
   it("sends each trigger once across a gapless hand-over: A's end and stop, then B's load, and B's play with its start", async () => {
@@ -1181,3 +1199,75 @@ it("holds a chained song in the library, and lets go of it when the chain is und
   vi.useRealTimers();
 });
 
+describe("per-entry overrides on the playing song", () => {
+  const reset = () => {
+    mocks.library.playlistPlaying = true;
+    mocks.library.queue = ["a", "b"];
+    mocks.library.queueOverrides = [];
+    mocks.library.position = 0;
+  };
+  afterEach(() => {
+    reset();
+    mocks.library.queueOverrides = [];
+  });
+
+  it("a stop override ends the playlist at that song, even when the song itself would go on", async () => {
+    vi.useFakeTimers();
+    reset();
+    mocks.library.queueOverrides = [{ endBehaviour: "stop" }, null];
+    mocks.library.pausePlaylist = vi.fn();
+    mocks.library.advancePlaylist = vi.fn(async () => {});
+    const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+    await vi.advanceTimersByTimeAsync(10);
+    (session.state.player as unknown as { onEnded(): void }).onEnded();
+    expect(mocks.library.pausePlaylist).toHaveBeenCalledTimes(1);
+    expect(mocks.library.advancePlaylist).not.toHaveBeenCalled();
+    unload();
+    session.dispose();
+    vi.useRealTimers();
+  });
+
+  it("a loop override loops the song inside the player, whatever the song itself says", async () => {
+    vi.useFakeTimers();
+    reset();
+    mocks.library.queueOverrides = [{ endBehaviour: "loop" }, null];
+    const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+    await vi.advanceTimersByTimeAsync(10);
+    expect((session.state.player as unknown as { behaviour: string }).behaviour).toBe("loop");
+    unload();
+    session.dispose();
+    vi.useRealTimers();
+  });
+
+  it("an entry that waits for Play does not start by itself when it becomes the playing song", async () => {
+    vi.useFakeTimers();
+    reset();
+    mocks.library.position = 1;
+    mocks.library.queueOverrides = [null, { autoplay: false }];
+    const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(session.state.playing).toBe(false);
+    unload();
+    session.dispose();
+    vi.useRealTimers();
+  });
+
+  it("an entry that waits for Play is not chained onto the song before it", async () => {
+    vi.useFakeTimers();
+    reset();
+    const incoming = new StemPlayer({} as Stems);
+    const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: incoming };
+    mocks.library.queueOverrides = [null, { autoplay: false }];
+    mocks.library.preparedNext = () => next as never;
+    const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+    await vi.advanceTimersByTimeAsync(10);
+    mocks.position = 56;
+    mocks.audioNow = 16;
+    vi.advanceTimersByTime(250);
+    expect(session.state.player).not.toBe(incoming);
+    expect(mocks.library.holdChain).not.toHaveBeenCalledWith(expect.objectContaining({ id: "b" }));
+    unload();
+    session.dispose();
+    vi.useRealTimers();
+  });
+});

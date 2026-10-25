@@ -77,6 +77,9 @@ vi.mock("@/song/stems/player", () => ({
     start = 0;
     behaviour = "next";
     isPlaying = false;
+    setEndBehaviour(behaviour: string) {
+      this.behaviour = behaviour;
+    }
     stopped = false;
     next: Player | null = null;
     onEnded: (() => void) | null = null;
@@ -153,7 +156,7 @@ beforeEach(() => {
   mock.fetch.mockImplementation(async () => file());
   mock.settings.mockResolvedValue(undefined);
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
-  useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], position: -1, playlistPlaying: false, midiSession: null });
+  useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], queueOverrides: [], position: -1, playlistPlaying: false, midiSession: null });
   useBluetooth.setState({
     connection: { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mock.send, clear: mock.clear } as unknown as BleMidiConnection,
   });

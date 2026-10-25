@@ -188,3 +188,25 @@ it("upgrades a v1 library with raw audio to v4 without losing a song", async () 
 it("opens an empty library at v4", async () => {
   expect(await store.index()).toEqual(emptyLibrary());
 });
+
+it("saves each playlist entry's override with the playlist, and refuses one that does not fit", async () => {
+  const a = await saved(1),
+    b = await saved(2);
+  const id = randomUUID();
+  await store.playlists([{ id, name: "Gig", songs: [a.song.id, b.song.id], overrides: [null, { endBehaviour: "loop" }] }]);
+  expect((await store.index()).playlists[0].overrides).toEqual([null, { endBehaviour: "loop" }]);
+  await expect(store.playlists([{ id, name: "Gig", songs: [a.song.id, b.song.id], overrides: [{ endBehaviour: "repeat" as "loop" }, null] }])).rejects.toThrow(
+    "Invalid playlist entry settings.",
+  );
+  expect((await store.index()).playlists[0].overrides).toEqual([null, { endBehaviour: "loop" }]);
+});
+
+it("keeps each remaining entry's override with its song when a song is removed from a playlist", async () => {
+  const a = await saved(1),
+    b = await saved(2);
+  await store.playlists([{ id: randomUUID(), name: "Gig", songs: [a.song.id, b.song.id], overrides: [{ autoplay: false }, { endBehaviour: "stop" }] }]);
+  await store.remove(a.song.id);
+  const [playlist] = (await store.index()).playlists;
+  expect(playlist.songs).toEqual([b.song.id]);
+  expect(playlist.overrides).toEqual([{ endBehaviour: "stop" }]);
+});

@@ -241,6 +241,15 @@ export class StemPlayer {
   }
 
   /**
+   * Sets what the song does at its end. A playlist entry's override replaces the song's own when the entry becomes the playing one, so a
+   * loop override loops inside the player as it would for a song saved as a loop.
+   */
+  setEndBehaviour(behaviour: EndBehaviour): void {
+    this.endBehaviour = behaviour;
+    if (this.playing) this.updateLoop();
+  }
+
+  /**
    * Applies a new trim, fades and end behaviour. A trim change while the song plays moves its stop at once. Fades apply from the next
    * start, because the ramps of a playing song are already scheduled.
    */

@@ -127,6 +127,7 @@ vi.mock("@/state/device", () => ({ useDevice: (select: (s: unknown) => unknown) 
 const playlist = vi.hoisted(() => ({
   active: false,
   queue: [] as string[],
+  queueOverrides: [] as unknown[],
   position: 0,
   preparedNext: (): unknown => null,
   playlistPlaying: true,
@@ -141,11 +142,11 @@ const playlist = vi.hoisted(() => ({
   takeAutoplay: (): boolean => false,
 }));
 vi.mock("@/song/library", () => ({
-  useSongLibrary: Object.assign(() => (playlist.active ? playlist : { queue: [], position: -1, index: { songs: [] } }), {
+  useSongLibrary: Object.assign(() => (playlist.active ? playlist : { queue: [], queueOverrides: [], position: -1, index: { songs: [] } }), {
     getState: () =>
       playlist.active
         ? playlist
-        : { queue: [], position: -1, playlistPlaying: false, preparedNext: (): unknown => null, claimHandover: (): unknown => null, takeAutoplay: (): boolean => false },
+        : { queue: [], queueOverrides: [], position: -1, playlistPlaying: false, preparedNext: (): unknown => null, claimHandover: (): unknown => null, takeAutoplay: (): boolean => false },
   }),
 }));
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
@@ -184,6 +185,10 @@ vi.mock("@/song/stems/player", () => ({
       mocks.position = value;
     }
     isPlaying = false;
+    behaviour = "next";
+    setEndBehaviour(behaviour: string) {
+      this.behaviour = behaviour;
+    }
     setMix(value: unknown) {
       mocks.mix(value);
     }

@@ -53,3 +53,13 @@ it("offers no controls on the song that is playing", () => {
   expect(screen.getByLabelText("Playing now").querySelectorAll("button")).toHaveLength(0);
   expect(screen.queryByLabelText("Remove queue entry 0")).toBeNull();
 });
+
+it("sets how an upcoming queue entry ends and whether it starts by itself, without moving it", () => {
+  set(["a", "b", "c"], 0);
+  render(<QueuePanel />);
+  fireEvent.change(screen.getByLabelText("Queue entry 2 end"), { target: { value: "stop" } });
+  expect(useSongLibrary.getState().queueOverrides[2]).toEqual({ endBehaviour: "stop" });
+  fireEvent.click(screen.getByLabelText("Queue entry 1 starts by itself"));
+  expect(useSongLibrary.getState().queueOverrides[1]).toEqual({ autoplay: false });
+  expect(useSongLibrary.getState().queue).toEqual(["a", "b", "c"]);
+});

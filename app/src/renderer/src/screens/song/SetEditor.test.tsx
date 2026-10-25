@@ -41,7 +41,7 @@ it("shows each set with its song count and running time, and plays only that set
   await act(async () => {
     fireEvent.click(screen.getAllByText("Play set")[1]);
   });
-  expect(playPlaylist).toHaveBeenCalledWith(["s3", "s4"], 0, "33333333-3333-3333-3333-333333333333");
+  expect(playPlaylist).toHaveBeenCalledWith(["s3", "s4"], 0, "33333333-3333-3333-3333-333333333333", [null, null]);
 });
 
 it("starts a set at an entry, and the set heading goes with the entries when one is removed", async () => {
@@ -72,4 +72,22 @@ it("queues from a point in the playlist through the queue, not by changing the p
   });
   expect(useSongLibrary.getState().queue).toEqual(["s1", "s3", "s4"]);
   expect(api.playlists).not.toHaveBeenCalled();
+});
+
+it("saves each entry's end behaviour and whether it starts by itself with the playlist", async () => {
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs, playlists: [playlist()] } });
+  render(<SetEditor playlist={playlist()} songs={songs} />);
+  fireEvent.change(screen.getByLabelText("Entry 2 end"), { target: { value: "loop" } });
+  await act(async () => {});
+  const [saved] = api.playlists.mock.calls.at(-1) as [Playlist[]];
+  expect(saved[0].overrides).toEqual([null, { endBehaviour: "loop" }, null, null]);
+  // The entry keeps its loop when its autoplay is switched off as well.
+  cleanup();
+  const looped = playlist({ overrides: [null, { endBehaviour: "loop" }, null, null] });
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs, playlists: [looped] } });
+  render(<SetEditor playlist={looped} songs={songs} />);
+  fireEvent.click(screen.getByLabelText("Entry 2 starts by itself"));
+  await act(async () => {});
+  const [after] = api.playlists.mock.calls.at(-1) as [Playlist[]];
+  expect(after[0].overrides).toEqual([null, { endBehaviour: "loop", autoplay: false }, null, null]);
 });

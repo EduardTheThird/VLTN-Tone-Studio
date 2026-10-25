@@ -448,7 +448,14 @@ describe("the queue, play recording and organisation", () => {
   it("makes a playlist from the plays since a date, and clears the history", async () => {
     api.playlists.mockResolvedValue(undefined);
     reset({
-      index: { ...emptyLibrary(), songs: songs(), history: [{ songId: "two", at: "2026-03-01T00:00:00.000Z" }, { songId: "four", at: "2025-01-01T00:00:00.000Z" }] },
+      index: {
+        ...emptyLibrary(),
+        songs: songs(),
+        history: [
+          { songId: "two", at: "2026-03-01T00:00:00.000Z" },
+          { songId: "four", at: "2025-01-01T00:00:00.000Z" },
+        ],
+      },
     });
     await useSongLibrary.getState().playlistFromHistory("  March  ", "2026-01-01");
     expect(api.playlists).toHaveBeenCalledWith([expect.objectContaining({ name: "March", songs: ["two"], sets: [] })]);
@@ -471,10 +478,77 @@ describe("the queue, play recording and organisation", () => {
 
 it("removing a song that is only queued drops it from the queue and leaves the playing set alone", async () => {
   const songs = [songNamed("one", "One"), songNamed("two", "Two"), songNamed("three", "Three")];
-  useSongLibrary.setState({ index: { ...emptyLibrary(), songs }, queue: ["one", "two", "three", "two"], position: 0, playlistPlaying: true, playingSet: "set-1" });
+  useSongLibrary.setState({
+    index: { ...emptyLibrary(), songs },
+    queue: ["one", "two", "three", "two"],
+    position: 0,
+    playlistPlaying: true,
+    playingSet: "set-1",
+  });
   api.remove.mockResolvedValue(undefined);
   api.index.mockResolvedValue({ ...emptyLibrary(), songs: songs.filter((s) => s.id !== "two") });
   await useSongLibrary.getState().remove("two");
   expect(useSongLibrary.getState()).toMatchObject({ queue: ["one", "three"], position: 0, playlistPlaying: true, playingSet: "set-1" });
 });
 
+describe("per-entry overrides in the playing queue", () => {
+  const loop = { endBehaviour: "loop" as const };
+  const stop = { endBehaviour: "stop" as const };
+  const songs = () => [songNamed("one", "One"), songNamed("two", "Two"), songNamed("three", "Three")];
+  const reset = (extra: Partial<ReturnType<typeof useSongLibrary.getState>> = {}) =>
+    useSongLibrary.setState({
+      index: { ...emptyLibrary(), songs: songs() },
+      queue: ["one", "two", "three"],
+      queueOverrides: [null, null, null],
+      position: 0,
+      playlistPlaying: true,
+      chainHold: null,
+      prepared: null,
+      error: "",
+      notice: "",
+      ...extra,
+    });
+  beforeEach(() => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: songs() });
+  });
+
+  it("sets an upcoming entry's override, and refuses one that is playing", () => {
+    reset();
+    expect(useSongLibrary.getState().setQueueOverride(2, loop)).toBeNull();
+    expect(useSongLibrary.getState().queueOverrides).toEqual([null, null, loop]);
+    expect(useSongLibrary.getState().setQueueOverride(0, stop)).toBe("That song is playing or has already played.");
+    expect(useSongLibrary.getState().queueOverrides).toEqual([null, null, loop]);
+  });
+
+  it("undoes a chain when the next entry's setting changes, and leaves it alone otherwise", () => {
+    const release = vi.fn();
+    reset({ chainHold: { id: "two", release } });
+    useSongLibrary.getState().setQueueOverride(2, loop);
+    expect(release).not.toHaveBeenCalled();
+    useSongLibrary.getState().setQueueOverride(1, { autoplay: false });
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(useSongLibrary.getState().chainHold).toBeNull();
+  });
+
+  it("starts a playlist with each entry's override, so it is the queue's override", async () => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+    reset({ index: { ...emptyLibrary(), songs: [saved] } });
+    await useSongLibrary.getState().playPlaylist([saved.id, saved.id], 0, undefined, [loop, null]);
+    expect(useSongLibrary.getState().queueOverrides).toEqual([loop, null]);
+  });
+
+  it("gives the armed song its override, and keeps the others with theirs", () => {
+    reset({ queue: ["one", "two", "three"], queueOverrides: [null, loop, stop], position: 0 });
+    expect(useSongLibrary.getState().armNext("three")).toBeNull();
+    expect(useSongLibrary.getState().queue).toEqual(["one", "three", "two"]);
+    expect(useSongLibrary.getState().queueOverrides).toEqual([null, stop, loop]);
+  });
+
+  it("removes a queued song's override with it", async () => {
+    reset({ queue: ["one", "two", "three"], queueOverrides: [null, stop, loop], position: 0 });
+    api.remove.mockResolvedValue(undefined);
+    await useSongLibrary.getState().remove("two");
+    expect(useSongLibrary.getState().queue).toEqual(["one", "three"]);
+    expect(useSongLibrary.getState().queueOverrides).toEqual([null, loop]);
+  });
+});

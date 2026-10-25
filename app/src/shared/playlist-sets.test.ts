@@ -91,3 +91,22 @@ describe("editing sets", () => {
     expect(normaliseSets([set(5, "A", 9), set(6, "B", 1), set(7, "C", 1)], 4)).toEqual([set(7, "C", 1)]);
   });
 });
+
+describe("entry overrides move with their songs", () => {
+  const withOverrides = (overrides: (import("./entry-overrides").EntryOverride | null)[]): Playlist => ({ ...playlist(), overrides });
+
+  it("removes an entry's override with the entry", () => {
+    const stop = { endBehaviour: "stop" as const };
+    expect(removeEntry(withOverrides([null, stop, null, null]), 1).overrides).toEqual([null, null, null]);
+  });
+
+  it("moves an override with the entry it belongs to", () => {
+    const loop = { endBehaviour: "loop" as const };
+    expect(moveEntry(withOverrides([null, null, loop, null]), 2, 0).overrides).toEqual([loop, null, null, null]);
+  });
+
+  it("leaves a playlist with no overrides with none", () => {
+    expect(removeEntry(playlist(), 0).overrides).toBeUndefined();
+    expect(moveEntry(playlist(), 0, 1).overrides).toBeUndefined();
+  });
+});
