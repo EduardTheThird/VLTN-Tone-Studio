@@ -1,4 +1,5 @@
 import type { ViewHost } from "@/song/performance/actions";
+import { holdAutoscroll } from "@/song/performance/autoscroll";
 import { useReaderText } from "@/song/performance/reader-text";
 import type { MetronomeMode } from "@/song/performance/rhythm";
 import type { Mix } from "@/song/stems/mix";
@@ -34,6 +35,8 @@ export function buildViewHost(state: ViewState): ViewHost {
       const reader = visibleReader();
       if (!reader) return "Lyrics are not on screen.";
       const step = pages ? reader.clientHeight * 0.9 : SCROLL_STEP_PX;
+      // A remote scroll is a manual one: autoscroll waits for it, and then returns to the song position.
+      holdAutoscroll();
       reader.scrollBy({ top: direction * step, behavior: "smooth" });
     },
     fontSize: (direction) => useReaderText.getState().step(direction),

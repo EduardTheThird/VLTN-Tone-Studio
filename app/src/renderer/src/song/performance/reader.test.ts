@@ -51,3 +51,7 @@ describe("an untimed chart", () => {
     expect(lines).toEqual([{ time: 2, text: "Timed line", chords: [] }]);
   });
 });
+it("never throws for a malformed or half-typed import, so the reader stays up during a show", () => {
+  const broken = ["{midi:pc", "# \n{soc\n[C", "[00:01] {midi:$NOPE}", "{midi@load:}", "[99:99] # x", "\u0000", "// only a comment"];
+  for (const chart of broken) expect(() => performanceLines(chart, "[00:02] words", [{ time: 1, name: "C", confidence: 1 }])).not.toThrow();
+});
