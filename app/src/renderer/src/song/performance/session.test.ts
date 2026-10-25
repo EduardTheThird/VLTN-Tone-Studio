@@ -4,6 +4,7 @@ import { useMidiDiagnostics } from "./midi-diagnostics";
 
 const mocks = vi.hoisted(() => ({
   position: 0,
+  lead: undefined as unknown,
   faults: [] as ((message: string) => void)[],
   sends: [] as ((message: { bytes: number[]; due: number; label: string }) => void)[],
   library: {
@@ -25,7 +26,8 @@ vi.mock("@/song/stems/player", () => ({
     get position() {
       return mocks.position;
     }
-    async play() {
+    async play(lead?: unknown) {
+      mocks.lead = lead;
       this.isPlaying = true;
     }
     pause() {
@@ -247,4 +249,27 @@ it("advances the playlist when a queued song ends, and skips by offset", async (
   expect(session.state.playing).toBe(false);
   session.skip(1);
   expect(mocks.library.skipPlaylist).toHaveBeenCalledWith(1);
+});
+
+it("waits out the start delay, cancels it with a second Play press, and starts with the count-in and pre-roll on the next press", async () => {
+  vi.useFakeTimers();
+  mocks.lead = undefined;
+  const session = new PerformanceSession({ initial: inputs({ bpm: 120 }), carried: null, initialClock: false });
+  const unload = session.loadSong(source, null);
+  session.update({ timing: { countInBars: 1, beatsPerBar: 4, preRollBeats: 2, startDelay: 3 } });
+  const cancelled = session.play();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(session.state.playing).toBe(false);
+  session.cancelStart();
+  await cancelled;
+  expect(mocks.lead).toBeUndefined();
+  expect(session.state.playing).toBe(false);
+  const started = session.play();
+  await vi.advanceTimersByTimeAsync(3000);
+  await started;
+  expect(mocks.lead).toEqual({ bpm: 120, countInBeats: 4, preRollBeats: 2 });
+  expect(session.state.playing).toBe(true);
+  session.pause();
+  unload();
+  vi.useRealTimers();
 });

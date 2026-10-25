@@ -6,6 +6,7 @@ import { useSongLibrary } from "@/song/library";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
+import { countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD } from "@/song/performance/midi-scheduler";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
@@ -38,6 +39,16 @@ export interface CarriedMidi {
   output: unknown;
 }
 
+/** The lead-in before a start: whole bars of count-in, beats of pre-roll, and a delay before either (seconds). */
+export interface Timing {
+  countInBars: number;
+  beatsPerBar: number;
+  preRollBeats: number;
+  startDelay: number;
+}
+
+export const NO_TIMING: Timing = { countInBars: 0, beatsPerBar: 4, preRollBeats: 0, startDelay: 0 };
+
 export interface SessionState {
   player: StemPlayer | null;
   playing: boolean;
@@ -63,12 +74,16 @@ export interface SessionState {
   cues: Cue[];
   parseError: string;
   bpm: number;
+  timing: Timing;
+  /** A start is waiting: the start delay, or the scheduler worker. A Play press cancels it. */
+  starting: boolean;
 }
 
 export type SessionInputs = Pick<
   SessionState,
   "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
->;
+> &
+  Partial<Pick<SessionState, "timing">>;
 
 export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {
   return (s.portId === BLUETOOTH_PORT_ID ? s.bluetooth : s.access?.outputs.get(s.portId)) ?? undefined;
@@ -118,6 +133,7 @@ export class PerformanceSession {
   private playPending = false;
   private startTempo: number[][] | null = null;
   private startPosition: number | null = null;
+  private cancelDelay: (() => void) | null = null;
   private noteChannels = new Set<number>();
   private previousBluetooth: BleMidiConnection | null;
 
@@ -141,6 +157,8 @@ export class PerformanceSession {
       error: "",
       lateNotice: null,
       portsVersion: 0,
+      timing: NO_TIMING,
+      starting: false,
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -182,7 +200,7 @@ export class PerformanceSession {
       setClockPosition(0);
     });
     return () => {
-      this.playRequest++;
+      this.cancelPendingStart();
       this.terminateWorker();
       void player.dispose();
       // Leaving Performance pauses the set; replacing its source during advance does not.
@@ -279,6 +297,37 @@ export class PerformanceSession {
   setAccess = (access: MIDIAccess | null) => this.set({ access });
   setArmed = (value: boolean) => this.set({ armedOutput: value ? (this.output ?? null) : null });
 
+  /** Waits out the start delay. Cancelling resolves the wait at once. */
+  private waitStartDelay(seconds: number): Promise<void> {
+    if (seconds <= 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.cancelDelay = null;
+        resolve();
+      }, seconds * 1000);
+      this.cancelDelay = () => {
+        clearTimeout(timer);
+        this.cancelDelay = null;
+        resolve();
+      };
+    });
+  }
+
+  /** Invalidates the pending start (if any) so it does nothing when it resumes. */
+  private cancelPendingStart() {
+    this.playRequest++;
+    this.playPending = false;
+    this.set({ starting: false });
+    const cancel = this.cancelDelay;
+    this.cancelDelay = null;
+    cancel?.();
+  }
+
+  /** Cancels a start that is still waiting (the start delay, or a worker). A second Play press does this. Once audio has begun it does nothing. */
+  cancelStart = () => {
+    if (this.playPending) this.cancelPendingStart();
+  };
+
   /** Stops the scheduler and releases anything this session started. A second call for one stop does nothing. */
   panic = (context: PanicContext = this.context()) => {
     this.startPosition = null;
@@ -354,7 +403,7 @@ export class PerformanceSession {
     this.batch(() => {
       const { player } = this.state;
       const wasRunning = player?.isPlaying || this.playPending;
-      this.playRequest++;
+      this.cancelPendingStart();
       player?.pause();
       this.set({ playing: false });
       // A pedal/THRU path can echo our Stop back into the selected input.
@@ -369,10 +418,11 @@ export class PerformanceSession {
     if (!player || this.state.parseError || this.playPending || player.isPlaying) return;
     const request = ++this.playRequest;
     this.playPending = true;
+    this.set({ starting: true });
     const armed = this.armed,
       output = this.output;
     try {
-      const { tempoOnStart, tempoChannel, bpm } = this.state;
+      const { tempoOnStart, tempoChannel, bpm, timing } = this.state;
       let tempoMessages: number[][] | null = null;
       if (armed && tempoOnStart && output?.state === "connected") {
         if (bpm < 40 || bpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
@@ -391,15 +441,19 @@ export class PerformanceSession {
         this.readyWorker = warm.worker;
         this.prepared = null;
       }
+      await this.waitStartDelay(timing.startDelay);
+      if (request !== this.playRequest) return;
       const requestedPosition = player.position >= player.duration ? 0 : Math.max(0, player.position);
-      await player.play();
+      // The count-in is clicked before the audio starts, so it begins with the tempo message.
+      await player.play({ bpm, countInBeats: countInBeats(timing.countInBars, timing.beatsPerBar), preRollBeats: timing.preRollBeats });
       if (request !== this.playRequest) {
         player.pause();
         this.terminateWorker();
         return;
       }
       this.startTempo = tempoMessages;
-      this.startPosition = armed ? requestedPosition : null;
+      // Cues start from where the audio really starts: a pre-roll puts that before the requested position.
+      this.startPosition = armed ? preRollStart(requestedPosition, timing.preRollBeats, bpm) : null;
       this.set({ playing: true });
     } catch (e) {
       this.terminateWorker();
@@ -415,7 +469,10 @@ export class PerformanceSession {
         });
       }
     } finally {
-      this.playPending = false;
+      if (request === this.playRequest) {
+        this.playPending = false;
+        this.set({ starting: false });
+      }
     }
   };
 
@@ -446,7 +503,7 @@ export class PerformanceSession {
 
   skip = (offset: number) => {
     this.batch(() => {
-      this.playRequest++;
+      this.cancelPendingStart();
       this.state.player?.pause();
       this.set({ playing: false });
       this.panic();
@@ -505,7 +562,7 @@ export class PerformanceSession {
         deps: (s) => [s.playlistPlaying],
         run: (s) => {
           if (!s.playlistPlaying && s.player?.isPlaying && s.queued) {
-            this.playRequest++;
+            this.cancelPendingStart();
             s.player.pause();
             this.set({ playing: false });
             this.panic();
