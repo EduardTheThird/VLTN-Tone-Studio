@@ -34,6 +34,7 @@ import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { StageView } from "./StageView";
 import { SectionStrip } from "./SectionStrip";
 import { SectionEditor } from "./SectionEditor";
+import type { ChartView } from "@shared/song-library";
 import { RemoteControlSettings } from "./RemoteControlSettings";
 import { SongTriggerField } from "./SongTriggerField";
 import { SongTriggerSettings } from "./SongTriggerSettings";
@@ -119,6 +120,8 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState("");
   const [chart, setChart] = useState(() => getSetting(key, ""));
+  // A saved song with a PDF shows the PDF unless the performer chose the text chart for it.
+  const [chartView, setChartView] = useState<ChartView>(() => (getSetting(key, ":chart") === "text" ? "text" : "pdf"));
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
     [beats, setBeats] = useState(options.beats),
     [shift, setShift] = useState(options.shift),
@@ -287,6 +290,18 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     if (id && Object.keys(patch).length) void useSongLibrary.getState().organiseSongs([id], patch);
   };
 
+  const saveChartView = (view: ChartView) => {
+    setChartView(view);
+    try {
+      setSetting(key, ":chart", view);
+    } catch (e) {
+      session.fail(e);
+    }
+  };
+
+  const savedSong = library.index.songs.find((s) => s.id === source?.libraryId);
+  const pdfState = source?.libraryId ? { songId: source.libraryId, chart: !!savedSong?.chart, view: chartView, onView: saveChartView } : undefined;
+
   const saveChart = (value: string) => {
     session.pause();
     setChart(value);
@@ -424,6 +439,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         onImportMetadata={applyImportedMetadata}
         beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat }}
         speedNote={speedNote(speed)}
+        pdf={pdfState}
       />
       <div style={{ display: stage ? "none" : "contents" }}>
         <PerformanceMidiSetup

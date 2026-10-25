@@ -7,7 +7,7 @@ import { selectArmed, selectOutput, useSession, type PerformanceSession } from "
 import { useState } from "react";
 import { useStagePower } from "./use-stage-power";
 import { BeatIndicator, EdgeFlash, type BeatGrid } from "./BeatIndicator";
-import { PerformanceReader } from "./PerformanceReader";
+import { PerformanceReader, type PdfReaderState } from "./PerformanceReader";
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
 import { SectionStrip } from "./SectionStrip";
@@ -25,6 +25,7 @@ export function StageView({
   onImportMetadata,
   beat,
   speedNote,
+  pdf,
 }: {
   session: PerformanceSession;
   stage: boolean;
@@ -39,6 +40,8 @@ export function StageView({
   beat: BeatGrid;
   /** Shown beside the beat light when the song is not at its own speed or pitch */
   speedNote: string | null;
+  /** The song's PDF chart, when it is a saved song with one (or can take one) */
+  pdf?: PdfReaderState;
 }) {
   const library = useSongLibrary();
   const source = useSong((s) => s.source);
@@ -61,6 +64,7 @@ export function StageView({
       <PerformanceReader
         stage={stage}
         onExitStage={onExitStage}
+        pdf={pdf}
         chart={chart}
         lyrics={lyrics}
         chords={chords}

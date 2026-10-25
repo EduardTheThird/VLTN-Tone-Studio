@@ -32,6 +32,17 @@ import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { ClockText } from "./PlaybackDisplay";
+import { PdfChart } from "./PdfChart";
+import { PdfControls } from "./PdfControls";
+import type { ChartView } from "@shared/song-library";
+
+/** The PDF chart of the song on screen: whether it has one, which view is showing, and how to change the view. */
+export interface PdfReaderState {
+  songId: string;
+  chart: boolean;
+  view: ChartView;
+  onView(view: ChartView): void;
+}
 
 /** The colour spans' palette, by the name written in `{color:…}`. */
 const COLOUR_CLASSES = new Map<string, string>([
@@ -80,9 +91,12 @@ export function PerformanceReader({
   onImportMetadata,
   stage = false,
   onExitStage,
+  pdf,
 }: {
   stage?: boolean;
   onExitStage?: () => void;
+  /** The song's PDF chart, when it is a saved song. The PDF replaces the lyrics body while its view is on. */
+  pdf?: PdfReaderState;
   chart: string;
   lyrics: string;
   chords: Chord[];
@@ -124,6 +138,7 @@ export function PerformanceReader({
     }
     return result;
   }, [chart, lyrics, chords, showCommands, macros]);
+  const pdfShown = !!pdf?.chart && pdf.view === "pdf";
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
     size = useReaderText((s) => s.size);
@@ -174,7 +189,7 @@ export function PerformanceReader({
       unsubscribe();
       stopListening();
     };
-  }, [follow, editing, expanded, stage, size, lines, autoscrollMode, linesPerMinute]);
+  }, [follow, editing, expanded, stage, size, lines, autoscrollMode, linesPerMinute, pdfShown]);
   useEffect(() => {
     if (stage || !expanded || selectedChord) return;
     const close = (event: KeyboardEvent) => {
@@ -215,7 +230,8 @@ export function PerformanceReader({
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow playback
         </label>
-        {follow && (
+        {pdf && <PdfControls songId={pdf.songId} chart={pdf.chart} view={pdf.view} stage={stage} onView={pdf.onView} />}
+        {follow && !pdfShown && (
           <Select value={autoscrollMode} onValueChange={(value) => isAutoscrollMode(value) && useAutoscroll.getState().update({ mode: value })}>
             <SelectTrigger aria-label="Autoscroll style" className="w-48">
               <SelectValue />
@@ -229,7 +245,7 @@ export function PerformanceReader({
             </SelectContent>
           </Select>
         )}
-        {follow && autoscrollMode === "constant" && (
+        {follow && !pdfShown && autoscrollMode === "constant" && (
           <>
             <label className="flex items-center gap-2 text-sm">
               Lines per minute
@@ -297,6 +313,14 @@ export function PerformanceReader({
             setEditing(false);
           }}
           onImportMetadata={onImportMetadata}
+        />
+      ) : pdfShown && pdf ? (
+        <PdfChart
+          songId={pdf.songId}
+          follow={follow}
+          stage={stage}
+          onShowText={() => pdf.onView("text")}
+          className={expanded || stage ? "min-h-0 flex-1" : "h-[28rem]"}
         />
       ) : (
         <div
