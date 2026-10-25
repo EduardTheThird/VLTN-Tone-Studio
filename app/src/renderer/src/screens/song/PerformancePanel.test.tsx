@@ -116,8 +116,12 @@ const mocks = vi.hoisted(() => ({
   panelRenders: 0,
   source: { name: "clock-test.wav", libraryId: undefined as string | undefined, audio: { sampleRate: 44100, channels: [new Float32Array(44100)] } },
 }));
+// The store keeps one tracks object until it changes, so the mock must too: the panel's effects depend on it.
+const noTracks = vi.hoisted(() => ({}));
 vi.mock("@/song/store", () => ({
-  useSong: Object.assign((select: (s: unknown) => unknown) => select({ source: mocks.source, stems: null }), { getState: () => ({ source: mocks.source }) }),
+  useSong: Object.assign((select: (s: unknown) => unknown) => select({ source: mocks.source, stems: null, tracks: noTracks, status: { kind: "idle" } }), {
+    getState: () => ({ source: mocks.source }),
+  }),
 }));
 vi.mock("@/state/device", () => ({ useDevice: (select: (s: unknown) => unknown) => select({ device: "gp5", preset: null, mode: "mock" }) }));
 const playlist = vi.hoisted(() => ({

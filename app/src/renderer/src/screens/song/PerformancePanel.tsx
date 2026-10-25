@@ -22,6 +22,8 @@ import { SongKey } from "./SongKey";
 import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceTransport } from "./PerformanceTransport";
 import { PerformanceMix } from "./PerformanceMix";
+import { TrackImport } from "./TrackImport";
+import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
@@ -58,6 +60,8 @@ function readGlobalMetronome(): MetronomeMode {
 const isTyping = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
+const NO_TRACKS: Record<string, TrackInfo> = {};
+
 export function PerformancePanel() {
   const source = useSong((s) => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
@@ -70,7 +74,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const bluetooth = useBluetooth((s) => s.connection);
   const midiConfig = useMidiConfiguration();
   const source = useSong((s) => s.source),
-    stems = useSong((s) => s.stems);
+    stems = useSong((s) => s.stems),
+    tracks = useSong((s) => s.tracks) ?? NO_TRACKS,
+    setTrackInfo = useSong((s) => s.setTrackInfo);
   const key = performanceKey(source);
   const library = useSongLibrary();
   const queued = !!source?.libraryId && library.queue[library.position] === source.libraryId;
@@ -129,8 +135,13 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     }
   };
   const [shapeVersion, setShapeVersion] = useState(0);
-  const [mix, setMix] = useState(options.mix);
-  const [trackBuses, setTrackBuses] = useState<TrackBuses>(options.trackBuses);
+  // An imported track starts on the bus, volume and pan it saved; a choice the song made since then wins.
+  const [mix, setMix] = useState(() => ({ ...mixDefaults(tracks), ...options.mix }));
+  const [trackBuses, setTrackBuses] = useState<TrackBuses>(() => ({ ...busDefaults(tracks), ...options.trackBuses }));
+  useEffect(() => {
+    setMix((current) => ({ ...mixDefaults(tracks), ...current }));
+    setTrackBuses((current) => ({ ...busDefaults(tracks), ...current }));
+  }, [tracks]);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
   const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
@@ -237,7 +248,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     }
   }, [session, key, bpm]);
   useEffect(() => {
-    setMix(options.mix);
+    setMix({ ...mixDefaults(tracks), ...options.mix });
   }, [player]);
   useEffect(() => {
     player?.setMix(mix);
@@ -320,13 +331,16 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
+        <TrackImport />
         <PerformanceMix
           session={session}
           stems={stems}
+          tracks={tracks}
           mix={mix}
           onMix={setMix}
           trackBuses={trackBuses}
           onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
+          onTrackInfo={setTrackInfo}
         />
         <PerformanceOutputs player={player} />
         <SectionEditor
