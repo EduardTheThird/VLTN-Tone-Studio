@@ -11,6 +11,8 @@ import { parseSections, saveLiveAsDefault, type Section } from "@/song/performan
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
+import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
+import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { useBluetooth } from "@/bluetooth/connection";
@@ -113,6 +115,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       session.fail(e);
     }
   };
+  const [shapeVersion, setShapeVersion] = useState(0);
   const [mix, setMix] = useState(options.mix);
   const [trackBuses, setTrackBuses] = useState<TrackBuses>(options.trackBuses);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
@@ -256,6 +259,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
+  // The song's trim, fades and end are read from its stored options, so a player always takes the song's own values.
+  useEffect(() => {
+    player?.setShape(playerShape(shapeFromOptions(getSetting(key, ":options"))));
+  }, [player, key, shapeVersion]);
   useEffect(() => {
     try {
       localStorage.setItem("vltn.performance.metronome", String(metronome));
@@ -292,6 +299,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onTap={tap}
         />
         <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
+        <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
         <PerformanceMix

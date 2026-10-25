@@ -8,7 +8,7 @@ export const END_BEHAVIOURS = ["next", "stop", "loop"] as const;
 export type EndBehaviour = (typeof END_BEHAVIOURS)[number];
 
 export const END_BEHAVIOUR_LABELS: Record<EndBehaviour, string> = {
-  next: "Next song",
+  next: "Play the next song",
   stop: "Stop the playlist",
   loop: "Loop the song",
 };

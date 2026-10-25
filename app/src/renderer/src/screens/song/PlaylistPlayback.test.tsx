@@ -64,6 +64,7 @@ vi.mock("@/song/stems/player", () => ({
       return Promise.resolve();
     }
     setTrackBuses() {}
+    setShape() {}
     testTone() {}
     names = ["other"];
     duration = 10;

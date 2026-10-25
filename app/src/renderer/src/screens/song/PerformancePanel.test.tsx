@@ -179,6 +179,7 @@ vi.mock("@/song/stems/player", () => ({
     setMetronome(value: unknown) {
       mocks.metronome(value);
     }
+    setShape() {}
     async dispose() {}
     async play() {
       this.isPlaying = true;
