@@ -29,6 +29,8 @@ export interface SchedulerConfig {
 export interface SchedulerJump {
   at: number;
   position: number;
+  /** The rate from the jump on, when it changes (a speed swap). Missing keeps the current rate. */
+  rate?: number;
 }
 export type SchedulerReply =
   | { type: "batch"; messages: ScheduledMessage[]; dropped?: ScheduledMessage[] }
@@ -67,13 +69,16 @@ export function lateAction(bytes: number[]): "send" | "drop" | "ignore" {
 export class MidiSchedule {
   private next: number;
   private pulse: number;
-  /** Clock time of pulse zero. It stays put across a jump, so the 24-pulse clock never gaps or bursts. */
-  private pulseOrigin: number;
+  /**
+   * Where the clock pulses are anchored: pulse `index` is due at `time`. It stays put across a jump, so the 24-pulse clock never gaps
+   * or bursts. A jump that changes the rate re-anchors it at the swap, so the spacing changes there and nowhere else.
+   */
+  private pulseAnchor: { time: number; index: number };
   private lastTick: number;
   private heartbeat: number;
   private config: SchedulerConfig;
   /** The rate the song plays at. Song time runs at this multiple of clock time. */
-  private readonly rate: number;
+  private rate: number;
   private resyncs: number[] = [];
   private lastPosition: number;
   private lastAdvance: number;
@@ -98,7 +103,7 @@ export class MidiSchedule {
     this.cues = config.cues.filter((c) => c.messages.length && c.time <= config.duration).sort((a, b) => a.time - b.time);
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
-    this.pulseOrigin = config.origin;
+    this.pulseAnchor = { time: config.origin, index: 0 };
     this.lastTick = now;
     this.heartbeat = this.clockAt(config.position);
     this.lastPosition = config.position;
@@ -146,7 +151,7 @@ export class MidiSchedule {
     if (advanced && Math.abs(at - this.clockAt(position)) > STALE_MS) {
       const shift = at - this.clockAt(position);
       this.config.origin += shift;
-      this.pulseOrigin += shift;
+      this.pulseAnchor.time += shift;
       this.resync(now, position);
     }
   }
@@ -172,6 +177,13 @@ export class MidiSchedule {
   private jump() {
     const jump = this.pendingJump!;
     this.pendingJump = null;
+    // A new rate re-anchors the clock on the last pulse already sent, so the spacing changes after it. Pulses sent in the lookahead
+    // keep the old spacing, and none is sent twice or bunched up.
+    if (jump.rate !== undefined && clampRate(jump.rate) !== this.rate) {
+      const last = this.pulseDue(this.pulse - 1);
+      this.rate = clampRate(jump.rate);
+      this.pulseAnchor = { time: last, index: this.pulse - 1 };
+    }
     this.config.origin = jump.at - (jump.position * 1000) / this.rate;
     this.config.position = jump.position;
     this.next = this.cursorAt(jump.position);
@@ -185,9 +197,9 @@ export class MidiSchedule {
   private clockAt(song: number): number {
     return this.config.origin + (song * 1000) / this.rate;
   }
-  /** Clock time of pulse `k`: 24 pulses per beat, from `pulseOrigin`. The pulses follow the effective tempo, the written BPM times `rate`. */
+  /** Clock time of pulse `k`: 24 pulses per beat, from the pulse anchor. The pulses follow the effective tempo, the written BPM times `rate`. */
   private pulseDue(k: number): number {
-    return this.pulseOrigin + ((k / 24) * 60 * 1000) / (this.config.bpm * this.rate);
+    return this.pulseAnchor.time + (((k - this.pulseAnchor.index) / 24) * 60 * 1000) / (this.config.bpm * this.rate);
   }
   tick(now: number) {
     if (this.stopped) return;

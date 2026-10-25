@@ -317,3 +317,30 @@ it("keeps the clock's pulse spacing steady across a rate-aware jump", () => {
   const clocks = f.messages().filter((m) => m.bytes[0] === 248);
   for (let i = 1; i < clocks.length; i++) expect(clocks[i].due - clocks[i - 1].due).toBeCloseTo(60000 / (24 * 120 * 0.5), 5);
 });
+
+it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no stall fault", () => {
+  const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
+  const f = fixture({ cues, bpm: 120, rate: 1, clock: true, duration: 10, origin: 1000 });
+  // Until the swap the song plays at 1x, holding cues after song 3 s. The swap lands at clock 4000 on song 3 s, at 50%.
+  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5 });
+  for (let t = 1000; t <= 16000; t += 20) {
+    const song = t < 4000 ? (t - 1000) / 1000 : 3 + (t - 4000) / 2000;
+    f.schedule.sync(song, t, t);
+    f.schedule.tick(t);
+  }
+  const cueSent = (value: number) => f.messages().find((m) => m.label === "Song cue" && m.bytes[1] === value)?.due;
+  expect(cueSent(2)).toBeCloseTo(3000, 0);
+  // Song 5 s is 2 s of song after the swap at 50%, so 4 s of clock after the swap.
+  expect(cueSent(5)).toBeCloseTo(8000, 0);
+  expect(cueSent(8)).toBeCloseTo(14000, 0);
+  // The jump also resends the pedal state at song 3 s as a chase, so only the song cues are checked for repeats.
+  const cueMessages = f.messages().filter((m) => m.label === "Song cue");
+  expect(new Set(cueMessages.map((m) => m.bytes[1])).size).toBe(cueMessages.length);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  const clocks = f.messages().filter((m) => m.bytes[0] === 248).map((m) => m.due);
+  expect(new Set(clocks).size).toBe(clocks.length);
+  const before = clocks.filter((t) => t < 4000);
+  const after = clocks.filter((t) => t > 4100);
+  for (let i = 1; i < before.length; i++) expect(before[i] - before[i - 1]).toBeCloseTo(60000 / (24 * 120), 3);
+  for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120 * 0.5), 3);
+});
