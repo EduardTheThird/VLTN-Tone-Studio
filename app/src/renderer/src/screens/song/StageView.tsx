@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useStagePower } from "./use-stage-power";
 import { BeatIndicator, EdgeFlash, type BeatGrid } from "./BeatIndicator";
 import { PerformanceReader } from "./PerformanceReader";
+import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
 import { SectionStrip } from "./SectionStrip";
 
@@ -21,6 +22,7 @@ export function StageView({
   chords,
   shift,
   onSaveChart,
+  onImportMetadata,
   beat,
   speedNote,
 }: {
@@ -32,6 +34,7 @@ export function StageView({
   chords: Chord[];
   shift: number;
   onSaveChart: (chart: string) => void;
+  onImportMetadata?: (metadata: ChartMetadata) => void;
   /** The song's beat grid, for the beat light and the edge flash */
   beat: BeatGrid;
   /** Shown beside the beat light when the song is not at its own speed or pitch */
@@ -65,6 +68,7 @@ export function StageView({
         title={source?.name ?? "Performance"}
         onEditStart={session.pause}
         onSaveChart={stage ? undefined : onSaveChart}
+        onImportMetadata={stage ? undefined : onImportMetadata}
         status={
           <>
             {stage && <p>Stage mode: seeking and editing locked. {queued ? `Set ${library.position + 1} / ${library.queue.length}` : ""}</p>}

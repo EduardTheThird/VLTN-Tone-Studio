@@ -4,6 +4,8 @@ import { editableEvents, eventChart, type EditableEvent } from "@/song/performan
 import type { Chord } from "@/song/performance/chords";
 import { clockPosition } from "@/song/performance/playback-clock";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
+import type { ChartMetadata } from "@/song/performance/import/import-result";
+import { ChartImport } from "./ChartImport";
 
 export function PerformanceEditor({
   chart,
@@ -11,12 +13,14 @@ export function PerformanceEditor({
   chords,
   onSave,
   onCancel,
+  onImportMetadata,
 }: {
   chart: string;
   lyrics: string;
   chords: Chord[];
   onSave: (chart: string) => void;
   onCancel: () => void;
+  onImportMetadata?: (metadata: ChartMetadata) => void;
 }) {
   const macros = useMidiConfiguration((s) => s.macros);
   const [initial] = useState(() => {
@@ -32,6 +36,13 @@ export function PerformanceEditor({
   const field = "mt-1 w-full rounded border border-seam bg-background p-2 text-sm";
   return (
     <div aria-label="Performance page editor" className="min-h-0 space-y-3 overflow-y-auto text-sm">
+      <ChartImport
+        chart={chart}
+        onImport={(next, metadata) => {
+          onSave(next);
+          onImportMetadata?.(metadata);
+        }}
+      />
       <p>
         Edit the original chord names, lyrics, times and MIDI here. Saving creates a manual chart from the displayed lyrics and chord estimates. Transposition
         stays a display setting. Audio timing is unchanged.

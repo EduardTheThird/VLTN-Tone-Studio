@@ -1,4 +1,4 @@
-import { parseChart } from "./chart";
+import { COLOUR_TAG, parseChart } from "./chart";
 import type { Chord } from "./chords";
 import { checkCommandText, type MidiMacro } from "./midi-macros";
 import { performanceLines } from "./reader";
@@ -89,7 +89,9 @@ export function eventChart(rows: EditableEvent[]): string {
         if (c.startsWith("@") && !trigger) throw new Error(`Line ${index + 1}: a MIDI trigger starts @load, @play, @stop or @end, then one command.`);
         checkCommandText(trigger ? trigger[2] : c);
       }
-      if (/[\r\n{}]/.test(row.lyrics) || /\[\d+:[0-5]\d|\[[A-G]/.test(row.lyrics))
+      // A colour span is part of the lyric text, so it is allowed; any other brace is not.
+      const lyric = row.lyrics.replace(COLOUR_TAG, "");
+      if (/[\r\n{}]/.test(lyric) || /\[\d+:[0-5]\d|\[[A-G]/.test(lyric))
         throw new Error(`Line ${index + 1}: put chords and MIDI in their own fields; lyrics must be one line.`);
       if (/[{}\r\n]/.test(row.label)) throw new Error(`Line ${index + 1}: label must be one line without braces.`);
       return [

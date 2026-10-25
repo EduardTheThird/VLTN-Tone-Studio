@@ -3,6 +3,7 @@
  * already in the app's format (timed lines, `[C]` chords, MIDI and LRC) is passed through unchanged.
  */
 import { parseChart } from "../chart";
+import type { MidiMacro } from "../midi-macros";
 import { chordColumns, parseChordOverLyrics } from "./chord-over-lyrics";
 import { parseChordPro } from "./chordpro";
 import type { ImportResult } from "./import-result";
@@ -17,8 +18,11 @@ export function detectFormat(text: string): ImportResult["format"] {
   return "app";
 }
 
-/** Imports any supported text. Never throws: a chart that does not parse comes back with `error` set. */
-export function importChart(text: string): ImportResult {
+/**
+ * Imports any supported text. Never throws: a chart that does not parse comes back with `error` set. `macros` are the MIDI macros the
+ * chart may use, so a `$CODE` reference is checked the way the chart will be read.
+ */
+export function importChart(text: string, macros: readonly MidiMacro[] = []): ImportResult {
   const format = detectFormat(text);
   const result: ImportResult =
     format === "chordpro"
@@ -27,7 +31,7 @@ export function importChart(text: string): ImportResult {
         ? parseChordOverLyrics(text)
         : { format, chart: text.replace(/\r\n?/g, "\n").trimEnd(), metadata: {}, notes: [] };
   try {
-    parseChart(result.chart);
+    parseChart(result.chart, macros);
     return result;
   } catch (error) {
     return { ...result, error: error instanceof Error ? error.message : String(error) };

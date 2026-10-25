@@ -6,6 +6,7 @@ import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
 import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf";
 import { chordDisplayTranspose, clampCapo, effectiveBpm } from "@/song/performance/speed";
+import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
@@ -274,6 +275,18 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   /** Writes the live loop and release choices into the sections' stored modes, which are saved with the song. */
   const saveSectionDefaults = () => setSectionList(saveLiveAsDefault(sectionList, session.state.sectionLive));
 
+  /**
+   * Song details read by an import: the tempo and capo become the song's own, and the key and year are saved to its library entry. A
+   * title or artist is not changed, since the library does not hold them. The import is refused during playback, so this runs when stopped.
+   */
+  const applyImportedMetadata = (metadata: ChartMetadata) => {
+    if (metadata.tempo !== undefined) setBpm(metadata.tempo);
+    if (metadata.capo !== undefined) setCapo(clampCapo(metadata.capo));
+    const id = source?.libraryId;
+    const patch = { ...(metadata.key ? { key: metadata.key } : {}), ...(metadata.year !== undefined ? { year: metadata.year } : {}) };
+    if (id && Object.keys(patch).length) void useSongLibrary.getState().organiseSongs([id], patch);
+  };
+
   const saveChart = (value: string) => {
     session.pause();
     setChart(value);
@@ -408,6 +421,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         chords={chords}
         shift={shapeShift}
         onSaveChart={saveChart}
+        onImportMetadata={applyImportedMetadata}
         beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat }}
         speedNote={speedNote(speed)}
       />

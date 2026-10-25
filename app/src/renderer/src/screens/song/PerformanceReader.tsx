@@ -1,29 +1,70 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Dialog as StageDialog } from "radix-ui";
 import { Button } from "@/components/ui/button";
-import { lrcTime, transpose, parseChart, type Cue } from "@/song/performance/chart";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { headingLabel, lrcTime, parseChart, stageText, transpose, type Cue } from "@/song/performance/chart";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import type { Chord } from "@/song/performance/chords";
 import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceEditor } from "./PerformanceEditor";
 import { performanceLines } from "@/song/performance/reader";
-import { useActiveIndex } from "@/song/performance/playback-clock";
+import { useActiveIndex, usePlaybackClock } from "@/song/performance/playback-clock";
 import { READER_TEXT, useReaderText } from "@/song/performance/reader-text";
+import {
+  AUTOSCROLL_LABELS,
+  AUTOSCROLL_MODES,
+  LINES_PER_MINUTE,
+  SCROLL_KEYS,
+  autoscrollTarget,
+  fitLinesPerMinute,
+  holdAutoscroll,
+  isAutoscrollHeld,
+  isAutoscrollMode,
+  onAutoscrollResume,
+  scrollTopFor,
+  useAutoscroll,
+  type AutoscrollMode,
+  type ScrollRow,
+} from "@/song/performance/autoscroll";
+import { keySpelling } from "@/song/performance/speed";
+import type { ChartMetadata } from "@/song/performance/import/import-result";
+import { useSong } from "@/song/store";
+import { useSongLibrary } from "@/song/library";
 import { ClockText } from "./PlaybackDisplay";
 
+/** The colour spans' palette, by the name written in `{color:…}`. */
+const COLOUR_CLASSES = new Map<string, string>([
+  ["red", "text-red-400"],
+  ["amber", "text-amber-400"],
+  ["green", "text-green-400"],
+  ["blue", "text-sky-400"],
+  ["violet", "text-violet-400"],
+]);
+
+/**
+ * The lyric text as it is shown: emphasis, colour spans, and no chord names (the chord row above the line shows those). An unknown colour
+ * name is shown in the normal text colour.
+ */
 function formatted(text: string) {
+  let colour: string | undefined;
   return text
     .replace(/\[N\]/g, "")
-    .split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[A-G][^\]]*\])/g)
-    .map((part, i) =>
-      part.startsWith("**") ? (
-        <strong key={i}>{part.slice(2, -2)}</strong>
-      ) : part.startsWith("*") ? (
-        <em key={i}>{part.slice(1, -1)}</em>
-      ) : /^\[[A-G]/.test(part) ? null : (
-        part
-      ),
-    );
+    .split(/(\{color:[a-z]+\}|\{\/color\}|\*\*[^*]+\*\*|\*[^*]+\*|\[[A-G][^\]]*\])/g)
+    .map((part, i) => {
+      const open = /^\{color:([a-z]+)\}$/.exec(part);
+      if (open) {
+        colour = COLOUR_CLASSES.get(open[1]);
+        return null;
+      }
+      if (part === "{/color}") {
+        colour = undefined;
+        return null;
+      }
+      if (/^\[[A-G]/.test(part)) return null;
+      const content = part.startsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith("*") ? <em key={i}>{part.slice(1, -1)}</em> : part;
+      return colour ? <span key={i} className={colour}>{content}</span> : content;
+    });
 }
 
 export function PerformanceReader({
@@ -36,6 +77,7 @@ export function PerformanceReader({
   status,
   onEditStart,
   onSaveChart,
+  onImportMetadata,
   stage = false,
   onExitStage,
 }: {
@@ -50,6 +92,8 @@ export function PerformanceReader({
   status?: ReactNode;
   onEditStart?: () => void;
   onSaveChart?: (chart: string) => void;
+  /** Receives the song details an import read (key, tempo, capo and so on), once the imported chart has been saved. */
+  onImportMetadata?: (metadata: ChartMetadata) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
@@ -83,20 +127,54 @@ export function PerformanceReader({
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
     size = useReaderText((s) => s.size);
+  // The song's key and length, from its library entry, for the chord spelling and the constant-speed fit.
+  const libraryId = useSong((s) => s.source?.libraryId);
+  const librarySong = useSongLibrary((s) => s.index?.songs.find((song) => song.id === libraryId));
+  const spelling = keySpelling(librarySong?.key ?? undefined, shift);
+  const duration = librarySong?.duration ?? 0;
+  const autoscrollMode = useAutoscroll((s) => s.mode),
+    linesPerMinute = useAutoscroll((s) => s.linesPerMinute);
   const viewport = useRef<HTMLDivElement>(null),
-    current = useRef<HTMLDivElement>(null),
+    rowRefs = useRef<(HTMLDivElement | null)[]>([]),
     expandButton = useRef<HTMLButtonElement>(null);
   const chordButton = useRef<HTMLButtonElement | null>(null);
   const active = useActiveIndex(useMemo(() => lines.map((line) => line.time), [lines]));
   const changes = useMemo(() => lines.flatMap((line) => line.chords), [lines]);
   const activeChord = useActiveIndex(useMemo(() => changes.map((chord) => chord.time), [changes]));
+  // Where each row sits in the lyrics, measured after layout. The scroll reads this model, so it never waits for a render.
+  const scrollModel = useRef<{ mode: AutoscrollMode; linesPerMinute: number; rows: ScrollRow[] }>({
+    mode: "line",
+    linesPerMinute: LINES_PER_MINUTE.initial,
+    rows: [],
+  });
+  useLayoutEffect(() => {
+    scrollModel.current = {
+      mode: autoscrollMode,
+      linesPerMinute,
+      rows: lines.map((line, index) => ({ time: line.time, top: rowRefs.current[index]?.offsetTop ?? 0 })),
+    };
+  }, [lines, size, expanded, stage, editing, autoscrollMode, linesPerMinute]);
+  // Autoscroll follows the song position from the playback clock. The clock's listener moves the scroll box directly, so a frame of
+  // playback does not re-render the reader. A manual or remote scroll holds it off for a while, and it then returns to the position.
   useEffect(() => {
-    if (!follow || !viewport.current || !current.current) return;
-    const panel = viewport.current,
-      line = current.current;
-    const top = panel.scrollTop + line.getBoundingClientRect().top - panel.getBoundingClientRect().top - panel.clientHeight * 0.3;
-    panel.scrollTo({ top: Math.max(0, top), behavior: "instant" });
-  }, [active, follow, expanded, stage, size, lines]);
+    const apply = (position: number) => {
+      const panel = viewport.current,
+        model = scrollModel.current;
+      if (!follow || !panel || isAutoscrollHeld()) return;
+      const target = autoscrollTarget(model.mode, position, model.rows, model.linesPerMinute);
+      if (target === null) return;
+      const top = scrollTopFor(target, panel.clientHeight);
+      if (Math.abs(panel.scrollTop - top) < 0.5) return;
+      panel.scrollTo({ top, behavior: "instant" });
+    };
+    apply(usePlaybackClock.getState().position);
+    const unsubscribe = usePlaybackClock.subscribe((state) => apply(state.position));
+    const stopListening = onAutoscrollResume(() => apply(usePlaybackClock.getState().position));
+    return () => {
+      unsubscribe();
+      stopListening();
+    };
+  }, [follow, editing, expanded, stage, size, lines, autoscrollMode, linesPerMinute]);
   useEffect(() => {
     if (stage || !expanded || selectedChord) return;
     const close = (event: KeyboardEvent) => {
@@ -137,6 +215,41 @@ export function PerformanceReader({
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow playback
         </label>
+        {follow && (
+          <Select value={autoscrollMode} onValueChange={(value) => isAutoscrollMode(value) && useAutoscroll.getState().update({ mode: value })}>
+            <SelectTrigger aria-label="Autoscroll style" className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AUTOSCROLL_MODES.map((mode) => (
+                <SelectItem key={mode} value={mode}>
+                  {AUTOSCROLL_LABELS[mode]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {follow && autoscrollMode === "constant" && (
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              Lines per minute
+              <Input
+                aria-label="Lines per minute"
+                type="number"
+                min={LINES_PER_MINUTE.min}
+                max={LINES_PER_MINUTE.max}
+                className="w-24"
+                value={linesPerMinute}
+                onChange={(e) => useAutoscroll.getState().update({ linesPerMinute: Number(e.target.value) })}
+              />
+            </label>
+            {fitLinesPerMinute(lines.length, duration) !== null && (
+              <Button variant="outline" onClick={() => useAutoscroll.getState().update({ linesPerMinute: fitLinesPerMinute(lines.length, duration) ?? linesPerMinute })}>
+                Fit to song length
+              </Button>
+            )}
+          </>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={showCommands} onChange={(e) => useMidiConfiguration.getState().update({ showCommands: e.target.checked })} /> Show
           MIDI commands
@@ -183,6 +296,7 @@ export function PerformanceReader({
             onSaveChart(next);
             setEditing(false);
           }}
+          onImportMetadata={onImportMetadata}
         />
       ) : (
         <div
@@ -190,6 +304,11 @@ export function PerformanceReader({
           data-reader-scroll
           tabIndex={0}
           aria-label="Combined lyrics and chords"
+          onWheel={() => holdAutoscroll()}
+          onTouchMove={() => holdAutoscroll()}
+          onKeyDown={(event) => {
+            if (SCROLL_KEYS.has(event.key)) holdAutoscroll();
+          }}
           className={
             expanded || stage
               ? "relative min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg p-6"
@@ -199,64 +318,74 @@ export function PerformanceReader({
         >
           {lines.length ? (
             <div className="mx-auto max-w-4xl pb-48">
-              {lines.map((line, index) => (
-                <div
-                  key={index}
-                  ref={index === active ? current : undefined}
-                  aria-current={index === active ? "true" : undefined}
-                  className={
-                    "mb-5 rounded-lg border-l-4 px-5 py-3 transition-colors " +
-                    (index === active ? "border-sky-400 bg-sky-400/10 text-foreground" : "border-transparent text-silkscreen-3")
-                  }
-                >
-                  {!!line.chords.length && (
-                    <div aria-label="Chords" className="flex flex-wrap gap-x-6 font-semibold text-sky-400">
-                      {line.chords.map((chord, i) =>
-                        chord.name === "N" ? (
-                          <span key={i}>—</span>
-                        ) : (
-                          <button
-                            disabled={stage}
-                            key={i}
-                            type="button"
-                            aria-label={`Show ${transpose(`[${chord.name}]`, shift).slice(1, -1)} guitar voicings`}
-                            title={(Number.isFinite(chord.time) ? lrcTime(chord.time) + " · " : "") + "Show guitar tabs"}
-                            onClick={(event) => {
-                              chordButton.current = event.currentTarget;
-                              setSelectedChord(transpose(`[${chord.name}]`, shift).slice(1, -1));
-                            }}
-                            className={
-                              "cursor-pointer rounded px-1 text-left hover:bg-sky-400/15 focus-visible:outline-2 focus-visible:outline-sky-400 " +
-                              (changes[activeChord] === chord ? "bg-sky-400/20 text-sky-300 ring-1 ring-sky-400" : "")
-                            }
-                          >
-                            {transpose(`[${chord.name}]`, shift).slice(1, -1)}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  )}
-                  {!!line.text && (
-                    <p className={index === active ? "whitespace-pre-wrap font-semibold" : "whitespace-pre-wrap"}>{formatted(transpose(line.text, shift))}</p>
-                  )}
-                  {line.midi.map((cue, i) => (
-                    <div key={i} aria-label="MIDI cue" className="my-2 rounded border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-sm text-amber-300">
-                      <strong>
-                        {lrcTime(cue.time)} · {cue.label || "MIDI command"}
-                      </strong>
-                      <span className="ml-2 font-mono">
-                        {cue.messages
-                          .map((bytes) =>
-                            bytes[0] < 0xf0
-                              ? `ch ${(bytes[0] & 15) + 1} · ${bytes[0] >> 4 === 12 ? "PC" : bytes[0] >> 4 === 11 ? "CC" : "MIDI"} ${bytes.slice(1).join(" ")}`
-                              : "SysEx",
-                          )
-                          .join(" → ")}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ))}
+              {lines.map((line, index) => {
+                const shown = stageText(line.text);
+                const label = headingLabel(shown);
+                return (
+                  <div
+                    key={index}
+                    ref={(element) => {
+                      rowRefs.current[index] = element;
+                    }}
+                    aria-current={index === active ? "true" : undefined}
+                    className={
+                      "mb-5 rounded-lg border-l-4 px-5 py-3 transition-colors " +
+                      (index === active ? "border-sky-400 bg-sky-400/10 text-foreground" : "border-transparent text-silkscreen-3")
+                    }
+                  >
+                    {!!line.chords.length && (
+                      <div aria-label="Chords" className="flex flex-wrap gap-x-6 font-semibold text-sky-400">
+                        {line.chords.map((chord, i) =>
+                          chord.name === "N" ? (
+                            <span key={i}>—</span>
+                          ) : (
+                            <button
+                              disabled={stage}
+                              key={i}
+                              type="button"
+                              aria-label={`Show ${transpose(`[${chord.name}]`, shift, spelling).slice(1, -1)} guitar voicings`}
+                              title={(Number.isFinite(chord.time) ? lrcTime(chord.time) + " · " : "") + "Show guitar tabs"}
+                              onClick={(event) => {
+                                chordButton.current = event.currentTarget;
+                                setSelectedChord(transpose(`[${chord.name}]`, shift, spelling).slice(1, -1));
+                              }}
+                              className={
+                                "cursor-pointer rounded px-1 text-left hover:bg-sky-400/15 focus-visible:outline-2 focus-visible:outline-sky-400 " +
+                                (changes[activeChord] === chord ? "bg-sky-400/20 text-sky-300 ring-1 ring-sky-400" : "")
+                              }
+                            >
+                              {transpose(`[${chord.name}]`, shift, spelling).slice(1, -1)}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    )}
+                    {label !== null ? (
+                      <h3 className="text-sm font-semibold tracking-wide text-silkscreen-3 uppercase">{label}</h3>
+                    ) : shown ? (
+                      <p className={index === active ? "whitespace-pre-wrap font-semibold" : "whitespace-pre-wrap"}>
+                        {formatted(transpose(shown, shift, spelling))}
+                      </p>
+                    ) : null}
+                    {line.midi.map((cue, i) => (
+                      <div key={i} aria-label="MIDI cue" className="my-2 rounded border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-sm text-amber-300">
+                        <strong>
+                          {lrcTime(cue.time)} · {cue.label || "MIDI command"}
+                        </strong>
+                        <span className="ml-2 font-mono">
+                          {cue.messages
+                            .map((bytes) =>
+                              bytes[0] < 0xf0
+                                ? `ch ${(bytes[0] & 15) + 1} · ${bytes[0] >> 4 === 12 ? "PC" : bytes[0] >> 4 === 11 ? "CC" : "MIDI"} ${bytes.slice(1).join(" ")}`
+                                : "SysEx",
+                            )
+                            .join(" → ")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-base text-silkscreen-3">

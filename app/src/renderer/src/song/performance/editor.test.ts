@@ -54,3 +54,8 @@ it("refuses a trigger row with a time, and a macro row whose code is malformed",
   expect(() => eventChart([{ ...row, midi: "@sometimes pc 1 5", seconds: "" }])).toThrow(/trigger starts/);
   expect(() => eventChart([{ ...row, midi: "$lower", seconds: "1" }])).toThrow(/Invalid macro reference/);
 });
+it("keeps a colour span in a lyric when the row is saved, and still refuses other braces", () => {
+  const [row] = editableEvents("[00:01] {color:red}Loud{/color} words", "", []);
+  expect(eventChart([row])).toBe("[00:01.00] {color:red}Loud{/color} words");
+  expect(() => eventChart([{ ...row, lyrics: "{label:x} words" }])).toThrow(/one line/);
+});
