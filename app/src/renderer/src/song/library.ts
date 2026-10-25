@@ -23,7 +23,7 @@ import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
 import { speedFromOptions } from "./performance/speed";
 import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, SongSource, Stems } from "./types";
-import { savedSettingsOf, trackInfoOf, type TrackInfo } from "./tracks";
+import { mergeTrackDefaults, savedSettingsOf, trackInfoOf, type TrackInfo } from "./tracks";
 import { mixDown } from "./import/align";
 
 /**
@@ -139,12 +139,15 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
     stems[trackKey(track)] = pcm;
     tracks[trackKey(track)] = trackInfoOf(track);
   }
+  // A track's saved pitch choice is a default: the song's own choice, if it has one, wins.
+  const options = song.settings[":options"] ?? "";
+  const merged = mergeTrackDefaults(options, tracks);
   return {
     id,
     title: song.title,
     source: { name: song.sourceName, libraryId: song.id, audio: source },
     stems: stems as Stems,
-    settings: song.settings,
+    settings: merged === options ? song.settings : { ...song.settings, ":options": merged },
     tracks,
     skipped,
   };

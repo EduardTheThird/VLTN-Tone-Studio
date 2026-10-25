@@ -68,6 +68,8 @@ export interface SongState {
    * file that was refused or padded. Throws when nothing can be imported at all.
    */
   addTracks(files: File[]): Promise<string[]>;
+  /** Changes what the mixer knows about one imported track, such as its mute groups. Saved with the song on the next save. */
+  setTrackInfo(key: string, patch: Partial<Omit<TrackInfo, "kind">>): void;
   setChoice(patch: Partial<SplitChoice>): void;
   cancel(): void;
   reset(): void;

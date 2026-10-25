@@ -53,6 +53,44 @@ export function savedSettingsOf(info: TrackInfo | undefined): Pick<LibraryAudio,
   return saved;
 }
 
+/** The mix each track starts with: its saved volume and pan. Only tracks with one of those saved are listed. */
+export function mixDefaults(tracks: Readonly<Record<string, TrackInfo>>): Mix {
+  const mix: Mix = {};
+  for (const [key, info] of Object.entries(tracks)) {
+    if (info.gain === undefined && info.pan === undefined) continue;
+    mix[key] = { ...defaultStemMix(), volume: info.gain ?? 1, pan: info.pan };
+  }
+  return mix;
+}
+
+/** The bus each track starts on, where the track saved one. */
+export function busDefaults(tracks: Readonly<Record<string, TrackInfo>>): Partial<Record<string, BusName>> {
+  return Object.fromEntries(Object.entries(tracks).filter(([, info]) => info.bus !== undefined).map(([key, info]) => [key, info.bus]));
+}
+
+/** Whether each track follows the pitch shift, where the track saved a choice. */
+export function pitchDefaults(tracks: Readonly<Record<string, TrackInfo>>): Record<string, boolean> {
+  return Object.fromEntries(Object.entries(tracks).filter(([, info]) => info.transpose !== undefined).map(([key, info]) => [key, info.transpose!]));
+}
+
+/**
+ * The song's options JSON with each track's saved pitch choice added to its `followsPitch`. A choice the song already has wins, so a
+ * change made in the mixer is kept. Returns the input unchanged when no track saved a choice.
+ */
+export function mergeTrackDefaults(optionsJson: string, tracks: Readonly<Record<string, TrackInfo>>): string {
+  const defaults = pitchDefaults(tracks);
+  if (!Object.keys(defaults).length) return optionsJson;
+  let options: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(optionsJson || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) options = parsed as Record<string, unknown>;
+  } catch {
+    // A damaged options entry starts again from the track defaults.
+  }
+  const chosen = options.followsPitch && typeof options.followsPitch === "object" ? (options.followsPitch as Record<string, boolean>) : {};
+  return JSON.stringify({ ...options, followsPitch: { ...defaults, ...chosen } });
+}
+
 /** Named colours for a file name such as `Bass (color=blue).wav`, as hex so they can be saved */
 export const NAMED_COLOURS: Record<string, string> = {
   red: "#ef4444",

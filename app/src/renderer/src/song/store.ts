@@ -4,7 +4,8 @@ import { decodeSong } from "./decode";
 import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
 import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
 import { importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
-import type { TrackInfo } from "./tracks";
+import { mergeTrackDefaults, type TrackInfo } from "./tracks";
+import { getSetting, performanceKey, setSetting } from "./performance/settings";
 import type { PcmAudio, SongState, SplitInfo, Stems } from "./types";
 
 // The loaded song and its stems (contract: types.ts). One job at a time: loading another song or splitting
@@ -119,13 +120,18 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         // Drop the fields that were not set, so a default still applies to them.
         for (const field of Object.keys(nextTracks[track.key]) as (keyof TrackInfo)[]) if (nextTracks[track.key][field] === undefined) delete nextTracks[track.key][field];
       }
-      set({
-        source: source ?? { name: "Imported tracks", audio: outcome.source! },
-        stems: nextStems,
-        tracks: nextTracks,
-        status: { kind: "idle" },
-      });
+      const nextSource = source ?? { name: "Imported tracks", audio: outcome.source! };
+      // A track's saved pitch choice is written into the song's options now, before the session reads them for the new stems.
+      const key = performanceKey(nextSource);
+      setSetting(key, ":options", mergeTrackDefaults(getSetting(key, ":options"), nextTracks));
+      set({ source: nextSource, stems: nextStems, tracks: nextTracks, status: { kind: "idle" } });
       return outcome.notices;
+    },
+
+    setTrackInfo(key, patch) {
+      const current = get().tracks[key];
+      if (!current) return;
+      set({ tracks: { ...get().tracks, [key]: { ...current, ...patch } } });
     },
 
     setChoice(patch) {

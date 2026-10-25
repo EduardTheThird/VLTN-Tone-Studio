@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { defaultMix, stemGains } from "./stems/mix";
 import {
+  busDefaults,
   clickStretchWarning,
+  mergeTrackDefaults,
+  mixDefaults,
+  pitchDefaults,
   savedSettingsOf,
   trackInfoOf,
   defaultBus,
@@ -167,5 +171,30 @@ describe("saved track settings", () => {
     const legacy = { name: "drums", sampleRate: 44100, frames: 10, channels: 2, file: "drums.flac", codec: "flac" as const, bytes: 1, sha256: "a".repeat(64) };
     expect(trackInfoOf(legacy)).toEqual({ kind: "stem", name: "drums" });
     expect(savedSettingsOf(undefined)).toEqual({});
+  });
+});
+
+describe("track defaults", () => {
+  const tracks = {
+    track0: { kind: "user" as const, name: "Click", bus: "click" as const, transpose: false },
+    track1: { kind: "user" as const, name: "Keys", gain: 0.6, pan: -0.5, transpose: true },
+    drums: { kind: "stem" as const, name: "drums" },
+  };
+
+  it("starts each track on its saved bus, volume and pan, and leaves the rest on the defaults", () => {
+    expect(busDefaults(tracks)).toEqual({ track0: "click" });
+    expect(mixDefaults(tracks)).toEqual({ track1: { volume: 0.6, mute: false, solo: false, pan: -0.5 } });
+    expect(pitchDefaults(tracks)).toEqual({ track0: false, track1: true });
+  });
+
+  it("adds the saved pitch choices to a song's options, and keeps a choice the song already made", () => {
+    const merged = JSON.parse(mergeTrackDefaults(JSON.stringify({ shift: 2, followsPitch: { track1: false } }), tracks));
+    expect(merged).toEqual({ shift: 2, followsPitch: { track0: false, track1: false } });
+  });
+
+  it("starts from nothing when the options are missing or broken, and leaves them alone with no saved choice", () => {
+    expect(JSON.parse(mergeTrackDefaults("", tracks))).toEqual({ followsPitch: { track0: false, track1: true } });
+    expect(JSON.parse(mergeTrackDefaults("{broken", tracks))).toEqual({ followsPitch: { track0: false, track1: true } });
+    expect(mergeTrackDefaults('{"shift":1}', { drums: { kind: "stem", name: "drums" } })).toBe('{"shift":1}');
   });
 });

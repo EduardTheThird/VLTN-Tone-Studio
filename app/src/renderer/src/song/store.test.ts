@@ -165,3 +165,69 @@ describe("song store", () => {
     expect(separate).not.toHaveBeenCalled();
   });
 });
+
+describe("imported tracks in the song store", () => {
+  /** An import that gives each file the next track key, and a source sum when the song has none. */
+  const importFake: SongDeps["importTracks"] = async (files, options) => ({
+    tracks: files.map((f, i) => ({
+      key: `track${options.taken.length + i}`,
+      file: `track${options.taken.length + i}.flac`,
+      kind: "user",
+      name: f.name,
+      bus: "main",
+      pcm: audio(),
+    })),
+    source: options.reference === null ? audio() : null,
+    notices: [],
+  });
+
+  it("gives a song with no source the sum of its tracks as its source", async () => {
+    const useSong = store({ importTracks: importFake });
+    const notices = await useSong.getState().addTracks([file("Click.wav"), file("Keys.wav")]);
+    expect(notices).toEqual([]);
+    expect(useSong.getState().source?.name).toBe("Imported tracks");
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["track0", "track1"]);
+    expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Click.wav" });
+  });
+
+  it("adds tracks beside a split song's stems and keeps its source", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("song.mp3"));
+    const source = useSong.getState().source;
+    await useSong.getState().split();
+    await useSong.getState().addTracks([file("Keys.wav")]);
+    expect(useSong.getState().source).toBe(source);
+    // The fake import numbers new tracks after the six stems, so the first one is track6.
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(expect.arrayContaining(["drums", "vocals", "track6"]));
+    expect(useSong.getState().tracks.track6.kind).toBe("user");
+    expect(useSong.getState().tracks.drums).toBeUndefined();
+  });
+
+  it("keeps imported tracks when the song is split again", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("song.mp3"));
+    await useSong.getState().addTracks([file("Keys.wav")]);
+    await useSong.getState().split();
+    expect(useSong.getState().stems?.track0).toBeDefined();
+    expect(useSong.getState().tracks.track0?.name).toBe("Keys.wav");
+  });
+
+  it("refuses to add tracks while the song is splitting", async () => {
+    const pending = deferred<Separation>();
+    const useSong = store({ importTracks: importFake, separate: () => pending.promise });
+    await useSong.getState().load(file("song.mp3"));
+    const splitting = useSong.getState().split();
+    await expect(useSong.getState().addTracks([file("Keys.wav")])).rejects.toThrow("Wait for the song");
+    pending.resolve(separation());
+    await splitting;
+  });
+
+  it("changes a track's mute groups without touching its audio", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().addTracks([file("Click.wav")]);
+    const pcm = useSong.getState().stems?.track0;
+    useSong.getState().setTrackInfo("track0", { muteGroups: [2] });
+    expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Click.wav", muteGroups: [2] });
+    expect(useSong.getState().stems?.track0).toBe(pcm);
+  });
+});
