@@ -86,5 +86,6 @@ it("refuses a song whose macro is missing, and names the MIDI file when the file
     expect.stringMatching(/^MIDI file cannot play: broken\.mid:/),
   ]);
   const macros = [{ code: "NOPE", label: "Nope", commands: ["pc 1 1"] }];
-  expect(playlistPreflight(["one"], [{ ...saved, song: { ...saved.song!, settings: { ":bpm": "120", "": "[00:01] {midi:$NOPE}" } } }], { ...config, macros })[0].errors).toEqual([]);
+  const known = { ...saved, song: { ...saved.song!, settings: { ":bpm": "120", "": "[00:01] {midi:$NOPE}" } } };
+  expect(playlistPreflight(["one"], [known], { ...config, macros })[0].errors).toEqual([]);
 });

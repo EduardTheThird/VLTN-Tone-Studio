@@ -34,7 +34,13 @@ const defaults: MidiConfiguration = {
 /** The stored shape of a macro. Whether its commands are valid is checked by `macroProblems`, so a bad one can still be shown and removed. */
 function isMacroShape(value: unknown): value is MidiMacro {
   const macro = value as Partial<MidiMacro> | null;
-  return !!macro && typeof macro.code === "string" && typeof macro.label === "string" && Array.isArray(macro.commands) && macro.commands.every((c) => typeof c === "string");
+  return (
+    !!macro &&
+    typeof macro.code === "string" &&
+    typeof macro.label === "string" &&
+    Array.isArray(macro.commands) &&
+    macro.commands.every((c) => typeof c === "string")
+  );
 }
 
 export function readMidiConfiguration(): MidiConfiguration {

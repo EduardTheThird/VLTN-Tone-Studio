@@ -59,7 +59,8 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
       if (hasChase && hasNoChase) throw new Error(`Line ${index + 1}: use either {chase} or {nochase}, not both.`);
       const labelled = label ? { label } : {};
       const triggers = [...content.matchAll(TRIGGER)];
-      if (/\{midi@/.test(content.replace(TRIGGER, ""))) throw new Error(`Line ${index + 1}: a MIDI trigger is {midi@load: …}, {midi@play: …}, {midi@stop: …} or {midi@end: …} with one command.`);
+      if (/\{midi@/.test(content.replace(TRIGGER, "")))
+        throw new Error(`Line ${index + 1}: a MIDI trigger is {midi@load: …}, {midi@play: …}, {midi@stop: …} or {midi@end: …} with one command.`);
       const triggerCues: Cue[] = triggers.map((t) => {
         const command = t[2].trim();
         if (!command) throw new Error(`Line ${index + 1}: MIDI triggers need contents.`);
