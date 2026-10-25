@@ -1,4 +1,5 @@
 import { expandCommand, isLegacyCommand, type MidiMacro } from "./midi-macros";
+import { isChordName, transposeChordName } from "./speed";
 
 export { midiCommand } from "./midi-command";
 
@@ -31,15 +32,32 @@ export function timedCues(cues: readonly Cue[]): Cue[] {
 const TIMESTAMP = /\[(\d+):([0-5]\d(?:\.\d+)?)\]/g;
 const TRIGGER = /\{midi@(load|play|stop|end):([^}]*)\}/g;
 
-/** Deliberately strict, documented syntax; values are wire values (PC 0–127), channels 1–16. */
-export function transpose(text: string, steps: number): string {
-  return text.replace(/\[([A-G][#b]?)([^\]\s]*?)\]/g, (_, root: string, tail: string) => {
-    const note = (n: string) => NOTES[(((pitch(n) + steps) % 12) + 12) % 12];
-    return `[${note(root)}${tail.replace(/\/([A-G][#b]?)$/, (_: string, bass: string) => "/" + note(bass))}]`;
-  });
+/**
+ * Moves every chord in the text by `steps` semitones. `flats` respells the chords (true for a flat key, false for a sharp one); without it
+ * each chord keeps its own accidental. Lines without chords are returned unchanged.
+ */
+export function transpose(text: string, steps: number, flats?: boolean): string {
+  return text.replace(/\[([^\]\s]+)\]/g, (match, chord: string) => (isChordName(chord) ? `[${transposeChordName(chord, steps, flats)}]` : match));
 }
-const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const pitch = (n: string) => ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 })[n[0]]! + (n[1] === "#" ? 1 : n[1] === "b" ? -1 : 0);
+
+/** A heading line, such as `# Chorus`, shown as a label. Returns the label, or null for an ordinary line. */
+export function headingLabel(text: string): string | null {
+  const match = /^#\s+(\S.*)$/.exec(text.trim());
+  return match ? match[1].trim() : null;
+}
+
+/** A `// …` comment starts at the beginning of a line or after a space, so a web address such as `http://` is never a comment. */
+const COMMENT = /(^|\s)\/\/.*$/;
+
+/** The text the stage shows: the comments are an editor note and are removed. */
+export function stageText(text: string): string {
+  return text.replace(COMMENT, "").trim();
+}
+
+/** The colour names a `{color:…}` span may use. Any other name is shown in the normal text colour. */
+export const COLOUR_NAMES = ["red", "amber", "green", "blue", "violet"] as const;
+/** `{color:red}` opens a coloured span and `{/color}` closes it. */
+export const COLOUR_TAG = /\{color:([a-z]+)\}|\{\/color\}/g;
 
 /**
  * Parses a chart. `macros` resolves `{midi:$CODE}` references; a reference to an unknown macro, a macro that refers to itself, or a

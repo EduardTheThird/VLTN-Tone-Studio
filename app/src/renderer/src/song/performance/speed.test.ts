@@ -14,6 +14,8 @@ import {
   speedOptions,
   clampSpeed,
   transposeChordName,
+  flatsForKey,
+  keySpelling,
 } from "./speed";
 
 describe("clampRate", () => {
@@ -126,5 +128,58 @@ describe("speed options", () => {
     expect(speedFromOptions(JSON.stringify(speedOptions(speed)))).toEqual(speed);
     expect(speedFromOptions("{not json")).toEqual(DEFAULT_SPEED);
     expect(speedFromOptions("")).toEqual(DEFAULT_SPEED);
+  });
+});
+
+describe("spelling a transposed chord by key", () => {
+  it.each([
+    ["Bb", 0, undefined, "Bb"],
+    ["A#", 0, undefined, "A#"],
+    ["C", 1, undefined, "C#"],
+    ["Bb", 2, undefined, "C"],
+    ["F#m", -1, undefined, "Fm"],
+    ["Bb", 0, true, "Bb"],
+    ["A#", 0, true, "Bb"],
+    ["A#", 0, false, "A#"],
+    ["Bb", 0, false, "A#"],
+    ["C", 3, true, "Eb"],
+    ["C", 3, false, "D#"],
+    ["G/B", 2, true, "A/Db"],
+    ["N", 5, true, "N"],
+    ["Am7", 0, false, "Am7"],
+  ])("%s moved by %i with flats %s is %s", (name, steps, flats, expected) => {
+    expect(transposeChordName(name, steps, flats)).toBe(expected);
+  });
+  it.each([
+    ["Bb", true],
+    ["Eb minor", true],
+    ["D", false],
+    ["D minor", true],
+    ["Dm", true],
+    ["Gb", true],
+    ["F", true],
+    ["F#m", false],
+    ["E", false],
+    ["A", false],
+    ["C", false],
+    ["  Ab  ", true],
+    ["F#", false],
+    ["", undefined],
+    ["Hmm", undefined],
+    ["D major", false],
+  ])("the key %j uses flats %s", (key, expected) => {
+    expect(flatsForKey(key)).toBe(expected);
+  });
+  it.each([
+    ["Bb", 2, false],
+    ["Bb", -2, true],
+    ["A minor", 1, true],
+    ["C", 1, true],
+    ["D", 0, false],
+    ["Eb", 0, true],
+    [undefined, 3, undefined],
+    ["", 1, undefined],
+  ])("the song in %j moved by %i uses flats %s", (key, steps, expected) => {
+    expect(keySpelling(key, steps)).toBe(expected);
   });
 });

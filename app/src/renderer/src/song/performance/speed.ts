@@ -62,30 +62,86 @@ const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", 
 const NOTE_INDEX: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const ROOT = /^([A-G])([#b]?)(.*)$/;
 
-/** Moves one note name (root, with an optional accidental) by `semitones`, keeping a flat spelling where the source used one. */
-function transposeNote(root: string, accidental: string, semitones: number): string {
+/**
+ * Moves one note name (root, with an optional accidental) by `semitones`. `flats` picks the spelling of the result (true for flats, false
+ * for sharps). Without it, a flat in the source is kept as a flat and anything else is spelled with sharps.
+ */
+function transposeNote(root: string, accidental: string, semitones: number, flats?: boolean): string {
   const index = (NOTE_INDEX[root] + (accidental === "#" ? 1 : accidental === "b" ? -1 : 0) + semitones + 1200) % 12;
-  return accidental === "b" ? FLAT_NAMES[index] : SHARP_NAMES[index];
+  return (flats ?? accidental === "b") ? FLAT_NAMES[index] : SHARP_NAMES[index];
 }
 
 /** One chord symbol (no bass) moved by `semitones`. Quality text such as "m7" or "sus4" is kept as written. */
-function transposeSymbol(symbol: string, semitones: number): string {
+function transposeSymbol(symbol: string, semitones: number, flats?: boolean): string {
   const match = ROOT.exec(symbol);
   if (!match) return symbol;
   const [, root, accidental, quality] = match;
-  return transposeNote(root, accidental, semitones) + quality;
+  return transposeNote(root, accidental, semitones, flats) + quality;
 }
 
 /**
  * A chord name moved by `semitones`, including a slash bass ("G/B" → "A/C#"). "N" (no chord) and names that do not parse are returned
- * unchanged, so nothing is ever invented.
+ * unchanged, so nothing is ever invented. `flats` respells every note in the chosen style, even at zero semitones: "A#" in a flat key
+ * becomes "Bb". Without it, a name is only moved and keeps its own spelling.
  */
-export function transposeChordName(name: string, semitones: number): string {
-  if (!semitones || name === "N") return name;
+export function transposeChordName(name: string, semitones: number, flats?: boolean): string {
+  if (name === "N") return name;
+  if (!semitones && flats === undefined) return name;
   const [symbol, bass, ...rest] = name.split("/");
   if (rest.length) return name;
-  const moved = transposeSymbol(symbol, semitones);
-  return bass === undefined ? moved : `${moved}/${transposeSymbol(bass, semitones)}`;
+  const moved = transposeSymbol(symbol, semitones, flats);
+  return bass === undefined ? moved : `${moved}/${transposeSymbol(bass, semitones, flats)}`;
+}
+
+/**
+ * Pitch classes (0 = C) of the keys written with flats when the key has no accidental of its own: F, Bb, Eb, Ab and Db major, and C, D,
+ * Eb, F, G, Ab and Bb minor, which share their signature. Gb is written with a flat in the key name, and F# with a sharp, so pitch class 6
+ * is left out: a key that moves onto F# is written with sharps.
+ */
+const FLAT_MAJOR_PITCHES = new Set([1, 3, 5, 8, 10]);
+const FLAT_MINOR_PITCHES = new Set([0, 2, 3, 5, 7, 8, 10]);
+
+/** The root, pitch class, minor flag and accidental of a key name such as "Bb", "A minor", "F#m" or "Eb major", or null when it does not parse. */
+function keyParts(key: string): { pitch: number; minor: boolean; accidental: string } | null {
+  const match = /^([A-G])([#b]?)(.*)$/.exec(key.trim());
+  if (!match) return null;
+  const pitch = (NOTE_INDEX[match[1]] + (match[2] === "#" ? 1 : match[2] === "b" ? -1 : 0) + 12) % 12;
+  return { pitch, minor: /^\s*(min|minor|m)(?![a-z])/i.test(match[3]), accidental: match[2] };
+}
+
+/**
+ * Whether the chord names of `key` are spelled with flats (true) or sharps (false). A key written with a flat or a sharp keeps that
+ * spelling. Undefined when the key does not parse, so the chords keep their own spelling.
+ */
+export function flatsForKey(key: string | undefined): boolean | undefined {
+  const parts = keyParts(key ?? "");
+  if (!parts) return undefined;
+  if (parts.accidental) return parts.accidental === "b";
+  return (parts.minor ? FLAT_MINOR_PITCHES : FLAT_MAJOR_PITCHES).has(parts.pitch);
+}
+
+/**
+ * The spelling a song's chord names use once its key is moved by `steps`. The shifted key's pitch decides it, so A minor up a semitone is
+ * Bb minor, written with flats, and C up a semitone is Db, with flats. Undefined when no key is known.
+ */
+export function keySpelling(key: string | undefined, steps: number): boolean | undefined {
+  const parts = keyParts(key ?? "");
+  if (!parts) return undefined;
+  if (!steps) return flatsForKey(key);
+  const pitch = (((parts.pitch + steps) % 12) + 12) % 12;
+  return (parts.minor ? FLAT_MINOR_PITCHES : FLAT_MAJOR_PITCHES).has(pitch);
+}
+
+/**
+ * A chord name as the app writes it: a root A to G with an optional sharp or flat, then quality such as `m7`, `maj7`, `sus4`, `add9` or
+ * `7b5`, and an optional bass after a slash. `N.C.` and `N` mean no chord. Words such as "Bass", "Dad" or "Chorus" do not match, so a
+ * `[Chorus]` label is never moved.
+ */
+const CHORD_NAME = /^(?:[A-G](?:#|b)?(?:maj|min|m|M|dim|aug|sus|add|\+|°|ø|-|#|b|\d)*(?:\/[A-G](?:#|b)?)?|N\.?C\.?|N)$/;
+
+/** Whether `token` is a chord name, so it can be moved or merged. */
+export function isChordName(token: string): boolean {
+  return CHORD_NAME.test(token);
 }
 
 /** A song's speed and pitch as the player and the reader use them. Stored in the song's options, next to its other performance options. */

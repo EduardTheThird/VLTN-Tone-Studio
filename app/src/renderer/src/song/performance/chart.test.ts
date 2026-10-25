@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { midiCommand, parseChart, timedCues, transpose } from "./chart";
+import { COLOUR_NAMES, COLOUR_TAG, headingLabel, midiCommand, parseChart, stageText, timedCues, transpose } from "./chart";
 import { isChased } from "./midi-chase";
 
 /** Charts written with the original grammar. Their parse is pinned to the output of the parser from before triggers, macros and the extended grammar. */
@@ -323,5 +323,53 @@ describe("chase rules for the new messages", () => {
     expect(isChased(song, song.messages[0])).toBe(true);
     const start = cue("[00:01] {midi:start}");
     expect(isChased(start, start.messages[0])).toBe(false);
+  });
+});
+
+describe("transposing chords with a key", () => {
+  it.each([
+    ["[Bb] [Eb] [Ab]", 0, undefined, "[Bb] [Eb] [Ab]"],
+    ["[A#] [D#]", 0, undefined, "[A#] [D#]"],
+    ["[A#] [D#]", 0, true, "[Bb] [Eb]"],
+    ["[Bb] [Eb]", 0, false, "[A#] [D#]"],
+    ["[C] [G7] [Am]", 1, undefined, "[C#] [G#7] [A#m]"],
+    ["[C] [G7] [Am]", 1, true, "[Db] [Ab7] [Bbm]"],
+    ["[F#m] [E/G#]", -2, true, "[Em] [D/Gb]"],
+    ["[N] [F] Words", 4, false, "[N] [A] Words"],
+  ])("%s by %i with flats %s is %s", (text, steps, flats, expected) => {
+    expect(transpose(text, steps, flats)).toBe(expected);
+  });
+  it("leaves lyrics with brackets that are not chords alone", () => {
+    expect(transpose("[Verse] Hello [Chorus]", 2)).toBe("[Verse] Hello [Chorus]");
+  });
+});
+
+describe("headings, comments and colour in the text", () => {
+  it.each([
+    ["# Chorus", "Chorus"],
+    ["  #   Verse 2 ", "Verse 2"],
+    ["#Chorus", null],
+    ["Chorus", null],
+    ["[00:01] # Bridge", null],
+    ["Hello # not a heading", null],
+  ])("headingLabel(%j) is %j", (text, label) => {
+    expect(headingLabel(text)).toBe(label);
+  });
+  it.each([
+    ["[C]Hello // a note", "[C]Hello"],
+    ["// whole line note", ""],
+    ["Plain line", "Plain line"],
+    ["Visit http://example.com", "Visit http://example.com"],
+    ["Shown {color:red}here{/color} // hidden", "Shown {color:red}here{/color}"],
+  ])("stageText(%j) is %j", (text, shown) => {
+    expect(stageText(text)).toBe(shown);
+  });
+  it("names the colours a span may use", () => {
+    expect(COLOUR_NAMES).toEqual(["red", "amber", "green", "blue", "violet"]);
+    expect("x {color:red}y{/color} {color:purple}z{/color}".match(COLOUR_TAG)).toEqual(["{color:red}", "{/color}", "{color:purple}", "{/color}"]);
+  });
+  it("keeps headings, comments and colour spans in the parsed text, so the editor shows them", () => {
+    const [cue] = parseChart("[00:02] # Chorus {color:red}Loud{/color} // note");
+    expect(cue.text).toBe("# Chorus {color:red}Loud{/color} // note");
   });
 });
