@@ -9,6 +9,7 @@ import { useStagePower } from "./use-stage-power";
 import { BeatIndicator, EdgeFlash, type BeatGrid } from "./BeatIndicator";
 import { PerformanceReader } from "./PerformanceReader";
 import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
+import { SectionStrip } from "./SectionStrip";
 
 /** The reader with its status lines and transport, used both inline and as the full-screen stage view. */
 export function StageView({
@@ -38,6 +39,7 @@ export function StageView({
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
   const queued = useSession(session, (s) => s.queued);
+  const sectioned = useSession(session, (s) => s.sections.length > 0);
   const parseError = useSession(session, (s) => s.parseError);
   const error = useSession(session, (s) => s.error);
   const lateNotice = useSession(session, (s) => s.lateNotice);
@@ -99,13 +101,18 @@ export function StageView({
                 {edgeFlash ? "Edge flash on" : "Edge flash off"}
               </Button>
             )}
-            <PositionSlider
-              disabled={stage}
-              label="Expanded song position"
-              className="min-w-32 flex-1"
-              duration={duration}
-              onSeek={(value) => void session.seek(value)}
-            />
+            {/* In Stage the sections replace the seek bar: seeking stays locked, jumps between sections do not. */}
+            {stage && sectioned ? (
+              <SectionStrip session={session} />
+            ) : (
+              <PositionSlider
+                disabled={stage}
+                label="Expanded song position"
+                className="min-w-32 flex-1"
+                duration={duration}
+                onSeek={(value) => void session.seek(value)}
+              />
+            )}
             <Button variant="outline" onClick={session.panicAndDisarm}>
               Panic / stop MIDI
             </Button>

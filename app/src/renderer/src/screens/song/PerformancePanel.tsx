@@ -7,6 +7,7 @@ import { parseChart } from "@/song/performance/chart";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
+import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
@@ -21,6 +22,8 @@ import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { StageView } from "./StageView";
+import { SectionStrip } from "./SectionStrip";
+import { SectionEditor } from "./SectionEditor";
 
 function readNumber(raw: string, fallback: number, min: number, max: number): number {
   const n = raw === "" ? NaN : Number(raw);
@@ -75,9 +78,12 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         countInBars: "",
         preRollBeats: "",
         startDelay: "",
+        sections: [] as unknown[],
       }),
     [key],
   );
+  // Sections are part of the song; their live changes are not saved (see sections.ts).
+  const [sectionList, setSectionList] = useState<Section[]>(() => parseSections(options.sections));
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState("");
   const [chart, setChart] = useState(() => getSetting(key, ""));
@@ -137,6 +143,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           cues: parsed.cues,
           parseError: parsed.error,
           bpm,
+          sections: sectionList,
         },
       }),
   );
@@ -187,8 +194,12 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       parseError: parsed.error,
       bpm,
       timing,
+      sections: sectionList,
     });
   });
+
+  /** Writes the live loop and release choices into the sections' stored modes, which are saved with the song. */
+  const saveSectionDefaults = () => setSectionList(saveLiveAsDefault(sectionList, session.state.sectionLive));
 
   const saveChart = (value: string) => {
     session.pause();
@@ -235,12 +246,13 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           countInBars: lead.countInBars,
           preRollBeats: lead.preRollBeats,
           startDelay: lead.startDelay,
+          sections: sectionList,
         }),
       );
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, clock, volume, mix, trackBuses, chordChoice, metronome, lead]);
+  }, [session, key, firstBeat, beats, shift, clock, volume, mix, trackBuses, chordChoice, metronome, lead, sectionList]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -279,6 +291,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           }}
           onTap={tap}
         />
+        <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
         <PerformanceMix
@@ -290,6 +303,14 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
         />
         <PerformanceOutputs player={player} />
+        <SectionEditor
+          sections={sectionList}
+          onSections={setSectionList}
+          duration={player?.duration ?? 0}
+          bpm={bpm}
+          firstBeat={firstBeat}
+          channels={source?.audio.channels ?? null}
+        />
       </div>
       <StageView
         session={session}
