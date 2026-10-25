@@ -27,7 +27,11 @@ Everything here works in the desktop app. The browser build can play a song and 
 
 **Key.** Performance estimates the song's major or minor key in the background, from the guitar stem first and the original mix as a last resort. It shows **Unknown** rather than guess. Use **Key override** to save a correction. The key only changes how chords are displayed, never the audio or any MIDI.
 
-**Metronome.** The **Metronome** switch is remembered globally and follows playback. To line it up with a recording that has an intro, pause on the first downbeat and choose **Metronome settings → Set first beat here**. Fine-tune with **First beat (seconds)**, or **Reset first beat**. The grid is fixed, so it cannot follow a recording that speeds up or slows down. It does not move lyrics or MIDI cues.
+**Metronome.** Choose **Off**, **While stopped** (a rehearsal click on the grid), **While playing** or **Both** from the **Metronome** menu. The choice is saved for each song and starts from the last one used. To line it up with a recording that has an intro, pause on the first downbeat and choose **Metronome settings → Set first beat here**. Fine-tune with **First beat (seconds)**, or **Reset first beat**. The grid is fixed, so it cannot follow a recording that speeds up or slows down. It does not move lyrics or MIDI cues.
+
+**Count-in, pre-roll and start delay.** In **Metronome settings**, a count-in of one or two bars clicks before the audio starts, and a pre-roll starts the audio a few beats before the current position so you can re-enter a passage. A start delay of up to 10 seconds comes before both; press Play again while it waits to cancel. The count-in, pre-roll and start delay are saved for each song.
+
+**Tap tempo.** Press **Tap tempo** or the **T** key to set the Song BPM by tapping. It averages the last four taps, and a pause of two seconds starts again. Taps set the BPM only while stopped. The beat light next to the transport shows song beats, not count-in beats.
 
 ## Lyrics and chords
 

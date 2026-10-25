@@ -8,6 +8,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **Perform a set.** Song → Performance plays stems with a song-following metronome, a combined lyrics and chords reader with guitar chord tabs, and an estimated song key. See [Performance](PERFORMANCE.md).
 - **Timed MIDI cues.** Program changes, controllers, notes and SysEx fire at set times in a song, over USB or standard Bluetooth MIDI, with a pedal command library (TimeLine, RC-10R, IR-200, SY-200, GP-150, GP-180), custom pedal import and export, a one-time GP-180 tempo command and a preflight check. See [MIDI pedal command presets](MIDI-PEDALS.md).
 - **Song library and playlists.** Songs are saved with their audio, stems, chart, lyrics and mix, and ordered into playlists that play in sequence. A whole-playlist check and portable backup and restore are included. See [Song library](SONG-LIBRARY.md).
+- **Count-in, pre-roll and tap tempo.** A one- or two-bar count-in, a pre-roll, an optional start delay, four metronome modes, a beat light and tap tempo for the song BPM. See [Performance](PERFORMANCE.md).
 - **Stage mode.** Large lyrics and transport, locked editing and seeking, always-visible MIDI status with a Panic button, and sleep prevention during playback.
 - **GP-150 and GP-180 performance MIDI** with setup presets that cover both models.
 
