@@ -41,6 +41,8 @@ import { SongTriggerSettings } from "./SongTriggerSettings";
 import { buildViewHost } from "./remote-view";
 import { AudienceSettings } from "./AudienceSettings";
 import { useAudienceFeed } from "./use-audience-feed";
+import { useBandSyncControl } from "./use-band-sync";
+import { BandSyncSettings } from "./BandSyncSettings";
 import { useChartUrl } from "./use-chart-url";
 import { audienceModel, type AudienceSongInput } from "@/song/performance/audience";
 import { useAudienceSettings } from "@/song/performance/audience-settings";
@@ -346,6 +348,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     [audienceSong, audienceSettings.showChords, audienceSettings.fontScale, audienceSettings.rotation, audienceSettings.blackout, audienceSettings.blackBetweenSongs],
   );
   useAudienceFeed(session, key, audienceModelValue);
+  useBandSyncControl(session);
 
   const saveChart = (value: string) => {
     session.pause();
@@ -498,6 +501,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         />
         <SongTriggerField songId={source?.libraryId} songs={library.index.songs} inputReady={inputReady} />
         <AudienceSettings />
+        <BandSyncSettings />
         <RemoteControlSettings inputReady={inputReady} />
         <SongTriggerSettings songs={library.index.songs} inputReady={inputReady} />
         <PerformanceAnalysis
