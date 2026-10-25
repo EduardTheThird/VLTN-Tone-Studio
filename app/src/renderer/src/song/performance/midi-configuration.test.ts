@@ -37,3 +37,11 @@ it("replaces a macro with the same code and refuses a table with a problem, chan
   removeMacro("LEAD");
   expect(useMidiConfiguration.getState().macros).toEqual([]);
 });
+
+it("keeps song triggers off until they are switched on, and reads a bad value as off", () => {
+  expect(readMidiConfiguration().songTriggers).toEqual({ listen: false, scope: "library", autoplay: false, whilePlaying: "ignore" });
+  localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ songTriggers: { listen: true, scope: "playlist", whilePlaying: "now" } }));
+  expect(readMidiConfiguration().songTriggers).toEqual({ listen: true, scope: "playlist", autoplay: false, whilePlaying: "now" });
+  localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ songTriggers: { listen: "yes", whilePlaying: "load" } }));
+  expect(readMidiConfiguration().songTriggers).toEqual({ listen: false, scope: "library", autoplay: false, whilePlaying: "ignore" });
+});

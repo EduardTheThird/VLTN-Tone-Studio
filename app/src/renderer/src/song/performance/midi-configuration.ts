@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { macroProblems, type MidiMacro } from "./midi-macros";
 import { defaultBindings, sanitizeBindings, type Binding } from "./bindings";
+import { SONG_TRIGGER_DEFAULTS, sanitizeTriggerSettings, type SongTriggerSettings } from "./song-triggers";
 
 export const MIDI_CONFIG_KEY = "vltn.performance.midi.v1";
 export interface PortChoice {
@@ -22,6 +23,8 @@ export interface MidiConfiguration {
   macros: MidiMacro[];
   /** What each MIDI message or key runs (see bindings.ts). Absent in a saved config means the defaults. */
   bindings: Binding[];
+  /** Whether the selected input may load songs, and how (see song-triggers.ts). Off until switched on. */
+  songTriggers: SongTriggerSettings;
 }
 const defaults: MidiConfiguration = {
   preset: "cues",
@@ -34,6 +37,7 @@ const defaults: MidiConfiguration = {
   commands: {},
   macros: [],
   bindings: defaultBindings(),
+  songTriggers: SONG_TRIGGER_DEFAULTS,
 };
 /** The stored shape of a macro. Whether its commands are valid is checked by `macroProblems`, so a bad one can still be shown and removed. */
 function isMacroShape(value: unknown): value is MidiMacro {
@@ -68,6 +72,7 @@ export function readMidiConfiguration(): MidiConfiguration {
       ) as MidiConfiguration["commands"],
       macros: Array.isArray(data.macros) ? data.macros.filter(isMacroShape) : [],
       bindings: data.bindings === undefined ? defaultBindings() : sanitizeBindings(data.bindings),
+      songTriggers: sanitizeTriggerSettings(data.songTriggers),
     };
   } catch {
     return { ...defaults };

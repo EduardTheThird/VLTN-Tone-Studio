@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   SETTINGS_DEBOUNCE_MS,
+  changeSavedOptions,
   clearSettingsCache,
   flushSettings,
   getSetting,
@@ -92,4 +93,18 @@ it("leaves the localStorage copies in place when the library cannot take them", 
   api.updateSettings.mockRejectedValueOnce(new Error("offline"));
   await expect(migrateLocalSettings([{ id, settings: {} }])).rejects.toThrow("offline");
   expect(localStorage.getItem(key + ":bpm")).toBe("100");
+});
+
+it("changes one song's options and keeps the rest, from the cache when the song is loaded and from the library's copy when it is not", async () => {
+  const saved = JSON.stringify({ sections: [1], midiTrigger: { type: "songselect", number: 4 } });
+  const removed = changeSavedOptions(id, saved, (options) => ({ ...options, midiTrigger: undefined }));
+  expect(JSON.parse(removed)).toEqual({ sections: [1] });
+  expect(getSetting(key, ":options")).toBe(removed);
+  // Once the first edit has been saved, the cached options are the base, even when the library's copy is older.
+  await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS);
+  seedSettings(id, { ":options": JSON.stringify({ speed: 2 }) });
+  const added = changeSavedOptions(id, saved, (options) => ({ ...options, midiTrigger: { type: "songselect", number: 5 } }));
+  expect(JSON.parse(added)).toEqual({ speed: 2, midiTrigger: { type: "songselect", number: 5 } });
+  await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS);
+  expect(api.updateSettings).toHaveBeenCalledWith(id, { ":options": added });
 });

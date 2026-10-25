@@ -82,6 +82,24 @@ export function readSettings(key: string): Record<string, string> {
 export function writeSettings(key: string, values: Record<string, string>): void {
   for (const suffix of settingSuffixes) setSetting(key, suffix, values[suffix] ?? "");
 }
+/**
+ * Changes one saved song's options through the settings cache, so the change is saved with the song's other edits. A song that is not in
+ * the cache yet starts from `saved`, the copy the library holds, so nothing else in its options is lost. Returns the options as stored.
+ */
+export function changeSavedOptions(id: string, saved: string | undefined, change: (options: Record<string, unknown>) => Record<string, unknown>): string {
+  const cached = cache.get(id)?.[":options"];
+  const json = JSON.stringify(change(parseObject(cached ?? saved ?? "")));
+  setSetting(`${LIBRARY_PREFIX}${id}`, ":options", json);
+  return json;
+}
+function parseObject(json: string): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(json || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
 export function readOptions<T>(key: string, defaults: T): T {
   try {
     return { ...defaults, ...JSON.parse(getSetting(key, ":options") || "{}") };
