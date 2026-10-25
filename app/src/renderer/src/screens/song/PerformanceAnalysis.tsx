@@ -4,6 +4,7 @@ import { host } from "@/host";
 import { lrcTime, transpose, type Cue } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
 import { useActiveIndex } from "@/song/performance/playback-clock";
+import { CAPO_MAX } from "@/song/performance/speed";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { STEM_NAMES, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
@@ -83,6 +84,8 @@ export function PerformanceAnalysis({
   onSaveChart,
   shift,
   onShift,
+  capo,
+  onCapo,
   onLyrics,
   chords,
   analysing,
@@ -99,6 +102,8 @@ export function PerformanceAnalysis({
   onSaveChart: (chart: string) => void;
   shift: number;
   onShift: (value: number) => void;
+  capo: number;
+  onCapo: (value: number) => void;
   onLyrics: (text: string) => void;
   chords: Chord[];
   analysing: boolean;
@@ -123,6 +128,18 @@ export function PerformanceAnalysis({
             max="12"
             value={shift}
             onChange={(e) => onShift(Math.max(-12, Math.min(12, Number(e.target.value) || 0)))}
+          />
+        </label>
+        <label>
+          Capo{" "}
+          <input
+            aria-label="Capo fret"
+            className={field + " w-16"}
+            type="number"
+            min="0"
+            max={CAPO_MAX}
+            value={capo}
+            onChange={(e) => onCapo(Number(e.target.value) || 0)}
           />
         </label>
         <label className="cursor-pointer underline">

@@ -4,6 +4,7 @@ import { useSong } from "@/song/store";
 import { defaultMix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { parseChart } from "@/song/performance/chart";
+import { chordDisplayTranspose, clampCapo } from "@/song/performance/speed";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
@@ -70,6 +71,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         firstBeat: 0,
         beats: 4,
         shift: 0,
+        capo: 0,
         clock: false,
         volume: 0.25,
         mix: defaultMix(),
@@ -91,7 +93,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const [chart, setChart] = useState(() => getSetting(key, ""));
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
     [beats, setBeats] = useState(options.beats),
-    [shift, setShift] = useState(options.shift);
+    [shift, setShift] = useState(options.shift),
+    [capo, setCapo] = useState(() => clampCapo(options.capo));
+  // The chord names and shapes on screen. The capo lowers the shapes the player plays. The pitch shift is 0 until it is rendered.
+  const shapeShift = shift + chordDisplayTranspose(0, capo, false);
   const [volume, setVolume] = useState(options.volume);
   const [firstBeat, setFirstBeat] = useState(() =>
     typeof options.firstBeat === "number" && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0,
@@ -239,6 +244,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           firstBeat,
           beats,
           shift,
+          capo,
           clock,
           volume,
           mix,
@@ -255,7 +261,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, clock, volume, mix, trackBuses, chordChoice, metronome, lead, sectionList]);
+  }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, chordChoice, metronome, lead, sectionList]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -327,7 +333,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         chart={chart}
         lyrics={lyrics}
         chords={chords}
-        shift={shift}
+        shift={shapeShift}
         onSaveChart={saveChart}
         beat={{ bpm, beats, firstBeat }}
       />
@@ -341,6 +347,8 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onSaveChart={saveChart}
           shift={shift}
           onShift={setShift}
+          capo={capo}
+          onCapo={(value) => setCapo(clampCapo(value))}
           onLyrics={setLyrics}
           chords={chords}
           analysing={analysing}
