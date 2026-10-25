@@ -21,6 +21,11 @@ export interface SchedulerConfig {
   /** Seconds of cues to emit ahead of the audio position. Defaults to the Bluetooth value. */
   lookahead?: number;
 }
+/** A planned jump: from clock time `at` the song is at `position`. */
+export interface SchedulerJump {
+  at: number;
+  position: number;
+}
 export type SchedulerReply =
   | { type: "batch"; messages: ScheduledMessage[]; dropped?: ScheduledMessage[] }
   | { type: "resync"; position: number }
@@ -28,7 +33,11 @@ export type SchedulerReply =
   | { type: "ready" }
   | { type: "started" }
   | { type: "heartbeat" };
-export type SchedulerRequest = { type: "start"; config: SchedulerConfig } | { type: "sync"; position: number; at: number } | { type: "stop" };
+export type SchedulerRequest =
+  | { type: "start"; config: SchedulerConfig }
+  | { type: "sync"; position: number; at: number }
+  | { type: "plan"; cap: number | null; jump: SchedulerJump | null }
+  | { type: "stop" };
 
 /** USB / system MIDI: Web MIDI queues timestamped messages on the browser's MIDI thread, so renderer jank cannot delay them. */
 export const SYSTEM_LOOKAHEAD = 1;
@@ -52,8 +61,10 @@ export function lateAction(bytes: number[]): "send" | "drop" | "ignore" {
 
 /** Independent of React and audio analysis. All times are epoch milliseconds. */
 export class MidiSchedule {
-  private next = 0;
+  private next: number;
   private pulse: number;
+  /** Clock time of pulse zero. It stays put across a jump, so the 24-pulse clock never gaps or bursts. */
+  private pulseOrigin: number;
   private lastTick: number;
   private heartbeat: number;
   private config: SchedulerConfig;
@@ -65,6 +76,11 @@ export class MidiSchedule {
   private cues: Cue[];
   /** Starting after the first cue means the pedals have to be brought to the state they would be in. */
   private chasePending = true;
+  /** Cues after this song time are held back. A planned jump sets it so the old passage stops at the boundary. */
+  private cap = Infinity;
+  private pendingJump: SchedulerJump | null = null;
+  /** Checkpoints taken before this clock time were taken before the last jump, so they describe the old passage. */
+  private jumpAt = -Infinity;
   constructor(
     config: SchedulerConfig,
     now: number,
@@ -73,8 +89,9 @@ export class MidiSchedule {
     // A resync moves the origin, so keep the caller's object untouched.
     this.config = { ...config };
     this.cues = config.cues.filter((c) => c.messages.length && c.time <= config.duration).sort((a, b) => a.time - b.time);
-    while (this.next < this.cues.length && this.cues[this.next].time < config.position - 0.001) this.next++;
+    this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
+    this.pulseOrigin = config.origin;
     this.lastTick = now;
     this.heartbeat = config.origin + config.position * 1000;
     this.lastPosition = config.position;
@@ -84,6 +101,22 @@ export class MidiSchedule {
   stop() {
     this.stopped = true;
   }
+  /** Index of the first cue at or after `position`. */
+  private cursorAt(position: number): number {
+    let next = 0;
+    while (next < this.cues.length && this.cues[next].time < position - 0.001) next++;
+    return next;
+  }
+  /**
+   * Holds cues after song time `cap` (null lifts the hold). With a `jump`, the schedule moves to `jump.position` at clock time
+   * `jump.at`. Cues in the skipped span are never sent; the pedals get the state they would have had at the new position.
+   * Setting a new plan replaces the old one, so a cancelled jump is a plan with no jump.
+   */
+  plan(cap: number | null, jump: SchedulerJump | null) {
+    if (this.stopped) return;
+    this.cap = cap ?? Infinity;
+    this.pendingJump = jump;
+  }
   /** The audio position is a checkpoint. A frozen audio clock is fatal; a drifted or late one re-anchors the schedule. */
   sync(position: number, at: number, now: number) {
     if (this.stopped) return;
@@ -91,6 +124,7 @@ export class MidiSchedule {
       this.fault("MIDI timing interrupted: invalid audio checkpoint.");
       return;
     }
+    if (at < this.jumpAt) return;
     const advanced = position > this.lastPosition + 0.001;
     if (advanced) {
       this.lastPosition = position;
@@ -103,7 +137,9 @@ export class MidiSchedule {
     // A late checkpoint is still a consistent (position, time) pair, so it can re-anchor the origin.
     // A frozen position can't anchor anything; it is judged by the stall check above instead.
     if (advanced && Math.abs(at - (this.config.origin + position * 1000)) > STALE_MS) {
-      this.config.origin = at - position * 1000;
+      const shift = at - position * 1000 - this.config.origin;
+      this.config.origin += shift;
+      this.pulseOrigin += shift;
       this.resync(now, position);
     }
   }
@@ -125,8 +161,26 @@ export class MidiSchedule {
     this.stopped = true;
     this.emit({ type: "fault", error });
   }
+  /** Moves the schedule to the planned position. The audio jumped at the same boundary, so the audio checkpoint restarts here too. */
+  private jump() {
+    const jump = this.pendingJump!;
+    this.pendingJump = null;
+    this.config.origin = jump.at - jump.position * 1000;
+    this.config.position = jump.position;
+    this.next = this.cursorAt(jump.position);
+    this.cap = Infinity;
+    this.lastPosition = jump.position;
+    this.lastAdvance = jump.at;
+    this.jumpAt = jump.at;
+    this.chasePending = true;
+  }
+  /** Clock time of pulse `k`: 24 pulses per beat, from `pulseOrigin`. */
+  private pulseDue(k: number): number {
+    return this.pulseOrigin + ((k / 24) * 60 * 1000) / this.config.bpm;
+  }
   tick(now: number) {
     if (this.stopped) return;
+    if (this.pendingJump && now >= this.pendingJump.at) this.jump();
     let position = (now - this.config.origin) / 1000;
     if (now - this.lastTick > STALE_MS || now - this.heartbeat > STALE_MS) {
       this.resync(now, position);
@@ -134,7 +188,8 @@ export class MidiSchedule {
     }
     this.lastTick = now;
     position = (now - this.config.origin) / 1000;
-    const until = Math.min(this.config.duration, position + (this.config.lookahead ?? BLUETOOTH_LOOKAHEAD)),
+    const lookahead = this.config.lookahead ?? BLUETOOTH_LOOKAHEAD;
+    const until = Math.min(this.cap, this.config.duration, position + lookahead),
       candidates: ScheduledMessage[] = [];
     while (this.next < this.cues.length && this.cues[this.next].time <= until) {
       const cue = this.cues[this.next++];
@@ -150,10 +205,11 @@ export class MidiSchedule {
         });
       this.tempo = null;
     }
-    if (this.config.clock)
-      while (((this.pulse / 24) * 60) / this.config.bpm < until) {
-        candidates.push({ bytes: [248], due: this.config.origin + (((this.pulse++ / 24) * 60) / this.config.bpm) * 1000, label: "MIDI clock" });
-      }
+    if (this.config.clock) {
+      // The clock runs on its own clock time, not on the song's, so a jump does not change its phase.
+      const horizon = Math.min(now + lookahead * 1000, this.config.origin + this.config.duration * 1000);
+      while (this.pulseDue(this.pulse) < horizon) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
+    }
     const messages: ScheduledMessage[] = [],
       dropped: ScheduledMessage[] = [];
     for (const message of candidates) {

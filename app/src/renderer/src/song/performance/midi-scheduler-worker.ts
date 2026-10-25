@@ -17,6 +17,8 @@ self.onmessage = (event: MessageEvent<SchedulerRequest>) => {
   } else if (request.type === "sync") {
     schedule?.sync(request.position, request.at, now());
     self.postMessage({ type: "heartbeat" });
+  } else if (request.type === "plan") {
+    schedule?.plan(request.cap, request.jump);
   }
 };
 self.postMessage({ type: "ready" });

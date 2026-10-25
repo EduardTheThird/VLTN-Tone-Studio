@@ -1,4 +1,4 @@
-import { lateAction, STALE_MS, type ScheduledMessage, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
+import { lateAction, STALE_MS, type ScheduledMessage, type SchedulerConfig, type SchedulerJump, type SchedulerReply } from "./midi-scheduler";
 const failedWorkers = new WeakMap<Worker, Error>();
 /** The session keeps running through late messages; this reports them so the UI can show a non-blocking notice. */
 export interface SchedulerDegraded {
@@ -135,6 +135,15 @@ export function startMidiScheduler(
       if (active)
         try {
           worker.postMessage({ type: "sync", position, at: midiNow() });
+        } catch (error) {
+          fault(String(error));
+        }
+    },
+    /** Holds cues after song time `cap` and moves the schedule at a planned jump. See `MidiSchedule.plan`. */
+    plan(cap: number | null, jump: SchedulerJump | null) {
+      if (active)
+        try {
+          worker.postMessage({ type: "plan", cap, jump });
         } catch (error) {
           fault(String(error));
         }
