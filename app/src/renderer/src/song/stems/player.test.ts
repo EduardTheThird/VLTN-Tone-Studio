@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { createPlaybackEngine } from "../audio/playback-engine";
 import { DEFAULT_OUTPUTS, type OutputConfig } from "../audio/outputs";
 import type { Stems } from "../types";
 import { StemPlayer } from "./player";
@@ -10,6 +11,7 @@ class Context {
   clockShift = 0;
   destination = {};
   oscillators: ReturnType<Context["node"]>[] = [];
+  gains: ReturnType<Context["node"]>[] = [];
   sources: ReturnType<Context["node"]>[] = [];
   constructor() {
     Context.instances.push(this);
@@ -27,7 +29,14 @@ class Context {
       stop: vi.fn(),
       onended: null as null | (() => void),
       frequency: { setValueAtTime: vi.fn() },
-      gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn(), setTargetAtTime: vi.fn() },
+      gain: {
+        setValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        setValueCurveAtTime: vi.fn(),
+        cancelScheduledValues: vi.fn(),
+        setTargetAtTime: vi.fn(),
+      },
       buffer: null,
       fftSize: 2048,
     };
@@ -36,7 +45,9 @@ class Context {
     return { copyToChannel: vi.fn() };
   }
   createGain() {
-    return this.node();
+    const n = this.node();
+    this.gains.push(n);
+    return n;
   }
   createAnalyser() {
     return this.node();
@@ -230,7 +241,6 @@ it("keeps the count-in when the metronome changes mid-count-in, and pause cancel
 /** A Context whose destination reports a device's channel count, and which records the output nodes it creates. */
 class OutputContext extends Context {
   destination: { maxChannelCount?: number; channelCount?: number; channelInterpretation?: string } = { maxChannelCount: 4, channelCount: 2 };
-  gains: ReturnType<Context["node"]>[] = [];
   analysers: ReturnType<Context["node"]>[] = [];
   createAnalyser() {
     const analyser = super.createAnalyser();
@@ -241,11 +251,6 @@ class OutputContext extends Context {
   sinkIds: string[] = [];
   /** How many of the next setSinkId calls reject */
   sinkFailures = 0;
-  createGain() {
-    const gain = super.createGain();
-    this.gains.push(gain);
-    return gain;
-  }
   createChannelMerger() {
     this.merger = this.node();
     return this.merger;
@@ -417,7 +422,8 @@ it("cancels a waiting jump in time, and the stems keep their place", async () =>
   const [old, next] = ctx.sources;
   expect(player.cancelJump()).toBe(true);
   expect(next.stop).toHaveBeenCalledWith(0);
-  expect(old.stop).toHaveBeenLastCalledWith(15.02 + 86400);
+  // The stems go back to the song's own end (10 s of audio from 10.02), not to a far-off stop.
+  expect(old.stop).toHaveBeenLastCalledWith(20.02);
   ctx.currentTime = 14.9;
   expect(player.position).toBeCloseTo(4.88);
   // The cancelled jump leaves the timeline as it was, so a new one can be queued.
@@ -465,4 +471,96 @@ it("keeps the metronome on the song's bar grid through a jump, and clicks the ta
   expect(after[1]).toBeCloseTo(15.52);
   expect(ctx.oscillators.find((osc) => Math.abs((osc.start.mock.calls[0][0] as number) - 15.02) < 1e-6)!.frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
   await player.dispose();
+});
+
+const pcm = (frames: number) => ({ sampleRate: 100, channels: [new Float32Array(frames)] });
+
+it("plays only the trimmed range, and fades in and out at its ends", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: pcm(1000) }, undefined, { trimStart: 2, trimEnd: 6, fadeIn: 0.5, fadeOut: 1 });
+  expect(player.start).toBe(2);
+  expect(player.duration).toBe(6);
+  expect(player.position).toBe(2);
+  await player.play();
+  const ctx = Context.instances[0];
+  expect(ctx.sources[0].start).toHaveBeenCalledWith(10.02, 2);
+  expect(ctx.sources[0].stop).toHaveBeenCalledWith(14.02);
+  const ramps = ctx.gains.flatMap((g) => g.gain.linearRampToValueAtTime.mock.calls);
+  expect(ramps).toEqual([
+    [1, 10.52],
+    [0, 14.02],
+  ]);
+  await player.seek(1);
+  // Playing from 10.02 on a clock still at 10, so the position is just short of the trim start.
+  expect(player.position).toBeCloseTo(2, 1);
+  await player.dispose();
+});
+
+it("hands over to the next song on the same clock, fading out the outgoing one", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const engine = createPlaybackEngine();
+  const outgoing = new StemPlayer({ other: pcm(1000) }, engine);
+  const incoming = new StemPlayer({ other: pcm(500) }, engine);
+  await outgoing.play();
+  const ctx = Context.instances[0];
+  expect(Context.instances).toHaveLength(1);
+  ctx.currentTime = 12;
+  const join = { startAt: 19, fadeLength: 1, stopAt: 20.02, lead: {} };
+  expect(outgoing.chainNext(incoming, join)).toBe(true);
+  expect(ctx.sources[0].stop).toHaveBeenLastCalledWith(20.02);
+  expect(ctx.sources[1].start).toHaveBeenCalledWith(19, 0);
+  const curves = ctx.gains.flatMap((g) => g.gain.setValueCurveAtTime.mock.calls).map((call) => call.slice(1));
+  expect(curves).toEqual([
+    [19, 1],
+    [19, 1],
+  ]);
+  expect(incoming.isPlaying).toBe(true);
+  // The outgoing song's own end hands over without starting a rehearsal grid.
+  const clicks = ctx.oscillators.length;
+  ctx.currentTime = 20.02;
+  ctx.sources[0].onended?.();
+  expect(outgoing.isPlaying).toBe(false);
+  expect(ctx.oscillators).toHaveLength(clicks);
+  expect(outgoing.detachNext()).toBe(incoming);
+  await outgoing.dispose();
+  await incoming.dispose();
+  await engine.close();
+});
+
+it("keeps a handed-over song's stems running to their end when it is disposed", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const engine = createPlaybackEngine();
+  const outgoing = new StemPlayer({ other: pcm(1000) }, engine);
+  const incoming = new StemPlayer({ other: pcm(500) }, engine);
+  await outgoing.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  outgoing.chainNext(incoming, { startAt: 19, fadeLength: 1, stopAt: 20.02, lead: {} });
+  expect(outgoing.detachNext()).toBe(incoming);
+  ctx.currentTime = 19.5;
+  await outgoing.dispose();
+  // Stopping now would cut the crossfade short: only the scheduled stop may end the outgoing stems.
+  expect(ctx.sources[0].stop.mock.calls.some((call) => call.length === 0)).toBe(false);
+  vi.advanceTimersByTime(1000);
+  await incoming.dispose();
+  await engine.close();
+});
+
+it("cancels a hand-over when the outgoing song is paused, and the next song stops", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const engine = createPlaybackEngine();
+  const outgoing = new StemPlayer({ other: pcm(1000) }, engine);
+  const incoming = new StemPlayer({ other: pcm(500) }, engine);
+  await outgoing.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  expect(outgoing.chainNext(incoming, { startAt: 19, fadeLength: 1, stopAt: 20.02, lead: {} })).toBe(true);
+  outgoing.pause();
+  expect(incoming.isPlaying).toBe(false);
+  expect(outgoing.isPlaying).toBe(false);
+  expect(ctx.sources[1].stop.mock.calls.some((call) => call.length === 0)).toBe(true);
+  await outgoing.dispose();
+  await incoming.dispose();
+  await engine.close();
 });

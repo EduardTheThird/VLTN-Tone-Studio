@@ -1,14 +1,14 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
 import { audioTimeOf, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
+import { equalPowerCurve, playRange } from "../performance/transition";
+import { createPlaybackEngine, type PlaybackEngine } from "../audio/playback-engine";
 import { stemGains, type Mix } from "./mix";
-import { OutputRouter, type BusName, type OutputConfig } from "../audio/outputs";
+import { type BusName, type OutputConfig } from "../audio/outputs";
 
-/** Which bus each track plays on, keyed by track name. A track without an entry plays on Main. */
-export type TrackBuses = Partial<Record<string, BusName>>;
-
-// Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → an analyser
-// (level meter) → the main output bus. Pausing or seeking restarts the sources at the new position.
+// Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → a fade (the song's
+// fades and any crossfade) → an analyser (level meter) → the main output bus. Pausing or seeking restarts the sources at the new
+// position.
 //
 // The metronome is one grid of clicks. While the song plays it follows the song's timeline (see timeline.ts), so a count-in
 // (clicks before the audio) and a pre-roll (audio that starts before the requested position) keep the same bar phase, and a jump
@@ -17,18 +17,26 @@ export type TrackBuses = Partial<Record<string, BusName>>;
 //
 // A jump is scheduled ahead on the audio clock: the stems stop at its boundary and restart at the target, sample-accurately, so
 // nothing has to be late. The jump can be cancelled until shortly before the boundary.
+//
+// Songs in a set share one engine (one AudioContext and output router). A song can hand over to the next one: the next song starts
+// on the same clock at the join, and this song fades out and stops at the join's end. The session takes the next song over before
+// the join is heard. Until then either song can be paused, which cancels the hand-over.
+
+/** Which bus each track plays on, keyed by track name. A track without an entry plays on Main. */
+export type TrackBuses = Partial<Record<string, BusName>>;
 
 const RAMP_S = 0.015;
 /** A jump that would start in the past starts this far from now. */
 const JUMP_MIN_S = 0.05;
 /** A jump can be cancelled until this long before it takes effect. The metronome reads this far ahead, so a cancel must come first. */
 const JUMP_CANCEL_S = 0.15;
-/** How long a cancelled stem keeps playing: a stop far enough away that it never comes. */
-const RESTORE_S = 86400;
+/** A song's fade in and fade out can be at most this long, in seconds */
+const FADE_MAX_S = 10;
 
 interface Voice {
   buffer: AudioBuffer;
   gain: GainNode;
+  fade: GainNode;
   analyser: AnalyserNode;
   source: AudioBufferSourceNode | null;
 }
@@ -53,6 +61,27 @@ export interface Lead {
   preRollBeats?: number;
 }
 
+/** The part of a song's file that plays, and the fades at its ends. Song time is the file's own time, so cues line up without shifting. */
+export interface SongShape {
+  /** Song time in seconds where the song starts. Default 0. */
+  trimStart?: number;
+  /** Song time in seconds where the song ends. Default the end of the file. */
+  trimEnd?: number;
+  /** Seconds to fade in from silence at each start. Default 0. */
+  fadeIn?: number;
+  /** Seconds to fade out before the end. Default 0. */
+  fadeOut?: number;
+}
+
+/** When the next song starts and when this one stops, both on the audio clock. A fade of `fadeLength` runs between them. */
+export interface Join {
+  startAt: number;
+  fadeLength: number;
+  stopAt: number;
+  /** The next song's lead-in: its count-in comes before `startAt` is heard */
+  lead: Lead;
+}
+
 /** Stops and forgets every click in `clicks`. */
 function silence(clicks: Set<OscillatorNode>): void {
   for (const osc of clicks) {
@@ -62,47 +91,88 @@ function silence(clicks: Set<OscillatorNode>): void {
   clicks.clear();
 }
 
+/** Seconds per beat of a lead-in tempo, or 0 when the tempo is not usable. */
+function beatInterval(bpm: number): number {
+  return Number.isFinite(bpm) && bpm > 0 ? beatSeconds(bpm) : 0;
+}
+
+/** A fade length the player can ramp: finite, not negative, and not longer than a fade may be. */
+function fadeSeconds(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(FADE_MAX_S, value!)) : 0;
+}
+
 export class StemPlayer {
+  /** Song time where the playable range ends. Trim and the file's length both set it. */
   readonly duration: number;
-  private ctx = new AudioContext({ sampleRate: 44100 });
+  /** Song time where the playable range starts */
+  readonly start: number;
   /** The split's stems, STEM_NAMES order */
   readonly names: StemName[];
+  private readonly engine: PlaybackEngine;
+  private readonly ownsEngine: boolean;
+  private readonly ctx: AudioContext;
+  private readonly router: PlaybackEngine["router"];
+  private readonly fadeIn: number;
+  private readonly fadeOut: number;
   private voices: Partial<Record<StemName, Voice>>;
   /** The song's timeline on the audio clock. A jump appends a segment. Empty until something has been started. */
   private segments: Segment[] = [];
   private prepared: PreparedJump | null = null;
-  private offset = 0;
+  private offset: number;
   /** The position the last start asked for. A pause during the count-in returns here, not to the pre-roll start. */
   private resumeAt = 0;
   private playing = false;
+  /** The song this one has handed over to, until the session takes it or the hand-over is cancelled */
+  private next: StemPlayer | null = null;
+  /** Whether this song has handed over. Its stems then run on to `tailEnd`, and the song is not rehearsed afterwards. */
+  private handedOver = false;
+  /** Audio time at which the last stem of a handed-over song stops */
+  private tailEnd = 0;
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
   private metronome: MetronomeSettings = { mode: "off", bpm: 120, beats: 4, volume: 0.25 };
   private clickTimer: ReturnType<typeof setInterval> | null = null;
   private clicks = new Set<OscillatorNode>();
   /** Count-in clicks have their own set: a metronome change restarts the grid and must not cut the count-in short. */
   private countInClicks = new Set<OscillatorNode>();
   private meterBuffer = new Float32Array(2048);
-  private router: OutputRouter;
+  private unlisten: () => void;
   /** Called when playback reaches the end on its own */
   onEnded: (() => void) | null = null;
   /** Called when an output cannot be used and audio falls back to the default output */
   onOutputWarning: ((message: string) => void) | null = null;
 
-  constructor(stems: Stems) {
+  /**
+   * `engine` is the context and outputs this song plays on. Without one the player makes its own and closes it on dispose; a session
+   * passes the shared engine so that songs in a set play on one clock.
+   */
+  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}) {
     this.names = STEM_NAMES.filter((name) => stems[name]);
     if (!this.names.length) throw new Error("There are no stems to play.");
     const first = stems[this.names[0]]!;
-    this.duration = first.channels[0].length / first.sampleRate;
-    this.router = new OutputRouter(this.ctx, (message) => this.onOutputWarning?.(message));
+    const range = playRange(first.channels[0].length / first.sampleRate, shape);
+    this.start = range.start;
+    this.duration = range.end;
+    this.offset = range.start;
+    this.fadeIn = fadeSeconds(shape.fadeIn);
+    this.fadeOut = fadeSeconds(shape.fadeOut);
+    this.ownsEngine = !engine;
+    this.engine = engine ?? createPlaybackEngine();
+    this.ctx = this.engine.ctx;
+    this.router = this.engine.router;
+    this.unlisten = this.engine.onWarning((message) => this.onOutputWarning?.(message));
     this.voices = Object.fromEntries(
       this.names.map((name) => {
         const pcm = stems[name]!;
         const buffer = this.ctx.createBuffer(pcm.channels.length, pcm.channels[0].length, pcm.sampleRate);
         pcm.channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
         const gain = this.ctx.createGain();
+        const fade = this.ctx.createGain();
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = this.meterBuffer.length;
-        gain.connect(analyser).connect(this.router.buses.main);
-        return [name, { buffer, gain, analyser, source: null }];
+        gain.connect(fade);
+        fade.connect(analyser);
+        analyser.connect(this.router.buses.main);
+        return [name, { buffer, gain, fade, analyser, source: null }];
       }),
     );
   }
@@ -136,31 +206,61 @@ export class StemPlayer {
     // Rehearsal clicks stop at once; the song's own grid takes over below.
     this.stopMetronome();
     await this.router.resume();
-    if (this.offset >= this.duration) this.offset = 0;
+    if (this.offset >= this.duration) this.offset = this.start;
     const bpm = lead.bpm ?? this.metronome.bpm;
-    const interval = Number.isFinite(bpm) && bpm > 0 ? beatSeconds(bpm) : 0;
-    const countIn = (lead.countInBeats ?? 0) * interval;
     this.resumeAt = this.offset;
-    if (lead.preRollBeats && interval) this.offset = preRollStart(this.offset, lead.preRollBeats, bpm);
-    const from = this.offset;
-    const when = this.ctx.currentTime + 0.02;
-    const start = when + countIn;
+    if (lead.preRollBeats && beatInterval(bpm)) this.offset = preRollStart(this.offset, lead.preRollBeats, bpm);
+    this.launch(this.ctx.currentTime + 0.02, this.offset, lead, 0);
+  }
+
+  /**
+   * Starts the song at audio time `clickAt`, from song time `from`. The count-in, when there is one, comes first, so the audio begins
+   * after it. A crossfade of `crossfadeIn` seconds fades the song in with its curve instead of the song's own fade in.
+   */
+  private launch(clickAt: number, from: number, lead: Lead, crossfadeIn: number): void {
+    const bpm = lead.bpm ?? this.metronome.bpm;
+    const interval = beatInterval(bpm);
+    const start = clickAt + (lead.countInBeats ?? 0) * interval;
     for (const name of this.names) {
       const v = this.voice(name);
       const source = this.ctx.createBufferSource();
       source.buffer = v.buffer;
       source.connect(v.gain);
       source.start(start, from);
+      source.stop(start + (this.duration - from));
       v.source = source;
     }
+    this.scheduleFades(start, from, crossfadeIn);
     this.watchEnd();
-    this.segments = [{ ctxStart: start, songStart: from, songEnd: Infinity }];
+    this.segments = [{ ctxStart: start, songStart: from, songEnd: this.duration }];
     this.playing = true;
-    if (lead.countInBeats) this.scheduleCountIn(when, lead.countInBeats, interval);
+    if (lead.countInBeats) this.scheduleCountIn(clickAt, lead.countInBeats, interval);
     this.startPlayingGrid();
   }
 
+  /** Ramps every stem's fade for a start at `start` from song time `from`: a crossfade's curve in, or the song's own fades. */
+  private scheduleFades(start: number, from: number, crossfadeIn: number): void {
+    const end = start + (this.duration - from);
+    for (const name of this.names) {
+      const { fade } = this.voice(name);
+      fade.gain.cancelScheduledValues(start);
+      if (crossfadeIn > 0) {
+        fade.gain.setValueCurveAtTime(equalPowerCurve("in"), start, crossfadeIn);
+        continue;
+      }
+      if (this.fadeIn > 0) {
+        fade.gain.setValueAtTime(0, start);
+        fade.gain.linearRampToValueAtTime(1, start + this.fadeIn);
+      } else fade.gain.setValueAtTime(1, start);
+      if (this.fadeOut > 0) {
+        fade.gain.setValueAtTime(1, Math.max(start, end - this.fadeOut));
+        fade.gain.linearRampToValueAtTime(0, end);
+      }
+    }
+  }
+
   pause(): void {
+    this.cancelChain();
     if (!this.playing) return;
     const at = this.position;
     this.offset = at < 0 ? this.resumeAt : Math.max(0, at);
@@ -170,7 +270,7 @@ export class StemPlayer {
   }
 
   async seek(seconds: number): Promise<void> {
-    const t = Math.max(0, Math.min(this.duration, seconds));
+    const t = Math.max(this.start, Math.min(this.duration, seconds));
     if (!this.playing) {
       this.offset = t;
       return;
@@ -178,6 +278,61 @@ export class StemPlayer {
     this.pause();
     this.offset = t;
     await this.play();
+  }
+
+  /**
+   * Hands over to `next`. It starts on this clock at `join.startAt` (after its count-in), and this song fades out over
+   * `join.fadeLength` and stops at `join.stopAt`. Playback carries on until then, so the session can take the next song over first.
+   * Returns false when there is nothing to hand over to: this song is not playing, already has a next song, or the join is in the past.
+   */
+  chainNext(next: StemPlayer, join: Join): boolean {
+    if (!this.playing || this.next || next.ctx !== this.ctx || join.startAt < this.ctx.currentTime) return false;
+    this.next = next;
+    this.stopMetronome();
+    for (const name of this.names) {
+      const { fade, source } = this.voice(name);
+      if (join.fadeLength > 0) {
+        fade.gain.cancelScheduledValues(join.startAt);
+        fade.gain.setValueCurveAtTime(equalPowerCurve("out"), join.startAt, join.fadeLength);
+      }
+      // A later stop replaces the stop that was set for the song's own end.
+      source?.stop(join.stopAt);
+    }
+    this.tailEnd = join.stopAt;
+    next.resumeAt = next.start;
+    next.launch(join.startAt, next.start, join.lead, join.fadeLength);
+    return true;
+  }
+
+  /** Gives the next song to the caller, which takes it over. This song's own end no longer stops anything else. */
+  detachNext(): StemPlayer | null {
+    const next = this.next;
+    this.next = null;
+    this.handedOver = next !== null;
+    return next;
+  }
+
+  /** Undoes a hand-over that has not been taken: the next song stops, and this song keeps its own fades and end. */
+  private cancelChain(): void {
+    const next = this.next;
+    if (!next) return;
+    this.next = null;
+    const now = this.ctx.currentTime;
+    const end = audioTimeOf(this.segments, this.duration);
+    for (const name of this.names) {
+      const { fade, source } = this.voice(name);
+      fade.gain.cancelScheduledValues(now);
+      fade.gain.setValueAtTime(1, now);
+      source?.stop(end);
+    }
+    next.stopNow();
+    this.startPlayingGrid();
+  }
+
+  /** Stops this song at once, with no rehearsal grid. Used for a hand-over that was cancelled. */
+  private stopNow(): void {
+    this.playing = false;
+    this.stopSources();
   }
 
   /**
@@ -196,6 +351,7 @@ export class StemPlayer {
       source.buffer = v.buffer;
       source.connect(v.gain);
       source.start(when, to);
+      source.stop(Math.max(when, when + (this.duration - to)));
       previous.push(v.source!);
       v.source = source;
     }
@@ -203,11 +359,14 @@ export class StemPlayer {
     this.watchEnd();
     const end = last.songEnd;
     last.songEnd = at;
-    this.segments.push({ ctxStart: when, songStart: to, songEnd: Infinity });
+    this.segments.push({ ctxStart: when, songStart: to, songEnd: this.duration });
     // The jump has taken effect once the clock passes `when`; after that it cannot be cancelled and the record is no longer needed.
-    const timer = setTimeout(() => {
-      if (this.prepared?.when === when) this.prepared = null;
-    }, (when - this.ctx.currentTime) * 1000 + 50);
+    const timer = setTimeout(
+      () => {
+        if (this.prepared?.when === when) this.prepared = null;
+      },
+      (when - this.ctx.currentTime) * 1000 + 50,
+    );
     this.prepared = { when, previous, end, timer };
     return when;
   }
@@ -221,18 +380,19 @@ export class StemPlayer {
     if (!jump || this.ctx.currentTime > jump.when - JUMP_CANCEL_S) return false;
     clearTimeout(jump.timer);
     this.prepared = null;
+    this.segments.pop();
+    this.segments[this.segments.length - 1].songEnd = jump.end;
+    // The stems go back to the song's own end, which a stop set for the jump's boundary has replaced.
+    const end = audioTimeOf(this.segments, this.duration);
     this.names.forEach((name, i) => {
       const v = this.voice(name);
       const pending = v.source!;
       pending.onended = null;
       pending.stop(0);
       pending.disconnect();
-      // A later stop replaces the stop that was set for the jump's boundary.
-      jump.previous[i].stop(jump.when + RESTORE_S);
+      jump.previous[i].stop(end);
       v.source = jump.previous[i];
     });
-    this.segments.pop();
-    this.segments[this.segments.length - 1].songEnd = jump.end;
     this.watchEnd();
     return true;
   }
@@ -265,6 +425,8 @@ export class StemPlayer {
   setMetronome(settings: MetronomeSettings): void {
     this.stopMetronome();
     this.metronome = settings;
+    // A song that has handed over keeps no grid of its own: the next song takes the clicks.
+    if (this.next) return;
     if (this.playing) this.startPlayingGrid();
     else this.startRehearsal();
   }
@@ -356,24 +518,51 @@ export class StemPlayer {
     return this.router.apply(config);
   }
 
+  /**
+   * Ends the song. The stems stop at once, unless a hand-over has left them running to their end: then they are released after that.
+   * A shared engine is left open; a player that owns its engine closes it.
+   */
   async dispose(): Promise<void> {
+    this.cancelChain();
     this.playing = false;
-    this.stopSources();
-    this.router.dispose();
-    await this.ctx.close();
+    const tail = this.handedOver ? this.tailEnd - this.ctx.currentTime : 0;
+    if (tail > 0) {
+      this.releaseTimer = setTimeout(() => void this.release(false), tail * 1000 + 100);
+      return;
+    }
+    await this.release(true);
+  }
+
+  /** Frees the song's nodes. `stop` is false after a hand-over, whose stems have already been scheduled to end. */
+  private async release(stop: boolean): Promise<void> {
+    this.unlisten();
+    if (stop) this.stopSources();
+    else this.stopMetronome();
+    for (const name of this.names) {
+      const { gain, fade, analyser } = this.voice(name);
+      gain.disconnect();
+      fade.disconnect();
+      analyser.disconnect();
+    }
+    if (this.ownsEngine) await this.engine.close();
   }
 
   /**
    * The song's end: one source tells the end, the others end on the same sample. Attached to the leader, which a jump replaces, so
-   * the watch moves with it. A source that a jump has replaced ends without this firing.
+   * the watch moves with it. A source that a jump has replaced ends without this firing. After a hand-over the end is not a stop:
+   * the next song is already playing, so only the caller is told.
    */
   private watchEnd(): void {
     const leader = this.voice(this.names[0]);
     const ending = leader.source!;
     ending.onended = () => {
       if (!this.playing || leader.source !== ending) return;
-      this.stopSources();
       this.playing = false;
+      if (this.next || this.handedOver) {
+        this.onEnded?.();
+        return;
+      }
+      this.stopSources();
       this.offset = this.duration;
       this.onEnded?.();
       this.startRehearsal();
