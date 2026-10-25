@@ -144,7 +144,7 @@ For the GP-180, send the tempo once and let the pedal generate the clock. Apply 
 
 **Send MIDI Clock** (24 pulses per beat, with Start and Stop) is available for receivers that handle it, is remembered per song, and is switched off while automatic tempo is on. It was not stable on the tested rig, see [Hardware results](#hardware-results). Do not route output back into an input.
 
-External **Start/Continue/Stop**, or CC 80 with a value of 64–127 on any channel, plays and pauses the song. A GP-180 MIDI footswitch can send CC 80.
+External **Start/Continue/Stop**, or CC 80 with a value of 64–127 on any channel, plays and pauses the song. These are default bindings, so you can change them under [Remote control](#remote-control). A GP-180 MIDI footswitch can send CC 80.
 
 ### Setup presets
 
@@ -243,6 +243,37 @@ For each song, the **Song shape** controls in the Performance setup set how it s
 - **At the end** chooses what follows: **Play the next song**, **Stop the playlist**, which pauses the set at that song's end, or **Loop the song**, which repeats it without moving on.
 
 Trim changes while a song plays move its stop at once. Looping jumps back to the trimmed start a second before the end, so the loop has no gap. Sections are cut to the trimmed range, and preflight warns about cues or sections outside it, which will not play.
+
+## Remote control
+
+Every live action can run from a MIDI message on the selected input, from a key, or from a Bluetooth page-turner, which sends keys. Choose **Edit remote control** in Performance to see each action with its bindings.
+
+The defaults:
+
+- **Start** and **Continue** play, and **Stop** pauses. **CC 80** with a value of 64–127 on any channel plays or pauses. A footswitch that sends 127 on each press works, and repeats within 150 ms count as one press.
+- **Page Down** and the right arrow go to the next section; **Page Up** and the left arrow go to the previous one. **T** taps the tempo.
+
+**Learn MIDI** or **Learn key** on an action, then press the pedal, controller or key. The next message is bound. Learn shows the channel and the message it heard, such as "Ch 3 · CC 80 = 127". A message that already runs another action is not bound: Learn names that action, and you remove it first. A program change learned after a bank select (CC 0 and CC 32) is bound to that bank only.
+
+A controller binding has three modes:
+
+- **Momentary** fires on every message in its range.
+- **Threshold** fires once, when the value rises into the range.
+- **Toggle** fires on each switch, up or down.
+
+Tick **Double press** on a binding that must not run by accident, such as Stop or Panic. The first press shows a hint, and the action runs when the second press comes within 0.6 s.
+
+The actions cover transport (play, play or pause, stop, play from start, panic), songs (next, previous, select by number, crossfade), sections (next, previous, arm, jump now, loop, exit loop, cancel jump), lyrics (scroll and page), text size, stage mode, mute groups 1–6, click, tap tempo, speed up, down and reset, and arm or disarm MIDI cues. Lyrics pages scroll the reader by a screenful, because the app has no PDF view.
+
+Things to know:
+
+- Keys do nothing while you type in a field or a dialog, and a key that is held does not repeat its action. Keys with Ctrl, Alt or Cmd are not bindings.
+- Our own MIDI output is ignored when it comes back in through a THRU or loop-back input for a moment, so a Stop is not taken as a second Stop.
+- An action that does not apply now (a section jump in a song without sections, or next song outside a playlist) changes nothing and shows a short hint.
+- In stage mode every action still runs. The stage lock refuses seeking only, so **Play from start** is refused there.
+- Speed keys move the rate in 5% steps.
+- Bindings are saved with the MIDI setup on this computer. **Reset to defaults** restores the list above.
+- Only notes, controllers, program changes, Start, Continue and Stop can be learned. Clock, pitch bend and aftertouch cannot.
 
 ## Stage mode
 
