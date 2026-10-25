@@ -27,6 +27,7 @@ export interface SongStore extends SongState {
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const PLAYING_NOTICE = "Stop playback to add tracks. Adding tracks rebuilds the song's audio, which would stop the music.";
 /** The imported tracks of a song's stems, with their info, so a split can keep them. */
 const userTracksOf = (stems: Stems | null, tracks: Record<string, TrackInfo>): [string, PcmAudio][] =>
   Object.entries(stems ?? {}).filter((entry): entry is [string, PcmAudio] => entry[1] !== undefined && tracks[entry[0]]?.kind === "user");
@@ -93,7 +94,9 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       }
     },
 
-    async addTracks(files) {
+    async addTracks(files, options) {
+      // Refused, not queued: the caller shows the notice, and the music keeps playing.
+      if (options?.playing) return [PLAYING_NOTICE];
       const { source, stems, tracks, status } = get();
       if (["decoding", "model", "splitting"].includes(status.kind)) throw new Error("Wait for the song to finish loading or splitting before adding tracks.");
       const outcome = await (deps.importTracks ?? importTracks)(files, {

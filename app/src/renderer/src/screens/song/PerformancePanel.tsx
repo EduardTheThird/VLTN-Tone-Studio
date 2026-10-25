@@ -177,6 +177,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       }),
   );
   const player = useSession(session, (s) => s.player);
+  const playing = useSession(session, (s) => s.playing);
   const clock = useSession(session, (s) => s.clock);
   const speed = useSession(session, (s) => s.speed);
   // The chord names and shapes on screen: the chart transpose, plus the pitch when the chords follow it, less the capo.
@@ -336,7 +337,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
-        <TrackImport />
+        <TrackImport playing={playing || library.playlistPlaying} />
         <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
         <PerformanceMix
           session={session}

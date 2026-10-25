@@ -8,7 +8,7 @@ import { AUDIO_ACCEPT, isAudioFileName } from "@/song/decode";
  * Adds the user's own audio files to the song as tracks: several files, or a whole folder (the folder's other files are skipped
  * without a word). Files can also be dropped on the panel. Each file that is refused or padded is listed below.
  */
-export function TrackImport() {
+export function TrackImport({ playing = false }: { playing?: boolean }) {
   const status = useSong((s) => s.status.kind);
   // Settings can be copied to other saved songs once this song is saved and has imported tracks.
   const canApply = useSong((s) => !!s.source?.libraryId && Object.values(s.tracks ?? {}).some((track) => track.kind === "user"));
@@ -26,7 +26,7 @@ export function TrackImport() {
     setBusy(true);
     setNotices([]);
     try {
-      setNotices(await useSong.getState().addTracks(picked));
+      setNotices(await useSong.getState().addTracks(picked, { playing }));
     } catch (error) {
       setNotices([error instanceof Error ? error.message : String(error)]);
     } finally {
@@ -34,6 +34,7 @@ export function TrackImport() {
     }
   };
   const working = busy || ["decoding", "model", "splitting"].includes(status);
+  const blocked = working || playing;
   return (
     <section
       aria-label="Import tracks"
@@ -45,13 +46,19 @@ export function TrackImport() {
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" disabled={working} onClick={() => files.current?.click()}>
+        <Button size="sm" variant="outline" disabled={blocked} onClick={() => files.current?.click()}>
           Add tracks…
         </Button>
-        <Button size="sm" variant="outline" disabled={working} onClick={() => folder.current?.click()}>
+        <Button size="sm" variant="outline" disabled={blocked} onClick={() => folder.current?.click()}>
           Add folder…
         </Button>
-        <span className="opacity-70">Drop audio files here. Imported tracks are saved with the song.</span>
+        {playing ? (
+          <span role="note" className="text-led-warn">
+            Stop playback to add tracks.
+          </span>
+        ) : (
+          <span className="opacity-70">Drop audio files here. Imported tracks are saved with the song.</span>
+        )}
         {canApply && (
           <Button size="sm" variant="outline" disabled={working} onClick={() => void useSongLibrary.getState().applyTrackSettings()}>
             Apply track settings to similar songs

@@ -4,7 +4,7 @@ import type { Separation, SeparationProgress } from "./stems/engine";
 import type { SplitChoice } from "./stems/options";
 import type { PcmAudio } from "./types";
 // vi.mock is hoisted above this import: the real engine needs a worker and the model; the store gets fakes.
-import { createSongStore, type SongDeps } from "./store";
+import { createSongStore, PLAYING_NOTICE, type SongDeps } from "./store";
 
 vi.mock("./stems/engine", () => ({ separateStems: vi.fn() }));
 
@@ -210,6 +210,18 @@ describe("imported tracks in the song store", () => {
     await useSong.getState().split();
     expect(useSong.getState().stems?.track0).toBeDefined();
     expect(useSong.getState().tracks.track0?.name).toBe("Keys.wav");
+  });
+
+  it("refuses to add tracks while playing, with a notice, and leaves the song as it was", async () => {
+    const importer = vi.fn(importFake!);
+    const useSong = store({ importTracks: importer });
+    await useSong.getState().addTracks([file("Click.wav")]);
+    const before = useSong.getState().stems;
+    const notices = await useSong.getState().addTracks([file("Keys.wav")], { playing: true });
+    expect(notices).toEqual([PLAYING_NOTICE]);
+    expect(importer).toHaveBeenCalledTimes(1);
+    expect(useSong.getState().stems).toBe(before);
+    expect(Object.keys(useSong.getState().tracks)).toEqual(["track0"]);
   });
 
   it("refuses to add tracks while the song is splitting", async () => {

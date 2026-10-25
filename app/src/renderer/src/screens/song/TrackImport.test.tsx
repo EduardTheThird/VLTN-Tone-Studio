@@ -20,7 +20,7 @@ describe("track import", () => {
     const input = container.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement;
     const drums = new File([new Uint8Array(4)], "Drums.wav");
     fireEvent.change(input, { target: { files: [drums] } });
-    await waitFor(() => expect(addTracks).toHaveBeenCalledWith([drums]));
+    await waitFor(() => expect(addTracks).toHaveBeenCalledWith([drums], { playing: false }));
     expect((await screen.findByRole("status")).textContent).toContain("Pads is 3.0 s away");
   });
 
@@ -31,7 +31,7 @@ describe("track import", () => {
     const audio = new File([new Uint8Array(4)], "Bass.flac");
     const text = new File(["notes"], ".DS_Store");
     fireEvent.change(folder, { target: { files: [audio, text] } });
-    await waitFor(() => expect(addTracks).toHaveBeenCalledWith([audio]));
+    await waitFor(() => expect(addTracks).toHaveBeenCalledWith([audio], { playing: false }));
     expect(screen.queryByRole("status")).toBeNull();
   });
 
@@ -41,5 +41,17 @@ describe("track import", () => {
     const input = container.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File([new Uint8Array(4)], "Pads.wav")] } });
     expect((await screen.findByRole("status")).textContent).toContain("up to 32 imported tracks");
+  });
+
+  it("disables the import while playing, says why, and passes the playing state to the store", async () => {
+    addTracks.mockResolvedValueOnce(["Stop playback to add tracks."]);
+    const { container } = render(<TrackImport playing />);
+    expect((screen.getByRole("button", { name: "Add tracks…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Add folder…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("note").textContent).toContain("Stop playback to add tracks.");
+    const input = container.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array(4)], "Pads.wav")] } });
+    await waitFor(() => expect(addTracks).toHaveBeenCalledWith(expect.any(Array), { playing: true }));
+    expect((await screen.findByRole("status")).textContent).toContain("Stop playback");
   });
 });

@@ -65,9 +65,10 @@ export interface SongState {
   split(): Promise<void>;
   /**
    * Imports audio files as tracks of the loaded song (a song with no source gets their sum as its source). Resolves with one line per
-   * file that was refused or padded. Throws when nothing can be imported at all.
+   * file that was refused or padded. Throws when nothing can be imported at all. Refused, with a notice, while `playing`: adding tracks
+   * rebuilds the song's audio, which would stop the music.
    */
-  addTracks(files: File[]): Promise<string[]>;
+  addTracks(files: File[], options?: { playing?: boolean }): Promise<string[]>;
   /** Changes what the mixer knows about one imported track, such as its mute groups. Saved with the song on the next save. */
   setTrackInfo(key: string, patch: Partial<Omit<TrackInfo, "kind">>): void;
   setChoice(patch: Partial<SplitChoice>): void;
