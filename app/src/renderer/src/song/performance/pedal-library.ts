@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { TriggerCc } from "./midi-chase";
 import { PEDAL_PROFILES, parsePedalProfile, type PedalProfile } from "./pedal-profiles";
 const key = "vltn.midi-pedals.v1";
 export const DEFAULT_PEDAL_CHANNELS: Record<string, number> = {
@@ -7,6 +8,41 @@ export const DEFAULT_PEDAL_CHANNELS: Record<string, number> = {
   "boss-ir200": 3,
   "boss-sy200": 4,
 };
+/** A pedal as Performance sees it: the channel it is set to, and the trigger controllers its commands use. */
+export interface ConfiguredPedal {
+  name: string;
+  channel: number;
+  /** Trigger commands whose CC is not assigned yet, so the app cannot tell which controller they use. */
+  unassigned: number;
+  /** Trigger controllers that are assigned, on this pedal's channel. Chases never replay them (see midi-chase.ts). */
+  triggers: TriggerCc[];
+}
+
+/** `cc $channel <number or $cc> …`, the form every profile uses for a controller. */
+const CC_COMMAND = /^cc \$channel (\$cc|\d+) /;
+
+/**
+ * Every built-in and imported pedal with its channel and trigger controllers. A trigger command that names `$cc` uses the CC the user
+ * assigned in the command builder; one without an assignment counts as unassigned. Fixed CC numbers are used as they are.
+ */
+export function configuredPedals(library: Pick<LibraryData, "profiles" | "channels" | "assignments">): ConfiguredPedal[] {
+  return [...PEDAL_PROFILES, ...library.profiles].map((profile) => {
+    const channel = library.channels[profile.id] ?? DEFAULT_PEDAL_CHANNELS[profile.id] ?? 1;
+    const triggers: TriggerCc[] = [];
+    let unassigned = 0;
+    for (const action of profile.actions) {
+      if (!action.momentary) continue;
+      const matches = action.commands.map((command) => CC_COMMAND.exec(command)?.[1]).filter((cc): cc is string => cc !== undefined);
+      const assigned = library.assignments[profile.id + ":" + action.id];
+      const usesAssignment = matches.includes("$cc");
+      if (usesAssignment && assigned === undefined) unassigned++;
+      const ccs = new Set([...matches.filter((cc) => cc !== "$cc").map(Number), ...(usesAssignment && assigned !== undefined ? [assigned] : [])]);
+      for (const cc of ccs) triggers.push([channel, cc]);
+    }
+    return { name: profile.name, channel, unassigned, triggers };
+  });
+}
+
 interface LibraryData {
   profiles: PedalProfile[];
   channels: Record<string, number>;

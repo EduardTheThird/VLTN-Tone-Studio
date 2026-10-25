@@ -119,3 +119,16 @@ describe("MIDI timecode preflight", () => {
     expect(report.issues.map((i) => i.code)).toContain("timecode-clock");
   });
 });
+it("warns about a raw CC that would be chased while a pedal on its channel has unassigned trigger commands", () => {
+  const pedals = [{ name: "BOSS RC-10R", channel: 2, unassigned: 15, triggers: [] }];
+  const codes = (text: string) => midiPreflight(parseChart(text), { ...options, pedals }).issues.map((i) => i.code);
+  expect(codes("[00:10] {midi:cc 2 11 90}")).toEqual(["chase-unassigned-trigger"]);
+  expect(codes("[00:10] {nochase} {midi:cc 2 11 90}")).toEqual([]);
+  expect(codes("[00:10] {midi:cc 3 11 90}")).toEqual([]);
+});
+it("says a raw CC matching an assigned trigger is skipped by the chase unless its cue says {chase}", () => {
+  const pedals = [{ name: "BOSS RC-10R", channel: 2, unassigned: 0, triggers: [[2, 70] as [number, number]] }];
+  const report = (text: string) => midiPreflight(parseChart(text), { ...options, pedals });
+  expect(report("[00:03] {midi:cc 2 70 127}").issues.map((i) => i.code)).toEqual(["chase-assigned-trigger"]);
+  expect(report("[00:03] {chase} {midi:cc 2 70 127}").issues).toEqual([]);
+});

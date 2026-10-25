@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Cue } from "@/song/performance/chart";
 import { midiPreflight } from "@/song/performance/midi-preflight";
 import type { TimecodeRate } from "@/song/performance/timecode";
-import { PEDAL_PROFILES } from "@/song/performance/pedal-profiles";
-import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
+import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { useBluetooth, resetBluetoothTiming } from "@/bluetooth/connection";
 /** How often the counters on screen may refresh. The scheduler and Bluetooth writes update their stores far more often than that. */
@@ -40,7 +39,7 @@ export function MidiHealth({
         tempoChannel,
         outputName,
         timecode,
-        pedals: [...PEDAL_PROFILES, ...library.profiles].map((p) => ({ name: p.name, channel: library.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
+        pedals: configuredPedals(library),
       }),
     [cues, duration, range, clock, tempoChannel, outputName, timecode, library.channels, library.profiles],
   );

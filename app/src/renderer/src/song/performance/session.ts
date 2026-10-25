@@ -17,6 +17,7 @@ import { readCrossfade } from "@/song/performance/crossfade";
 import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
+import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
 import { orderForPedal } from "@/song/performance/midi-pedal-order";
 import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
@@ -1812,6 +1813,7 @@ export class PerformanceSession {
           playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
           pedalChannel: s.tempoChannel,
+          chaseTriggers: configuredPedals(usePedalLibrary.getState()).flatMap((pedal) => pedal.triggers),
         },
         (message) => {
           // A replaced output object (same port id) is never sent to; the statechange handler disarms.

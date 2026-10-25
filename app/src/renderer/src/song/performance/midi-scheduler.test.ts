@@ -412,3 +412,15 @@ it("sends the other pedal's message before the GP-180's when a cue is due togeth
     [192, 0],
   ]);
 });
+it("skips an assigned trigger controller in the chase, and sends the chase CHASE_LEAD_MS before the audio position", () => {
+  // The audio is at song 30 s at clock 2000 (origin 1000 + 1000 - 30000), so the chase is due 100 ms before it.
+  const f = fixture({
+    cues: parseChart("[00:10] {midi:cc 1 11 90}\n[00:20] {midi:cc 2 70 127}"),
+    position: 30,
+    origin: 1000 + 1000 - 30_000,
+    duration: 200,
+    chaseTriggers: [[2, 70]],
+  });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => [m.bytes, m.label, m.due])).toEqual([[[176, 11, 90], "Chase state", 1900]]);
+});

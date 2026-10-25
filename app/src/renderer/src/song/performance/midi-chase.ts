@@ -7,7 +7,7 @@ export interface ChaseMessage {
 }
 
 /** The chase is sent this long before the start position so the pedals have settled when the song begins. */
-export const CHASE_LEAD_MS = 30;
+export const CHASE_LEAD_MS = 100;
 
 /**
  * Controller numbers that every built-in pedal profile uses only for triggers (looper, tap tempo, footswitch presses, patch step).
@@ -17,19 +17,34 @@ export const CHASE_LEAD_MS = 30;
  */
 export const MOMENTARY_CCS: ReadonlySet<number> = new Set([24, 64, 65, 75, 80, 82, 85, 86, 87, 89, 90, 93, 125]);
 
+/** A pedal's trigger controller: its channel as the pedal is set (1–16) and its CC number. */
+export type TriggerCc = [channel: number, cc: number];
+
+/** Key of a trigger in the set that `chaseTriggerSet` builds. */
+export const triggerKey = (channel: number, cc: number) => `${channel}:${cc}`;
+
+/** The set `isChased` checks: each pedal's assigned trigger CCs, keyed by `triggerKey`. */
+export function chaseTriggerSet(triggers: readonly TriggerCc[] = []): ReadonlySet<string> {
+  return new Set(triggers.map(([channel, cc]) => triggerKey(channel, cc)));
+}
+
 const isBank = (cc: number) => cc === 0 || cc === 32;
 
 /**
  * Whether a message from this cue is state worth replaying when the song starts after it. Notes and clock never are, and neither are
  * triggers or the Start/Continue/Stop bytes, which are one-shot actions. Song select is state (it picks the song or pattern), so it is replayed.
+ * A controller is a trigger when it is in `triggers` (the CCs the pedal profiles assign to their trigger commands) or in MOMENTARY_CCS.
  */
-export function isChased(cue: Cue, bytes: number[]): boolean {
+export function isChased(cue: Cue, bytes: number[], triggers: ReadonlySet<string> = new Set()): boolean {
   if (cue.chase === false || cue.trigger) return false;
   if (bytes[0] === 0xf0) return cue.chase === true;
   if (bytes[0] === 0xf3) return true;
   const kind = bytes[0] & 240;
   if (kind === 0xc0) return true;
-  if (kind === 0xb0) return cue.chase === true || !MOMENTARY_CCS.has(bytes[1]);
+  if (kind === 0xb0) {
+    if (cue.chase === true) return true;
+    return !MOMENTARY_CCS.has(bytes[1]) && !triggers.has(triggerKey((bytes[0] & 15) + 1, bytes[1]));
+  }
   return false;
 }
 
@@ -37,8 +52,9 @@ export function isChased(cue: Cue, bytes: number[]): boolean {
  * The messages that bring the pedals to the state they would be in at `position` had the song played from the start.
  * Order: song select, then bank select + program change per channel, then controllers, then SysEx; each group in song order.
  * Only the latest value per (channel, controller), the latest program change per channel and the latest song select are kept.
+ * `triggers` lists the assigned trigger controllers (see `chaseTriggerSet`), which are never replayed unless a cue says `{chase}`.
  */
-export function computeChaseState(cues: Cue[], position: number): ChaseMessage[] {
+export function computeChaseState(cues: Cue[], position: number, triggers: ReadonlySet<string> = new Set()): ChaseMessage[] {
   const banks = new Map<number, Map<number, number[]>>();
   const programs = new Map<number, ChaseMessage[]>();
   const controllers = new Map<string, ChaseMessage>();
@@ -47,7 +63,7 @@ export function computeChaseState(cues: Cue[], position: number): ChaseMessage[]
   const ordered = cues.filter((cue) => cue.messages.length && !cue.trigger && cue.time < position - 0.001).sort((a, b) => a.time - b.time);
   for (const cue of ordered) {
     for (const bytes of cue.messages) {
-      if (!isChased(cue, bytes)) continue;
+      if (!isChased(cue, bytes, triggers)) continue;
       if (bytes[0] === 0xf3) {
         songSelect = { bytes, time: cue.time };
         continue;

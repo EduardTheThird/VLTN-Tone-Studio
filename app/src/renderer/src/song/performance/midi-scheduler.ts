@@ -1,5 +1,5 @@
 import type { Cue } from "./chart";
-import { CHASE_LEAD_MS, computeChaseState } from "./midi-chase";
+import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } from "./midi-chase";
 import { orderForPedal } from "./midi-pedal-order";
 import { clampRate } from "./speed";
 import { cycleFrames, framesAt, fullFrame, quarterFrame, type TimecodeRate } from "./timecode";
@@ -28,6 +28,11 @@ export interface SchedulerConfig {
   lookahead?: number;
   /** The GP-150 / GP-180 receive channel. Messages due together go to other channels first (see midi-pedal-order.ts). Missing keeps chart order. */
   pedalChannel?: number;
+  /**
+   * The trigger controllers the pedal profiles assign, as (channel, CC) with the channel 1–16 as the pedal is set. A chase never
+   * replays them unless the cue says `{chase}`. Built on the main thread, so the worker needs no profile data.
+   */
+  chaseTriggers?: TriggerCc[];
   /** The `{midi@play}` trigger messages. They are sent once, with the start tempo, and never again on a jump or loop. */
   playTriggers?: number[][];
   /**
@@ -124,6 +129,7 @@ export class MidiSchedule {
   private tempo: number[][] | null;
   private playTriggers: number[][];
   private cues: Cue[];
+  private chaseTriggers: ReadonlySet<string>;
   /** Starting after the first cue means the pedals have to be brought to the state they would be in. */
   private chasePending = true;
   /** Cues after this song time are held back. A planned jump sets it so the old passage stops at the boundary. */
@@ -147,6 +153,7 @@ export class MidiSchedule {
       .filter((c) => c.messages.length && !c.trigger && c.time <= config.duration)
       .sort((a, b) => a.time - b.time);
     this.playTriggers = config.playTriggers ?? [];
+    this.chaseTriggers = chaseTriggerSet(config.chaseTriggers);
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
     this.pulseAnchor = { time: config.origin, index: 0 };
@@ -351,7 +358,7 @@ export class MidiSchedule {
       const chasePosition = this.chasePending ? this.config.position : position;
       this.chasePending = false;
       const sent = new Set(messages.map((m) => m.bytes.join(",")));
-      const chase = computeChaseState(this.cues, chasePosition)
+      const chase = computeChaseState(this.cues, chasePosition, this.chaseTriggers)
         .filter((m) => !sent.has(m.bytes.join(",")))
         .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.clockAt(chasePosition) - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
       messages.unshift(...chase);

@@ -3,8 +3,7 @@ import { isRenderedAhead } from "@/song/library";
 import { host } from "@/host";
 import { Button } from "@/components/ui/button";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
-import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
-import { PEDAL_PROFILES } from "@/song/performance/pedal-profiles";
+import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { playlistPreflight, type PlaylistCheck } from "@/song/performance/playlist-preflight";
 import { songEntries } from "@/song/performance/song-triggers";
 import type { LibrarySong } from "@shared/song-library";
@@ -42,7 +41,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
           macros: config.macros,
           songs: songEntries(songs),
           bindings: config.bindings,
-          pedals: [...PEDAL_PROFILES, ...pedals.profiles].map((p) => ({ name: p.name, channel: pedals.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
+          pedals: configuredPedals(pedals),
         }),
       );
     } catch (e) {

@@ -1,5 +1,5 @@
 import { timedCues, type Cue } from "./chart";
-import { isChased } from "./midi-chase";
+import { chaseTriggerSet, isChased, triggerKey, type TriggerCc } from "./midi-chase";
 import { sectionIssues, type Section } from "./sections";
 import { parseOffset, type TimecodeRate } from "./timecode";
 export interface PreflightOptions {
@@ -7,7 +7,11 @@ export interface PreflightOptions {
   tempoChannel?: number;
   clock: boolean;
   outputName?: string;
-  pedals: { name: string; channel: number }[];
+  /**
+   * The configured pedals. `unassigned` counts trigger commands whose CC is not set; `triggers` lists the assigned trigger controllers
+   * (see `configuredPedals`). Both are optional so a caller with only names and channels still works.
+   */
+  pedals: { name: string; channel: number; unassigned?: number; triggers?: TriggerCc[] }[];
   /** The song's sections, checked against its tempo grid when a tempo is given */
   sections?: Section[];
   /** The part of the audio that plays, when the song is trimmed. Cues outside it never fire. */
@@ -30,6 +34,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     if (issues.length < 100) issues.push({ code, text });
   };
   // Triggers have no time, so they are checked below rather than on the timeline.
+  // The chase replays a controller unless it is an assigned trigger here or a fixed one (see midi-chase.ts).
+  const triggers = chaseTriggerSet(options.pedals.flatMap((pedal) => pedal.triggers ?? []));
   const events = timedCues(cues)
     .filter((c) => c.messages.length)
     .slice()
@@ -69,7 +75,9 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     dense = false;
   const conflicts = new Map<string, string>();
   const pressed = new Map<string, { time: number; value: number }>();
-  let warnedMomentary = false;
+  let warnedMomentary = false,
+    warnedUnassigned = false;
+  const warnedTriggers = new Set<string>();
   for (let i = 0; i < events.length; i++) {
     const cue = events[i];
     if (!Number.isFinite(cue.time) || cue.time < 0) add("time", "A MIDI cue has an invalid timestamp.");
@@ -107,7 +115,27 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
           );
         conflicts.set(id, value);
       }
-      if (kind === 176 && isChased(cue, bytes) && !warnedMomentary) {
+      if (kind === 176 && cue.chase === undefined && bytes[1] !== 0 && bytes[1] !== 32) {
+        // A raw controller that is an assigned trigger is skipped by the chase, which the user should know about. Otherwise, one that would
+        // be chased on a pedal with trigger commands still unassigned cannot be told apart from a trigger, so the user must decide.
+        const key = triggerKey(channel, bytes[1]);
+        const unassigned = options.pedals.filter((pedal) => pedal.channel === channel && (pedal.unassigned ?? 0) > 0);
+        if (triggers.has(key) && !warnedTriggers.has(key)) {
+          warnedTriggers.add(key);
+          add(
+            "chase-assigned-trigger",
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s is an assigned trigger, so it is not replayed when starting mid-song. Add {chase} to the cue to replay it.`,
+          );
+        } else if (!triggers.has(key) && unassigned.length && isChased(cue, bytes, triggers) && !warnedUnassigned) {
+          add(
+            "chase-unassigned-trigger",
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s would be replayed when starting mid-song, but ${unassigned.map((pedal) => pedal.name).join(", ")} ` +
+              `has trigger commands with no CC assigned, so the app cannot tell whether it is one. Set the pedal’s CC assignments in Performance, or add {nochase} to the cue.`,
+          );
+          warnedUnassigned = true;
+        }
+      }
+      if (kind === 176 && isChased(cue, bytes, triggers) && !warnedMomentary) {
         // A press followed by a release within half a second looks like a button, which should not be replayed when starting mid-song.
         const key = `${channel}:${bytes[1]}`,
           last = pressed.get(key);

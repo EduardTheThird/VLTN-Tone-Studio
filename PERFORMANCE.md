@@ -145,8 +145,9 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 
 - Pause, seek, leaving Performance or changing the output clears anything queued.
 - Seeking pauses; pressing Play starts cues from the new position. Earlier cues are not played as cues, but the pedals are brought to the state they would be in: just before the song starts, the app sends the latest bank select and program change for each channel, then the latest value of each controller. It does the same if a stall drops a patch or controller change.
-- Looper, tap tempo, footswitch and similar trigger controllers are never replayed this way. Notes and clock are not either, and SysEx is replayed only when the cue has `{chase}`.
-- Add `{chase}` to a cue to always replay its commands, or `{nochase}` to never replay them. Cues built from a pedal's trigger commands get `{nochase}` automatically. Preflight warns about a controller that is pressed and released within half a second without `{nochase}`.
+- Looper, tap tempo, footswitch and similar trigger controllers are never replayed this way. The app skips the fixed trigger numbers, and any controller that a pedal's trigger commands use on its channel once the CC is assigned in the pedal picker (see [MIDI pedal command presets](MIDI-PEDALS.md)). Notes and clock are not replayed either, and SysEx is replayed only when the cue has `{chase}`.
+- Add `{chase}` to a cue to always replay its commands, or `{nochase}` to never replay them. Cues built from a pedal's trigger commands get `{nochase}` automatically. Preflight warns about a controller that is pressed and released within half a second without `{nochase}`. It also warns about a raw controller that would be replayed on a pedal channel whose trigger CCs are not assigned yet, because the app cannot tell it from a trigger: assign the CCs, or add `{nochase}`.
+- The state is sent 100 ms before the audio position it belongs to when playback is scheduled ahead, such as a planned jump. A start from a position sends the state as soon as the schedule begins, so it does not yet lead the audio by 100 ms.
 - Removing the port disarms.
 - Cues past the end of the audio are not scheduled.
 - Messages due together in a cue go to the other pedals first, because the GP-150 / GP-180 pauses briefly while it changes patch and would hold them.
