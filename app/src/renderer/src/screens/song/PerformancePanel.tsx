@@ -33,6 +33,8 @@ import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { StageView } from "./StageView";
 import { SectionStrip } from "./SectionStrip";
 import { SectionEditor } from "./SectionEditor";
+import { RemoteControlSettings } from "./RemoteControlSettings";
+import { buildViewHost } from "./remote-view";
 
 function readNumber(raw: string, fallback: number, min: number, max: number): number {
   const n = raw === "" ? NaN : Number(raw);
@@ -58,10 +60,6 @@ function readGlobalMetronome(): MetronomeMode {
     return "off";
   }
 }
-
-/** Typing in a field must not tap the tempo. */
-const isTyping = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
 const NO_TRACKS: Record<string, TrackInfo> = {};
 
@@ -189,6 +187,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           parseError: parsed.error,
           bpm,
           sections: sectionList,
+          bindings: midiConfig.bindings,
         },
       }),
   );
@@ -196,6 +195,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const playing = useSession(session, (s) => s.playing);
   const clock = useSession(session, (s) => s.clock);
   const speed = useSession(session, (s) => s.speed);
+  const inputReady = useSession(session, (s) => s.inputId !== "");
   // The chord names and shapes on screen: the chart transpose, plus the pitch when the chords follow it, less the capo.
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   const { chords, analysing } = useChordAnalysis(session, stems, chordSource);
@@ -220,11 +220,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     const value = tapBpm(tapsRef.current);
     if (value && !session.state.playing) setBpm(value);
   };
+  // Key presses run their bindings (the T key taps the tempo by default). Typing in a field never does: the session checks that.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "t" || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-      tap();
-    };
+    const onKey = (e: KeyboardEvent) => void session.keyDown(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [session]);
@@ -244,7 +242,13 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       bpm,
       timing,
       sections: sectionList,
+      bindings: midiConfig.bindings,
     });
+  });
+
+  // The view actions of the remote bindings. The session is handed them again whenever the screen changes.
+  useEffect(() => {
+    session.setView(buildViewHost({ stage, setStage, metronome, setMetronome, mix, setMix, tracks, tap }));
   });
 
   /** Writes the live loop and release choices into the sections' stored modes, which are saved with the song. */
@@ -389,6 +393,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       />
       <div style={{ display: stage ? "none" : "contents" }}>
         <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} midiFile={midiFile} onMidiFile={saveMidiFile} />
+        <RemoteControlSettings inputReady={inputReady} />
         <PerformanceAnalysis
           session={session}
           stems={stems}
