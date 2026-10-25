@@ -3,13 +3,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { c as createTar, x as extractTar, Header } from "tar";
-import { decodeFlac, quantize } from "@shared/flac";
+import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
 import { isLegacySong } from "@shared/song-library";
 import { SongLibraryStore } from "./song-library-store";
-import { flacSong, legacySong, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
+import { FRAMES, flacSong, legacySong, pcm, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
 
 let temp: string, root: string, archive: string, store: SongLibraryStore;
 const tracks = ["source.flac", "guitar.flac"];
@@ -249,4 +249,36 @@ it("restores as copies when asked, even if the songs are already there", async (
 it("rejects a damaged archive when inspecting", async () => {
   await writeFile(archive, "not an archive");
   await expect(store.inspectBackup(archive)).rejects.toThrow();
+});
+
+it("backs up and restores a multitrack song with its imported track and that track's settings", async () => {
+  const fixture = await flacSong(4),
+    click = pcm(1, 9),
+    bytes = await encodeFlac({ sampleRate: 44100, channels: click });
+  fixture.files["track0.flac"] = bytes;
+  const imported = {
+    name: "Click",
+    sampleRate: 44100,
+    frames: FRAMES,
+    channels: 1,
+    file: "track0.flac",
+    codec: "flac" as const,
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    kind: "user" as const,
+    color: "#ef4444",
+    bus: "click" as const,
+    transpose: false,
+    gain: 0.5,
+    muteGroups: [1, 3],
+  };
+  fixture.song.audio.push(imported);
+  await save(store, fixture);
+  await store.exportBackup(archive);
+  const destination = join(temp, "restored");
+  expect(await new SongLibraryStore(destination).restoreBackup(archive)).toEqual({ songs: 1, playlists: 0 });
+  const [song] = (await new SongLibraryStore(destination).index()).songs;
+  expect(song.audio.find((a) => a.file === "track0.flac")).toEqual(imported);
+  expect(song.audio).toHaveLength(3);
+  await expectAudio(destination, song.id, { ...fixture, audio: { track0: click } });
 });
