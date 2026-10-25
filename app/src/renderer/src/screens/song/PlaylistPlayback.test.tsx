@@ -53,6 +53,9 @@ vi.mock("./LyricsTrack", () => ({ LyricsTrack: () => null }));
 vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null }));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
+    static async create() {
+      return new this();
+    }
     outputChannels = 2;
     setOutputs() {
       return Promise.resolve();

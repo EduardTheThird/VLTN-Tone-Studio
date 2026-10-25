@@ -14,16 +14,23 @@ import {
 } from "@shared/song-library";
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
+import { playerShape, shapeFromOptions } from "./performance/song-shape";
+import { sharedPlaybackEngine } from "./audio/playback-engine";
+import { StemPlayer } from "./stems/player";
 import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, SongSource, Stems } from "./types";
 
-/** A playlist song loaded ahead of time. It is not in use until the session takes it over. */
+/**
+ * A playlist song loaded ahead of time: its audio, and a player whose buffers are already built on the shared engine. The library
+ * owns the player until the session takes the song over; the session then owns it.
+ */
 export interface PreparedSong {
   id: string;
   title: string;
   source: SongSource;
   stems: Stems;
   settings: Record<string, string>;
+  player: StemPlayer;
 }
 
 interface LibraryState {
@@ -74,7 +81,7 @@ async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
   return audio;
 }
 /** Loads a song's audio from the library, without changing anything in the app. */
-async function fetchSong(index: SongLibrary, id: string): Promise<PreparedSong> {
+async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedSong, "player">> {
   const song = index.songs.find((s) => s.id === id);
   if (!song) throw new Error("Song is missing from the library.");
   const urls = await api().audioUrls(id);
@@ -142,22 +149,35 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
    * Loads the playlist's next song in the background, so that it can start on the same clock as the current one. Only one is held
    * besides the current song. A failure is a notice: the next song then loads after the current one, as before.
    */
+  /** Releases the prepared song that is held, if any. Once a song has been taken over, the library no longer holds it. */
+  const dropPrepared = () => {
+    const { prepared } = get();
+    if (!prepared) return;
+    set({ prepared: null });
+    void prepared.player.dispose();
+  };
   const prefetchNext = () => {
     const { index, queue, position, playlistPlaying, prepared } = get();
     const id = playlistPlaying ? queue[position + 1] : undefined;
     if (!id) {
       prefetchGeneration++;
       prefetching = null;
-      if (prepared) set({ prepared: null });
+      dropPrepared();
       return;
     }
     if (prepared?.id === id || prefetching === id) return;
-    if (prepared) set({ prepared: null });
+    dropPrepared();
     const generation = ++prefetchGeneration;
     prefetching = id;
     fetchSong(index, id)
-      .then((next) => {
-        if (generation === prefetchGeneration) set({ prepared: next });
+      .then(async (next) => {
+        // The buffers are built here, well before the join, a channel at a time. The join then only starts them.
+        const player = await StemPlayer.create(next.stems, sharedPlaybackEngine(), playerShape(shapeFromOptions(next.settings[":options"] ?? "")));
+        if (generation !== prefetchGeneration) {
+          await player.dispose();
+          return;
+        }
+        set({ prepared: { ...next, player } });
       })
       .catch((e) => {
         if (generation === prefetchGeneration) set({ notice: `The next song could not be loaded in advance. ${e instanceof Error ? e.message : String(e)}` });
