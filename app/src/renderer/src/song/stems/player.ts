@@ -1,6 +1,7 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
-import { audioTimeOf, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
+import { audioTimeOf, beatAtOrAfter, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
+import { clampRate } from "../performance/speed";
 import { equalPowerCurve, playRange, CROSSFADE_MAX_S, type PlayRange } from "../performance/transition";
 import type { EndBehaviour, SongShape } from "../performance/song-shape";
 import { createPlaybackEngine, type PlaybackEngine } from "../audio/playback-engine";
@@ -49,13 +50,21 @@ interface PreparedJump {
   previous: AudioBufferSourceNode[];
   end: number;
   timer: ReturnType<typeof setTimeout>;
+  /** The buffers and rate the stems played before a render swap, so a cancelled swap can go back to them */
+  restore: { rate: number; buffers: Partial<Record<StemName, AudioBuffer>> } | null;
+}
+
+/** A render of the song: the rate its buffers play at, and one buffer per stem, holding song time divided by the rate. */
+export interface RenderedBuffers {
+  rate: number;
+  buffers: Partial<Record<StemName, AudioBuffer>>;
 }
 
 export interface MetronomeSettings { mode: MetronomeMode; bpm: number; beats: number; volume: number; firstBeat?: number }
 
 /** Lead-in for one start. Both are in beats of `bpm`; a missing or zero value means none. */
 export interface Lead {
-  /** Defaults to the metronome's tempo */
+  /** The song's written tempo, which the metronome uses. Defaults to the metronome's tempo. The count-in runs at this times the song's rate. */
   bpm?: number;
   /** Clicks before the audio starts; the first is on the downbeat */
   countInBeats?: number;
@@ -106,8 +115,10 @@ export function yieldToMain(): Promise<void> {
 export class StemPlayer {
   /** The playable range, in song seconds. Trim and the file's length both set it. */
   private range: PlayRange;
-  /** The file's length in seconds, before any trim */
+  /** The song's length in song seconds, before any trim. The buffers may be a render of it, so this is not their own length. */
   private readonly fileLength: number;
+  /** The rate the buffers play at. One song second takes 1 / rate seconds of audio. */
+  private rate: number;
   /** The split's stems, STEM_NAMES order */
   readonly names: StemName[];
   private readonly engine: PlaybackEngine;
@@ -148,11 +159,15 @@ export class StemPlayer {
    * `engine` is the context and outputs this song plays on. Without one the player makes its own and closes it on dispose; a session
    * passes the shared engine so that songs in a set play on one clock.
    */
-  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now") {
+  /**
+   * `stems` are the song's stems, or a render of them at `rate` (see `renderBuffers`). Shape and fades are in song seconds.
+   */
+  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now", rate = 1) {
     this.names = STEM_NAMES.filter((name) => stems[name]);
     if (!this.names.length) throw new Error("There are no stems to play.");
     const first = stems[this.names[0]]!;
-    this.fileLength = first.channels[0].length / first.sampleRate;
+    this.rate = clampRate(rate);
+    this.fileLength = (first.channels[0].length / first.sampleRate) * this.rate;
     this.range = playRange(this.fileLength, shape);
     this.offset = this.range.start;
     this.fadeIn = fadeSeconds(shape.fadeIn);
@@ -184,8 +199,8 @@ export class StemPlayer {
    * Builds a player whose buffers are filled a channel at a time, yielding between channels, so a long song does not block the
    * renderer. The player is not used until the returned promise resolves.
    */
-  static async create(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, pause: () => Promise<void> = yieldToMain): Promise<StemPlayer> {
-    const player = new StemPlayer(stems, engine, shape, "later");
+  static async create(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, pause: () => Promise<void> = yieldToMain, rate = 1): Promise<StemPlayer> {
+    const player = new StemPlayer(stems, engine, shape, "later", rate);
     for (const name of player.names) {
       const pcm = stems[name]!;
       const buffer = player.voice(name).buffer;
@@ -279,20 +294,21 @@ export class StemPlayer {
    */
   private launch(clickAt: number, from: number, lead: Lead, crossfadeIn: number): void {
     const bpm = lead.bpm ?? this.metronome.bpm;
-    const interval = beatInterval(bpm);
+    // The count-in is counted at the song's tempo times its rate, so it is as long as the audio it leads.
+    const interval = beatInterval(bpm) / this.rate;
     const start = clickAt + (lead.countInBeats ?? 0) * interval;
     for (const name of this.names) {
       const v = this.voice(name);
       const source = this.ctx.createBufferSource();
       source.buffer = v.buffer;
       source.connect(v.gain);
-      source.start(start, from);
-      source.stop(start + (this.duration - from));
+      source.start(start, from / this.rate);
+      source.stop(start + (this.duration - from) / this.rate);
       v.source = source;
     }
     this.scheduleFades(start, from, crossfadeIn);
     this.watchEnd();
-    this.segments = [{ ctxStart: start, songStart: from, songEnd: this.duration }];
+    this.segments = [{ ctxStart: start, songStart: from, songEnd: this.duration, rate: this.rate }];
     this.playing = true;
     if (lead.countInBeats) this.scheduleCountIn(clickAt, lead.countInBeats, interval);
     this.startPlayingGrid();
@@ -321,7 +337,7 @@ export class StemPlayer {
 
   /** Ramps every stem's fade for a start at `start` from song time `from`: a crossfade's curve in, or the song's own fades. */
   private scheduleFades(start: number, from: number, crossfadeIn: number): void {
-    const end = start + (this.duration - from);
+    const end = start + (this.duration - from) / this.rate;
     for (const name of this.names) {
       const { fade } = this.voice(name);
       fade.gain.cancelScheduledValues(start);
@@ -421,26 +437,31 @@ export class StemPlayer {
    * A jump that would start in the past starts JUMP_MIN_S from now. Returns the audio time it takes effect, or null when nothing
    * plays or another jump is still waiting.
    */
-  prepareJump(to: number, at: number): number | null {
+  prepareJump(to: number, at: number, render?: RenderedBuffers): number | null {
     if (!this.playing || this.prepared) return null;
     const last = this.segments[this.segments.length - 1];
     const when = Math.max(this.ctx.currentTime + JUMP_MIN_S, audioTimeOf(this.segments, at));
+    // A render swap plays the new buffers from the jump on, at their rate. The old buffers stay with the record for a cancel.
+    const rate = render?.rate ?? this.rate;
+    const restore = render ? { rate: this.rate, buffers: Object.fromEntries(this.names.map((name) => [name, this.voice(name).buffer])) } : null;
     const previous: AudioBufferSourceNode[] = [];
     for (const name of this.names) {
       const v = this.voice(name);
       const source = this.ctx.createBufferSource();
-      source.buffer = v.buffer;
+      source.buffer = render?.buffers[name] ?? v.buffer;
       source.connect(v.gain);
-      source.start(when, to);
-      source.stop(Math.max(when, when + (this.duration - to)));
+      source.start(when, to / rate);
+      source.stop(Math.max(when, when + (this.duration - to) / rate));
       previous.push(v.source!);
       v.source = source;
+      if (render?.buffers[name]) v.buffer = render.buffers[name];
     }
+    if (render) this.rate = render.rate;
     for (const old of previous) old.stop(when);
     this.watchEnd();
     const end = last.songEnd;
     last.songEnd = at;
-    this.segments.push({ ctxStart: when, songStart: to, songEnd: this.duration });
+    this.segments.push({ ctxStart: when, songStart: to, songEnd: this.duration, rate });
     // The jump has taken effect once the clock passes `when`; after that it cannot be cancelled and the record is no longer needed.
     const timer = setTimeout(
       () => {
@@ -448,8 +469,69 @@ export class StemPlayer {
       },
       (when - this.ctx.currentTime) * 1000 + 50,
     );
-    this.prepared = { when, previous, end, timer };
+    this.prepared = { when, previous, end, timer, restore };
     return when;
+  }
+
+  /**
+   * Builds the buffers of a render of this song at `rate`, one per stem, from the stems the render was made of. Each channel is
+   * copied in turn, yielding between them, so a long song does not hold the renderer. The buffers are not played until they are
+   * given to `swapRender` or `applyRender`.
+   */
+  async renderBuffers(stems: Stems, rate: number, pause: () => Promise<void> = yieldToMain): Promise<RenderedBuffers> {
+    const buffers: Partial<Record<StemName, AudioBuffer>> = {};
+    for (const name of this.names) {
+      const pcm = stems[name];
+      if (!pcm) continue;
+      const buffer = this.ctx.createBuffer(pcm.channels.length, pcm.channels[0].length, pcm.sampleRate);
+      for (let c = 0; c < pcm.channels.length; c++) {
+        buffer.copyToChannel(pcm.channels[c] as Float32Array<ArrayBuffer>, c);
+        await pause();
+      }
+      buffers[name] = buffer;
+    }
+    return { rate: clampRate(rate), buffers };
+  }
+
+  /**
+   * Puts a render in place while the song is stopped. Song position is kept, because it is in song time, and the next start plays
+   * the new buffers at the new rate.
+   */
+  applyRender(render: RenderedBuffers): void {
+    this.rate = render.rate;
+    for (const name of this.names) {
+      const buffer = render.buffers[name];
+      if (buffer) this.voice(name).buffer = buffer;
+    }
+  }
+
+  /**
+   * The first beat of the metronome's grid at or after the song time that plays `lead` audio seconds from now. The beat grid is
+   * in song time, so a render swap lands on a beat of the song at any rate. Without a usable tempo the grid is every second.
+   */
+  nextBeatAfter(lead: number): number {
+    const { bpm } = this.metronome;
+    const interval = Number.isFinite(bpm) && bpm > 0 ? 60 / bpm : 1;
+    const firstBeat = this.firstBeat();
+    const ahead = this.position + lead * this.rate;
+    return firstBeat + beatAtOrAfter(ahead, firstBeat, interval) * interval;
+  }
+
+  /**
+   * Swaps a render in while the song plays, at the first beat that is at least `lead` audio seconds away. The jump keeps the song
+   * position: the same song time before and after, on new buffers at the new rate. Returns the song time and the audio time the swap
+   * takes effect, or null when a jump is still waiting or the song is not playing. The caller retries then.
+   */
+  swapRender(render: RenderedBuffers, lead = JUMP_MIN_S): { at: number; when: number } | null {
+    if (!this.playing || this.next) return null;
+    const at = this.nextBeatAfter(lead);
+    const when = this.prepareJump(at, at, render);
+    return when === null ? null : { at, when };
+  }
+
+  /** The rate the song plays at now. The buffers and the rate change together, so this is also the rate of a render in place. */
+  get playbackRate(): number {
+    return this.rate;
   }
 
   /**
@@ -461,6 +543,10 @@ export class StemPlayer {
     if (!jump || this.ctx.currentTime > jump.when - JUMP_CANCEL_S) return false;
     clearTimeout(jump.timer);
     this.prepared = null;
+    if (jump.restore) {
+      this.rate = jump.restore.rate;
+      for (const name of this.names) if (jump.restore.buffers[name]) this.voice(name).buffer = jump.restore.buffers[name]!;
+    }
     this.segments.pop();
     this.segments[this.segments.length - 1].songEnd = jump.end;
     // The stems go back to the song's own end, which a stop set for the jump's boundary has replaced.

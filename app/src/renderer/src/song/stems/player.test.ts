@@ -603,3 +603,76 @@ it("loops a song by jumping back to its trimmed start just before the end, with 
   await player.dispose();
   vi.useRealTimers();
 });
+
+it("swaps a render in at a beat, keeping the song position, and plays the new buffers at the new rate", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  // Ten song seconds at 100 frames a second, at the song's own speed
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  expect(player.position).toBeCloseTo(1.98);
+  // At 50% the same song is twenty audio seconds: a buffer of 2000 frames
+  const render = await player.renderBuffers({ other: { sampleRate: 100, channels: [new Float32Array(2000)] } }, 0.5, async () => {});
+  const swap = player.swapRender(render);
+  // The next beat (0.5 s grid) at or after song 2.03 is song 2.5, which plays at audio 12.52
+  expect(swap).toEqual({ at: 2.5, when: 12.52 });
+  expect(ctx.sources[1].start.mock.calls[0]).toEqual([12.52, 5]);
+  expect(ctx.sources[1].stop.mock.calls[0][0]).toBeCloseTo(27.52);
+  expect(player.playbackRate).toBe(0.5);
+  // The song time is continuous through the swap, then runs at half speed
+  ctx.currentTime = 12.52;
+  expect(player.position).toBeCloseTo(2.5);
+  ctx.currentTime = 13.52;
+  expect(player.position).toBeCloseTo(3);
+  expect(player.swapRender(render)).toBeNull();
+});
+
+it("applies a render at once while stopped, and a later start plays it at the new rate", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  player.pause();
+  const render = await player.renderBuffers({ other: { sampleRate: 100, channels: [new Float32Array(2000)] } }, 0.5, async () => {});
+  player.applyRender(render);
+  expect(player.playbackRate).toBe(0.5);
+  expect(player.position).toBeCloseTo(1.98);
+  await player.play();
+  // Song 1.98 sits at buffer 3.96 s, which the new source starts from
+  expect(ctx.sources.at(-1)!.start.mock.calls[0][1]).toBeCloseTo(3.96);
+});
+
+it("counts a count-in at the song tempo times its rate", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(2000)] } }, undefined, {}, "now", 0.5);
+  await player.play({ bpm: 120, countInBeats: 4 });
+  const ctx = Context.instances[0];
+  // At 120 BPM a beat is 0.5 song seconds, which is one audio second at 50%
+  const clicks = ctx.oscillators.slice(0, 4).map((o) => o.start.mock.calls[0][0]);
+  expect(clicks).toEqual([10.02, 11.02, 12.02, 13.02]);
+});
+
+it("cancelling a render swap goes back to the old rate and buffers", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  const render = await player.renderBuffers({ other: { sampleRate: 100, channels: [new Float32Array(2000)] } }, 0.5, async () => {});
+  player.swapRender(render);
+  expect(player.playbackRate).toBe(0.5);
+  // Too close to the swap to cancel: it stands
+  ctx.currentTime = 12.4;
+  expect(player.cancelJump()).toBe(false);
+  expect(player.playbackRate).toBe(0.5);
+  // Early enough, the swap is undone: the old rate is back
+  ctx.currentTime = 11;
+  expect(player.cancelJump()).toBe(true);
+  expect(player.playbackRate).toBe(1);
+});
