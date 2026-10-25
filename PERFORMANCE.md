@@ -109,7 +109,19 @@ Give every line a timestamp so it follows playback:
 [00:24.00] [F]Chorus {midi:cc 1 64 127}
 ```
 
-Untimed lines stay visible for manual reading. `**bold**` and `*italic*` work; full ChordPro directives do not. Transposing changes chord symbols (slash basses included) but not the audio.
+Untimed lines stay visible for manual reading. `**bold**` and `*italic*` work. A line that starts with `# ` is a heading, such as `# Chorus`, and shows as a label. A `// …` comment is for the editor and is not shown on stage. `{color:red}…{/color}` colours a span: red, amber, green, blue or violet. Transposing changes chord symbols (slash basses included) but not the audio. Chords are spelled with flats or sharps by the song's key, so a song in Bb shows Bb and not A#. Set the key under the song's details in the library.
+
+**Autoscroll.** With **Follow playback** on, choose how the lyrics move:
+
+- **Line by line** keeps the last timed line that has started at the reading position.
+- **Between timed lines** moves smoothly from one timed line to the next, for a chart where only some lines have timestamps.
+- **Constant speed** moves at **Lines per minute**, so untimed lyrics can scroll too. **Fit to song length** sets the speed so the last line lands at the end of the song.
+
+The lyrics follow the song's position, so a speed change, a section jump or a loop is followed. Scrolling by hand, with the wheel, the touch pad or the page keys, or a remote scroll, pauses autoscroll for six seconds, then the lyrics return to the song position. The style and speed are kept on this computer.
+
+**Importing ChordPro or chords above lyrics.** Under **Edit chords, lyrics & MIDI**, the import panel reads pasted text or a `.cho`, `.chordpro`, `.pro`, `.crd` or `.txt` file. ChordPro directives become the song's title, artist, key, tempo, capo, duration and year, and sections become headings. Chords above lyrics are merged into the lyric line below, at the column where they were typed. The summary lists the format, the song details it found, and each line it did not take as written, with its line number. Directives the app does not support are kept as `//` comments, so nothing is lost silently. Only the first song in a file is imported. **Replace chart with this import** writes the chart and applies the key and year to the song and the tempo and capo to the performance. The title and artist are shown but not changed.
+
+An import replaces the chart, so it is refused during playback, and when the chart has MIDI commands or triggers. Remove those in the editor first, so they are not dropped without you seeing it. Imported text has no timestamps, so it is read as untimed text: it has no MIDI cues and no timed lines until you add timestamps in the editor.
 
 **Automatic drafts.** After a split, Performance estimates chords from the guitar stem and, when the song has none, transcribes lyrics from the vocals with a local Whisper model. Choose **Lyrics language** first if you know it. The first run downloads the model; nothing is uploaded. Chord estimates cover major and minor triads only. Treat both as drafts and check them before you play, because dense mixes and backing vocals cause mistakes. Anything in your own chart takes priority over a draft.
 

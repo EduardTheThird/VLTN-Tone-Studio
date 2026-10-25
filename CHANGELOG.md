@@ -5,6 +5,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Added
+- **Import ChordPro and chords above lyrics.** The chart editor reads ChordPro (`.cho`, `.chordpro`, `.pro`, `.crd`) and plain chords-above-lyrics text, with a summary of what was read and of each line that was kept as a comment. Headings, `//` comments and `{color:…}` spans are supported in the chart. See [Lyrics and chords](PERFORMANCE.md#lyrics-and-chords).
+- **Autoscroll styles.** Follow playback can move the lyrics line by line, smoothly between timed lines, or at a constant speed in lines per minute with a fit to the song's length. A manual or remote scroll pauses it for six seconds. See [Lyrics and chords](PERFORMANCE.md#lyrics-and-chords).
 - **Perform a set.** Song → Performance plays stems with a song-following metronome, a combined lyrics and chords reader with guitar chord tabs, and an estimated song key. See [Performance](PERFORMANCE.md).
 - **Timed MIDI cues.** Program changes, controllers, notes and SysEx fire at set times in a song, over USB or standard Bluetooth MIDI, with a pedal command library (TimeLine, RC-10R, IR-200, SY-200, GP-150, GP-180), custom pedal import and export, a one-time GP-180 tempo command and a preflight check. See [MIDI pedal command presets](MIDI-PEDALS.md).
 - **Song library and playlists.** Songs are saved with their audio, stems, chart, lyrics and mix, and ordered into playlists that play in sequence. A whole-playlist check and portable backup and restore are included. See [Song library](SONG-LIBRARY.md).
