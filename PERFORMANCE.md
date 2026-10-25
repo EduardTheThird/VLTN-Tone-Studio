@@ -258,6 +258,16 @@ For each song, the **Song shape** controls in the Performance setup set how it s
 
 Trim changes while a song plays move its stop at once. Looping jumps back to the trimmed start a second before the end, so the loop has no gap. Sections are cut to the trimmed range, and preflight warns about cues or sections outside it, which will not play.
 
+## PDF charts
+
+A saved song can show a PDF (a lead sheet, chord chart or score) instead of its text chart. Choose **Attach PDF chart** in the reader, or **Replace** or **Remove** to change it. **Show PDF chart** and **Show text chart** switch between the two for that song. The PDF is stored in the song's library entry and goes into backups. The app never changes the PDF itself. A PDF over 50 MB is refused with a notice.
+
+- **Scroll** shows the pages one under another at the width of the reader. **Page** shows one page at a time, or two side by side on a wide screen. **Previous** and **Next** turn pages.
+- **Annotations** are a pen, a highlighter and text notes, in four colours. **Undo mark** removes the last mark on the page, and **Clear page marks** removes them all. They are saved with the song, and they survive a restart and a backup. Marks are kept as positions on the page, so they fit any zoom.
+- **Page turns**: while the song plays, a page turn at a song time moves the PDF to the next page. Press **Turn page at this time** at each turn while you rehearse, and **Clear page turns** to start again. Follow playback switches this on and off.
+- A PDF that cannot be read shows an error with a **Show text chart** button. The lyrics view stays available.
+- A remote page action turns the PDF page when a PDF is on screen, and scrolls the lyrics otherwise. In stage mode a page action turns half a page in a scrolling PDF.
+
 ## Remote control
 
 Every live action can run from a MIDI message on the selected input, from a key, or from a Bluetooth page-turner, which sends keys. Choose **Edit remote control** in Performance to see each action with its bindings.
@@ -266,6 +276,7 @@ The defaults:
 
 - **Start** and **Continue** play, and **Stop** pauses. **CC 80** with a value of 64–127 on any channel plays or pauses. A footswitch that sends 127 on each press works, and repeats within 150 ms count as one press.
 - **Page Down** and the right arrow go to the next section; **Page Up** and the left arrow go to the previous one. **T** taps the tempo.
+- **Page up**, **Page down**, **Previous page** and **Next page** scroll the lyrics, or turn the page of a [PDF chart](#pdf-charts) when one is on screen. They work in stage mode too, so a page-turner can turn the chart.
 
 **Learn MIDI** or **Learn key** on an action, then press the pedal, controller or key. The next message is bound. Learn shows the channel and the message it heard, such as "Ch 3 · CC 80 = 127". A message that already runs another action is not bound: Learn names that action, and you remove it first. A program change learned after a bank select (CC 0 and CC 32) is bound to that bank only.
 
