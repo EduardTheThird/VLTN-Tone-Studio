@@ -52,7 +52,9 @@ Each saved song has details you set in **Song → Songs & playlists**: its key, 
 
 ## Playlist sets and smart playlists
 
-A regular playlist can be split into headed sets, such as "Set 1" and "Encore". Each set shows its song count and running time, and the playlist shows its total. **Play set** plays only that set and stops at its end. A set heading moves with the songs around it; removing the only song of a set removes its heading. Running times use each song's length.
+A regular playlist can be split into headed sets, such as "Set 1" and "Encore". Each set shows its song count and running time, and the playlist shows its total. **Play set** plays only that set and stops at its end. A set heading moves with the songs around it; removing the only song of a set removes its heading. A song's running time is its trimmed length at its saved speed, so a set's total is the time it will actually take to play.
+
+Each entry of a regular playlist also has two settings, shown beside it: **Song's own end** (or **Play the next song**, **Stop the playlist**, **Loop the song**) and **Starts by itself**. They override the song's own end setting and whether it starts when it becomes the playing song, for this playlist only. A stop entry ends the set there, a loop entry repeats its song until Next is pressed, and an entry that does not start by itself loads and waits for Play. The entry that is playing keeps its settings for as long as it plays.
 
 A smart playlist holds no songs of its own. It picks songs from the library by its rules, sorted and optionally limited to a number of songs. Saving the rules changes what it picks the next time. Playing it takes a snapshot of the songs it picks at that moment, so a change to the library never reorders a set that is already playing.
 
@@ -60,7 +62,7 @@ A smart playlist holds no songs of its own. It picks songs from the library by i
 
 The queue is the list of what plays next. **Play next** puts a song straight after the one playing, **Add to queue** adds it at the end, and **Queue from here** adds the rest of a playlist from one of its entries. In the queue panel you can drag an upcoming song, move it up or down, send it to the top or bottom, or remove it. The song playing, and the songs before it, are locked.
 
-Editing the queue never stops or changes the song that is playing. If an edit changes the next song, a join already prepared for the old one is undone, the outgoing song runs to its own end, and the new next song is prepared. An edit that leaves the next song as it was keeps the join. Adding songs to a single song that is loaded on its own starts a queue, which then plays on when the song ends. The queue holds up to 128 songs, counting the songs already played.
+Each upcoming queue entry has the same two settings, which apply to that queue only and never change the playlist. Editing the queue never stops or changes the song that is playing. If an edit changes the next song, a join already prepared for the old one is undone, the outgoing song runs to its own end, and the new next song is prepared. An edit that leaves the next song as it was keeps the join. Adding songs to a single song that is loaded on its own starts a queue, which then plays on when the song ends. The queue holds up to 128 songs, counting the songs already played.
 
 ## History
 
