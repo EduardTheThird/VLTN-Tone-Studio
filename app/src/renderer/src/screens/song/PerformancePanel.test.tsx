@@ -437,14 +437,14 @@ it("remembers global metronome, song clock and mixer settings without arming MID
   localStorage.clear();
   const view = render(<PerformancePanel />);
   expect(screen.queryByText("Start rhythm")).toBeNull();
-  fireEvent.click(screen.getByLabelText("Metronome"));
+  fireEvent.change(screen.getByLabelText("Metronome mode"), { target: { value: "playing" } });
   fireEvent.click(screen.getByLabelText("MIDI Clock (24 PPQN)"));
   fireEvent.change(screen.getByLabelText("Song volume"), { target: { value: "0.4" } });
   expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({ mode: "playing", bpm: 120 });
   expect(mocks.mix.mock.lastCall?.[0].other.volume).toBe(0.4);
   view.unmount();
   render(<PerformancePanel />);
-  expect((screen.getByLabelText("Metronome") as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText("Metronome mode") as HTMLSelectElement).value).toBe("playing");
   expect((screen.getByLabelText("MIDI Clock (24 PPQN)") as HTMLInputElement).checked).toBe(true);
   expect((screen.getByLabelText("Song volume") as HTMLInputElement).value).toBe("0.4");
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
@@ -646,7 +646,7 @@ it("preserves the song key when mixer, tempo and metronome options are saved", (
   fireEvent.change(screen.getByLabelText("Song key override"), { target: { value: "D minor" } });
   fireEvent.change(screen.getByLabelText("Song volume"), { target: { value: "0.35" } });
   fireEvent.change(screen.getByLabelText("BPM"), { target: { value: "100" } });
-  fireEvent.click(screen.getByLabelText("Metronome"));
+  fireEvent.change(screen.getByLabelText("Metronome mode"), { target: { value: "playing" } });
   view.unmount();
   render(<PerformancePanel />);
   expect((screen.getByLabelText("Song key override") as HTMLSelectElement).value).toBe("D minor");
@@ -736,4 +736,16 @@ it("does not re-render the panel while playing", async () => {
   }
   expect(screen.getByLabelText("Song position")).toHaveProperty("value", "1");
   expect(mocks.panelRenders - before).toBeLessThanOrEqual(2);
+});
+
+it("taps the tempo with T and sets the BPM from the taps", () => {
+  localStorage.clear();
+  const now = vi.spyOn(performance, "now");
+  render(<PerformancePanel />);
+  for (const at of [0, 500, 1000]) {
+    now.mockReturnValueOnce(at);
+    fireEvent.keyDown(window, { key: "t" });
+  }
+  expect((screen.getByLabelText("BPM") as HTMLInputElement).value).toBe("120");
+  now.mockRestore();
 });

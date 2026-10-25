@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { defaultMix } from "@/song/stems/mix";
 import { parseChart } from "@/song/performance/chart";
 import { defaultChordSource } from "@/song/performance/sources";
-import { PerformanceSession, useSession } from "@/song/performance/session";
+import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
+import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { useSongLibrary } from "@/song/library";
@@ -24,6 +25,25 @@ function readNumber(raw: string, fallback: number, min: number, max: number): nu
 }
 
 let sessionId = 0;
+/** A saved number, kept within its range; anything else gets the fallback. */
+const numberIn = (value: unknown, min: number, max: number, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+
+/** The metronome mode a song starts with when it has none of its own. Earlier builds stored the on/off toggle as "true" or "false". */
+function readGlobalMetronome(): MetronomeMode {
+  try {
+    const stored = localStorage.getItem("vltn.performance.metronome");
+    if (stored === "true") return "playing";
+    return isMetronomeMode(stored) ? stored : "off";
+  } catch {
+    return "off";
+  }
+}
+
+/** Typing in a field must not tap the tempo. */
+const isTyping = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
 export function PerformancePanel() {
   const source = useSong((s) => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
@@ -51,6 +71,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         mix: defaultMix(),
         chordChoice: "" as StemName | "",
         lyricsLanguage: "auto",
+        metronomeMode: "",
+        countInBars: 0,
+        preRollBeats: 0,
+        startDelay: 0,
       }),
     [key],
   );
@@ -64,13 +88,10 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const [firstBeat, setFirstBeat] = useState(() =>
     typeof options.firstBeat === "number" && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0,
   );
-  const [metronome, setMetronome] = useState(() => {
-    try {
-      return localStorage.getItem("vltn.performance.metronome") === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [metronome, setMetronome] = useState<MetronomeMode>(() => (isMetronomeMode(options.metronomeMode) ? options.metronomeMode : readGlobalMetronome()));
+  const [countInBars, setCountInBars] = useState(() => numberIn(options.countInBars, 0, 2, 0));
+  const [preRollBeats, setPreRollBeats] = useState(() => numberIn(options.preRollBeats, 0, 16, 0));
+  const [startDelay, setStartDelay] = useState(() => numberIn(options.startDelay, 0, 10, 0));
   const [mix, setMix] = useState(options.mix);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
@@ -115,6 +136,23 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     session.bind();
     return () => session.dispose();
   }, [session]);
+  // Lead-in before a start. Memoised: the session compares inputs by identity, so a new object every render would re-run it every render.
+  const timing = useMemo<Timing>(() => ({ countInBars, beatsPerBar: beats, preRollBeats, startDelay }), [countInBars, beats, preRollBeats, startDelay]);
+  // Tap tempo sets the song BPM only while stopped. The taps live in a ref so the key handler always sees the latest sequence.
+  const tapsRef = useRef<number[]>([]);
+  const tap = () => {
+    tapsRef.current = recordTap(tapsRef.current, performance.now());
+    const value = tapBpm(tapsRef.current);
+    if (value && !session.state.playing) setBpm(value);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "t" || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      tap();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session]);
   // Values owned by other stores; the session re-runs only the effects whose inputs changed.
   useEffect(() => {
     session.update({
@@ -129,6 +167,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       cues: parsed.cues,
       parseError: parsed.error,
       bpm,
+      timing,
     });
   });
 
@@ -169,14 +208,18 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           mix,
           chordChoice,
           lyricsLanguage: readOptions(key, { lyricsLanguage: "auto" }).lyricsLanguage,
+          metronomeMode: metronome,
+          countInBars,
+          preRollBeats,
+          startDelay,
         }),
       );
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice]);
+  }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice, metronome, countInBars, preRollBeats, startDelay]);
   useEffect(() => {
-    player?.setMetronome({ mode: metronome ? "playing" : "off", bpm, beats, volume, firstBeat });
+    player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
   useEffect(() => {
     try {
@@ -197,7 +240,23 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           stage={stage}
           bpm={bpm}
           onBpm={setBpm}
-          metronome={{ metronome, onMetronome: setMetronome, firstBeat, onFirstBeat: setFirstBeat, beats, onBeats: setBeats, volume, onVolume: setVolume }}
+          metronome={{
+            metronome,
+            onMetronome: setMetronome,
+            firstBeat,
+            onFirstBeat: setFirstBeat,
+            beats,
+            onBeats: setBeats,
+            volume,
+            onVolume: setVolume,
+            countInBars,
+            onCountInBars: setCountInBars,
+            preRollBeats,
+            onPreRollBeats: setPreRollBeats,
+            startDelay,
+            onStartDelay: setStartDelay,
+          }}
+          onTap={tap}
         />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
