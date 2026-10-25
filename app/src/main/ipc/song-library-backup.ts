@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import { c as createTar, Parser, type ReadEntry } from "tar";
-import { TRACK_NAMES, trackFiles, validId, validatePlaylists, validateSong, type LibraryTransferProgress } from "@shared/song-library";
+import { TRACK_NAMES, isTrackFileName, trackFiles, validId, validatePlaylists, validateSong, type LibraryTransferProgress } from "@shared/song-library";
 import type { DiskIndex } from "./song-library-store";
 
 const MANIFEST = "backup-manifest.json",
@@ -19,19 +19,21 @@ interface BackupFile {
 }
 interface Manifest {
   format: "vltn-song-library";
-  /** 1: raw float32 files. 2: FLAC files. Both are read; new backups are 2. */
-  version: 1 | 2;
+  /** 1: raw float32 files. 2: FLAC files. 3: FLAC files and per-track settings. All are read; new backups are 3. */
+  version: 1 | 2 | 3;
   files: BackupFile[];
 }
 type Progress = (value: LibraryTransferProgress) => void;
 const invalid = () => new Error("Invalid or damaged song-library backup.");
-const SAFE_AUDIO = new RegExp(`^[a-f0-9-]{36}/(${TRACK_NAMES.join("|")})(-[01]\\.f32|\\.flac)$`);
-const safePath = (path: string) => path === INDEX || SAFE_AUDIO.test(path);
+const SAFE_RAW = new RegExp(`^[a-f0-9-]{36}/(${TRACK_NAMES.join("|")})-[01]\\.f32$`);
+const SAFE_FLAC = /^[a-f0-9-]{36}\/([^/]+)$/;
+/** Raw v1 channels, or a FLAC track file (a legacy track or an imported one). */
+const safePath = (path: string) => path === INDEX || SAFE_RAW.test(path) || (SAFE_FLAC.test(path) && isTrackFileName(path.split("/")[1]));
 export function validateDiskIndex(value: unknown): DiskIndex {
   const index = value as DiskIndex;
   if (
     !index ||
-    (index.version !== 1 && index.version !== 2) ||
+    (index.version !== 1 && index.version !== 2 && index.version !== 3) ||
     !Array.isArray(index.songs) ||
     !Array.isArray(index.playlists) ||
     !index.revisions ||
@@ -82,7 +84,7 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
   const metadata = await readFile(join(root, INDEX));
   if (metadata.length > MAX_METADATA) throw new Error("Library metadata exceeds the supported backup size.");
   files.set(INDEX, metadata.length);
-  const manifest: Manifest = { format: "vltn-song-library", version: 2, files: [] };
+  const manifest: Manifest = { format: "vltn-song-library", version: 3, files: [] };
   let total = 0,
     done = 0;
   for (const [path, bytes] of files) {
@@ -169,7 +171,7 @@ export async function readBackup(file: string, stage: string, progress: Progress
               if (
                 !manifest ||
                 manifest.format !== "vltn-song-library" ||
-                (manifest.version !== 1 && manifest.version !== 2) ||
+                (manifest.version !== 1 && manifest.version !== 2 && manifest.version !== 3) ||
                 !Array.isArray(manifest.files) ||
                 !manifest.files.length ||
                 manifest.files.length > MAX_FILES

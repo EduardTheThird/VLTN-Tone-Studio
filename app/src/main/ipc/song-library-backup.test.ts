@@ -70,11 +70,11 @@ it("round-trips all audio/settings and repeated playlist entries as new copies w
   await restored.restoreBackup(archive);
   expect((await restored.index()).songs).toHaveLength(5);
 });
-it("writes a version 2 manifest holding the FLAC files", async () => {
+it("writes a version 3 manifest holding the FLAC files", async () => {
   await save(store, await flacSong());
   await store.exportBackup(archive);
   const manifest = JSON.parse(await readFile(join(await unpack(), "backup-manifest.json"), "utf8"));
-  expect(manifest.version).toBe(2);
+  expect(manifest.version).toBe(3);
   expect(manifest.files.map((f: { path: string }) => f.path.split("/").pop()).sort()).toEqual(["guitar.flac", "library.json", "source.flac"]);
 });
 it("restores a version 1 backup of raw float32 files and converts it to FLAC with the same audio", async () => {
@@ -143,7 +143,7 @@ it.each(["checksum", "missing", "version", "duplicate", "truncated", "index-dige
     if (damage === "checksum") await writeFile(join(dir, path), new Uint8Array((await readFile(join(dir, path))).length).fill(1));
     if (damage === "version") {
       const manifest = JSON.parse(await readFile(join(dir, "backup-manifest.json"), "utf8"));
-      manifest.version = 3;
+      manifest.version = 4;
       await writeFile(join(dir, "backup-manifest.json"), JSON.stringify(manifest));
     }
     if (damage === "index-digest") {

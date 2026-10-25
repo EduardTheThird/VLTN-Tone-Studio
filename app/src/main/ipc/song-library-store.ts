@@ -9,10 +9,11 @@ import {
   flacName,
   isFlacTrack,
   isLegacySong,
+  isTrackFileName,
   trackFiles,
+  upgradeIndex,
   validId,
   validatePlaylists,
-  TRACK_NAMES,
   validateSong,
   type LibrarySong,
   type Playlist,
@@ -86,8 +87,9 @@ export class SongLibraryStore {
   private async read(): Promise<DiskIndex> {
     try {
       const index = JSON.parse(await readFile(join(this.root, "library.json"), "utf8")) as DiskIndex;
-      if ((index.version !== 1 && index.version !== 2) || !index.revisions) throw new Error("Unsupported song library.");
-      return index;
+      if (![1, 2, 3].includes(index.version) || !index.revisions) throw new Error("Unsupported song library.");
+      // An older index gets the v3 track model in memory; the next publish writes it back as v3.
+      return upgradeIndex(index);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return { ...emptyLibrary(), revisions: {} };
       throw e;
@@ -96,8 +98,8 @@ export class SongLibraryStore {
   private async publish(index: DiskIndex): Promise<void> {
     await mkdir(this.root, { recursive: true });
     const temp = join(this.root, `index-${randomUUID()}.tmp`);
-    // Saving or converting a song makes this a v2 library; an older app refuses to open it instead of misreading the FLAC files.
-    await writeFile(temp, JSON.stringify({ ...index, version: 2 }));
+    // Saving a song with per-track settings makes this a v3 library; an older app refuses to open it instead of misreading the tracks.
+    await writeFile(temp, JSON.stringify({ ...index, version: 3 }));
     await rename(temp, join(this.root, "library.json"));
   }
   async preflight(ids: string[]): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
@@ -266,7 +268,7 @@ export class SongLibraryStore {
           const have = new Set(current.playlists.map(key));
           playlists = playlists.filter((p) => !have.has(key(p)));
         }
-        await this.publish({ version: 2, songs: [...current.songs, ...songs], playlists: [...current.playlists, ...playlists], revisions });
+        await this.publish({ version: 3, songs: [...current.songs, ...songs], playlists: [...current.playlists, ...playlists], revisions });
         moved.length = 0;
         const result = { songs: songs.length, playlists: playlists.length };
         return mode === "skip" ? { ...result, skipped: backup.songs.length - songs.length } : result;
@@ -360,11 +362,10 @@ export class SongLibraryStore {
   }
 }
 
-const FILE_NAME = new RegExp(`^(${TRACK_NAMES.join("|")})\\.flac$`);
 /** Maps `app://library/<revision>/<track>.flac` to a path inside the library root, or null for anything else. */
 export function libraryFilePath(root: string, url: string): string | null {
   const parsed = new URL(url),
     [, revision, file, ...rest] = decodeURIComponent(parsed.pathname).split("/");
-  if (parsed.host !== "library" || rest.length || !validId(revision ?? "") || !FILE_NAME.test(file ?? "")) return null;
+  if (parsed.host !== "library" || rest.length || !validId(revision ?? "") || !isTrackFileName(file ?? "")) return null;
   return join(root, revision, file);
 }

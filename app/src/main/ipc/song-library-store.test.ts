@@ -44,7 +44,7 @@ it("writes a v2 index and hands out protocol URLs instead of audio bytes", async
   const fixture = await flacSong();
   await saveFlacSong(store, fixture);
   const index = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
-  expect(index.version).toBe(2);
+  expect(index.version).toBe(3);
   const urls = await store.audioUrls(fixture.song.id);
   expect(Object.keys(urls).sort()).toEqual(["guitar", "source"]);
   expect(urls.source).toBe(`app://library/${index.revisions[fixture.song.id]}/source.flac`);
@@ -137,7 +137,7 @@ it("migrates a v1 library to FLAC with the same audio and settings, then removes
   expect(await store.migrate((p) => progress.push(`${p.phase} ${p.completed}/${p.total}`))).toEqual({ converted: 2, failed: 0 });
   expect(progress[0]).toBe("Converting saved songs 0/2");
   const index = await new SongLibraryStore(root).index();
-  expect(index.version).toBe(2);
+  expect(index.version).toBe(3);
   for (const fixture of [first, second]) {
     const song = index.songs.find((s) => s.id === fixture.song.id)!;
     expect(isLegacySong(song)).toBe(false);
