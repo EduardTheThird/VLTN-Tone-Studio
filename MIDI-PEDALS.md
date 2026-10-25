@@ -39,6 +39,16 @@ Codes are upper-case letters, digits and underscores, such as `GP_LEAD`. A macro
 
 **Song MIDI files:** attach a standard MIDI file (format 0 or 1, ticks per beat) to a song in **Song MIDI cues**. Its messages play alongside the chart's cues at the same timing, follow the song's speed and are replayed when you start mid-song like the chart's own state. Channel messages, song select and SysEx are sent. Meta events other than tempo, and real-time bytes, are skipped. The app reads the file when you attach it and refuses one it cannot play. The file is saved with the song and included in backups. SMPTE timing and format 2 files are not supported.
 
+## MIDI over the network
+
+Network MIDI is not built into the app. The operating system provides it, and the app then sees the session as an ordinary MIDI port.
+
+**macOS.** Open **Audio MIDI Setup** and set up a **MIDI Network Setup** session (the MIDI Studio window; menu names vary by macOS version). Enable the session and invite the other computer or device. Once it is connected, it appears in the app's output and input lists like any other MIDI port. Nothing else needs installing.
+
+**Windows.** Windows does not have network MIDI built in. Install an RTP-MIDI driver (rtpMIDI, by Tobias Erichsen) and create a session in it. The session then appears as a MIDI port, and the app lists it once the port is connected.
+
+Network MIDI adds the latency and jitter of the network to every cue and timecode message. Use a wired link where you can, and test the path with the pedals before a show. Hardware results are not yet recorded for network sessions.
+
 ## Included profiles
 
 | Pedal | Actions and manual reference |

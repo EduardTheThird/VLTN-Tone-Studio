@@ -292,6 +292,20 @@ Things to know:
 - In a playlist, a trigger for a song in the set moves the set to that song. A song outside the set loads on its own and pauses the set, with a notice.
 - A song needs to be saved in the library before it can have a trigger. Anything that is not a program change or Song Select does nothing.
 
+## MIDI timecode
+
+The app can send MIDI Time Code (quarter frames and full frames) so that a DAW, a lighting desk or a timecode-aware device can follow the song.
+
+- **Turn it on** in the MIDI setup with **Send MIDI timecode**, and choose the frame rate: 24, 25 or 30 fps (non-drop). 29.97 drop-frame is not offered.
+- **Each song has its own offset**, `HH:MM:SS:FF`, in its MIDI setup. It is the timecode at song position zero. Frames must be below the rate: at 25 fps, `00:00:00:24` is valid and `00:00:00:25` is not. An invalid offset stops Play and is named in the preflight.
+- **What is sent.** A full frame at the start, seek, jump, loop wrap and speed change, followed by quarter frames that follow song time. A speed of 50–150% stretches or shrinks the quarter-frame spacing, so the timecode stays with the audio. Nothing is sent during the count-in.
+- **Gapless and crossfade.** The next song's timecode starts from its own offset with a full frame at its start. The outgoing song's quarter frames stop where the next song joins.
+- **Timecode replaces app MIDI clock.** Turning timecode on turns the clock off, and the clock box is disabled while timecode is on. A receiver gets one source of time.
+- **Bluetooth is not recommended.** Quarter frames come every few milliseconds, and Bluetooth cannot keep them steady. Preflight warns when timecode is on with a Bluetooth output. Use USB.
+- Late quarter frames are dropped rather than sent in a burst. A late full frame is still sent, because it sets the position.
+
+Check the receiving device on the rig before relying on it, and see the timecode rows in the hardware test plan.
+
 ## Stage mode
 
 Choose **Enter stage mode** in Performance. The window fills with large lyrics and transport buttons, and MIDI status and faults stay visible. Setup, the mixer, editors, seeking, rewind and chord popups are locked, and Escape or clicking outside does not exit.
