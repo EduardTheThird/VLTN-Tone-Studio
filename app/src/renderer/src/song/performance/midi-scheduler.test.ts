@@ -380,3 +380,20 @@ describe("MIDI triggers and file cues in the schedule", () => {
     ]);
   });
 });
+
+it("fires a cue inside a loop once per pass, and a play trigger only at the start", () => {
+  const cues = parseChart("[00:00.50] {midi:pc 1 7}\n{midi@load: pc 1 1}");
+  const f = fixture({ cues, duration: 10, playTriggers: [[192, 2]] });
+  f.schedule.tick(1000);
+  // Loop back to the start at 1.0 s of song time, three times over.
+  f.schedule.plan(null, { at: 1600, position: 0 });
+  for (let t = 1020; t <= 4000; t += 20) {
+    f.schedule.sync(Math.max(0, (t - 1000) / 1000), t, t);
+    f.schedule.tick(t);
+    if (t === 2600) f.schedule.plan(null, { at: 2700, position: 0 });
+  }
+  const bytes = f.messages().map((m) => m.bytes);
+  expect(bytes.filter((b) => b[0] === 192 && b[1] === 7)).toHaveLength(3);
+  expect(bytes.filter((b) => b[0] === 192 && b[1] === 2)).toHaveLength(1);
+  expect(bytes.filter((b) => b[0] === 192 && b[1] === 1)).toHaveLength(0);
+});
