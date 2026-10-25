@@ -19,6 +19,8 @@ export interface PlaylistCheck {
   title: string;
   errors: string[];
   warnings: string[];
+  /** Information only, shown without the warning label */
+  notes: string[];
 }
 export function playlistPreflight(
   ids: string[],
@@ -37,7 +39,8 @@ export function playlistPreflight(
     const saved = byId.get(id),
       song = saved?.song;
     const errors = [...(saved?.errors ?? ["Song was not checked."])],
-      warnings: string[] = [];
+      warnings: string[] = [],
+      notes: string[] = [];
     if (song) {
       if (config.tempoOnStart && !config.outputName)
         warnings.push("Automatic tempo is enabled but no MIDI output preference is saved. Select and arm the intended output before performing.");
@@ -59,8 +62,13 @@ export function playlistPreflight(
       if (Number.isFinite(played) && config.tempoOnStart && (played < 40 || played > 300))
         errors.push(`At ${Math.round(speed.rate * 100)}% this song plays at ${Math.round(played)} BPM; automatic pedal tempo requires 40–300 BPM.`);
       const changed = speed.rate !== 1 || speed.semitones !== 0 || speed.cents !== 0;
-      if (changed && config.renderReady && !config.renderReady(id))
-        warnings.push("Its speed or pitch is not rendered in advance yet. It plays at its own speed until the render is ready; check the join in rehearsal.");
+      // The first song renders as it loads and the second is the one the set prepares next, so a render that is not ready for either is
+      // a warning. Later songs are prepared in turn and are only noted, so the warnings stay for what needs doing.
+      if (changed && config.renderReady && !config.renderReady(id)) {
+        const text = "Its speed or pitch is not rendered in advance yet. It plays at its own speed until the render is ready.";
+        if (entry <= 1) warnings.push(text);
+        else notes.push(text);
+      }
       if (config.tempoOnStart && options.clock)
         warnings.push("Saved continuous clock is enabled alongside automatic tempo. Disable continuous clock for this setup.");
       const stems = STEM_NAMES.flatMap((name) => song.audio.filter((a) => a.name === name));
@@ -86,6 +94,6 @@ export function playlistPreflight(
         errors.push(`Chart cannot play: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings };
+    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, notes };
   });
 }

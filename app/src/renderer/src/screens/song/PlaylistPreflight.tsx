@@ -73,7 +73,7 @@ export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; 
                 <strong>
                   {r.entry}. {r.title}
                 </strong>
-                {!r.errors.length && !r.warnings.length ? (
+                {!r.errors.length && !r.warnings.length && !r.notes.length ? (
                   <p>No static issues found.</p>
                 ) : (
                   <ul>
@@ -84,6 +84,11 @@ export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; 
                     ))}
                     {r.warnings.map((s, i) => (
                       <li key={"w" + i}>Warning: {s}</li>
+                    ))}
+                    {r.notes.map((s, i) => (
+                      <li key={"n" + i} className="text-silkscreen-3">
+                        Note: {s}
+                      </li>
                     ))}
                   </ul>
                 )}

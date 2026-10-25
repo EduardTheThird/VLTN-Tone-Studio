@@ -66,6 +66,13 @@ it("checks the tempo the song plays at, and whether its speed render is ready", 
   expect(warned.warnings.join(" ")).toContain("not rendered in advance");
   const [ready] = playlistPreflight(["one"], [{ ...saved, song }], { ...config, renderReady: () => true });
   expect(ready.warnings.join(" ")).not.toContain("not rendered in advance");
+  // The first two songs are warnings, since the first renders as it loads and the second is prepared next; later songs are noted
+  const three = [saved, { ...saved, id: "two" }, { ...saved, id: "three" }].map((e) => ({ ...e, song: { ...song } }));
+  const checks = playlistPreflight(["one", "two", "three"], three, { ...config, renderReady: () => false });
+  expect(checks[0].warnings.join(" ")).toContain("not rendered in advance");
+  expect(checks[1].warnings.join(" ")).toContain("not rendered in advance");
+  expect(checks[2].warnings).toEqual([]);
+  expect(checks[2].notes.join(" ")).toContain("not rendered in advance");
   const fast = { ...saved.song!, settings: { ":bpm": "250", ":options": '{"speed":1.5}', "": "" } };
   const [result] = playlistPreflight(["one"], [{ ...saved, song: fast }], config);
   expect(result.errors.join(" ")).toContain("375 BPM");
