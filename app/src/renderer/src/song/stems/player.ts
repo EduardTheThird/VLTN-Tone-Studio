@@ -1,7 +1,10 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
 import { stemGains, type Mix } from "./mix";
-import { OutputRouter, type OutputConfig } from "../audio/outputs";
+import { OutputRouter, type BusName, type OutputConfig } from "../audio/outputs";
+
+/** Which bus each track plays on, keyed by track name. A track without an entry plays on Main. */
+export type TrackBuses = Partial<Record<string, BusName>>;
 
 // Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → an analyser
 // (level meter) → the main output bus. Pausing or seeking restarts the sources at the new position.
@@ -101,7 +104,7 @@ export class StemPlayer {
     if (this.playing) return;
     // Rehearsal clicks stop at once; the song's own grid takes over below.
     this.stopMetronome();
-    await this.ctx.resume();
+    await this.router.resume();
     if (this.offset >= this.duration) this.offset = 0;
     const bpm = lead.bpm ?? this.metronome.bpm;
     const interval = Number.isFinite(bpm) && bpm > 0 ? beatSeconds(bpm) : 0;
@@ -156,6 +159,25 @@ export class StemPlayer {
     await this.play();
   }
 
+  /** Sends each track to its bus. Tracks without an entry stay on Main. */
+  setTrackBuses(routes: TrackBuses): void {
+    for (const name of this.names) {
+      const analyser = this.voice(name).analyser;
+      analyser.disconnect();
+      analyser.connect(this.router.buses[routes[name] ?? "main"]);
+    }
+  }
+
+  /** Channels the main device has. */
+  get outputChannels(): number {
+    return this.router.channels;
+  }
+
+  /** A short tone on one bus, to check that output. */
+  testTone(bus: BusName): void {
+    this.router.testTone(bus);
+  }
+
   setMix(mix: Mix): void {
     const gains = stemGains(mix);
     for (const name of this.names) this.voice(name).gain.gain.setTargetAtTime(gains[name], this.ctx.currentTime, RAMP_S);
@@ -174,23 +196,26 @@ export class StemPlayer {
     return Number.isFinite(firstBeat) && firstBeat! >= 0 ? firstBeat! : 0;
   }
 
-  /** One click at `when`. Kept in `into`, so the set's owner can cancel it. */
+  /** One click at `when` (a main-clock time). Kept in `into`, so the set's owner can cancel it. */
   private click(when: number, down: boolean, into: Set<OscillatorNode> = this.clicks): void {
     const volume = this.metronome.volume;
-    const osc = this.ctx.createOscillator(),
-      gain = this.ctx.createGain();
-    osc.frequency.setValueAtTime(down ? 1500 : 1000, when);
-    gain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * (down ? 1 : 0.65), when);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.04);
-    osc.connect(gain).connect(this.router.buses.click);
+    // The click may sit on its own device, with its own clock: `localTime` maps the time onto that clock.
+    const { ctx, bus, localTime } = this.router.clickTarget();
+    const at = localTime(when);
+    const osc = ctx.createOscillator(),
+      gain = ctx.createGain();
+    osc.frequency.setValueAtTime(down ? 1500 : 1000, at);
+    gain.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * (down ? 1 : 0.65), at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
+    osc.connect(gain).connect(bus);
     into.add(osc);
     osc.onended = () => {
       into.delete(osc);
       osc.disconnect();
       gain.disconnect();
     };
-    osc.start(when);
-    osc.stop(when + 0.05);
+    osc.start(at);
+    osc.stop(at + 0.05);
   }
 
   /** The count-in is always clicked, whatever the metronome mode: it is the lead-in the player asked for. */

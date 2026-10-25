@@ -5,7 +5,8 @@ function config(click: [number, number], main: [number, number] = [0, 1]): Outpu
   return {
     deviceId: "usb-4",
     label: "Interface",
-    buses: { main: { channels: main, gain: 1 }, click: { channels: click, gain: 0.8 } },
+    clickDevice: null,
+    buses: { ...DEFAULT_OUTPUTS.buses, main: { channels: main, gain: 1 }, click: { channels: click, gain: 0.8 } },
   };
 }
 
@@ -24,7 +25,7 @@ describe("planRoutes", () => {
     expect(planRoutes(DEFAULT_OUTPUTS, 2)).toEqual({
       outputs: 2,
       multichannel: false,
-      buses: { main: [0, 1], click: [0, 1] },
+      buses: { main: [0, 1], click: [0, 1], aux1: [0, 1], aux2: [0, 1] },
       fellBack: false,
     });
   });
@@ -33,7 +34,7 @@ describe("planRoutes", () => {
     expect(planRoutes(config([2, 3]), 4)).toEqual({
       outputs: 4,
       multichannel: true,
-      buses: { main: [0, 1], click: [2, 3] },
+      buses: { main: [0, 1], click: [2, 3], aux1: [0, 1], aux2: [0, 1] },
       fellBack: false,
     });
   });
@@ -42,7 +43,7 @@ describe("planRoutes", () => {
     expect(planRoutes(config([2, 3]), 2)).toEqual({
       outputs: 2,
       multichannel: false,
-      buses: { main: [0, 1], click: [0, 1] },
+      buses: { main: [0, 1], click: [0, 1], aux1: [0, 1], aux2: [0, 1] },
       fellBack: true,
     });
   });

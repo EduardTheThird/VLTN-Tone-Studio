@@ -1,11 +1,13 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { OutputConfig } from "../audio/outputs";
+import { DEFAULT_OUTPUTS, type OutputConfig } from "../audio/outputs";
 import type { Stems } from "../types";
 import { StemPlayer } from "./player";
 
 class Context {
   static instances: Context[] = [];
   currentTime = 10;
+  /** How far this context's audio clock runs behind the performance clock, as a second device's clock can */
+  clockShift = 0;
   destination = {};
   oscillators: ReturnType<Context["node"]>[] = [];
   sources: ReturnType<Context["node"]>[] = [];
@@ -14,6 +16,9 @@ class Context {
   }
   async resume() {}
   async close() {}
+  getOutputTimestamp() {
+    return { contextTime: this.currentTime - this.clockShift, performanceTime: this.currentTime * 1000 };
+  }
   node() {
     return {
       connect: vi.fn().mockReturnThis(),
@@ -226,6 +231,12 @@ it("keeps the count-in when the metronome changes mid-count-in, and pause cancel
 class OutputContext extends Context {
   destination: { maxChannelCount?: number; channelCount?: number; channelInterpretation?: string } = { maxChannelCount: 4, channelCount: 2 };
   gains: ReturnType<Context["node"]>[] = [];
+  analysers: ReturnType<Context["node"]>[] = [];
+  createAnalyser() {
+    const analyser = super.createAnalyser();
+    this.analysers.push(analyser);
+    return analyser;
+  }
   merger: ReturnType<Context["node"]> | null = null;
   sinkIds: string[] = [];
   /** How many of the next setSinkId calls reject */
@@ -256,7 +267,8 @@ function interface4(click: [number, number]): OutputConfig {
   return {
     deviceId: "usb-4",
     label: "Interface",
-    buses: { main: { channels: [0, 1], gain: 1 }, click: { channels: click, gain: 1 } },
+    clickDevice: null,
+    buses: { ...DEFAULT_OUTPUTS.buses, click: { channels: click, gain: 1 } },
   };
 }
 
@@ -337,5 +349,40 @@ it("moves to the default output when the device disappears, and back when it ret
   listeners[0]();
   await vi.waitFor(() => expect(ctx.sinkIds).toEqual(["usb-4", "", "usb-4"]));
   expect(ctx.merger).not.toBeNull();
+  await player.dispose();
+});
+
+it("plays the count-in on the click device at the time that device's clock reads", async () => {
+  // The second context is the click device; its clock runs 5 s behind the main one.
+  class SecondDevice extends OutputContext {
+    clockShift = Context.instances.length > 1 ? 5 : 0;
+  }
+  vi.stubGlobal("AudioContext", SecondDevice);
+  const player = new StemPlayer(oneStem());
+  await player.setOutputs({ ...interface4([2, 3]), clickDevice: { deviceId: "hp", label: "Headphones" } });
+  const [main, sink] = Context.instances as OutputContext[];
+  expect(sink.sinkIds).toEqual(["hp"]);
+  await player.play({ countInBeats: 4 });
+  expect(main.oscillators).toHaveLength(0);
+  // The main clock's beats are at 10.02, 10.52, 11.02 and 11.52; on the click device they read 5 s earlier.
+  expect(sink.oscillators).toHaveLength(4);
+  expect(sink.oscillators[0].start.mock.calls[0][0]).toBeCloseTo(5.02);
+  expect(sink.oscillators[1].start.mock.calls[0][0]).toBeCloseTo(5.52);
+  expect(sink.oscillators[3].start.mock.calls[0][0]).toBeCloseTo(6.52);
+  await player.dispose();
+});
+
+it("sends each track to its assigned bus, and leaves the others on Main", async () => {
+  vi.stubGlobal("AudioContext", OutputContext);
+  const player = new StemPlayer({
+    drums: { sampleRate: 100, channels: [new Float32Array(1000)] },
+    other: { sampleRate: 100, channels: [new Float32Array(1000)] },
+  } as Stems);
+  const ctx = Context.instances[0] as OutputContext;
+  const [drumsAnalyser, otherAnalyser] = ctx.analysers;
+  player.setTrackBuses({ drums: "aux1" });
+  expect(drumsAnalyser.disconnect).toHaveBeenCalled();
+  expect(drumsAnalyser.connect).toHaveBeenLastCalledWith(ctx.gains[2]);
+  expect(otherAnalyser.connect).toHaveBeenLastCalledWith(ctx.gains[0]);
   await player.dispose();
 });
