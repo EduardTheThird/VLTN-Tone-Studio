@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
 import { useSongLibrary } from "./library";
-import { clearSettingsCache, getSetting, performanceKey, setSetting } from "./performance/settings";
+import { clearSettingsCache, flushSettings, getSetting, performanceKey, setSetting } from "./performance/settings";
 import { useNav } from "@/state/nav";
 
 const api = vi.hoisted(() => ({
@@ -302,4 +302,46 @@ it("releases a handed-over song that no session takes up: a claim for another so
   expect(second.dispose).toHaveBeenCalledTimes(1);
   expect(second.unwire).toHaveBeenCalledTimes(1);
   expect(library().handover).toBeNull();
+});
+
+const songNamed = (id: string, title: string): LibrarySong => ({ ...saved, id, title, audio: [], settings: {} });
+
+it("sets a saved song's MIDI trigger, keeps its other options, saves it, and removes it on request", async () => {
+  const withOptions = { ...saved, settings: { ...saved.settings, ":options": JSON.stringify({ sections: [{ id: "a" }] }) } };
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs: [withOptions] } });
+  useSongLibrary.getState().setSongTrigger(saved.id, { type: "pc", channel: 2, program: 9 });
+  const options = JSON.parse(useSongLibrary.getState().index.songs[0].settings[":options"]);
+  expect(options).toEqual({ sections: [{ id: "a" }], midiTrigger: { type: "pc", channel: 2, program: 9 } });
+  await flushSettings();
+  expect(api.updateSettings).toHaveBeenCalledWith(saved.id, { ":options": JSON.stringify(options) });
+  useSongLibrary.getState().setSongTrigger(saved.id, null);
+  expect(JSON.parse(useSongLibrary.getState().index.songs[0].settings[":options"])).toEqual({ sections: [{ id: "a" }] });
+  expect(() => useSongLibrary.getState().setSongTrigger("missing", null)).toThrow("Song is missing from the library.");
+});
+
+it("arms a song as next in a playing playlist, and says why it did not move", () => {
+  const songs = [songNamed("one", "One"), songNamed("two", "Two"), songNamed("three", "Three")];
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs }, queue: ["one", "two", "three"], position: 0, playlistPlaying: true });
+  expect(useSongLibrary.getState().armNext("three")).toBeNull();
+  expect(useSongLibrary.getState().queue).toEqual(["one", "three", "two"]);
+  expect(useSongLibrary.getState().notice).toBe("Three plays next.");
+  expect(useSongLibrary.getState().armNext("three")).toBe("Three is already next.");
+  expect(useSongLibrary.getState().armNext("one")).toBe("One is playing.");
+  useSongLibrary.setState({ position: 2 });
+  expect(useSongLibrary.getState().armNext("two")).toBe("Two is playing.");
+  expect(useSongLibrary.getState().armNext("three")).toBe("Three has already played in this set.");
+});
+
+it("does not arm a song as next when no playlist is playing", () => {
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs: [songNamed("one", "One")] }, queue: ["one"], position: 0, playlistPlaying: false });
+  expect(useSongLibrary.getState().armNext("one")).toBe("Arming a song as next needs a playlist that is playing.");
+  expect(useSongLibrary.getState().queue).toEqual(["one"]);
+});
+
+it("hands a MIDI autoplay request to the one song it names, once", () => {
+  useSongLibrary.getState().requestAutoplay("one");
+  expect(useSongLibrary.getState().takeAutoplay("two")).toBe(false);
+  expect(useSongLibrary.getState().takeAutoplay(undefined)).toBe(false);
+  expect(useSongLibrary.getState().takeAutoplay("one")).toBe(true);
+  expect(useSongLibrary.getState().takeAutoplay("one")).toBe(false);
 });

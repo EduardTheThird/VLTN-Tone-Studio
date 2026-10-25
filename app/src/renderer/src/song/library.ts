@@ -21,7 +21,17 @@ import { sharedPlaybackEngine } from "./audio/playback-engine";
 import { StemPlayer, yieldToMain } from "./stems/player";
 import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
 import { speedFromOptions } from "./performance/speed";
-import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
+import {
+  changeSavedOptions,
+  flushSettings,
+  forgetSettings,
+  migrateLocalSettings,
+  performanceKey,
+  readSettings,
+  seedSettings,
+  writeSettings,
+} from "./performance/settings";
+import { armAsNext, type SongTrigger } from "./performance/song-triggers";
 import type { PcmAudio, SongSource, Stems } from "./types";
 import { mergeTrackDefaults, savedSettingsOf, trackInfoOf, type TrackInfo } from "./tracks";
 import { mixDown } from "./import/align";
@@ -106,6 +116,15 @@ interface LibraryState {
   claimHandover(id: string | undefined): HandedOverSong | null;
   /** Stops and releases the held song, when no session took it up. */
   releaseHandover(): void;
+  /** Sets (or, with null, removes) the MIDI trigger a saved song loads by. The song's other options are kept. Throws for a song not in the library. */
+  setSongTrigger(id: string, trigger: SongTrigger | null): void;
+  /** Puts a saved song after the playing one in the playlist, for a trigger that arrives during a set. Returns a hint when it did not move. */
+  armNext(id: string): string | null;
+  /** The song a MIDI trigger loaded, which the next session for it starts playing. Null when none. */
+  autoplayId: string | null;
+  requestAutoplay(id: string): void;
+  /** Takes the autoplay request when it is for song `id`. Returns true once, then false. */
+  takeAutoplay(id: string | undefined): boolean;
 }
 /** Songs whose speed or pitch render was built in advance, by id. A song that is not here plays at its own speed until its render is ready. */
 const renderedAhead = new Set<string>();
@@ -203,7 +222,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     try {
       await task();
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e), playlistPlaying: false });
+      set({ error: e instanceof Error ? e.message : String(e), playlistPlaying: false, autoplayId: null });
     } finally {
       set({ busy: false });
     }
@@ -319,6 +338,36 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     midiSession: null,
     prepared: null,
     handover: null,
+    autoplayId: null,
+    requestAutoplay: (id) => set({ autoplayId: id }),
+    takeAutoplay: (id) => {
+      if (!id || get().autoplayId !== id) return false;
+      set({ autoplayId: null });
+      return true;
+    },
+    setSongTrigger: (id, trigger) => {
+      const { index } = get();
+      const song = index.songs.find((s) => s.id === id);
+      if (!song) throw new Error("Song is missing from the library.");
+      const options = changeSavedOptions(id, song.settings[":options"], (current) => ({ ...current, midiTrigger: trigger ?? undefined }));
+      set({ index: { ...index, songs: index.songs.map((s) => (s.id === id ? { ...s, settings: { ...s.settings, ":options": options } } : s)) } });
+    },
+    armNext: (id) => {
+      const { index, queue, position, playlistPlaying } = get();
+      if (!playlistPlaying) return "Arming a song as next needs a playlist that is playing.";
+      const title = index.songs.find((s) => s.id === id)?.title ?? "That song";
+      const result = armAsNext(queue, position, id);
+      if (!result.ok) {
+        return {
+          current: `${title} is playing.`,
+          played: `${title} has already played in this set.`,
+          next: `${title} is already next.`,
+        }[result.reason];
+      }
+      set({ queue: result.queue, notice: `${title} plays next.` });
+      prefetchNext();
+      return null;
+    },
     setHandover: (handover) => {
       get().releaseHandover();
       set({ handover });
