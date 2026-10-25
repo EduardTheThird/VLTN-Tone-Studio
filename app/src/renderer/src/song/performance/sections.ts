@@ -211,6 +211,19 @@ function boundaryAtEnd(ordered: Section[], index: number, live: SectionLive): Se
   return { at: section.end, action: { kind: "continue" }, live: leave(live, section.id) };
 }
 
+/**
+ * A jump to section `id` taken at song time `at` rather than at the next boundary: the performer's double tap. The session passes
+ * a time far enough ahead that cues already queued still belong to the passage being left.
+ */
+export function immediateJump(sections: readonly Section[], at: number, live: SectionLive, id: string): SectionBoundary | null {
+  const ordered = sortedSections(sections);
+  const target = ordered.find((s) => s.id === id);
+  if (!target) return null;
+  const current = ordered[sectionIndexAt(ordered, at)];
+  const next = current ? leave(live, current.id) : live;
+  return { at, action: { kind: "jump", to: target.start, target: target.id }, live: { ...next, jump: null } };
+}
+
 /** Arms a jump: the next boundary goes to `id`. Tapping the armed section again does not disarm it. */
 export function armJump(live: SectionLive, id: string): SectionLive {
   return { ...live, jump: id };

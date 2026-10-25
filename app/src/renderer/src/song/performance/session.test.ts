@@ -1,11 +1,16 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
+import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 
 const mocks = vi.hoisted(() => ({
   position: 0,
+  audioNow: 0,
+  jumps: [] as { to: number; at: number }[],
+  cancelOk: true,
+  plans: [] as { cap: number | null; jump: { at: number; position: number } | null }[],
   outputs: [] as { player: unknown; config: unknown }[],
   toasts: [] as unknown[],
   players: [] as { onOutputWarning: ((message: string) => void) | null }[],
@@ -50,6 +55,19 @@ vi.mock("@/song/stems/player", () => ({
     async seek(value: number) {
       mocks.position = value;
     }
+    get audioNow() {
+      return mocks.audioNow;
+    }
+    audioTimeOf(at: number) {
+      return mocks.audioNow + (at - mocks.position);
+    }
+    prepareJump(to: number, at: number) {
+      mocks.jumps.push({ to, at });
+      return this.audioTimeOf(at);
+    }
+    cancelJump() {
+      return mocks.cancelOk;
+    }
     async dispose() {}
   },
 }));
@@ -61,7 +79,11 @@ vi.mock("@/song/performance/midi-scheduler-client", () => ({
   startMidiScheduler: (_config: unknown, send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
     mocks.sends.push(send);
     mocks.faults.push(fault);
-    return { stop: vi.fn(), sync: vi.fn() };
+    return {
+      stop: vi.fn(),
+      sync: vi.fn(),
+      plan: (cap: number | null, jump: { at: number; position: number } | null) => mocks.plans.push({ cap, jump }),
+    };
   },
 }));
 
@@ -95,6 +117,10 @@ function armedSession(out = output(), patch: Partial<SessionInputs> = {}) {
 
 beforeEach(() => {
   mocks.position = 0;
+  mocks.audioNow = 0;
+  mocks.jumps.length = 0;
+  mocks.plans.length = 0;
+  mocks.cancelOk = true;
   mocks.outputs.length = 0;
   mocks.toasts.length = 0;
   mocks.players.length = 0;
@@ -308,4 +334,89 @@ it("applies the saved outputs to a new player, again when they change, and shows
   unload();
   useOutputSettings.getState().update(DEFAULT_OUTPUTS);
   expect(applied()).toHaveLength(2);
+});
+
+describe("sections", () => {
+  const verse = (mode: Section["mode"]): Section => ({ id: "verse", name: "Verse", start: 8, end: 16, mode });
+  /** Plays the song from `position` with the sections. */
+  function playing(sections: Section[], position = 0) {
+    const armed = armedSession(output(), { sections });
+    mocks.position = position;
+    mocks.audioNow = position;
+    armed.session.store.setState({ playing: true });
+    return armed;
+  }
+  /** Moves the song and the audio clock to `position`, then runs one 50 ms section tick. */
+  function at(position: number) {
+    mocks.position = position;
+    mocks.audioNow = position;
+    vi.advanceTimersByTime(50);
+  }
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("decides a loop two seconds ahead, holds the schedule up to its boundary, and jumps the audio back", () => {
+    const { session } = playing([verse("loop")]);
+    at(13.5);
+    expect(mocks.jumps).toHaveLength(0);
+    at(14.1);
+    expect(mocks.jumps).toEqual([{ to: 8, at: 16 }]);
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 16, jump: { position: 8 } });
+    // The jump is taken at the boundary. Nothing pauses: a loop keeps the song playing.
+    at(16.1);
+    expect(session.state.playing).toBe(true);
+    expect(mocks.jumps).toHaveLength(1);
+  });
+
+  it("cancels an armed jump: the decision is undone and the hold is lifted", () => {
+    const { session } = playing([verse("continue")]);
+    session.tapSection("verse");
+    expect(session.state.sectionLive.jump).toBe("verse");
+    at(14.1);
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 16 });
+    session.cancelSectionJump();
+    expect(session.state.sectionLive.jump).toBeNull();
+    expect(mocks.plans.at(-1)).toEqual({ cap: null, jump: null });
+  });
+
+  it("refuses to cancel a jump that is too close, and the jump then stands", () => {
+    const { session } = playing([verse("continue")]);
+    session.tapSection("verse");
+    at(14.1);
+    mocks.cancelOk = false;
+    session.cancelSectionJump();
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 16 });
+  });
+
+  it("pauses at the boundary of a section whose mode is pause", () => {
+    const { session } = playing([verse("pause")]);
+    at(14.1);
+    expect(session.state.playing).toBe(true);
+    at(16.05);
+    expect(session.state.playing).toBe(false);
+  });
+
+  it("stopped, a tap moves the playhead to the section start instead of arming a jump", () => {
+    const { session } = armedSession(output(), { sections: [verse("continue")] });
+    session.tapSection("verse");
+    expect(mocks.position).toBe(8);
+    expect(session.state.sectionLive.jump).toBeNull();
+  });
+
+  it("a second tap jumps now, after the MIDI lookahead, so the cues already queued still belong to the passage being left", () => {
+    const { session } = playing([verse("continue")], 5);
+    session.jumpSectionNow("verse");
+    // USB lookahead is one second: the jump is at song 6, and the cap holds the schedule there.
+    expect(mocks.jumps).toEqual([{ to: 8, at: 6 }]);
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 6, jump: { position: 8 } });
+  });
+
+  it("starts a live loop, then releases it: the performer's release is kept for the rest of the pass", () => {
+    const { session } = playing([verse("continue")], 10);
+    session.toggleSectionLoop("verse");
+    expect(session.state.sectionLive.loop).toBe("verse");
+    session.releaseSectionLoop();
+    expect(session.state.sectionLive.loop).toBeNull();
+    expect(session.state.sectionLive.released).toEqual(["verse"]);
+  });
 });

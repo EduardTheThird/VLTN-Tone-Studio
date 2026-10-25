@@ -10,7 +10,22 @@ import type { Cue } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
-import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD } from "@/song/performance/midi-scheduler";
+import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
+import {
+  armJump,
+  cancelJump,
+  DECISION_LEAD_S,
+  immediateJump,
+  NO_LIVE,
+  nextBoundary,
+  releaseLoop,
+  sectionIndexAt,
+  sortedSections,
+  startLoop,
+  type Section,
+  type SectionBoundary,
+  type SectionLive,
+} from "@/song/performance/sections";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { rememberedPort, type PortChoice } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
@@ -79,13 +94,17 @@ export interface SessionState {
   timing: Timing;
   /** A start is waiting: the start delay, or the scheduler worker. A Play press cancels it. */
   starting: boolean;
+  /** The song's sections, from its options */
+  sections: Section[];
+  /** What the performer has asked for about sections since the song started */
+  sectionLive: SectionLive;
 }
 
 export type SessionInputs = Pick<
   SessionState,
   "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
 > &
-  Partial<Pick<SessionState, "timing">>;
+  Partial<Pick<SessionState, "timing" | "sections">>;
 
 export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {
   return (s.portId === BLUETOOTH_PORT_ID ? s.bluetooth : s.access?.outputs.get(s.portId)) ?? undefined;
@@ -94,6 +113,20 @@ export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "acc
 export function selectArmed(s: Pick<SessionState, "portId" | "bluetooth" | "access" | "armedOutput">): boolean {
   const output = selectOutput(s);
   return !!s.armedOutput && s.armedOutput === output && output?.state === "connected";
+}
+
+/**
+ * A boundary the session has decided and is waiting for. `before` is the live state it was decided from, put back if the decision
+ * is cancelled. `schedule` is what the MIDI scheduler was told, so it can be told again if the scheduler restarts.
+ */
+interface SectionPlan {
+  kind: "continue" | "pause" | "jump";
+  /** Audio time at which the boundary takes effect */
+  ctxAt: number;
+  before: SectionLive;
+  /** The sections the decision was made on. Editing them drops the decision. */
+  sections: Section[];
+  schedule: { cap: number; jump: SchedulerJump | null } | null;
 }
 
 /** The values `panic` needs, captured when a stop is scheduled rather than when it runs. */
@@ -140,6 +173,9 @@ export class PerformanceSession {
   private cancelDelay: (() => void) | null = null;
   private noteChannels = new Set<number>();
   private previousBluetooth: BleMidiConnection | null;
+  private section: SectionPlan | null = null;
+  /** Whether the scheduler was last given a hold, so that clearing it is sent once */
+  private planSent = false;
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
@@ -163,6 +199,8 @@ export class PerformanceSession {
       portsVersion: 0,
       timing: NO_TIMING,
       starting: false,
+      sections: [],
+      sectionLive: NO_LIVE,
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -229,6 +267,7 @@ export class PerformanceSession {
 
   /** Runs every effect cleanup, which stops the scheduler and sends the final panic. */
   dispose() {
+    this.dropSectionPlan();
     this.unsubscribe?.();
     this.unsubscribe = null;
     for (const effect of this.effects) {
@@ -416,6 +455,7 @@ export class PerformanceSession {
       const { player } = this.state;
       const wasRunning = player?.isPlaying || this.playPending;
       this.cancelPendingStart();
+      this.dropSectionPlan();
       player?.pause();
       this.set({ playing: false });
       // A pedal/THRU path can echo our Stop back into the selected input.
@@ -518,6 +558,7 @@ export class PerformanceSession {
   skip = (offset: number) => {
     this.batch(() => {
       this.cancelPendingStart();
+      this.dropSectionPlan();
       this.state.player?.pause();
       this.set({ playing: false });
       this.panic();
@@ -553,6 +594,149 @@ export class PerformanceSession {
     }
   };
 
+  // ---- sections ------------------------------------------------------------------------------------------------
+
+  private lookahead(): number {
+    return this.state.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD;
+  }
+
+  /** The MIDI clock time at which the audio clock reads `ctx`. Both clocks are in step while playing. */
+  private clockOf(ctx: number): number {
+    return midiNow() + (ctx - (this.state.player?.audioNow ?? 0)) * 1000;
+  }
+
+  /** Tells the scheduler the waiting plan. Called on each decision, and when a scheduler starts while a plan waits. */
+  private sendPlan(): void {
+    const schedule = this.section?.schedule ?? null;
+    // Without sections there is never a plan to send or to clear, so the scheduler is not touched.
+    if (!schedule && !this.planSent) return;
+    this.planSent = schedule !== null;
+    this.scheduler?.plan(schedule?.cap ?? null, schedule?.jump ?? null);
+  }
+
+  /** Takes a boundary decided by the planner: the audio jump is scheduled now, the MIDI schedule is held up to it. */
+  private commitBoundary(boundary: SectionBoundary): void {
+    const { player, sections, sectionLive } = this.state;
+    if (!player) return;
+    const { action } = boundary;
+    if (action.kind === "jump") {
+      const ctxAt = player.prepareJump(action.to, boundary.at);
+      if (ctxAt === null) return;
+      this.section = {
+        kind: "jump",
+        ctxAt,
+        before: sectionLive,
+        sections,
+        schedule: { cap: boundary.at, jump: { at: this.clockOf(ctxAt), position: action.to } },
+      };
+    } else {
+      this.section = {
+        kind: action.kind,
+        ctxAt: player.audioTimeOf(boundary.at),
+        before: sectionLive,
+        sections,
+        schedule: action.kind === "pause" ? { cap: boundary.at, jump: null } : null,
+      };
+    }
+    this.sendPlan();
+    this.set({ sectionLive: boundary.live });
+  }
+
+  /**
+   * Puts back the decision that has not taken effect yet, and the live state it was made from. Returns false when a jump is already
+   * too close to take effect to undo, and the jump then stands.
+   */
+  private cancelSectionPlan(): boolean {
+    const plan = this.section;
+    if (!plan) return true;
+    if (plan.kind === "jump" && !this.state.player?.cancelJump()) return false;
+    this.section = null;
+    this.sendPlan();
+    this.set({ sectionLive: plan.before });
+    return true;
+  }
+
+  /** Forgets a decision because playback stopped. Any jump was dropped by the player, and the live state goes back to what it was. */
+  private dropSectionPlan(): void {
+    const plan = this.section;
+    if (!plan) return;
+    this.section = null;
+    this.set({ sectionLive: plan.before });
+  }
+
+  /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
+  private tickSections = (): void => {
+    const { player, playing, sections } = this.state;
+    if (!player || !playing) return;
+    try {
+      const plan = this.section;
+      if (plan) {
+        if (plan.sections !== sections) {
+          this.cancelSectionPlan();
+          return;
+        }
+        if (player.audioNow < plan.ctxAt) return;
+        this.section = null;
+        if (plan.kind === "pause") this.pause();
+        return;
+      }
+      if (!sections.length || player.position < 0) return;
+      const boundary = nextBoundary(sections, player.position, player.duration, this.state.sectionLive);
+      if (boundary && boundary.at - player.position <= DECISION_LEAD_S) this.commitBoundary(boundary);
+    } catch (e) {
+      this.cancelSectionPlan();
+      this.fail(e);
+    }
+  };
+
+  /** A tap arms a jump to the section for the next boundary. While stopped it moves the playhead to the section's start instead. */
+  tapSection = (id: string) => {
+    const section = this.state.sections.find((s) => s.id === id);
+    if (!section) return;
+    if (!this.state.playing) {
+      void this.state.player?.seek(section.start);
+      setClockPosition(section.start);
+      return;
+    }
+    this.cancelSectionPlan();
+    this.set({ sectionLive: armJump(this.state.sectionLive, id) });
+  };
+
+  /** A second tap on the armed section: jumps now, after the MIDI lookahead, so queued cues still belong to the passage being left. */
+  jumpSectionNow = (id: string) => {
+    const { player, playing } = this.state;
+    if (!player || !playing) {
+      this.tapSection(id);
+      return;
+    }
+    this.cancelSectionPlan();
+    const boundary = immediateJump(this.state.sections, player.position + this.lookahead(), this.state.sectionLive, id);
+    if (boundary) this.commitBoundary(boundary);
+  };
+
+  /** Loops a section until it is released; tapping the looping section releases it. */
+  toggleSectionLoop = (id: string) => {
+    this.cancelSectionPlan();
+    const live = this.state.sectionLive;
+    this.set({ sectionLive: live.loop === id ? releaseLoop(live, id) : startLoop(live, id) });
+  };
+
+  /** Releases the loop of the section being played, whether it was started live or is the section's own mode. */
+  releaseSectionLoop = () => {
+    const { player, sections } = this.state;
+    const ordered = sortedSections(sections);
+    const current = player ? ordered[sectionIndexAt(ordered, player.position)] : undefined;
+    if (!current) return;
+    this.cancelSectionPlan();
+    this.set({ sectionLive: releaseLoop(this.state.sectionLive, current.id) });
+  };
+
+  /** Cancels the armed jump. A decision already made for it is put back too, where that is still possible. */
+  cancelSectionJump = () => {
+    this.cancelSectionPlan();
+    this.set({ sectionLive: cancelJump(this.state.sectionLive) });
+  };
+
   // ---- effects -------------------------------------------------------------------------------------------------
 
   private createEffects(): Effect[] {
@@ -577,6 +761,7 @@ export class PerformanceSession {
         run: (s) => {
           if (!s.playlistPlaying && s.player?.isPlaying && s.queued) {
             this.cancelPendingStart();
+            this.dropSectionPlan();
             s.player.pause();
             this.set({ playing: false });
             this.panic();
@@ -636,6 +821,15 @@ export class PerformanceSession {
           const player = s.player;
           if (!s.playing || !player) return;
           return startPlaybackClock(() => player.position);
+        },
+      },
+      // Section boundaries: decided ahead and carried out on the audio clock while the song plays.
+      {
+        deps: (s) => [s.playing, s.player],
+        run: (s) => {
+          if (!s.playing || !s.player) return;
+          const timer = setInterval(this.tickSections, 50);
+          return () => clearInterval(timer);
         },
       },
       // The MIDI scheduler itself.
@@ -777,6 +971,7 @@ export class PerformanceSession {
       this.readyWorker = null;
       this.startTempo = null;
       this.scheduler = handle;
+      this.sendPlan();
       // Audio position is a checkpoint, not the scheduling clock. A missing or
       // frozen checkpoint makes the worker stop producing new batches.
       const timer = setInterval(() => handle.sync(player.position), 50);

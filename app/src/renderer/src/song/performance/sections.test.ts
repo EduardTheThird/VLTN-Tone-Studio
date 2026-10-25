@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   armJump,
+  immediateJump,
   cancelJump,
   isBarAligned,
   nextBoundary,
@@ -118,6 +119,18 @@ describe("live jumps and loops", () => {
   it("returns no boundary when nothing lies ahead", () => {
     expect(nextBoundary([], 0, 10, NO_LIVE)).toBeNull();
     expect(nextBoundary(song(), 32, 32, NO_LIVE)).toBeNull();
+  });
+});
+
+describe("immediateJump", () => {
+  it("jumps at once to the section, leaving the one being played: its loop and repeat are forgotten", () => {
+    const live = { ...startLoop(NO_LIVE, "verse"), repeated: ["verse"] };
+    const boundary = immediateJump(song(), 10, live, "chorus");
+    expect(boundary).toEqual({ at: 10, action: { kind: "jump", to: 16, target: "chorus" }, live: NO_LIVE });
+  });
+
+  it("returns nothing for a section that does not exist", () => {
+    expect(immediateJump(song(), 10, NO_LIVE, "gone")).toBeNull();
   });
 });
 
