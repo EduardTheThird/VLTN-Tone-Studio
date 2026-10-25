@@ -24,19 +24,22 @@ const mix: Mix = {
 };
 
 function renderMix(overrides: Partial<Parameters<typeof PerformanceMix>[0]> = {}) {
-  const props = {
-    session: fakeSession(["track0", "track1", "track2"]),
-    stems: {},
-    tracks,
-    mix,
-    onMix: vi.fn(),
-    trackBuses: {},
-    onTrackBus: vi.fn(),
-    onTrackInfo: vi.fn(),
-    ...overrides,
-  };
-  render(<PerformanceMix {...props} />);
-  return props;
+  const onMix = vi.fn<(update: (mix: Mix) => Mix) => void>();
+  const onTrackInfo = vi.fn<(key: string, patch: Partial<Omit<TrackInfo, "kind">>) => void>();
+  render(
+    <PerformanceMix
+      session={fakeSession(["track0", "track1", "track2"])}
+      stems={{}}
+      tracks={tracks}
+      mix={mix}
+      trackBuses={{}}
+      onTrackBus={vi.fn()}
+      {...overrides}
+      onMix={onMix}
+      onTrackInfo={onTrackInfo}
+    />,
+  );
+  return { onMix, onTrackInfo };
 }
 
 afterEach(cleanup);
