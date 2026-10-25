@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Cue } from "@/song/performance/chart";
 import { midiPreflight } from "@/song/performance/midi-preflight";
+import type { TimecodeRate } from "@/song/performance/timecode";
 import { PEDAL_PROFILES } from "@/song/performance/pedal-profiles";
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
@@ -16,6 +17,7 @@ export function MidiHealth({
   tempoChannel,
   outputName,
   parseError,
+  timecode,
 }: {
   cues: Cue[];
   duration: number;
@@ -25,6 +27,8 @@ export function MidiHealth({
   tempoChannel?: number;
   outputName?: string;
   parseError: string;
+  /** Set only while MIDI timecode is on */
+  timecode?: { fps: TimecodeRate; offset: string; bluetooth: boolean };
 }) {
   const library = usePedalLibrary();
   const report = useMemo(
@@ -35,9 +39,10 @@ export function MidiHealth({
         clock,
         tempoChannel,
         outputName,
+        timecode,
         pedals: [...PEDAL_PROFILES, ...library.profiles].map((p) => ({ name: p.name, channel: library.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
       }),
-    [cues, duration, range, clock, tempoChannel, outputName, library.channels, library.profiles],
+    [cues, duration, range, clock, tempoChannel, outputName, timecode, library.channels, library.profiles],
   );
   const [timing, setTiming] = useState(() => useMidiDiagnostics.getState());
   const [ble, setBle] = useState(() => useBluetooth.getState().diagnostics);

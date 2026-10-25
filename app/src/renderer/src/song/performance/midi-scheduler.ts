@@ -51,6 +51,7 @@ export type SchedulerRequest =
   | { type: "start"; config: SchedulerConfig }
   | { type: "sync"; position: number; at: number }
   | { type: "plan"; cap: number | null; jump: SchedulerJump | null }
+  | { type: "timecode-end"; at: number | null }
   | { type: "stop" };
 
 /** USB / system MIDI: Web MIDI queues timestamped messages on the browser's MIDI thread, so renderer jank cannot delay them. */
@@ -114,6 +115,8 @@ export class MidiSchedule {
   private jumpAt = -Infinity;
   /** The timecode stream: quarter frame `next` is due at `anchor.time` plus its share of a quarter at the current rate. */
   private timecode: { anchor: { time: number; frames: number }; next: number; fullPending: boolean } | null = null;
+  /** Quarter frames stop at this clock time. A hand-over ends the outgoing song's timecode where the next song's begins. */
+  private timecodeEnd = Infinity;
   constructor(
     config: SchedulerConfig,
     now: number,
@@ -144,6 +147,10 @@ export class MidiSchedule {
   }
   stop() {
     this.stopped = true;
+  }
+  /** Stops quarter frames at clock time `at`, or lifts the stop with null. Cues and clock are not affected. */
+  endTimecode(at: number | null) {
+    if (!this.stopped) this.timecodeEnd = at ?? Infinity;
   }
   /** Index of the first cue at or after `position`. */
   private cursorAt(position: number): number {
@@ -302,7 +309,13 @@ export class MidiSchedule {
       while (this.pulseDue(this.pulse) < horizon) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
     }
     // Quarter frames stop at a pending jump (the old passage ends there) and at the cap, and never run before song position zero.
-    const timecodeLimit = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration), this.clockAt(this.cap), this.pendingJump?.at ?? Infinity);
+    const timecodeLimit = Math.min(
+      now + lookahead * 1000,
+      this.clockAt(this.config.duration),
+      this.clockAt(this.cap),
+      this.pendingJump?.at ?? Infinity,
+      this.timecodeEnd,
+    );
     const skippedTimecode = this.timecodeMessages(now, timecodeLimit, candidates);
     const messages: ScheduledMessage[] = [],
       dropped: ScheduledMessage[] = skippedTimecode ? [skippedTimecode] : [];

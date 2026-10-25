@@ -6,15 +6,16 @@ import { Worker } from "node:worker_threads";
 
 it("runs the production scheduler in a separate thread while the host thread is blocked", async () => {
   const engine = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
-    /import[^;]+from ['"]\.\/(midi-chase|speed)['"];?/g,
+    /import[^;]+from ['"]\.\/(midi-chase|speed|timecode)['"];?/g,
     "",
   );
   const chase = stripTypeScriptTypes(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
     /import[^;]+from ['"]\.\/chart['"];?/,
     "",
   );
-  // speed.ts has no imports; the scheduler reads its clamp, so the worker needs it too.
+  // speed.ts and timecode.ts have no imports; the scheduler reads its clamp and its frame encoding, so the worker needs them too.
   const speed = stripTypeScriptTypes(await readFile(new URL("./speed.ts", import.meta.url), "utf8"), { mode: "transform" });
+  const timecode = stripTypeScriptTypes(await readFile(new URL("./timecode.ts", import.meta.url), "utf8"), { mode: "transform" });
   const entry = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler-worker.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
     /import[^;]+from ['"]\.\/midi-scheduler['"];?/,
     "",
@@ -25,6 +26,7 @@ it("runs the production scheduler in a separate thread while the host thread is 
     "parentPort.on('message',data=>self.onmessage({data}));",
     chase,
     speed,
+    timecode,
     engine,
     entry,
     "parentPort.postMessage({ready:true});",

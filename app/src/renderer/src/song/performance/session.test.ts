@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   rate: 1,
   swaps: [] as unknown[],
   applied: [] as unknown[],
-  configs: [] as { rate?: number; tempo: number[][] | null; playTriggers?: number[][] }[],
+  configs: [] as { rate?: number; clock?: boolean; tempo: number[][] | null; playTriggers?: number[][]; timecode?: { fps: number; offset: number } }[],
   swapAt: 2.5,
   swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
@@ -177,6 +177,7 @@ vi.mock("@/song/performance/midi-scheduler-client", () => ({
       stop: vi.fn(),
       sync: vi.fn(),
       plan: (cap: number | null, jump: { at: number; position: number } | null) => mocks.plans.push({ cap, jump }),
+      endTimecode: vi.fn(),
     };
   },
 }));
@@ -1096,5 +1097,37 @@ describe("song triggers", () => {
     send([0xc1, 9]);
     expect(useRemoteLearn.getState().result).toContain("already runs an action, so the song will not load.");
     session.dispose();
+  });
+});
+
+describe("MIDI timecode in the session", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("gives the scheduler the rate and the offset, and sends no app clock while timecode is on", async () => {
+    const { session, out } = armedSession(output(), { timecode: { enabled: true, fps: 25, offset: "01:02:03:04" } });
+    session.setClock(true);
+    await session.play();
+    await vi.advanceTimersByTimeAsync(100);
+    const config = mocks.configs.at(-1)!;
+    expect(config.timecode).toEqual({ fps: 25, offset: 93079 });
+    expect(config.clock).toBe(false);
+    expect(out.send.mock.calls.some((c) => c[0][0] === 250)).toBe(false);
+    session.pause();
+  });
+
+  it("gives the scheduler no timecode while it is off", async () => {
+    const { session } = armedSession(output(), { timecode: { enabled: false, fps: 25, offset: "99:99:99:99" } });
+    await session.play();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.configs.at(-1)!.timecode).toBeUndefined();
+    session.pause();
+  });
+
+  it("refuses to play when the offset is not valid at the rate, and says why", async () => {
+    const { session } = armedSession(output(), { timecode: { enabled: true, fps: 24, offset: "00:00:00:24" } });
+    await session.play();
+    expect(session.state.playing).toBe(false);
+    expect(session.state.error).toBe("MIDI timecode offset: Frames must be 0 to 23 at 24 fps.");
   });
 });

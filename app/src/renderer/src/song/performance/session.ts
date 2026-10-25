@@ -18,6 +18,7 @@ import { getSetting, performanceKey, setSetting } from "@/song/performance/setti
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
+import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
 import {
   armJump,
   cancelJump,
@@ -149,13 +150,15 @@ export interface SessionState {
   sectionNext: { kind: "jump" | "pause"; target: string | null; at: number } | null;
   /** What each MIDI message or key runs. Saved with the MIDI configuration. */
   bindings: Binding[];
+  /** MIDI timecode: on or off, the rate, and the song's offset (see timecode.ts). Timecode replaces app clock while it is on. */
+  timecode: TimecodeSetting;
 }
 
 export type SessionInputs = Pick<
   SessionState,
   "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
 > &
-  Partial<Pick<SessionState, "timing" | "sections" | "bindings">>;
+  Partial<Pick<SessionState, "timing" | "sections" | "bindings" | "timecode">>;
 
 /** The actions the session carries out itself: transport, songs, sections and arming. The screen supplies the rest (see `setView`). */
 export type SessionHost = Omit<ActionHost, keyof ViewHost>;
@@ -381,6 +384,7 @@ export class PerformanceSession {
       speed: DEFAULT_SPEED,
       rendering: null,
       bindings: defaultBindings(),
+      timecode: NO_TIMECODE,
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -777,6 +781,8 @@ export class PerformanceSession {
     try {
       const { bpm, timing } = this.state;
       const tempoMessages = this.tempoMessages(armed, output);
+      // An offset that is not valid at the rate stops the start, rather than sending the wrong position.
+      if (armed) timecodeOffsetFrames(this.state.timecode);
       if (armed) {
         const warm = this.prepared ?? prepareMidiScheduler();
         this.prepared = warm;
@@ -932,6 +938,9 @@ export class PerformanceSession {
     }
     const countInMs = bpm > 0 ? (countInBeatsNow * beatSeconds(bpm) * 1000) / incoming.playbackRate : 0;
     this.chained = { id: next.id, player: incoming, countInMs, unwire };
+    // The outgoing song's quarter frames end where the next song joins, and its full frame starts there. The chain is decided several
+    // seconds ahead, so no quarter frame past the join is queued yet. Dropping the chain restores them.
+    this.scheduler?.endTimecode(this.clockOf(plan.startAt));
     this.clearHandoverTimer();
     this.handoverTimer = setTimeout(this.handOver, Math.max(0, (plan.startAt - HANDOVER_LEAD_S - player.audioNow) * 1000));
   }
@@ -966,6 +975,7 @@ export class PerformanceSession {
     const chained = this.chained;
     if (!chained) return;
     this.chained = null;
+    this.scheduler?.endTimecode(null);
     // The prepared song stays with the library: it is stopped here, and it can be chained again.
     this.state.player?.cancelChain();
     chained.unwire();
@@ -1540,7 +1550,7 @@ export class PerformanceSession {
           // A song that joins a set already running sends no Start: the set's Start went out with its first song.
           const joined = this.joining;
           this.joining = false;
-          if (context.armed && s.clock && !joined) {
+          if (context.armed && s.clock && !s.timecode.enabled && !joined) {
             try {
               this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251]);
             } catch (e) {
@@ -1608,7 +1618,7 @@ export class PerformanceSession {
       },
       // The MIDI scheduler itself.
       {
-        deps: (s) => [s.playing, s.player, armedOf(s), selectOutput(s), s.clock, s.bpm, s.cues],
+        deps: (s) => [s.playing, s.player, armedOf(s), selectOutput(s), s.clock, s.bpm, s.cues, s.timecode],
         run: (s) => this.runScheduler(s),
       },
       // A USB output that goes away or is replaced disarms the session.
@@ -1717,6 +1727,8 @@ export class PerformanceSession {
       const origin = midiNow() - (position * 1000) / rate;
       const playTriggers = this.startPlay ?? [];
       this.startPlay = null;
+      // Timecode replaces app clock: a receiver gets one source of time. The offset is checked here as well as at Play.
+      const offset = timecodeOffsetFrames(s.timecode);
       const handle = startMidiScheduler(
         {
           cues: s.cues,
@@ -1726,7 +1738,8 @@ export class PerformanceSession {
           tempoAt: origin - this.countInMs,
           bpm: s.bpm,
           rate,
-          clock: s.clock,
+          clock: s.clock && offset === null,
+          timecode: offset === null ? undefined : { fps: s.timecode.fps, offset },
           tempo: this.startTempo,
           playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,

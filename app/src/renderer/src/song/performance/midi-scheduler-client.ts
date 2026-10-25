@@ -148,5 +148,14 @@ export function startMidiScheduler(
           fault(String(error));
         }
     },
+    /** Stops timecode at clock time `at` (the clock `midiNow` reads), or lifts the stop with null. Used by a hand-over. */
+    endTimecode(at: number | null) {
+      if (active)
+        try {
+          worker.postMessage({ type: "timecode-end", at });
+        } catch (error) {
+          fault(String(error));
+        }
+    },
   };
 }

@@ -58,6 +58,7 @@ export function PerformanceTransport({
   const [crossfade, setCrossfade] = useState(readCrossfade);
   const source = useSong((s) => s.source);
   const player = useSession(session, (s) => s.player);
+  const timecodeOn = useSession(session, (s) => s.timecode.enabled);
   const playing = useSession(session, (s) => s.playing);
   const starting = useSession(session, (s) => s.starting);
   const queued = useSession(session, (s) => s.queued);
@@ -322,7 +323,7 @@ export function PerformanceTransport({
             <input
               type="checkbox"
               aria-label="MIDI Clock (24 PPQN)"
-              disabled={tempoOnStart}
+              disabled={tempoOnStart || timecodeOn}
               checked={clock}
               onChange={(e) => session.setClock(e.target.checked)}
             />{" "}

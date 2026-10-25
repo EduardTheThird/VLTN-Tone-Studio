@@ -109,6 +109,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         preRollBeats: "",
         startDelay: "",
         sections: [] as unknown[],
+        timecodeOffset: "",
       }),
     [key],
   );
@@ -162,6 +163,21 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     const cued = songCues(chart, midiConfig.macros, midiFile);
     return { cues: cued.cues, error: cued.error };
   }, [chart, midiConfig.macros, midiFile]);
+  // The song's MIDI timecode offset, saved with its options. Empty means 00:00:00:00.
+  const [timecodeOffset, setTimecodeOffset] = useState(options.timecodeOffset);
+  const saveTimecodeOffset = (value: string) => {
+    setTimecodeOffset(value);
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), timecodeOffset: value || undefined }));
+    } catch (e) {
+      session.fail(e);
+    }
+  };
+  // Memoised: the session compares its inputs by identity, so a new object each render would re-run the scheduler each render.
+  const timecode = useMemo(
+    () => ({ enabled: midiConfig.timecode.enabled, fps: midiConfig.timecode.fps, offset: timecodeOffset }),
+    [midiConfig.timecode.enabled, midiConfig.timecode.fps, timecodeOffset],
+  );
   const saveMidiFile = (file: MidiFileOption | null) => {
     setMidiFile(file);
     try {
@@ -190,6 +206,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           bpm,
           sections: sectionList,
           bindings: midiConfig.bindings,
+          timecode,
         },
       }),
   );
@@ -245,6 +262,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       timing,
       sections: sectionList,
       bindings: midiConfig.bindings,
+      timecode,
     });
   });
 
@@ -394,7 +412,15 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         speedNote={speedNote(speed)}
       />
       <div style={{ display: stage ? "none" : "contents" }}>
-        <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} midiFile={midiFile} onMidiFile={saveMidiFile} />
+        <PerformanceMidiSetup
+          session={session}
+          chart={chart}
+          onSaveChart={saveChart}
+          midiFile={midiFile}
+          onMidiFile={saveMidiFile}
+          timecodeOffset={timecodeOffset}
+          onTimecodeOffset={saveTimecodeOffset}
+        />
         <SongTriggerField songId={source?.libraryId} songs={library.index.songs} inputReady={inputReady} />
         <RemoteControlSettings inputReady={inputReady} />
         <SongTriggerSettings songs={library.index.songs} inputReady={inputReady} />

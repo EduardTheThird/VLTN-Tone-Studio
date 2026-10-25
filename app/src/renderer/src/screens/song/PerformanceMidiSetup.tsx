@@ -7,6 +7,7 @@ import { MidiCueBuilder } from "./MidiCueBuilder";
 import { MidiFileField } from "./MidiFileField";
 import type { MidiFileOption } from "@/song/performance/smf";
 import { MidiHealth } from "./MidiHealth";
+import { TimecodeSettings } from "./TimecodeSettings";
 
 const field = "rounded border border-seam bg-transparent p-2";
 
@@ -20,6 +21,14 @@ export function SessionMidiHealth({ session }: { session: PerformanceSession }) 
   const portId = useSession(session, (s) => s.portId);
   const output = useSession(session, selectOutput);
   const midiConfig = useMidiConfiguration();
+  const timecodeOn = useSession(session, (s) => s.timecode.enabled);
+  const timecodeFps = useSession(session, (s) => s.timecode.fps);
+  const timecodeOffset = useSession(session, (s) => s.timecode.offset);
+  // Only the settings that change what is sent are passed on; the object is memoised so the health check is not re-run every render.
+  const timecode = useMemo(
+    () => (timecodeOn ? { fps: timecodeFps, offset: timecodeOffset, bluetooth: portId === BLUETOOTH_PORT_ID } : undefined),
+    [timecodeOn, timecodeFps, timecodeOffset, portId],
+  );
   // A trimmed song's cues are checked against the part that plays: cues outside it never fire.
   const range = useMemo(
     () => (player && (player.start > 0 || player.duration < player.length) ? { start: player.start, end: player.duration } : undefined),
@@ -32,6 +41,7 @@ export function SessionMidiHealth({ session }: { session: PerformanceSession }) 
       range={range}
       clock={clock}
       tempoChannel={tempoOnStart ? midiConfig.tempoChannel : undefined}
+      timecode={timecode}
       outputName={portId === BLUETOOTH_PORT_ID ? `Bluetooth ${output?.name || ""}` : output?.name || undefined}
       parseError={parseError}
     />
@@ -45,12 +55,16 @@ export function PerformanceMidiSetup({
   onSaveChart,
   midiFile,
   onMidiFile,
+  timecodeOffset,
+  onTimecodeOffset,
 }: {
   session: PerformanceSession;
   chart: string;
   onSaveChart: (chart: string) => void;
   midiFile: MidiFileOption | null;
   onMidiFile: (file: MidiFileOption | null) => void;
+  timecodeOffset: string;
+  onTimecodeOffset: (value: string) => void;
 }) {
   const midiConfig = useMidiConfiguration();
   const bluetooth = useSession(session, (s) => s.bluetooth);
@@ -248,6 +262,7 @@ export function PerformanceMidiSetup({
         For GP-150 / GP-180 tempo control, use the named Set tempo (BPM) command at song start with app MIDI Clock off, GP-150 / GP-180 clock source Internal
         and TRS clock output On. Continuous app clock fluctuated in real GP-180 USB and Bluetooth tests with a TimeLine and caused audible delay changes.
       </p>
+      <TimecodeSettings session={session} offset={timecodeOffset} onOffset={onTimecodeOffset} bluetooth={portId === BLUETOOTH_PORT_ID} />
       <MidiFileField file={midiFile} onChange={onMidiFile} />
       {midiConfig.showCommands && (
         <MidiCueBuilder

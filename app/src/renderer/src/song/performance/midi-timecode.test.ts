@@ -93,6 +93,23 @@ describe("MIDI timecode in the schedule", () => {
     expect(last.messages.some((m) => m.bytes[0] === 0xf1 && m.due < 1350)).toBe(false);
   });
 
+  it("stops quarter frames at a hand-over, so the next song's full frame is not followed by the old one", () => {
+    const f = fixture();
+    f.schedule.endTimecode(1050);
+    f.schedule.tick(1000);
+    f.schedule.tick(1100);
+    expect(f.timecode().length).toBeGreaterThan(0);
+    expect(f.timecode().every((m) => m.due < 1050)).toBe(true);
+  });
+
+  it("resumes quarter frames when a chain is dropped and its stop is lifted", () => {
+    const f = fixture();
+    f.schedule.endTimecode(1050);
+    f.schedule.endTimecode(null);
+    f.schedule.tick(1000);
+    expect(f.timecode().some((m) => m.due >= 1050)).toBe(true);
+  });
+
   it("never runs clock alongside timecode", () => {
     const f = fixture({ clock: true });
     f.schedule.tick(1000);
