@@ -34,6 +34,8 @@ import { StageView } from "./StageView";
 import { SectionStrip } from "./SectionStrip";
 import { SectionEditor } from "./SectionEditor";
 import { RemoteControlSettings } from "./RemoteControlSettings";
+import { SongTriggerField } from "./SongTriggerField";
+import { SongTriggerSettings } from "./SongTriggerSettings";
 import { buildViewHost } from "./remote-view";
 
 function readNumber(raw: string, fallback: number, min: number, max: number): number {
@@ -393,7 +395,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
       />
       <div style={{ display: stage ? "none" : "contents" }}>
         <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} midiFile={midiFile} onMidiFile={saveMidiFile} />
+        <SongTriggerField songId={source?.libraryId} songs={library.index.songs} inputReady={inputReady} />
         <RemoteControlSettings inputReady={inputReady} />
+        <SongTriggerSettings songs={library.index.songs} inputReady={inputReady} />
         <PerformanceAnalysis
           session={session}
           stems={stems}
