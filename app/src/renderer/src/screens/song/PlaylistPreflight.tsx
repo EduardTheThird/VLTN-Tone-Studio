@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isRenderedAhead } from "@/song/library";
 import { host } from "@/host";
 import { Button } from "@/components/ui/button";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -35,6 +36,7 @@ export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; 
           tempoOnStart: config.tempoOnStart,
           tempoChannel: config.tempoChannel,
           outputName: config.output?.name,
+          renderReady: isRenderedAhead,
           pedals: [...PEDAL_PROFILES, ...pedals.profiles].map((p) => ({ name: p.name, channel: pedals.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
         }),
       );

@@ -16,7 +16,9 @@ import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
 import { playerShape, shapeFromOptions } from "./performance/song-shape";
 import { sharedPlaybackEngine } from "./audio/playback-engine";
-import { StemPlayer } from "./stems/player";
+import { StemPlayer, yieldToMain } from "./stems/player";
+import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
+import { speedFromOptions } from "./performance/speed";
 import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, SongSource, Stems } from "./types";
 
@@ -68,6 +70,14 @@ interface LibraryState {
   /** Makes the prepared song `id` the current one without a gap. Returns false, and changes nothing, when it is not ready. */
   advanceToPrepared(id: string): boolean;
 }
+/** Songs whose speed or pitch render was built in advance, by id. A song that is not here plays at its own speed until its render is ready. */
+const renderedAhead = new Set<string>();
+
+/** Whether the song's speed or pitch render was built in advance. */
+export function isRenderedAhead(id: string): boolean {
+  return renderedAhead.has(id);
+}
+
 const hex = (digest: ArrayBuffer) => Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 /** Fetches a saved track straight from the app protocol and decodes it in a worker; nothing is copied through IPC. */
 async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
@@ -172,7 +182,15 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     fetchSong(index, id)
       .then(async (next) => {
         // The buffers are built here, well before the join, a channel at a time. The join then only starts them.
-        const player = await StemPlayer.create(next.stems, sharedPlaybackEngine(), playerShape(shapeFromOptions(next.settings[":options"] ?? "")));
+        // A song saved at another speed or pitch is rendered here too, so the join plays it without waiting for a render.
+        const options = next.settings[":options"] ?? "";
+        const speed = speedFromOptions(options);
+        let stems = next.stems;
+        if (!isPlainSpeed(speed)) {
+          stems = (await new RenderQueue().render(next.stems, speed)) ?? next.stems;
+          renderedAhead.add(next.id);
+        }
+        const player = await StemPlayer.create(stems, sharedPlaybackEngine(), playerShape(shapeFromOptions(options)), yieldToMain, speed.rate);
         if (generation !== prefetchGeneration) {
           await player.dispose();
           return;

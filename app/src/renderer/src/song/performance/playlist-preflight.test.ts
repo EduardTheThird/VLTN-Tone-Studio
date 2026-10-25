@@ -56,3 +56,17 @@ it("uses the first playback stem in player order, not the longest track or metad
   expect(result.warnings.join(" ")).toContain("beyond the 5.00");
   expect(result.warnings.join(" ")).toContain("different lengths");
 });
+
+it("checks the tempo the song plays at, and whether its speed render is ready", () => {
+  const song = { ...saved.song!, settings: { ":bpm": "100", ":options": '{"speed":0.7}', "": "" } };
+  const [slow] = playlistPreflight(["one"], [{ ...saved, song }], config);
+  // 100 BPM at 70% is 70 BPM, which is inside the pedal range, so only the render warns
+  expect(slow.errors).toEqual([]);
+  const [warned] = playlistPreflight(["one"], [{ ...saved, song }], { ...config, renderReady: () => false });
+  expect(warned.warnings.join(" ")).toContain("not rendered in advance");
+  const [ready] = playlistPreflight(["one"], [{ ...saved, song }], { ...config, renderReady: () => true });
+  expect(ready.warnings.join(" ")).not.toContain("not rendered in advance");
+  const fast = { ...saved.song!, settings: { ":bpm": "250", ":options": '{"speed":1.5}', "": "" } };
+  const [result] = playlistPreflight(["one"], [{ ...saved, song: fast }], config);
+  expect(result.errors.join(" ")).toContain("375 BPM");
+});

@@ -5,6 +5,7 @@ import { midiPreflight, type PreflightOptions } from "./midi-preflight";
 import { parseSections } from "./sections";
 import { storedShape } from "./song-shape";
 import { playRange } from "./transition";
+import { clampSpeed, effectiveBpm } from "./speed";
 
 /** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
 function trimRange(duration: number, options: object): { start: number; end: number } | undefined {
@@ -22,7 +23,14 @@ export interface PlaylistCheck {
 export function playlistPreflight(
   ids: string[],
   songs: LibraryPreflightSong[],
-  config: { tempoOnStart: boolean; tempoChannel: number; outputName?: string; pedals: PreflightOptions["pedals"] },
+  config: {
+    tempoOnStart: boolean;
+    tempoChannel: number;
+    outputName?: string;
+    pedals: PreflightOptions["pedals"];
+    /** Whether a song's speed or pitch render was built in advance. Unset means the render is not checked. */
+    renderReady?: (id: string) => boolean;
+  },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
   return ids.map((id, entry) => {
@@ -45,7 +53,14 @@ export function playlistPreflight(
       const bpm = raw ? Number(raw) : 120;
       if (!raw) warnings.push("No saved BPM; playback defaults to 120. Confirm the recording tempo.");
       if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) errors.push("Saved BPM must be between 30 and 300.");
-      else if (config.tempoOnStart && bpm < 40) errors.push("Automatic pedal tempo requires 40–300 BPM.");
+      // The pedal is sent the tempo the song plays at, so the tempo range applies to the BPM times the saved speed.
+      const speed = clampSpeed(options as Record<string, unknown>);
+      const played = effectiveBpm(bpm, speed.rate);
+      if (Number.isFinite(played) && config.tempoOnStart && (played < 40 || played > 300))
+        errors.push(`At ${Math.round(speed.rate * 100)}% this song plays at ${Math.round(played)} BPM; automatic pedal tempo requires 40–300 BPM.`);
+      const changed = speed.rate !== 1 || speed.semitones !== 0 || speed.cents !== 0;
+      if (changed && config.renderReady && !config.renderReady(id))
+        warnings.push("Its speed or pitch is not rendered in advance yet. It plays at its own speed until the render is ready; check the join in rehearsal.");
       if (config.tempoOnStart && options.clock)
         warnings.push("Saved continuous clock is enabled alongside automatic tempo. Disable continuous clock for this setup.");
       const stems = STEM_NAMES.flatMap((name) => song.audio.filter((a) => a.name === name));
