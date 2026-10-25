@@ -1,8 +1,9 @@
 // Song: a user's audio file split into stems (Stem Splitter) and analysed for a preset on the pedal (Tone Match).
 // The store (song/store.ts, `useSong`) owns the loaded song and its stems; Tone Match only reads them.
-import type { SeparationModelId, StemName } from "@shared/host/song";
+import type { SeparationModelId } from "@shared/host/song";
 import type { QualityId, SplitChoice } from "./stems/options";
 import type { Backend } from "./stems/protocol";
+import type { TrackInfo } from "./tracks";
 
 // The stem names belong to the model registry, shared with the hosts; the song code reads them from here.
 export { STEM_NAMES, type StemName } from "@shared/host/song";
@@ -21,8 +22,11 @@ export interface SongSource {
   audio: PcmAudio;
 }
 
-/** A split's stems: the model's subset of STEM_NAMES (four-stem models have no guitar or piano). */
-export type Stems = Partial<Record<StemName, PcmAudio>>;
+/**
+ * A song's tracks, by track key (see `trackKey` in the library). A split holds the model's stems, a subset of STEM_NAMES (four-stem
+ * models have no guitar or piano); a song with imported tracks holds those too.
+ */
+export type Stems = Partial<Record<string, PcmAudio>>;
 
 export type SplitStatus =
   | { kind: "idle" }
@@ -48,8 +52,10 @@ export interface SplitInfo {
 
 export interface SongState {
   source: SongSource | null;
-  /** Present once a split finished for `source`; cleared when another song loads */
+  /** Present once a split finished for `source`; cleared when another song loads. Imported tracks are in it too. */
   stems: Stems | null;
+  /** What the mixer knows about each imported track, by key. Empty for a split song that has none. */
+  tracks: Record<string, TrackInfo>;
   status: SplitStatus;
   /** Model and quality the next split uses (remembered across launches) */
   choice: SplitChoice;
@@ -57,6 +63,11 @@ export interface SongState {
   load(file: File): Promise<void>;
   /** Split `source` with `choice` (downloads the model on first use); cancels a running split when called again */
   split(): Promise<void>;
+  /**
+   * Imports audio files as tracks of the loaded song (a song with no source gets their sum as its source). Resolves with one line per
+   * file that was refused or padded. Throws when nothing can be imported at all.
+   */
+  addTracks(files: File[]): Promise<string[]>;
   setChoice(patch: Partial<SplitChoice>): void;
   cancel(): void;
   reset(): void;

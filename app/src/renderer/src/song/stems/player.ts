@@ -1,4 +1,5 @@
-import { STEM_NAMES, type StemName, type Stems } from "../types";
+import type { Stems } from "../types";
+import { orderedKeys } from "../tracks";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
 import { audioTimeOf, beatAtOrAfter, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
 import { clampRate } from "../performance/speed";
@@ -8,8 +9,8 @@ import { createPlaybackEngine, type PlaybackEngine } from "../audio/playback-eng
 import { stemGains, type Mix } from "./mix";
 import { type BusName, type OutputConfig } from "../audio/outputs";
 
-// Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → a fade (the song's
-// fades and any crossfade) → an analyser (level meter) → the main output bus. Pausing or seeking restarts the sources at the new
+// Plays a song's tracks in sync through WebAudio: one buffer source per track → its gain (mixer) → its pan → a fade (the song's
+// fades and any crossfade) → an analyser (level meter) → the track's bus. A track is a split's stem or an imported one (see tracks.ts). Pausing or seeking restarts the sources at the new
 // position.
 //
 // The metronome is one grid of clicks. While the song plays it follows the song's timeline (see timeline.ts), so a count-in
@@ -39,6 +40,7 @@ const LOOP_CHECK_MS = 50;
 interface Voice {
   buffer: AudioBuffer;
   gain: GainNode;
+  pan: StereoPannerNode;
   fade: GainNode;
   analyser: AnalyserNode;
   source: AudioBufferSourceNode | null;
@@ -51,13 +53,13 @@ interface PreparedJump {
   end: number;
   timer: ReturnType<typeof setTimeout>;
   /** The buffers and rate the stems played before a render swap, so a cancelled swap can go back to them */
-  restore: { rate: number; buffers: Partial<Record<StemName, AudioBuffer>> } | null;
+  restore: { rate: number; buffers: Partial<Record<string, AudioBuffer>> } | null;
 }
 
 /** A render of the song: the rate its buffers play at, and one buffer per stem, holding song time divided by the rate. */
 export interface RenderedBuffers {
   rate: number;
-  buffers: Partial<Record<StemName, AudioBuffer>>;
+  buffers: Partial<Record<string, AudioBuffer>>;
 }
 
 export interface MetronomeSettings { mode: MetronomeMode; bpm: number; beats: number; volume: number; firstBeat?: number }
@@ -119,8 +121,8 @@ export class StemPlayer {
   private readonly fileLength: number;
   /** The rate the buffers play at. One song second takes 1 / rate seconds of audio. */
   private rate: number;
-  /** The split's stems, STEM_NAMES order */
-  readonly names: StemName[];
+  /** The song's tracks, in the order the mixer shows them (see `orderedKeys`) */
+  readonly names: string[];
   private readonly engine: PlaybackEngine;
   private readonly ownsEngine: boolean;
   private readonly ctx: AudioContext;
@@ -129,7 +131,7 @@ export class StemPlayer {
   private fadeOut: number;
   private endBehaviour: EndBehaviour = "next";
   private loopTimer: ReturnType<typeof setInterval> | null = null;
-  private voices: Partial<Record<StemName, Voice>>;
+  private voices: Record<string, Voice>;
   /** The song's timeline on the audio clock. A jump appends a segment. Empty until something has been started. */
   private segments: Segment[] = [];
   private prepared: PreparedJump | null = null;
@@ -163,7 +165,7 @@ export class StemPlayer {
    * `stems` are the song's stems, or a render of them at `rate` (see `renderBuffers`). Shape and fades are in song seconds.
    */
   constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now", rate = 1) {
-    this.names = STEM_NAMES.filter((name) => stems[name]);
+    this.names = orderedKeys(Object.keys(stems).filter((name) => stems[name]));
     if (!this.names.length) throw new Error("There are no stems to play.");
     const first = stems[this.names[0]]!;
     this.rate = clampRate(rate);
@@ -184,13 +186,15 @@ export class StemPlayer {
         const buffer = this.ctx.createBuffer(pcm.channels.length, pcm.channels[0].length, pcm.sampleRate);
         if (fill === "now") pcm.channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
         const gain = this.ctx.createGain();
+        const pan = this.ctx.createStereoPanner();
         const fade = this.ctx.createGain();
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = this.meterBuffer.length;
-        gain.connect(fade);
+        gain.connect(pan);
+        pan.connect(fade);
         fade.connect(analyser);
         analyser.connect(this.router.buses.main);
-        return [name, { buffer, gain, fade, analyser, source: null }];
+        return [name, { buffer, gain, pan, fade, analyser, source: null }];
       }),
     );
   }
@@ -212,7 +216,7 @@ export class StemPlayer {
     return player;
   }
 
-  private voice(name: StemName): Voice {
+  private voice(name: string): Voice {
     return this.voices[name]!;
   }
 
@@ -479,7 +483,7 @@ export class StemPlayer {
    * given to `swapRender` or `applyRender`.
    */
   async renderBuffers(stems: Stems, rate: number, pause: () => Promise<void> = yieldToMain): Promise<RenderedBuffers> {
-    const buffers: Partial<Record<StemName, AudioBuffer>> = {};
+    const buffers: Partial<Record<string, AudioBuffer>> = {};
     for (const name of this.names) {
       const pcm = stems[name];
       if (!pcm) continue;
@@ -583,9 +587,15 @@ export class StemPlayer {
     this.router.testTone(bus);
   }
 
+  /** Volume, mute, solo and pan, all ramped so a change is heard without a click. */
   setMix(mix: Mix): void {
-    const gains = stemGains(mix);
-    for (const name of this.names) this.voice(name).gain.gain.setTargetAtTime(gains[name], this.ctx.currentTime, RAMP_S);
+    const gains = stemGains(mix, this.names);
+    const now = this.ctx.currentTime;
+    for (const name of this.names) {
+      const v = this.voice(name);
+      v.gain.gain.setTargetAtTime(gains[name], now, RAMP_S);
+      v.pan.pan.setTargetAtTime(mix[name]?.pan ?? 0, now, RAMP_S);
+    }
   }
 
   /** Uses the stems' AudioContext and song-time origin, including after pause/seek. */
@@ -668,7 +678,7 @@ export class StemPlayer {
   }
 
   /** Current RMS level (0..1) of each stem after its gain */
-  levels(): Partial<Record<StemName, number>> {
+  levels(): Record<string, number> {
     return Object.fromEntries(
       this.names.map((name) => {
         if (!this.playing) return [name, 0];
@@ -706,8 +716,9 @@ export class StemPlayer {
     if (stop) this.stopSources();
     else this.stopMetronome();
     for (const name of this.names) {
-      const { gain, fade, analyser } = this.voice(name);
+      const { gain, pan, fade, analyser } = this.voice(name);
       gain.disconnect();
+      pan.disconnect();
       fade.disconnect();
       analyser.disconnect();
     }

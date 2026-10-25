@@ -125,7 +125,7 @@ export function clampSpeed(raw: Partial<SpeedSettings> | Record<string, unknown>
   const followed: Record<string, boolean> = {};
   if (source.followsPitch && typeof source.followsPitch === "object") {
     for (const [track, value] of Object.entries(source.followsPitch as Record<string, unknown>)) {
-      if (typeof value === "boolean" && /^[a-z]{1,16}$/.test(track)) followed[track] = value;
+      if (typeof value === "boolean" && /^[a-z][a-z0-9]{0,15}$/.test(track)) followed[track] = value;
     }
   }
   return {

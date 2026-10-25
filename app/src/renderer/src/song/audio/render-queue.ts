@@ -1,5 +1,6 @@
 import { followsPitch, type SpeedSettings } from "../performance/speed";
-import { STEM_NAMES, type PcmAudio, type StemName, type Stems } from "../types";
+import type { PcmAudio, Stems } from "../types";
+import { orderedKeys } from "../tracks";
 import type { StretchSettings } from "./stretch";
 import { stretchInWorker } from "./stretch-client";
 
@@ -24,7 +25,7 @@ export function isPlainSpeed(speed: Pick<SpeedSettings, "rate" | "semitones" | "
 }
 
 /** A render's key: the settings each track is rendered with, so two requests that render the same audio share one render. */
-export function renderKey(speed: Pick<SpeedSettings, "rate" | "semitones" | "cents" | "followsPitch">, tracks: readonly StemName[]): string {
+export function renderKey(speed: Pick<SpeedSettings, "rate" | "semitones" | "cents" | "followsPitch">, tracks: readonly string[]): string {
   return tracks
     .map((track) => {
       const settings = trackStretch(speed, track);
@@ -46,7 +47,7 @@ export class RenderQueue {
   async render(base: Stems, speed: SpeedSettings, onProgress?: (done: number, total: number) => void): Promise<Stems | null> {
     const id = ++this.latest;
     if (isPlainSpeed(speed)) return base;
-    const tracks = STEM_NAMES.filter((name) => base[name]);
+    const tracks = orderedKeys(Object.keys(base).filter((name) => base[name]));
     const key = renderKey(speed, tracks);
     const kept = this.renders.get(key);
     if (kept) return kept;

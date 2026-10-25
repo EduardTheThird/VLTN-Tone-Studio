@@ -52,6 +52,9 @@ class Context {
   createAnalyser() {
     return this.node();
   }
+  createStereoPanner() {
+    return { ...this.node(), pan: { value: 0, setTargetAtTime: vi.fn() } };
+  }
   createBufferSource() {
     const n = this.node();
     this.sources.push(n);

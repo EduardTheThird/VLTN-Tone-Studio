@@ -1,11 +1,12 @@
 import type { LibraryPreflightSong } from "@shared/song-library";
-import { STEM_NAMES } from "@shared/host/song";
+import { trackKey, trackKindOf } from "@shared/song-library";
 import { parseChart } from "./chart";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
 import { parseSections } from "./sections";
 import { storedShape } from "./song-shape";
 import { playRange } from "./transition";
 import { clampSpeed, effectiveBpm } from "./speed";
+import { orderedKeys } from "../tracks";
 
 /** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
 function trimRange(duration: number, options: object): { start: number; end: number } | undefined {
@@ -71,8 +72,11 @@ export function playlistPreflight(
       }
       if (config.tempoOnStart && options.clock)
         warnings.push("Saved continuous clock is enabled alongside automatic tempo. Disable continuous clock for this setup.");
-      const stems = STEM_NAMES.flatMap((name) => song.audio.filter((a) => a.name === name));
-      const tracks = stems.length ? stems : song.audio;
+      // Every playable track, split stems and imported tracks alike. The source is a mix of them, not a track of its own.
+      // In player order: the first one plays first, and its length is the one the song is checked against.
+      const playable = song.audio.filter((a) => trackKindOf(a) !== "source");
+      const byKey = new Map(playable.map((a) => [trackKey(a), a]));
+      const tracks = playable.length ? orderedKeys([...byKey.keys()]).map((key) => byKey.get(key)!) : song.audio;
       const duration = tracks[0].frames / tracks[0].sampleRate;
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
