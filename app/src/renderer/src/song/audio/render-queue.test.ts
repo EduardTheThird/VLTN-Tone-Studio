@@ -57,7 +57,7 @@ describe("RenderQueue", () => {
       [100, 0.5],
     ]);
     expect(progress).toEqual([0, 1, 2]);
-    expect(out!.vocals.channels[0]).toHaveLength(200);
+    expect(out!.vocals!.channels[0]).toHaveLength(200);
   });
 
   it("drops a render that a newer request has overtaken, and keeps the newest", async () => {
@@ -67,7 +67,7 @@ describe("RenderQueue", () => {
     const second = queue.render(base, speed({ rate: 0.8 }));
     await rec.release();
     expect(await first).toBeNull();
-    expect((await second)!.vocals.channels[0]).toHaveLength(Math.round(100 / 0.8));
+    expect((await second)!.vocals!.channels[0]).toHaveLength(Math.round(100 / 0.8));
   });
 
   it("answers a repeated setting from memory, and keeps only the current and the last one", async () => {
