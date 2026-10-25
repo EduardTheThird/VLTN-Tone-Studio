@@ -28,6 +28,7 @@ export interface ActionHost {
   cancelSectionJump(): Hint;
   arm(): Hint;
   disarm(): Hint;
+  /** Scrolls the lyrics, or turns the page of a PDF chart on screen (a page action turns a page). */
   scrollLyrics(direction: -1 | 1, pages: boolean): Hint;
   fontSize(direction: -1 | 1): Hint;
   toggleStage(): Hint;
@@ -75,8 +76,10 @@ const DEFINITIONS = {
   "section.cancelJump": { label: "Cancel jump", group: "Sections", run: (h) => h.cancelSectionJump() },
   "view.scrollUp": { label: "Scroll lyrics up", group: "View", run: (h) => h.scrollLyrics(-1, false) },
   "view.scrollDown": { label: "Scroll lyrics down", group: "View", run: (h) => h.scrollLyrics(1, false) },
-  "view.pageUp": { label: "Lyrics page up", group: "View", run: (h) => h.scrollLyrics(-1, true) },
-  "view.pageDown": { label: "Lyrics page down", group: "View", run: (h) => h.scrollLyrics(1, true) },
+  "view.pageUp": { label: "Page up", group: "View", run: (h) => h.scrollLyrics(-1, true) },
+  "view.pageDown": { label: "Page down", group: "View", run: (h) => h.scrollLyrics(1, true) },
+  "view.previousPage": { label: "Previous page", group: "View", run: (h) => h.scrollLyrics(-1, true) },
+  "view.nextPage": { label: "Next page", group: "View", run: (h) => h.scrollLyrics(1, true) },
   "view.fontLarger": { label: "Larger text", group: "View", run: (h) => h.fontSize(1) },
   "view.fontSmaller": { label: "Smaller text", group: "View", run: (h) => h.fontSize(-1) },
   "view.stage": { label: "Toggle stage mode", group: "View", run: (h) => h.toggleStage() },
