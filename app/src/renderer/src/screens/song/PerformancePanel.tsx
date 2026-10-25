@@ -300,7 +300,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   };
 
   const savedSong = library.index.songs.find((s) => s.id === source?.libraryId);
-  const pdfState = source?.libraryId ? { songId: source.libraryId, chart: !!savedSong?.chart, view: chartView, onView: saveChartView } : undefined;
+  const pdfState = source?.libraryId
+    ? { songId: source.libraryId, chart: !!savedSong?.chart, revision: savedSong?.chart?.sha256 ?? "", view: chartView, onView: saveChartView }
+    : undefined;
 
   const saveChart = (value: string) => {
     session.pause();

@@ -40,6 +40,8 @@ import type { ChartView } from "@shared/song-library";
 export interface PdfReaderState {
   songId: string;
   chart: boolean;
+  /** The digest of the song's PDF. A new PDF is a new digest, so the viewer reloads it. Annotation saves do not change it. */
+  revision: string;
   view: ChartView;
   onView(view: ChartView): void;
 }
@@ -316,6 +318,7 @@ export function PerformanceReader({
         />
       ) : pdfShown && pdf ? (
         <PdfChart
+          key={`${pdf.songId}:${pdf.revision}`}
           songId={pdf.songId}
           follow={follow}
           stage={stage}
