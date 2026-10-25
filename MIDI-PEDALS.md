@@ -27,7 +27,7 @@ A trigger holds one command and is sent only while **Send cues** is on. Jumping 
 
 When you start in the middle of a song, the latest song select is replayed as state. Start, Continue, Stop and triggers are one-shots and are not replayed. With **app MIDI clock** on, the app already sends Start and Stop, so preflight flags Start, Continue and Stop cues as conflicts. Turn clock off, or remove those cues.
 
-To run a performance action, such as next section, play or pause, or tap tempo, from a footswitch or controller, learn it under **Remote control** in [Performance](PERFORMANCE.md#remote-control).
+To run a performance action, such as next section, play or pause, or tap tempo, from a footswitch or controller, learn it under **Remote control** in [Performance](PERFORMANCE.md#remote-control). To load a song from a program change or Song Select, see [Load songs from MIDI](PERFORMANCE.md#load-songs-from-midi).
 
 **Macros** are named lists of commands. They are shared by every song and kept with your MIDI setup. Save a pedal command with **Save as macro** in the pedal picker, or a raw command in the command builder, then use it in a chart as `{midi:$CODE}`:
 

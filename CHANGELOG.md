@@ -17,6 +17,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **Speed and pitch.** Play at 50–150% speed, shift pitch by up to ±6 semitones with fine tune, and set a capo. Each track can follow the pitch change or keep its own, and the metronome, count-in and tempo commands use the effective BPM. See [Speed and pitch](PERFORMANCE.md#speed-and-pitch).
 - **Multitrack import.** Add up to 32 audio files or a folder as extra tracks, with mute groups and per-track settings. Songs can be normalised to −14 LUFS, and track settings can be applied to similar songs. See [Multitrack import](PERFORMANCE.md#multitrack-import).
 - **Remote control.** Live actions (transport, songs, sections, lyrics scroll and text size, stage mode, mute groups, click, tap tempo, speed and arming) can run from a MIDI message, a key or a Bluetooth page-turner. Learn binds the next pedal message or key, shows its channel and names any clash, and a double-press option guards Stop and Panic. Start, Continue, Stop and CC 80 are now default bindings. See [Remote control](PERFORMANCE.md#remote-control).
+- **Load songs from MIDI.** A program change (with its bank) or Song Select on the selected input loads the saved song it names. Each song's trigger is learned or typed in the performance view, and the options choose whether songs can load from the whole library or the current playlist, what a trigger does while a song plays (ignore, arm as next, or stop and load now), and whether the song starts. Clashes between songs or with a remote action are named in the view and in playlist preflight. See [Load songs from MIDI](PERFORMANCE.md#load-songs-from-midi).
 
 - **Pedal state on mid-song start.** Starting or seeking into a song, or recovering from a stall, now sets each pedal to the patch and controller values in force at that point. Trigger controls such as looper and tap tempo are left out, and `{chase}` / `{nochase}` on a cue override the defaults.
 
@@ -36,6 +37,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Pause and panic only release channels that sent notes, so they no longer trigger the GP-180 looper Stop.
 - A stall no longer disarms MIDI for the rest of the song. Late program changes, controllers and notes are dropped (note-offs are always sent), the schedule re-syncs, and a notice shows what was dropped. USB cues are queued up to a second ahead with exact timestamps. MIDI only disarms when timing cannot recover.
 - GP-180 backups keep the connected pedal model rather than defaulting to GP-150.
+- Our own scheduled MIDI that comes back through a THRU input is now recognised by its wire time. A USB cue is queued up to a second early, so its echo used to be missed and could fire a binding. The echo window is 200 ms.
 
 ## [0.8.1] - 2026-10-21
 

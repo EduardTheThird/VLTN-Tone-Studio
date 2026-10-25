@@ -37,7 +37,7 @@ MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, acc
 
 ## Where a saved song's settings live
 
-A saved song's chart, BPM, lyrics and options are kept in the library only, and are written back a moment after you stop editing. Songs you have not saved keep theirs in the browser's local storage. Settings that an earlier version left in local storage for saved songs are moved into the library the first time the library opens, and the old entries are removed.
+A saved song's chart, BPM, lyrics and options are kept in the library only, and are written back a moment after you stop editing. Songs you have not saved keep theirs in the browser's local storage. Settings that an earlier version left in local storage for saved songs are moved into the library the first time the library opens, and the old entries are removed. A song's MIDI trigger, if it has one, is one of these options.
 
 The first archive format supports up to 50,000 declared files, 512 GiB of uncompressed content, and 8 MiB each for metadata/manifest. Backups can still be large because they include the full lossless audio. Allow free space for the compressed archive when exporting, and for all restored audio when importing. Keep the app open until completion. An interrupted save, restore or conversion can leave an unreferenced folder in the library. The app removes such folders, and abandoned save sessions, once they are more than an hour old, at start and every 10 minutes after. An interrupted export can still leave a temporary archive beside the destination.
 

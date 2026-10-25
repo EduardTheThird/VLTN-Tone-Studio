@@ -275,6 +275,23 @@ Things to know:
 - Bindings are saved with the MIDI setup on this computer. **Reset to defaults** restores the list above.
 - Only notes, controllers, program changes, Start, Continue and Stop can be learned. Clock, pitch bend and aftertouch cannot.
 
+## Load songs from MIDI
+
+A program change or Song Select on the selected MIDI input can load a saved song, for example a GP-180 patch change that also selects the backing track. Turn it on under **Load songs from MIDI** in the MIDI setup. Each song's trigger is set in its **Song trigger** panel: choose **Learn trigger** and then press the program change (after its bank select, if the pedal sends one) or the Song Select message. You can also type the channel, the program or number, and an optional bank.
+
+- **Songs that can load** is the whole library, or only the current playlist.
+- **While a song plays** is what a trigger does during a song. **Ignore** is the default, so nothing stops. **Arm as next** plays the triggered song after the current one, in a playlist. **Stop and load now** stops the song and loads the triggered one; use it only when the set should jump.
+- **Start a song as soon as a trigger loads it** is off by default, so a loaded song waits for Play.
+
+Things to know:
+
+- A message that a remote action already claims runs that action and does not load a song. Learn names the action, and the song panel and preflight show the clash.
+- If two songs have the same trigger, the first song in the library loads for that message, every time. The list under the options and the playlist preflight name the others.
+- Our own program changes and Song Select, such as cues in a chart and the chase at a start, are ignored when they come back through a THRU input.
+- A message for the song that is already loaded does nothing. A pedal that sends the same message twice loads the song once.
+- In a playlist, a trigger for a song in the set moves the set to that song. A song outside the set loads on its own and pauses the set, with a notice.
+- A song needs to be saved in the library before it can have a trigger. Anything that is not a program change or Song Select does nothing.
+
 ## Stage mode
 
 Choose **Enter stage mode** in Performance. The window fills with large lyrics and transport buttons, and MIDI status and faults stay visible. Setup, the mixer, editors, seeking, rewind and chord popups are locked, and Escape or clicking outside does not exit.
