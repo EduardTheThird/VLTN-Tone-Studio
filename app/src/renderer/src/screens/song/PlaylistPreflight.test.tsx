@@ -9,7 +9,7 @@ afterEach(() => {
 });
 it("shows results for every entry without loading or playing songs", async () => {
   api.preflight.mockResolvedValue([{ id: "missing", errors: ["Song is missing from the library."] }]);
-  render(<PlaylistPreflight ids={["missing", "missing"]} disabled={false} revision={1} />);
+  render(<PlaylistPreflight ids={["missing", "missing"]} disabled={false} revision={1} songs={[]} />);
   fireEvent.click(screen.getByText("Check playlist"));
   await waitFor(() => expect(screen.getByText("2 entries checked · 2 errors · 0 warnings")).toBeTruthy());
   expect(screen.getAllByText(/Error: Song is missing/)).toHaveLength(2);
@@ -23,9 +23,9 @@ it("ignores a late result when the playlist changes and reports request failures
         finish = resolve;
       }),
   );
-  const view = render(<PlaylistPreflight ids={["old"]} disabled={false} revision={1} />);
+  const view = render(<PlaylistPreflight ids={["old"]} disabled={false} revision={1} songs={[]} />);
   fireEvent.click(screen.getByText("Check playlist"));
-  view.rerender(<PlaylistPreflight ids={["new"]} disabled={false} revision={2} />);
+  view.rerender(<PlaylistPreflight ids={["new"]} disabled={false} revision={2} songs={[]} />);
   await act(async () => {
     finish([{ id: "old", errors: ["Old failure"] }]);
   });

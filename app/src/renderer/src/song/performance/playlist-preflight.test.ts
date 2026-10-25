@@ -89,3 +89,18 @@ it("refuses a song whose macro is missing, and names the MIDI file when the file
   const known = { ...saved, song: { ...saved.song!, settings: { ":bpm": "120", "": "[00:01] {midi:$NOPE}" } } };
   expect(playlistPreflight(["one"], [known], { ...config, macros })[0].errors).toEqual([]);
 });
+
+it("warns about a playlist song whose MIDI trigger another song shares, or a remote action answers", () => {
+  const trigger = { type: "pc" as const, channel: 1, program: 4 };
+  const songs = [
+    { id: "one", title: "Opening", trigger },
+    { id: "two", title: "Second", trigger },
+  ];
+  const [shared] = playlistPreflight(["one"], [saved], { ...config, songs });
+  expect(shared.warnings).toContain("Its MIDI trigger is also used by Second. The first song in the library loads for that message.");
+  const bindings = [{ action: "section.next" as const, source: "midi" as const, match: { status: 0xc0, channel: 1, data1: 4 } }];
+  const [bound] = playlistPreflight(["one"], [saved], { ...config, songs: [songs[0]], bindings });
+  expect(bound.warnings.join(" ")).toContain("A remote action answers its MIDI trigger (Ch 1 · Program 4), so the song does not load from it.");
+  // A song with no trigger, or with one nothing else shares, gets no trigger warning.
+  expect(playlistPreflight(["one"], [saved], { ...config, songs: [{ id: "one", title: "Opening", trigger: null }] })[0].warnings).toEqual([]);
+});

@@ -9,6 +9,8 @@ import { storedShape } from "./song-shape";
 import { playRange } from "./transition";
 import { clampSpeed, effectiveBpm } from "./speed";
 import { orderedKeys } from "../tracks";
+import { describeBinding, type Binding } from "./bindings";
+import { bindingClaiming, triggerClashes, type SongEntry } from "./song-triggers";
 
 /** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
 function trimRange(duration: number, options: object): { start: number; end: number } | undefined {
@@ -37,6 +39,9 @@ export function playlistPreflight(
     renderReady?: (id: string) => boolean;
     /** The MIDI macros the charts refer to. A chart that uses a missing one cannot play. */
     macros?: readonly MidiMacro[];
+    /** Every saved song with its MIDI trigger, so a trigger shared with another song, or answered by a binding, is named. */
+    songs?: readonly SongEntry[];
+    bindings?: readonly Binding[];
   },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
@@ -85,6 +90,14 @@ export function playlistPreflight(
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
       // The chart and the MIDI file are checked together, because the file's messages play beside the chart's.
+      const trigger = config.songs?.find((entry) => entry.id === id)?.trigger;
+      if (config.songs && trigger) {
+        const clashes = triggerClashes(config.songs, id);
+        if (clashes.length)
+          warnings.push(`Its MIDI trigger is also used by ${clashes.map((other) => other.title).join(", ")}. The first song in the library loads for that message.`);
+        const bound = bindingClaiming(trigger, config.bindings ?? []);
+        if (bound) warnings.push(`A remote action answers its MIDI trigger (${describeBinding(bound)}), so the song does not load from it.`);
+      }
       const cued = songCues(song.settings[""] || "", config.macros ?? [], midiFileFromOptions(options));
       if (cued.error) errors.push(`${cued.part === "midi-file" ? "MIDI file" : "Chart"} cannot play: ${cued.error}`);
       else {

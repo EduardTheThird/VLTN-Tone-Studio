@@ -247,7 +247,13 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
               <p className="mb-3">
                 {playlist.songs.length} entries · {formatTime(duration)} · Automatically advances during playback
               </p>
-              <PlaylistPreflight key={playlist.id} ids={playlist.songs} disabled={library.busy || library.playlistPlaying} revision={library.index} />
+              <PlaylistPreflight
+                key={playlist.id}
+                ids={playlist.songs}
+                disabled={library.busy || library.playlistPlaying}
+                revision={library.index}
+                songs={library.index.songs}
+              />
               <ol className="space-y-2">
                 {playlist.songs.map((id, i) => (
                   <li key={i} className="flex flex-wrap items-center gap-2 rounded border border-seam p-2">

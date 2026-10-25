@@ -6,7 +6,9 @@ import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
 import { PEDAL_PROFILES } from "@/song/performance/pedal-profiles";
 import { playlistPreflight, type PlaylistCheck } from "@/song/performance/playlist-preflight";
-export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; disabled: boolean; revision: unknown }) {
+import { songEntries } from "@/song/performance/song-triggers";
+import type { LibrarySong } from "@shared/song-library";
+export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: string[]; disabled: boolean; revision: unknown; songs: readonly LibrarySong[] }) {
   const config = useMidiConfiguration(),
     pedals = usePedalLibrary();
   const [report, setReport] = useState<PlaylistCheck[] | null>(null),
@@ -38,6 +40,8 @@ export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; 
           outputName: config.output?.name,
           renderReady: isRenderedAhead,
           macros: config.macros,
+          songs: songEntries(songs),
+          bindings: config.bindings,
           pedals: [...PEDAL_PROFILES, ...pedals.profiles].map((p) => ({ name: p.name, channel: pedals.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
         }),
       );
