@@ -124,6 +124,7 @@ const playlist = vi.hoisted(() => ({
   active: false,
   queue: [] as string[],
   position: 0,
+  preparedNext: () => null,
   playlistPlaying: true,
   busy: false,
   index: { songs: [] },
@@ -134,9 +135,10 @@ const playlist = vi.hoisted(() => ({
 }));
 vi.mock("@/song/library", () => ({
   useSongLibrary: Object.assign(() => (playlist.active ? playlist : { queue: [], position: -1, index: { songs: [] } }), {
-    getState: () => (playlist.active ? playlist : { queue: [], position: -1, playlistPlaying: false }),
+    getState: () => (playlist.active ? playlist : { queue: [], position: -1, playlistPlaying: false, preparedNext: () => null }),
   }),
 }));
+vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/host", () => ({ host: { song: {} } }));
 vi.mock("@/bluetooth/connection", () => ({
   useBluetooth: Object.assign((select: (s: unknown) => unknown) => select({ connection: mocks.bluetooth }), {

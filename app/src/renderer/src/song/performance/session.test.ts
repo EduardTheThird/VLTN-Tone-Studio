@@ -25,13 +25,17 @@ const mocks = vi.hoisted(() => ({
     rememberMidi: vi.fn(),
     advancePlaylist: vi.fn(),
     skipPlaylist: vi.fn(),
+    preparedNext: (): unknown => null,
+    advanceToPrepared: vi.fn((): boolean => false),
     resumePlaylist: vi.fn(),
   },
 }));
 vi.mock("@/app/notify", () => ({ showToast: (spec: unknown) => mocks.toasts.push(spec) }));
+vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     duration = 60;
+    start = 0;
     isPlaying = false;
     onEnded?: () => void;
     onOutputWarning: ((message: string) => void) | null = null;
@@ -68,6 +72,13 @@ vi.mock("@/song/stems/player", () => ({
     cancelJump() {
       return mocks.cancelOk;
     }
+    chainNext() {
+      return true;
+    }
+    detachNext() {
+      return null;
+    }
+    cancelChain() {}
     async dispose() {}
   },
 }));
@@ -273,6 +284,50 @@ it("refuses to seek while locked", async () => {
   session.locked = false;
   await session.seek(30);
   expect(mocks.position).toBe(30);
+});
+
+it("chains the next playlist song near the end, takes it over at its join, and does not send Stop", async () => {
+  vi.useFakeTimers();
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {} };
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => next as never;
+  mocks.library.advanceToPrepared = vi.fn(() => true);
+  const { session, out, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  // The queued song starts itself; let that start settle.
+  await vi.advanceTimersByTimeAsync(10);
+  expect(session.state.playing).toBe(true);
+  // The outgoing song has four seconds left, which is inside the chaining window.
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(250);
+  expect(mocks.players).toHaveLength(2);
+  const incoming = mocks.players[1];
+  // The hand-over is taken half a second before the join, which is at the outgoing song's end.
+  vi.advanceTimersByTime(3500);
+  expect(mocks.library.advanceToPrepared).toHaveBeenCalledWith("b");
+  // The library's change arrives: the outgoing song is let go, and the chained song is adopted without a new player.
+  unload();
+  session.loadSong({ ...next.source }, null);
+  expect(session.state.player).toBe(incoming);
+  expect(session.state.playing).toBe(true);
+  expect(mocks.players).toHaveLength(2);
+  expect(out.send.mock.calls.some(([bytes]) => bytes?.[0] === 252)).toBe(false);
+  vi.useRealTimers();
+});
+
+it("keeps the next playlist song waiting when none is ready, so the join is a gap", async () => {
+  vi.useFakeTimers();
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => null;
+  armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(1000);
+  expect(mocks.players).toHaveLength(1);
+  vi.useRealTimers();
 });
 
 it("keeps the carry reset when panic and disarm runs inside a playing queued set", () => {

@@ -1,14 +1,17 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
-import { StemPlayer } from "@/song/stems/player";
+import { StemPlayer, type Lead } from "@/song/stems/player";
+import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { useSong } from "@/song/store";
-import { useSongLibrary } from "@/song/library";
+import { useSongLibrary, type PreparedSong } from "@/song/library";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
+import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
+import { readCrossfade } from "@/song/performance/crossfade";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
 import {
@@ -39,6 +42,21 @@ import type { BleMidiConnection } from "@/bluetooth/connection";
 
 export type MidiOutput = MIDIOutput | BleMidiConnection;
 export const BLUETOOTH_PORT_ID = "bluetooth-midi";
+
+/** How often the session checks whether the next playlist song can be chained onto this one */
+const CHAIN_CHECK_MS = 250;
+/** The next song is chained this far before its join, so that a pause in between has time to undo it */
+const CHAIN_AHEAD_S = 5;
+
+/** The next playlist song, started on the current song's clock and waiting for the session to take it over */
+interface Chained {
+  id: string;
+  player: StemPlayer;
+  /** The count-in before the next song's audio, in ms. Its start tempo is due at the start of the count-in. */
+  countInMs: number;
+  /** Takes the next song off the session's outputs and events */
+  unwire: () => void;
+}
 
 export interface LateNotice {
   dropped: number;
@@ -178,6 +196,11 @@ export class PerformanceSession {
   private section: SectionPlan | null = null;
   /** Whether the scheduler was last given a hold, so that clearing it is sent once */
   private planSent = false;
+  /** The next playlist song, once it has been started on this song's clock */
+  private chained: Chained | null = null;
+  private handoverTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The id of the song being handed over to, from the moment the library moves on until the session adopts it */
+  private handingOver: string | null = null;
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
@@ -228,10 +251,40 @@ export class PerformanceSession {
 
   // ---- lifecycle -----------------------------------------------------------------------------------------------
 
-  /** Creates the audio player for the song. Returns the cleanup, which leaves the playlist running if the source is merely replaced. */
+  /**
+   * Creates the audio player for the song, or takes over the next playlist song that is already playing on this clock. Returns the
+   * cleanup, which leaves the playlist running if the source is merely replaced.
+   */
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     if (!source) return () => {};
-    const player = new StemPlayer(stems ?? { other: source.audio });
+    const handover = this.takeHandover(source);
+    const player = handover?.player ?? new StemPlayer(stems ?? { other: source.audio }, sharedPlaybackEngine());
+    const stopWiring = handover ? handover.unwire : this.wirePlayer(player, source);
+    if (handover) {
+      this.startHandover(handover);
+      // Playback carries on: the song is already running, so the transport stays as it is.
+      this.batch(() => this.set({ player }));
+    } else {
+      this.batch(() => {
+        this.set({ player, playing: false });
+        setClockPosition(0);
+      });
+    }
+    return () => {
+      stopWiring();
+      // A hand-over keeps the worker, which the next song's scheduler is about to use.
+      if (this.handingOver === null) {
+        this.cancelPendingStart();
+        this.terminateWorker();
+      }
+      void player.dispose();
+      // Leaving Performance pauses the set; replacing its source during advance does not.
+      if (useSong.getState().source === source && useSongLibrary.getState().playlistPlaying) useSongLibrary.getState().pausePlaylist();
+    };
+  }
+
+  /** Connects a song's player to the outputs and to the session. Returns the function that disconnects it. */
+  private wirePlayer(player: StemPlayer, source: SongSource): () => void {
     player.onOutputWarning = (message) => showToast({ tone: "fault", title: "Audio output changed", body: message });
     // Outputs are applied now, and again whenever the saved outputs change. Playback keeps going through either.
     const applyOutputs = () => void player.setOutputs(useOutputSettings.getState().config);
@@ -240,6 +293,13 @@ export class PerformanceSession {
       if (state.config !== previous.config) applyOutputs();
     });
     player.onEnded = () => {
+      // A song the session has let go of has nothing left to say to it.
+      if (this.state.player !== player) return;
+      // The next song is already playing on this clock, so the hand-over is taken now rather than at its start.
+      if (this.chained) {
+        this.handOver();
+        return;
+      }
       this.batch(() => {
         this.set({ playing: false });
         setClockPosition(player.duration);
@@ -247,18 +307,35 @@ export class PerformanceSession {
         if (library.playlistPlaying && library.queue[library.position] === source.libraryId) void library.advancePlaylist();
       });
     };
-    this.batch(() => {
-      this.set({ player, playing: false });
-      setClockPosition(0);
-    });
-    return () => {
-      stopOutputs();
-      this.cancelPendingStart();
-      this.terminateWorker();
-      void player.dispose();
-      // Leaving Performance pauses the set; replacing its source during advance does not.
-      if (useSong.getState().source === source && useSongLibrary.getState().playlistPlaying) useSongLibrary.getState().pausePlaylist();
-    };
+    return stopOutputs;
+  }
+
+  /** The chained song, when `source` is the one being handed over to. Any other chained song is dropped. */
+  private takeHandover(source: SongSource): Chained | null {
+    const chained = this.chained;
+    const handingOver = this.handingOver;
+    this.chained = null;
+    this.handingOver = null;
+    this.clearHandoverTimer();
+    if (chained && handingOver === source.libraryId && chained.id === source.libraryId) return chained;
+    if (chained) {
+      chained.unwire();
+      void chained.player.dispose();
+    }
+    return null;
+  }
+
+  /** Sets the next song's start: its cues from its own start, and its tempo message at the start of its count-in. */
+  private startHandover(chained: Chained): void {
+    const armed = this.armed;
+    try {
+      this.startTempo = this.tempoMessages(armed, this.output);
+    } catch (e) {
+      this.fail(e);
+      this.startTempo = null;
+    }
+    this.startPosition = armed ? chained.player.start : null;
+    this.countInMs = chained.countInMs;
   }
 
   /** Starts the effects. Safe to call again after `dispose()`. */
@@ -271,6 +348,7 @@ export class PerformanceSession {
   /** Runs every effect cleanup, which stops the scheduler and sends the final panic. */
   dispose() {
     this.dropSectionPlan();
+    this.dropChained();
     this.unsubscribe?.();
     this.unsubscribe = null;
     for (const effect of this.effects) {
@@ -459,6 +537,7 @@ export class PerformanceSession {
       const wasRunning = player?.isPlaying || this.playPending;
       this.cancelPendingStart();
       this.dropSectionPlan();
+      this.dropChained();
       player?.pause();
       this.set({ playing: false });
       // A pedal/THRU path can echo our Stop back into the selected input.
@@ -477,17 +556,8 @@ export class PerformanceSession {
     const armed = this.armed,
       output = this.output;
     try {
-      const { tempoOnStart, tempoChannel, bpm, timing } = this.state;
-      let tempoMessages: number[][] | null = null;
-      if (armed && tempoOnStart && output?.state === "connected") {
-        if (bpm < 40 || bpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
-        const tempo = Math.round(bpm),
-          status = 0xb0 + tempoChannel - 1;
-        tempoMessages = [
-          [status, 73, tempo >> 7],
-          [status, 74, tempo & 127],
-        ];
-      }
+      const { bpm, timing } = this.state;
+      const tempoMessages = this.tempoMessages(armed, output);
       if (armed) {
         const warm = this.prepared ?? prepareMidiScheduler();
         this.prepared = warm;
@@ -562,12 +632,118 @@ export class PerformanceSession {
     this.batch(() => {
       this.cancelPendingStart();
       this.dropSectionPlan();
+      this.dropChained();
       this.state.player?.pause();
       this.set({ playing: false });
       this.panic();
       void useSongLibrary.getState().skipPlaylist(offset);
     });
   };
+
+  /** The one-time tempo message a start sends, or null when it sends none. Throws when the tempo is out of range. */
+  private tempoMessages(armed: boolean, output: MidiOutput | undefined): number[][] | null {
+    const { tempoOnStart, tempoChannel, bpm } = this.state;
+    if (!armed || !tempoOnStart || output?.state !== "connected") return null;
+    if (bpm < 40 || bpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
+    const tempo = Math.round(bpm),
+      status = 0xb0 + tempoChannel - 1;
+    return [
+      [status, 73, tempo >> 7],
+      [status, 74, tempo & 127],
+    ];
+  }
+
+  /** Crossfades into the next playlist song now. Returns false when no next song is ready, or a join is already planned. */
+  crossfadeNext = (): boolean => {
+    const { player, queued, playlistPlaying } = this.state;
+    const next = useSongLibrary.getState().preparedNext();
+    if (!player?.isPlaying || this.chained || !queued || !playlistPlaying || !next) return false;
+    const countIn = countInBeats(this.state.timing.countInBars, this.state.timing.beatsPerBar);
+    const plan = planTransition({
+      now: player.audioNow,
+      songEnd: player.audioTimeOf(player.duration),
+      crossfade: readCrossfade(),
+      ready: true,
+      countIn: countIn > 0,
+      manual: true,
+    });
+    if (plan.kind === "gap") return false;
+    this.startChain(next, plan, countIn);
+    return true;
+  };
+
+  /** Chains the next playlist song onto this one once its join is close, so the two play on one clock. Checked until it is chained. */
+  private planNext(): void {
+    const { player, queued, playlistPlaying } = this.state;
+    if (!player?.isPlaying || this.chained || !queued || !playlistPlaying) return;
+    const next = useSongLibrary.getState().preparedNext();
+    if (!next) return;
+    const now = player.audioNow;
+    const countIn = countInBeats(this.state.timing.countInBars, this.state.timing.beatsPerBar);
+    const plan = planTransition({
+      now,
+      songEnd: player.audioTimeOf(player.duration),
+      crossfade: readCrossfade(),
+      ready: true,
+      countIn: countIn > 0,
+    });
+    if (plan.kind === "gap" || plan.startAt - now > CHAIN_AHEAD_S) return;
+    this.startChain(next, plan, countIn);
+  }
+
+  /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. */
+  private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, countIn: number): void {
+    const { player, bpm } = this.state;
+    if (!player) return;
+    const incoming = new StemPlayer(next.stems, sharedPlaybackEngine());
+    const unwire = this.wirePlayer(incoming, next.source);
+    const countInBeatsNow = plan.kind === "countIn" ? countIn : 0;
+    const lead: Lead = { bpm, countInBeats: countInBeatsNow, preRollBeats: 0 };
+    if (!player.chainNext(incoming, { startAt: plan.startAt, fadeLength: plan.fadeLength, stopAt: plan.stopAt, lead })) {
+      unwire();
+      void incoming.dispose();
+      return;
+    }
+    const countInMs = bpm > 0 ? countInBeatsNow * beatSeconds(bpm) * 1000 : 0;
+    this.chained = { id: next.id, player: incoming, countInMs, unwire };
+    this.clearHandoverTimer();
+    this.handoverTimer = setTimeout(this.handOver, Math.max(0, (plan.startAt - HANDOVER_LEAD_S - player.audioNow) * 1000));
+  }
+
+  /**
+   * Takes the chained song over: the library moves on, and the session adopts the song when the change reaches it. The song is
+   * already playing, so this only moves the playlist and the outgoing song's events on.
+   */
+  private handOver = (): void => {
+    const chained = this.chained;
+    const outgoing = this.state.player;
+    if (!chained || !outgoing || this.handingOver === chained.id) return;
+    this.clearHandoverTimer();
+    const library = useSongLibrary.getState();
+    if (library.preparedNext()?.id !== chained.id) {
+      this.dropChained();
+      return;
+    }
+    outgoing.detachNext();
+    this.handingOver = chained.id;
+    library.advanceToPrepared(chained.id);
+  };
+
+  /** Undoes the chained song, if it has not been taken over: the outgoing song then runs to its own end. */
+  private dropChained(): void {
+    this.clearHandoverTimer();
+    const chained = this.chained;
+    if (!chained) return;
+    this.chained = null;
+    this.state.player?.cancelChain();
+    chained.unwire();
+    void chained.player.dispose();
+  }
+
+  private clearHandoverTimer(): void {
+    if (this.handoverTimer) clearTimeout(this.handoverTimer);
+    this.handoverTimer = null;
+  }
 
   /** Stop playback, release the output and disarm. */
   panicAndDisarm = () => {
@@ -762,6 +938,15 @@ export class PerformanceSession {
           void this.play();
         },
       },
+      // Chains the next playlist song onto this one once its join is close, so that the two play on one clock.
+      {
+        deps: (s) => [s.player, s.playing, s.queued, s.playlistPlaying],
+        run: (s) => {
+          if (!s.playing || !s.player || !s.queued || !s.playlistPlaying) return;
+          const timer = setInterval(() => this.planNext(), CHAIN_CHECK_MS);
+          return () => clearInterval(timer);
+        },
+      },
       // Stopping the playlist from elsewhere stops this song.
       {
         deps: (s) => [s.playlistPlaying],
@@ -769,6 +954,7 @@ export class PerformanceSession {
           if (!s.playlistPlaying && s.player?.isPlaying && s.queued) {
             this.cancelPendingStart();
             this.dropSectionPlan();
+            this.dropChained();
             s.player.pause();
             this.set({ playing: false });
             this.panic();
