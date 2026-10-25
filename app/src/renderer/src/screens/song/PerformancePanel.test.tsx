@@ -146,7 +146,15 @@ vi.mock("@/song/library", () => ({
     getState: () =>
       playlist.active
         ? playlist
-        : { queue: [], queueOverrides: [], position: -1, playlistPlaying: false, preparedNext: (): unknown => null, claimHandover: (): unknown => null, takeAutoplay: (): boolean => false },
+        : {
+            queue: [],
+            queueOverrides: [],
+            position: -1,
+            playlistPlaying: false,
+            preparedNext: (): unknown => null,
+            claimHandover: (): unknown => null,
+            takeAutoplay: (): boolean => false,
+          },
   }),
 }));
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
