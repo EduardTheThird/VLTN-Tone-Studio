@@ -128,7 +128,6 @@ export class StemPlayer {
   private handedOver = false;
   /** Audio time at which the last stem of a handed-over song stops */
   private tailEnd = 0;
-  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
   private metronome: MetronomeSettings = { mode: "off", bpm: 120, beats: 4, volume: 0.25 };
   private clickTimer: ReturnType<typeof setInterval> | null = null;
   private clicks = new Set<OscillatorNode>();
@@ -313,7 +312,7 @@ export class StemPlayer {
   }
 
   /** Undoes a hand-over that has not been taken: the next song stops, and this song keeps its own fades and end. */
-  private cancelChain(): void {
+  cancelChain(): void {
     const next = this.next;
     if (!next) return;
     this.next = null;
@@ -527,7 +526,7 @@ export class StemPlayer {
     this.playing = false;
     const tail = this.handedOver ? this.tailEnd - this.ctx.currentTime : 0;
     if (tail > 0) {
-      this.releaseTimer = setTimeout(() => void this.release(false), tail * 1000 + 100);
+      setTimeout(() => void this.release(false), tail * 1000 + 100);
       return;
     }
     await this.release(true);
