@@ -20,6 +20,8 @@ export default defineConfig({
   renderer: {
     resolve: { alias: { "@": resolve("src/renderer/src"), "@shared": resolve("src/shared") } },
     plugins: [react(), tailwindcss(), pdfjsAssets()],
+    // Two pages: the app, and the band follower page (spec 44), which band sync serves on the local network.
+    build: { rollupOptions: { input: { index: resolve("src/renderer/index.html"), follower: resolve("src/renderer/follower.html") } } },
     worker: { format: 'es' },
     // onnxruntime-web (Song stem splitter worker) ships a ready ESM bundle; pre-bundling it on first use reloads the page.
     optimizeDeps: { exclude: ["onnxruntime-web", "@huggingface/transformers"] },
