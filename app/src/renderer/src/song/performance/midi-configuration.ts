@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { macroProblems, type MidiMacro } from "./midi-macros";
+import { defaultBindings, sanitizeBindings, type Binding } from "./bindings";
 
 export const MIDI_CONFIG_KEY = "vltn.performance.midi.v1";
 export interface PortChoice {
@@ -19,6 +20,8 @@ export interface MidiConfiguration {
   commands: Record<string, { action: string; value: number }>;
   /** Named command lists that charts reference as {midi:$CODE}. Shared by every song. */
   macros: MidiMacro[];
+  /** What each MIDI message or key runs (see bindings.ts). Absent in a saved config means the defaults. */
+  bindings: Binding[];
 }
 const defaults: MidiConfiguration = {
   preset: "cues",
@@ -30,6 +33,7 @@ const defaults: MidiConfiguration = {
   pedal: "",
   commands: {},
   macros: [],
+  bindings: defaultBindings(),
 };
 /** The stored shape of a macro. Whether its commands are valid is checked by `macroProblems`, so a bad one can still be shown and removed. */
 function isMacroShape(value: unknown): value is MidiMacro {
@@ -63,6 +67,7 @@ export function readMidiConfiguration(): MidiConfiguration {
         ),
       ) as MidiConfiguration["commands"],
       macros: Array.isArray(data.macros) ? data.macros.filter(isMacroShape) : [],
+      bindings: data.bindings === undefined ? defaultBindings() : sanitizeBindings(data.bindings),
     };
   } catch {
     return { ...defaults };
