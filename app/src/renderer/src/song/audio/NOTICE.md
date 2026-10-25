@@ -10,6 +10,11 @@
   in its own worker. It is used unmodified, as a dependency, and its licence text is in `node_modules/pdfjs-dist/LICENSE`. Apache-2.0 is
   compatible with this app's GPL-3.0 licence. The version is pinned exactly in `app/package.json`.
 
+- **CodeMirror 6** (`@codemirror/state` 6.7.6, `@codemirror/view` 6.43.15, `@codemirror/commands` 6.11.1, `@codemirror/search` 6.7.2,
+  `@codemirror/language` 6.13.1; Marijn Haverbeke and contributors): MIT. It is the chart editor's text box (`screens/song/ChartCodeEditor.tsx`):
+  search, undo and syntax colours. It is used unmodified, as dependencies, and each licence text is in `node_modules/@codemirror/<package>/LICENSE`.
+  The versions are pinned exactly in `app/package.json`.
+
 The Rubber Band library was considered for higher-quality stretching but not used: its npm WASM build (`rubberband-wasm`)
 is listed as plain "GPLv2", not "GPLv2 or later". GPL-2.0-only code cannot be combined with this GPL-3.0-only app, so it
 stays out until its licence is confirmed.
