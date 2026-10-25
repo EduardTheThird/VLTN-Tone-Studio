@@ -440,7 +440,7 @@ it("remembers global metronome, song clock and mixer settings without arming MID
   fireEvent.click(screen.getByLabelText("Metronome"));
   fireEvent.click(screen.getByLabelText("MIDI Clock (24 PPQN)"));
   fireEvent.change(screen.getByLabelText("Song volume"), { target: { value: "0.4" } });
-  expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({ enabled: true, bpm: 120 });
+  expect(mocks.metronome.mock.lastCall?.[0]).toMatchObject({ mode: "playing", bpm: 120 });
   expect(mocks.mix.mock.lastCall?.[0].other.volume).toBe(0.4);
   view.unmount();
   render(<PerformancePanel />);

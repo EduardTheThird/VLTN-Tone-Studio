@@ -54,7 +54,7 @@ it("anchors clicks and stems to one audio clock, preserves bar phase on seek, an
   vi.useFakeTimers();
   vi.stubGlobal("AudioContext", Context);
   const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
-  player.setMetronome({ enabled: true, bpm: 120, beats: 4, volume: 0.25 });
+  player.setMetronome({ mode: "playing", bpm: 120, beats: 4, volume: 0.25 });
   await player.play();
   const ctx = Context.instances[0];
   expect(Context.instances).toHaveLength(1);
@@ -74,7 +74,7 @@ it("anchors clicks and stems to one audio clock, preserves bar phase on seek, an
   // Beat 8 is at song second 4, a downbeat, not a new bar at the seek point.
   expect(next.start.mock.calls[0][0]).toBeCloseTo(11.27);
   expect(next.frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
-  player.setMetronome({ enabled: false, bpm: 120, beats: 4, volume: 0.25 });
+  player.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.25 });
   const muted = ctx.oscillators.length;
   ctx.currentTime = 12;
   vi.advanceTimersByTime(1000);
@@ -99,7 +99,7 @@ it("anchors the first downbeat after an intro and preserves its phase through pa
   vi.useFakeTimers();
   vi.stubGlobal("AudioContext", Context);
   const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
-  player.setMetronome({ enabled: true, bpm: 120, beats: 4, volume: 0.25, firstBeat: 1.25 });
+  player.setMetronome({ mode: "playing", bpm: 120, beats: 4, volume: 0.25, firstBeat: 1.25 });
   await player.play();
   const ctx = Context.instances[0];
   expect(ctx.oscillators).toHaveLength(0);
@@ -127,7 +127,7 @@ it("does not replay the beat just before a seek or burst missed clicks after a s
   vi.useFakeTimers();
   vi.stubGlobal("AudioContext", Context);
   const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
-  player.setMetronome({ enabled: true, bpm: 120, beats: 4, volume: 0.25, firstBeat: 1.25 });
+  player.setMetronome({ mode: "playing", bpm: 120, beats: 4, volume: 0.25, firstBeat: 1.25 });
   await player.seek(1.26);
   await player.play();
   const ctx = Context.instances[0];
@@ -144,5 +144,60 @@ it("does not replay the beat just before a seek or burst missed clicks after a s
   ctx.currentTime = 14;
   vi.advanceTimersByTime(25);
   expect(ctx.oscillators).toHaveLength(count);
+  await player.dispose();
+});
+
+it("clicks a count-in on the grid before the audio starts, and a pause during it returns to the requested position", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  player.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.25 });
+  await player.play({ countInBeats: 4 });
+  const ctx = Context.instances[0];
+  // One bar at 120 BPM is two seconds: audio starts at 2.0 s after the first click.
+  expect(ctx.sources[0].start.mock.calls[0][0]).toBeCloseTo(12.02);
+  const clicks = ctx.oscillators.map((osc) => osc.start.mock.calls[0][0]);
+  [10.02, 10.52, 11.02, 11.52].forEach((at, i) => expect(clicks[i]).toBeCloseTo(at));
+  expect(ctx.oscillators[0].frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
+  expect(ctx.oscillators[1].frequency.setValueAtTime.mock.calls[0][0]).toBe(1000);
+  ctx.currentTime = 10.5;
+  expect(player.position).toBeLessThan(0);
+  player.pause();
+  expect(player.position).toBe(0);
+  await player.dispose();
+});
+
+it("starts the audio before the requested position by the pre-roll, clamped at the start of the song", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(10000)] } });
+  player.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.25 });
+  await player.seek(60);
+  await player.play({ preRollBeats: 2 });
+  expect(Context.instances[0].sources.at(-1)!.start.mock.calls[0][1]).toBeCloseTo(59);
+  await player.dispose();
+  const early = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(10000)] } });
+  early.setMetronome({ mode: "off", bpm: 120, beats: 4, volume: 0.25 });
+  await early.seek(0.5);
+  await early.play({ preRollBeats: 4 });
+  expect(Context.instances.at(-1)!.sources.at(-1)!.start.mock.calls[0][1]).toBe(0);
+  await early.dispose();
+});
+
+it("clicks on its own grid while stopped, and stops the rehearsal when the song plays", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  player.setMetronome({ mode: "stopped", bpm: 120, beats: 4, volume: 0.25 });
+  const ctx = Context.instances[0];
+  expect(ctx.oscillators[0].start.mock.calls[0][0]).toBeCloseTo(10.02);
+  ctx.currentTime = 10.5;
+  vi.advanceTimersByTime(25);
+  expect(ctx.oscillators.at(-1)!.start.mock.calls[0][0]).toBeCloseTo(10.52);
+  await player.play();
+  const count = ctx.oscillators.length;
+  ctx.currentTime = 11;
+  vi.advanceTimersByTime(1000);
+  expect(ctx.oscillators).toHaveLength(count);
+  expect(player.isPlaying).toBe(true);
   await player.dispose();
 });

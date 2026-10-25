@@ -176,7 +176,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     }
   }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice]);
   useEffect(() => {
-    player?.setMetronome({ enabled: metronome, bpm, beats, volume, firstBeat });
+    player?.setMetronome({ mode: metronome ? "playing" : "off", bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
   useEffect(() => {
     try {
