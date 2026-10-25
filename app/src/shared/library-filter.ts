@@ -289,12 +289,16 @@ export function searchSongs(songs: readonly LibrarySong[], query: string): Libra
  * Where each first letter starts in a list sorted by title: the A to Z index. Only worth showing for a long list, so it is empty below
  * `minimum` songs. Non-letters are grouped under "#".
  */
-export function letterIndex(songs: readonly LibrarySong[], minimum = 21): { letter: string; index: number }[] {
+export function letterIndex(
+  songs: readonly LibrarySong[],
+  minimum = 21,
+  label: (song: LibrarySong) => string = (song) => song.title,
+): { letter: string; index: number }[] {
   if (songs.length < minimum) return [];
   const seen = new Set<string>();
   const result: { letter: string; index: number }[] = [];
   songs.forEach((song, index) => {
-    const first = song.title.trim().charAt(0).toLocaleUpperCase();
+    const first = label(song).trim().charAt(0).toLocaleUpperCase();
     const letter = /^[A-Z]$/.test(first) ? first : "#";
     if (seen.has(letter)) return;
     seen.add(letter);

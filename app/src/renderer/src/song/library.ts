@@ -678,14 +678,27 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           writeSettings(performanceKey(detached), kept);
           useSong.setState({ source: detached });
         }
-        set({
-          index: await api().index(),
-          queue: [],
-          position: -1,
-          playlistPlaying: false,
-          midiSession: null,
-          notice: "Song removed from the library and playlists.",
-        });
+        const { queue, position } = get();
+        // Removing the song that is playing ends its queue, as before. Removing a song that is only queued drops it from the queue, and the
+        // song that is playing, and the set, carry on.
+        if (queue[position] === id || position < 0) {
+          set({
+            index: await api().index(),
+            queue: [],
+            position: -1,
+            playlistPlaying: false,
+            playingSet: null,
+            midiSession: null,
+            notice: "Song removed from the library and playlists.",
+          });
+        } else {
+          const kept = queue.filter((entry, i) => i <= position || entry !== id);
+          set({
+            index: await api().index(),
+            queue: kept,
+            notice: "Song removed from the library and playlists.",
+          });
+        }
         prefetchNext();
       }),
   };

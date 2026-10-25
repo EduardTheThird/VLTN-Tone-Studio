@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
-import { formatTime } from "@/song/stems/mix";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlaylistPreflight } from "./PlaylistPreflight";
 import { host } from "@/host";
+import { LibraryBrowser } from "./LibraryBrowser";
+import { QueuePanel } from "./QueuePanel";
+import { PlayHistory } from "./PlayHistory";
+import { PlaylistsPanel } from "./PlaylistsPanel";
 
 const field = "rounded border border-seam bg-transparent p-2";
 export function SongLibraryPanel({ onPick }: { onPick(): void }) {
@@ -15,10 +17,6 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
   const saved = library.index.songs.find((s) => s.id === source?.libraryId);
   const [title, setTitle] = useState(saved?.title ?? source?.name.replace(/\.[^.]+$/, "") ?? "");
   const [artist, setArtist] = useState(saved?.artist ?? "");
-  const [search, setSearch] = useState(""),
-    [name, setName] = useState(""),
-    [selected, setSelected] = useState("");
-  const [confirm, setConfirm] = useState("");
   useEffect(() => {
     if (host.song.library) void library.refresh();
   }, []);
@@ -26,16 +24,6 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
     setTitle(saved?.title ?? source?.name.replace(/\.[^.]+$/, "") ?? "");
     setArtist(saved?.artist ?? "");
   }, [source, saved?.title, saved?.artist]);
-  const playlist = library.index.playlists.find((p) => p.id === selected);
-  const rows = library.index.songs.filter((s) => `${s.title} ${s.artist}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  const update = (songs: string[]) => playlist && void library.playlists(library.index.playlists.map((p) => (p.id === playlist.id ? { ...p, songs } : p)));
-  const move = (i: number, offset: number) => {
-    if (!playlist) return;
-    const songs = [...playlist.songs];
-    [songs[i], songs[i + offset]] = [songs[i + offset], songs[i]];
-    update(songs);
-  };
-  const duration = playlist?.songs.reduce((sum, id) => sum + (library.index.songs.find((s) => s.id === id)?.duration ?? 0), 0) ?? 0;
   if (!host.song.library) return <p>Use the desktop app to save songs and audio for offline performances.</p>;
   return (
     <section aria-label="Saved songs and playlists" className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-2">
@@ -116,180 +104,11 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
         </p>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
-        <div>
-          <h2 className="mb-2 font-semibold">Songs · {library.index.songs.length}</h2>
-          <input
-            aria-label="Search saved songs"
-            placeholder="Search title or artist"
-            className={field + " mb-3 w-full"}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {!rows.length && <p>No saved songs. Open audio, prepare it, then save it above.</p>}
-          <ul className="space-y-2">
-            {rows.map((song) => (
-              <li key={song.id} className="rounded border border-seam p-3">
-                <strong>{song.title}</strong>
-                <p className="text-sm">
-                  {song.artist} · {formatTime(song.duration)} · {song.audio.length - 1} stems
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button disabled={library.busy} onClick={() => void library.load(song.id)}>
-                    Load song
-                  </Button>
-                  <Button variant="outline" disabled={!playlist || library.busy} onClick={() => update([...(playlist?.songs ?? []), song.id])}>
-                    Add to playlist
-                  </Button>
-                  <Button variant="outline" disabled={library.busy} onClick={() => setConfirm(song.id)}>
-                    Delete song…
-                  </Button>
-                  {confirm === song.id && (
-                    <>
-                      <span>Delete saved audio and remove from all playlists?</span>
-                      <Button
-                        disabled={library.busy}
-                        onClick={() => {
-                          setConfirm("");
-                          void library.remove(song.id);
-                        }}
-                      >
-                        Confirm delete
-                      </Button>
-                      <Button variant="outline" onClick={() => setConfirm("")}>
-                        Keep song
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h2 className="mb-2 font-semibold">Playlists / live sets</h2>
-          <div className="mb-3 flex flex-wrap gap-2">
-            <input aria-label="New playlist name" placeholder="New playlist name" className={field} value={name} onChange={(e) => setName(e.target.value)} />
-            <Button
-              disabled={!name.trim() || library.busy}
-              onClick={() => {
-                const id = crypto.randomUUID();
-                void library.playlists([...library.index.playlists, { id, name: name.trim(), songs: [] }]);
-                setSelected(id);
-                setName("");
-              }}
-            >
-              Create playlist
-            </Button>
-          </div>
-          <select
-            aria-label="Playlist"
-            className={field + " mb-3 w-full"}
-            value={selected}
-            onChange={(e) => {
-              setSelected(e.target.value);
-              setConfirm("");
-            }}
-          >
-            <option value="">Select a playlist…</option>
-            {library.index.playlists.map((p) => (
-              <option value={p.id} key={p.id}>
-                {p.name} ({p.songs.length})
-              </option>
-            ))}
-          </select>
-          {playlist && (
-            <>
-              <div className="mb-3 flex flex-wrap gap-2">
-                <input
-                  aria-label="Playlist name"
-                  key={playlist.id + playlist.name}
-                  defaultValue={playlist.name}
-                  className={field}
-                  disabled={library.busy}
-                  onBlur={(e) => {
-                    const next = e.target.value.trim();
-                    if (next && next !== playlist.name)
-                      void library.playlists(library.index.playlists.map((p) => (p.id === playlist.id ? { ...p, name: next } : p)));
-                  }}
-                />
-                <Button disabled={!playlist.songs.length || library.busy} onClick={() => void library.playPlaylist([...playlist.songs])}>
-                  Play playlist
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={!playlist.songs.length || library.busy}
-                  onClick={() => void library.load(playlist.songs[0], [...playlist.songs], 0)}
-                >
-                  Load set paused
-                </Button>
-                <Button variant="outline" disabled={library.busy} onClick={() => setConfirm("playlist:" + playlist.id)}>
-                  Delete playlist…
-                </Button>
-              </div>
-              {confirm === "playlist:" + playlist.id && (
-                <div>
-                  Keep the songs and delete this playlist?{" "}
-                  <Button
-                    disabled={library.busy}
-                    onClick={() => {
-                      void library.playlists(library.index.playlists.filter((p) => p.id !== playlist.id));
-                      setSelected("");
-                      setConfirm("");
-                    }}
-                  >
-                    Confirm delete playlist
-                  </Button>
-                  <Button variant="outline" onClick={() => setConfirm("")}>
-                    Keep playlist
-                  </Button>
-                </div>
-              )}
-              <p className="mb-3">
-                {playlist.songs.length} entries · {formatTime(duration)} · Automatically advances during playback
-              </p>
-              <PlaylistPreflight
-                key={playlist.id}
-                ids={playlist.songs}
-                disabled={library.busy || library.playlistPlaying}
-                revision={library.index}
-                songs={library.index.songs}
-              />
-              <ol className="space-y-2">
-                {playlist.songs.map((id, i) => (
-                  <li key={i} className="flex flex-wrap items-center gap-2 rounded border border-seam p-2">
-                    <span className="flex-1">
-                      {i + 1}. {library.index.songs.find((s) => s.id === id)?.title ?? "Missing song"}
-                    </span>
-                    <Button variant="outline" disabled={library.busy} onClick={() => void library.playPlaylist([...playlist.songs], i)}>
-                      Play from here
-                    </Button>
-                    <Button variant="outline" disabled={library.busy} onClick={() => void library.load(id, [...playlist.songs], i)}>
-                      Load paused
-                    </Button>
-                    <Button aria-label={`Move entry ${i + 1} up`} variant="outline" disabled={i === 0 || library.busy} onClick={() => move(i, -1)}>
-                      ↑
-                    </Button>
-                    <Button
-                      aria-label={`Move entry ${i + 1} down`}
-                      variant="outline"
-                      disabled={i === playlist.songs.length - 1 || library.busy}
-                      onClick={() => move(i, 1)}
-                    >
-                      ↓
-                    </Button>
-                    <Button
-                      aria-label={`Remove entry ${i + 1}`}
-                      variant="outline"
-                      disabled={library.busy}
-                      onClick={() => update(playlist.songs.filter((_, index) => index !== i))}
-                    >
-                      Remove
-                    </Button>
-                  </li>
-                ))}
-              </ol>
-            </>
-          )}
+        <LibraryBrowser />
+        <div className="space-y-5">
+          <QueuePanel />
+          <PlaylistsPanel />
+          <PlayHistory />
         </div>
       </div>
     </section>

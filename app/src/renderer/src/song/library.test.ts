@@ -469,3 +469,12 @@ describe("the queue, play recording and organisation", () => {
   });
 });
 
+it("removing a song that is only queued drops it from the queue and leaves the playing set alone", async () => {
+  const songs = [songNamed("one", "One"), songNamed("two", "Two"), songNamed("three", "Three")];
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs }, queue: ["one", "two", "three", "two"], position: 0, playlistPlaying: true, playingSet: "set-1" });
+  api.remove.mockResolvedValue(undefined);
+  api.index.mockResolvedValue({ ...emptyLibrary(), songs: songs.filter((s) => s.id !== "two") });
+  await useSongLibrary.getState().remove("two");
+  expect(useSongLibrary.getState()).toMatchObject({ queue: ["one", "three"], position: 0, playlistPlaying: true, playingSet: "set-1" });
+});
+
