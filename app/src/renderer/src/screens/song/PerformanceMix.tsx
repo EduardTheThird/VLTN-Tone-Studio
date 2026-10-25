@@ -1,18 +1,24 @@
 import type { Mix } from "@/song/stems/mix";
+import type { TrackBuses } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
+import { BUS_LABELS, BUS_NAMES, type BusName } from "@/song/audio/outputs";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 
-/** Per-stem mute and volume. */
+/** Per-stem mute and volume, and the output bus each stem plays on. */
 export function PerformanceMix({
   session,
   stems,
   mix,
   onMix,
+  trackBuses,
+  onTrackBus,
 }: {
   session: PerformanceSession;
   stems: Stems | null;
   mix: Mix;
   onMix: (update: (mix: Mix) => Mix) => void;
+  trackBuses: TrackBuses;
+  onTrackBus: (name: string, bus: BusName) => void;
 }) {
   const player = useSession(session, (s) => s.player);
   if (!player) return null;
@@ -40,6 +46,18 @@ export function PerformanceMix({
             onChange={(e) => onMix((m) => ({ ...m, [name]: { ...m[name], volume: Number(e.target.value) } }))}
           />
           <span className="w-9 text-right tabular-nums">{Math.round(mix[name].volume * 100)}%</span>
+          <select
+            aria-label={`${stems ? name : "Song"} bus`}
+            className="rounded-md border border-seam bg-transparent px-2 py-1"
+            value={trackBuses[name] ?? "main"}
+            onChange={(e) => onTrackBus(name, e.target.value as BusName)}
+          >
+            {BUS_NAMES.map((bus) => (
+              <option key={bus} value={bus}>
+                {BUS_LABELS[bus]}
+              </option>
+            ))}
+          </select>
         </div>
       ))}
     </div>

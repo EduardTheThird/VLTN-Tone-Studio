@@ -109,6 +109,7 @@ const mocks = vi.hoisted(() => ({
   clear: vi.fn(),
   metronome: vi.fn(),
   mix: vi.fn(),
+  trackBuses: vi.fn(),
   bluetooth: null as null | { id: string; name: string; state: string; send: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> },
   position: 0,
   playAdvance: 0,
@@ -157,7 +158,9 @@ vi.mock("@/song/stems/player", () => ({
     setOutputs() {
       return Promise.resolve();
     }
-    setTrackBuses() {}
+    setTrackBuses(value: unknown) {
+      mocks.trackBuses(value);
+    }
     testTone() {}
     names = ["other"];
     duration = 60;
@@ -195,6 +198,7 @@ afterEach(() => {
   mocks.clear.mockClear();
   mocks.metronome.mockClear();
   mocks.mix.mockClear();
+  mocks.trackBuses.mockClear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -455,6 +459,16 @@ it("remembers global metronome, song clock and mixer settings without arming MID
   expect((screen.getByLabelText("Song volume") as HTMLInputElement).value).toBe("0.4");
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(false);
   expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it("remembers which bus each track plays on", () => {
+  localStorage.clear();
+  const view = render(<PerformancePanel />);
+  fireEvent.change(screen.getByLabelText("Song bus"), { target: { value: "aux2" } });
+  expect(mocks.trackBuses.mock.lastCall?.[0]).toEqual({ other: "aux2" });
+  view.unmount();
+  render(<PerformancePanel />);
+  expect((screen.getByLabelText("Song bus") as HTMLSelectElement).value).toBe("aux2");
 });
 
 it("disables clock during playback without replaying transport or stopping audio", async () => {

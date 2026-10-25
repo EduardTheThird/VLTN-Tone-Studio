@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { defaultMix } from "@/song/stems/mix";
+import type { TrackBuses } from "@/song/stems/player";
 import { parseChart } from "@/song/performance/chart";
 import { defaultChordSource } from "@/song/performance/sources";
 import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
@@ -16,6 +17,7 @@ import { SongKey } from "./SongKey";
 import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceTransport } from "./PerformanceTransport";
 import { PerformanceMix } from "./PerformanceMix";
+import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { StageView } from "./StageView";
@@ -66,6 +68,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         clock: false,
         volume: 0.25,
         mix: defaultMix(),
+        trackBuses: {} as TrackBuses,
         chordChoice: "" as StemName | "",
         lyricsLanguage: "auto",
         metronomeMode: "",
@@ -105,6 +108,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     }
   };
   const [mix, setMix] = useState(options.mix);
+  const [trackBuses, setTrackBuses] = useState<TrackBuses>(options.trackBuses);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
   const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
@@ -209,6 +213,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     player?.setMix(mix);
   }, [player, mix]);
   useEffect(() => {
+    player?.setTrackBuses(trackBuses);
+  }, [player, trackBuses]);
+  useEffect(() => {
     try {
       setSetting(
         key,
@@ -221,6 +228,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           clock,
           volume,
           mix,
+          trackBuses,
           chordChoice,
           lyricsLanguage: readOptions(key, { lyricsLanguage: "auto" }).lyricsLanguage,
           metronomeMode: metronome,
@@ -232,7 +240,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, clock, volume, mix, chordChoice, metronome, lead]);
+  }, [session, key, firstBeat, beats, shift, clock, volume, mix, trackBuses, chordChoice, metronome, lead]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -273,7 +281,15 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         />
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
-        <PerformanceMix session={session} stems={stems} mix={mix} onMix={setMix} />
+        <PerformanceMix
+          session={session}
+          stems={stems}
+          mix={mix}
+          onMix={setMix}
+          trackBuses={trackBuses}
+          onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
+        />
+        <PerformanceOutputs player={player} />
       </div>
       <StageView
         session={session}
