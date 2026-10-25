@@ -5,6 +5,8 @@ declare module "soundtouchjs" {
     tempo: number;
     /** Pitch ratio without a speed change: 2 is an octave up */
     pitch: number;
+    /** The engine's window lengths. Its alignment is measured for these, so they are set once for every render. */
+    stretch: { setParameters(sampleRate: number, sequenceMs: number, seekWindowMs: number, overlapMs: number): void };
   }
   export class SimpleFilter {
     constructor(source: { extract(target: Float32Array, numFrames: number, position: number): number }, pipe: SoundTouch);

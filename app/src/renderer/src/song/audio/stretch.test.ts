@@ -68,3 +68,62 @@ describe("stretchPcm", () => {
     expect(out.channels[0]).toHaveLength(0);
   });
 });
+
+/** A click train over low noise with its own seed, so the test does not measure the calibration's own bursts. Bursts every second. */
+function clickTrain(seed: number): { signal: Float32Array; bursts: number[] } {
+  const frames = 12 * SR;
+  const signal = new Float32Array(frames);
+  let state = seed;
+  const random = () => ((state = (state * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) * 2 - 1;
+  for (let i = 0; i < frames; i++) signal[i] = 0.02 * random();
+  const bursts: number[] = [];
+  for (let t = 0.5; t < 11.5; t += 1) {
+    const start = Math.round(t * SR);
+    bursts.push(start);
+    for (let i = 0; i < 200; i++) signal[start + i] += 0.8 * random() * Math.exp(-i / 40);
+  }
+  return { signal, bursts };
+}
+
+/** Where each burst lands in the output, in ms from where song time puts it (song time ÷ rate). A burst with no match is null: it was lost. */
+function burstErrors(output: Float32Array, signal: Float32Array, bursts: number[], rate: number): (number | null)[] {
+  const template = signal.subarray(bursts[2], bursts[2] + 200);
+  const search = Math.round(0.25 * SR);
+  const errors: (number | null)[] = [];
+  for (const start of bursts.slice(1, -1)) {
+    const expected = Math.round(start / rate);
+    let best = -Infinity,
+      at = expected;
+    for (let k = Math.max(0, expected - search); k < Math.min(output.length - 200, expected + search); k++) {
+      let c = 0;
+      for (let i = 0; i < 200; i++) c += output[k + i] * template[i];
+      if (c > best) {
+        best = c;
+        at = k;
+      }
+    }
+    errors.push(best > 0.4 ? ((at - expected) / SR) * 1000 : null);
+  }
+  return errors;
+}
+
+describe("alignment of transients", () => {
+  it.each([
+    [0.5, 0],
+    [0.75, 0],
+    [1.25, 0],
+    [1.5, 0],
+    [1, 3],
+    [1, -3],
+  ])("lands transients on song time at rate %f, shift %i semitones", (rate, semitones) => {
+    const { signal, bursts } = clickTrain(4242);
+    const out = stretchPcm({ sampleRate: SR, channels: [signal] }, { rate, semitones, cents: 0 }).channels[0];
+    const errors = burstErrors(out, signal, bursts, rate);
+    const matched = errors.filter((e): e is number => e !== null);
+    const sorted = matched.map(Math.abs).sort((x, y) => x - y);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    // Measured when this was written (spec Status): medians 0.8 to 3.6 ms; 6 to 9 of 9 bursts within 5 ms, lost bursts counted as misses.
+    expect(median).toBeLessThan(5);
+    expect(errors.filter((e) => e !== null && Math.abs(e) <= 5).length).toBeGreaterThanOrEqual(6);
+  });
+});
