@@ -5,7 +5,7 @@ import { RenderQueue, isPlainSpeed } from "@/song/audio/render-queue";
 import { DEFAULT_SPEED, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { useSong } from "@/song/store";
-import { useSongLibrary, type PreparedSong } from "@/song/library";
+import { useSongLibrary, type HandedOverSong, type PreparedSong } from "@/song/library";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
 import type { SongSource, Stems } from "@/song/types";
@@ -52,16 +52,6 @@ export const BLUETOOTH_PORT_ID = "bluetooth-midi";
 const CHAIN_CHECK_MS = 250;
 /** The next song is chained this far before its join, so that a pause in between has time to undo it */
 const CHAIN_AHEAD_S = 5;
-
-/** The next playlist song, started on the current song's clock and waiting for the session to take it over */
-interface Chained {
-  id: string;
-  player: StemPlayer;
-  /** The count-in before the next song's audio, in ms. Its start tempo is due at the start of the count-in. */
-  countInMs: number;
-  /** Takes the next song off the session's outputs and events */
-  unwire: () => void;
-}
 
 export interface LateNotice {
   dropped: number;
@@ -219,11 +209,13 @@ export class PerformanceSession {
   /** Whether the scheduler was last given a hold, so that clearing it is sent once */
   private planSent = false;
   /** The next playlist song, once it has been started on this song's clock */
-  private chained: Chained | null = null;
+  private chained: HandedOverSong | null = null;
   private handoverTimer: ReturnType<typeof setTimeout> | null = null;
   private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
-  /** The id of the song being handed over to, from the moment the library moves on until the session adopts it */
+  /** The id of the song being handed over to, from the moment the library moves on until the session that takes it over is set up */
   private handingOver: string | null = null;
+  /** Set when a hand-over starts this session's song on a set that is already running: the set's Start went out with its first song */
+  private joining = false;
   /** The stems at 100%, which every render is made from */
   private baseStems: Stems | null = null;
   /** The settings key of the song loaded, under which its speed is stored */
@@ -296,8 +288,8 @@ export class PerformanceSession {
    * cleanup, which leaves the playlist running if the source is merely replaced.
    */
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
+    const handover = this.claimHandover(source);
     if (!source) return () => {};
-    const handover = this.takeHandover(source);
     const options = getSetting(performanceKey(source), ":options");
     const shape = playerShape(shapeFromOptions(options));
     const speed = speedFromOptions(options);
@@ -307,11 +299,11 @@ export class PerformanceSession {
     this.pendingRender = null;
     this.renderSwap = null;
     const player = handover?.player ?? new StemPlayer(this.baseStems, sharedPlaybackEngine(), shape);
-    const stopWiring = handover ? handover.unwire : this.wirePlayer(player, source);
+    const stopWiring = this.wirePlayer(player, source);
     if (handover) {
       this.startHandover(handover);
-      // Playback carries on: the song is already running, so the transport stays as it is.
-      this.batch(() => this.set({ player, speed }));
+      // Playback carries on: the song is already running, so the transport goes on as it was.
+      this.batch(() => this.set({ player, playing: true, speed }));
     } else {
       this.batch(() => {
         this.set({ player, playing: false, speed });
@@ -321,6 +313,7 @@ export class PerformanceSession {
       if (!isPlainSpeed(speed)) void this.renderSpeed(speed);
     }
     return () => {
+      this.dropChained();
       stopWiring();
       // A hand-over keeps the worker, which the next song's scheduler is about to use.
       if (this.handingOver === null) {
@@ -345,6 +338,8 @@ export class PerformanceSession {
     player.onEnded = () => {
       // A song the session has let go of has nothing left to say to it.
       if (this.state.player !== player) return;
+      // A song that has handed over was ended by its hand-over, which sent its end and stop triggers.
+      if (this.handingOver !== null) return;
       // The next song is already playing on this clock, so the hand-over is taken now rather than at its start.
       if (this.chained) {
         this.handOver();
@@ -377,21 +372,23 @@ export class PerformanceSession {
     return stopOutputs;
   }
 
-  /** The chained song, when `source` is the one being handed over to. Any other chained song is dropped. */
-  private takeHandover(source: SongSource): Chained | null {
-    const chained = this.chained;
-    const handingOver = this.handingOver;
-    this.chained = null;
-    this.handingOver = null;
-    this.clearHandoverTimer();
-    if (chained && handingOver === source.libraryId && chained.id === source.libraryId) return chained;
-    // The library owns a prepared song until it is taken over, so only its hook-up is undone here.
-    chained?.unwire();
-    return null;
+  /**
+   * The song the previous session handed over, when it is `source`: the library holds it until a session takes it up. Any other
+   * held song is released there. The previous session's hook-up is undone here, and this session wires the song up again.
+   */
+  private claimHandover(source: SongSource | null): HandedOverSong | null {
+    const handover = useSongLibrary.getState().claimHandover(source?.libraryId);
+    handover?.unwire();
+    return handover;
+  }
+
+  /** Whether a song this session handed over is still waiting in the library for the next session to take it up. */
+  private get passing(): boolean {
+    return this.handingOver !== null && useSongLibrary.getState().handover?.id === this.handingOver;
   }
 
   /** Sets the next song's start: its cues from its own start, and its tempo message at the start of its count-in. */
-  private startHandover(chained: Chained): void {
+  private startHandover(chained: HandedOverSong): void {
     const armed = this.armed;
     try {
       this.startTempo = this.tempoMessages(armed, this.output, chained.player.playbackRate);
@@ -402,6 +399,7 @@ export class PerformanceSession {
     this.startPosition = armed ? chained.player.start : null;
     this.startPlay = this.triggerBytes("play");
     this.countInMs = chained.countInMs;
+    this.joining = true;
   }
 
   /** Starts the effects. Safe to call again after `dispose()`. */
@@ -812,13 +810,13 @@ export class PerformanceSession {
   }
 
   /**
-   * Takes the chained song over: the library moves on, and the session adopts the song when the change reaches it. The song is
-   * already playing, so this only moves the playlist and the outgoing song's events on.
+   * Hands the chained song over: the library holds it and moves on, and the view is re-created for the new song. The next session
+   * takes the song up in `loadSong`. The song is already playing, so this only moves the playlist and the outgoing song's events on.
    */
   private handOver = (): void => {
     const chained = this.chained;
     const outgoing = this.state.player;
-    if (!chained || !outgoing || this.handingOver === chained.id) return;
+    if (!chained || !outgoing) return;
     this.clearHandoverTimer();
     const library = useSongLibrary.getState();
     if (library.preparedNext()?.id !== chained.id) {
@@ -826,10 +824,12 @@ export class PerformanceSession {
       return;
     }
     outgoing.detachNext();
+    this.chained = null;
     this.handingOver = chained.id;
     // The outgoing song ends at the join: its end and stop go out before the next song's load and play.
     this.sendTriggers("end");
     this.sendTriggers("stop");
+    library.setHandover(chained);
     library.advanceToPrepared(chained.id);
   };
 
@@ -1177,7 +1177,10 @@ export class PerformanceSession {
         run: (s) => {
           if (!s.playing) return;
           const context = this.context();
-          if (context.armed && s.clock) {
+          // A song that joins a set already running sends no Start: the set's Start went out with its first song.
+          const joined = this.joining;
+          this.joining = false;
+          if (context.armed && s.clock && !joined) {
             try {
               this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251]);
             } catch (e) {
@@ -1185,7 +1188,10 @@ export class PerformanceSession {
               this.setArmed(false);
             }
           }
-          return () => this.panic(context);
+          // A song handed over stays on the set's transport, so leaving this session does not stop it.
+          return () => {
+            if (!this.passing) this.panic(context);
+          };
         },
       },
       // Warm the scheduler worker while armed and stopped, so Play does not wait for it.

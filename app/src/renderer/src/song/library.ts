@@ -43,6 +43,25 @@ export interface PreparedSong {
   player: StemPlayer;
 }
 
+/**
+ * A playlist song that is already playing on the outgoing song's clock. The library holds it from the hand-over until the session for
+ * the new song takes it over, which is a new session because the view is re-created for each song. `unwire` undoes the outgoing
+ * session's hook-up of the song.
+ */
+export interface HandedOverSong {
+  id: string;
+  player: StemPlayer;
+  /** The count-in before the song's audio, in ms */
+  countInMs: number;
+  unwire: () => void;
+}
+
+/** Stops a handed-over song that no session took up, and frees its player. */
+const releaseSong = (handover: HandedOverSong) => {
+  handover.unwire();
+  void handover.player.dispose();
+};
+
 interface LibraryState {
   index: SongLibrary;
   busy: boolean;
@@ -79,6 +98,14 @@ interface LibraryState {
   preparedNext(): PreparedSong | null;
   /** Makes the prepared song `id` the current one without a gap. Returns false, and changes nothing, when it is not ready. */
   advanceToPrepared(id: string): boolean;
+  /** The song handed over from the outgoing session, until a session takes it over. Null when there is none. */
+  handover: HandedOverSong | null;
+  /** Holds a song handed over from the outgoing session. A song that is already held is released first. */
+  setHandover(handover: HandedOverSong): void;
+  /** Gives the held song to the session for song `id`, and returns it. A held song for any other song is released, and null returned. */
+  claimHandover(id: string | undefined): HandedOverSong | null;
+  /** Stops and releases the held song, when no session took it up. */
+  releaseHandover(): void;
 }
 /** Songs whose speed or pitch render was built in advance, by id. A song that is not here plays at its own speed until its render is ready. */
 const renderedAhead = new Set<string>();
@@ -254,6 +281,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       });
   };
   const load = async (id: string, queue: string[], position: number, playlist: boolean) => {
+    // Loading a song replaces the set, so a song held for the next one of the old set is released.
+    get().releaseHandover();
     const generation = ++loadGeneration;
     if (!playlist) set({ playlistPlaying: false, midiSession: null });
     // Switching songs mid-set must not wait on a failed write; the edits stay queued and are retried.
@@ -289,6 +318,25 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     playlistPlaying: false,
     midiSession: null,
     prepared: null,
+    handover: null,
+    setHandover: (handover) => {
+      get().releaseHandover();
+      set({ handover });
+    },
+    claimHandover: (id) => {
+      const { handover } = get();
+      if (!handover) return null;
+      set({ handover: null });
+      if (handover.id === id) return handover;
+      releaseSong(handover);
+      return null;
+    },
+    releaseHandover: () => {
+      const { handover } = get();
+      if (!handover) return;
+      set({ handover: null });
+      releaseSong(handover);
+    },
     preparedNext: () => {
       const { prepared, queue, position, playlistPlaying } = get();
       return playlistPlaying && prepared && queue[position + 1] === prepared.id ? prepared : null;
@@ -351,6 +399,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     rememberMidi: (midiSession) => set({ midiSession }),
     pausePlaylist: () => {
       loadGeneration++;
+      get().releaseHandover();
       set({ playlistPlaying: false });
       prefetchNext();
     },

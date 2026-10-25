@@ -69,6 +69,14 @@ export function PerformancePanel() {
   const source = useSong((s) => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
   const [stage, setStage] = useState(false);
+  // A song handed over to the next song's session is held by the library until that session takes it up. Leaving Performance
+  // before then pauses the set, which stops the held song.
+  useEffect(
+    () => () => {
+      if (useSongLibrary.getState().handover) useSongLibrary.getState().pausePlaylist();
+    },
+    [],
+  );
   return <PerformanceView key={generation} stage={stage} setStage={setStage} />;
 }
 

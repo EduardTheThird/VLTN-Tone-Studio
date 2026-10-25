@@ -136,10 +136,13 @@ const playlist = vi.hoisted(() => ({
   rememberMidi: vi.fn(),
   pausePlaylist: vi.fn(),
   resumePlaylist: vi.fn(),
+  handover: null,
+  claimHandover: (): unknown => null,
 }));
 vi.mock("@/song/library", () => ({
   useSongLibrary: Object.assign(() => (playlist.active ? playlist : { queue: [], position: -1, index: { songs: [] } }), {
-    getState: () => (playlist.active ? playlist : { queue: [], position: -1, playlistPlaying: false, preparedNext: (): unknown => null }),
+    getState: () =>
+      playlist.active ? playlist : { queue: [], position: -1, playlistPlaying: false, preparedNext: (): unknown => null, claimHandover: (): unknown => null },
   }),
 }));
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));

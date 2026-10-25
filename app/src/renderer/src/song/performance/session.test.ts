@@ -37,6 +37,28 @@ const mocks = vi.hoisted(() => ({
     preparedNext: (): unknown => null,
     advanceToPrepared: vi.fn((): boolean => false),
     resumePlaylist: vi.fn(),
+    // The held song is released by the library: stopped and unwired, as in the app.
+    handover: null as null | { id: string; player: { dispose: () => Promise<void> }; countInMs: number; unwire: () => void },
+    setHandover(handover: { id: string; player: { dispose: () => Promise<void> }; countInMs: number; unwire: () => void }) {
+      this.releaseHandover();
+      this.handover = handover;
+    },
+    claimHandover(id: string | undefined) {
+      const held = this.handover;
+      if (!held) return null;
+      this.handover = null;
+      if (held.id === id) return held;
+      held.unwire();
+      void held.player.dispose();
+      return null;
+    },
+    releaseHandover() {
+      const held = this.handover;
+      if (!held) return;
+      this.handover = null;
+      held.unwire();
+      void held.player.dispose();
+    },
   },
 }));
 vi.mock("@/app/notify", () => ({ showToast: (spec: unknown) => mocks.toasts.push(spec) }));
@@ -151,6 +173,18 @@ const inputs = (patch: Partial<SessionInputs> = {}): SessionInputs => ({
   bpm: 120,
   ...patch,
 });
+/** The session for the next playlist song, after the view was re-created on the hand-over. It is armed as the previous session was. */
+function joinedSession(out: ReturnType<typeof output>, access: MIDIAccess, patch: Partial<SessionInputs> = {}) {
+  const session = new PerformanceSession({
+    initial: inputs({ queued: true, playlistPlaying: true, ...patch }),
+    carried: { access, portId: "usb", inputId: "", armed: true, output: out },
+    initialClock: false,
+  });
+  const unload = session.loadSong({ ...source, libraryId: "b", name: "b.wav" }, null);
+  session.bind();
+  return { session, unload };
+}
+
 function armedSession(out = output(), patch: Partial<SessionInputs> = {}) {
   const access = Object.assign(new EventTarget(), { outputs: new Map([["usb", out]]), inputs: new Map() }) as unknown as MIDIAccess;
   const session = new PerformanceSession({
@@ -336,7 +370,7 @@ it("chains the next playlist song near the end, takes it over at its join, and d
   mocks.library.queue = ["a", "b"];
   mocks.library.preparedNext = () => next as never;
   mocks.library.advanceToPrepared = vi.fn(() => true);
-  const { session, out, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  const { session, out, access, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
   // The queued song starts itself; let that start settle.
   await vi.advanceTimersByTimeAsync(10);
   expect(session.state.playing).toBe(true);
@@ -348,15 +382,19 @@ it("chains the next playlist song near the end, takes it over at its join, and d
   // The hand-over is taken half a second before the join, which is at the outgoing song's end.
   vi.advanceTimersByTime(3500);
   expect(mocks.library.advanceToPrepared).toHaveBeenCalledWith("b");
-  // The library's change arrives: the outgoing song is let go, and the chained song is adopted without a new player.
+  // The library's change re-creates the view: the outgoing session is let go, and the new session takes the chained song up.
   const outgoing = session.state.player!;
   unload();
+  session.dispose();
   expect((outgoing as unknown as { disposed: boolean }).disposed).toBe(true);
-  session.loadSong({ ...next.source }, null);
-  expect(session.state.player).toBe(incoming);
-  expect(session.state.playing).toBe(true);
+  const joined = joinedSession(out, access);
+  expect(joined.session.state.player).toBe(incoming);
+  expect(joined.session.state.playing).toBe(true);
+  expect(mocks.library.handover).toBeNull();
   expect(mocks.players).toHaveLength(2);
   expect(out.send.mock.calls.some(([bytes]) => bytes?.[0] === 252)).toBe(false);
+  joined.unload();
+  joined.session.dispose();
   vi.useRealTimers();
 });
 
@@ -638,7 +676,7 @@ describe("MIDI triggers", () => {
     mocks.library.queue = ["a", "b"];
     mocks.library.preparedNext = () => next as never;
     mocks.library.advanceToPrepared = vi.fn(() => true);
-    const { session, out, unload } = armedSession(output(), { queued: true, playlistPlaying: true, cues: parseChart(chartA) });
+    const { session, out, access, unload } = armedSession(output(), { queued: true, playlistPlaying: true, cues: parseChart(chartA) });
     await vi.advanceTimersByTimeAsync(10);
     expect(session.state.playing).toBe(true);
     expect(sent(out)).toEqual([[192, 1]]);
@@ -652,10 +690,9 @@ describe("MIDI triggers", () => {
       [176, 81, 127],
     ]);
     unload();
-    session.update({ cues: parseChart(chartB) });
-    session.loadSong({ ...next.source }, null);
-    expect(session.state.player).toBe(incoming);
-    expect(session.state.playing).toBe(true);
+    session.dispose();
+    const joined = joinedSession(out, access, { cues: parseChart(chartB) });
+    expect(joined.session.state.player).toBe(incoming);
     expect(sent(out)).toEqual([
       [192, 1],
       [192, 9],

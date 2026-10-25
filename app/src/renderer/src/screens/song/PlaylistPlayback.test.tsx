@@ -41,8 +41,11 @@ const mock = vi.hoisted(() => ({
   settings: vi.fn(),
   send: vi.fn(),
   clear: vi.fn(),
+  now: 0,
   players: [] as { isPlaying: boolean; position: number; duration: number; onEnded: (() => void) | null; end(): void }[],
 }));
+/** A player as the tests see it: its chained song, and whether it was stopped rather than played out */
+type Player = { isPlaying: boolean; position: number; duration: number; onEnded: (() => void) | null; end(): void; next: Player | null; stopped: boolean };
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audioUrls: mock.audioUrls, updateSettings: mock.settings } } } }));
 vi.mock("@/song/stems/engine", () => ({ separateStems: vi.fn() }));
@@ -52,6 +55,7 @@ const file = () => new Response(new Uint8Array(8));
 vi.mock("./LyricsTrack", () => ({ LyricsTrack: () => null }));
 vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null }));
 vi.mock("@/song/stems/player", () => ({
+  yieldToMain: () => Promise.resolve(),
   StemPlayer: class {
     static async create() {
       // A prepared player is not one of the songs the test plays, so it is not recorded as one.
@@ -70,8 +74,37 @@ vi.mock("@/song/stems/player", () => ({
     duration = 10;
     playbackRate = 1;
     position = 0;
+    start = 0;
+    behaviour = "next";
     isPlaying = false;
+    stopped = false;
+    next: Player | null = null;
     onEnded: (() => void) | null = null;
+    get audioNow() {
+      return mock.now;
+    }
+    audioTimeOf(at: number) {
+      return mock.now + (at - this.position);
+    }
+    // A hand-over starts the next song on this clock, as the shared engine does.
+    chainNext(next: Player) {
+      this.next = next;
+      next.isPlaying = true;
+      return true;
+    }
+    detachNext() {
+      const next = this.next;
+      this.next = null;
+      return next;
+    }
+    cancelChain() {
+      const next = this.next;
+      this.next = null;
+      if (next) {
+        next.isPlaying = false;
+        next.stopped = true;
+      }
+    }
     constructor() {
       mock.players.push(this);
     }
@@ -88,6 +121,7 @@ vi.mock("@/song/stems/player", () => ({
     setMetronome() {}
     async dispose() {
       this.isPlaying = false;
+      this.stopped = true;
       this.onEnded = null;
     }
     end() {
@@ -123,6 +157,7 @@ beforeEach(() => {
   useBluetooth.setState({
     connection: { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mock.send, clear: mock.clear } as unknown as BleMidiConnection,
   });
+  mock.now = 0;
   HTMLElement.prototype.scrollTo = vi.fn();
 });
 afterEach(() => {
@@ -231,4 +266,41 @@ it("resumes the next song after stopping a transition instead of replaying the f
   });
   await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+});
+
+it("hands the chained song over to the session for the next song, which adopts it instead of starting it again", async () => {
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  render(<PerformancePanel />);
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  const outgoing = mock.players.at(-1)! as unknown as Player;
+  // The next song is prepared before the join. Near the outgoing song's end, the session chains it onto the same clock.
+  await waitFor(() => expect(useSongLibrary.getState().prepared).not.toBeNull());
+  const incoming = useSongLibrary.getState().prepared!.player as unknown as Player;
+  outgoing.position = 8;
+  await waitFor(() => expect(outgoing.next).toBe(incoming));
+  const players = mock.players.length;
+  await act(async () => {
+    outgoing.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+  // The change re-renders the view, which creates a new session. That session takes the chained song over: no second player
+  // is built, and the song that was already playing is not stopped.
+  expect(mock.players).toHaveLength(players);
+  expect(incoming.stopped).toBe(false);
+  expect(incoming.isPlaying).toBe(true);
+  expect((screen.getByLabelText("BPM") as HTMLInputElement).value).toBe("130");
+});
+
+it("stops a handed-over song that nothing took up, and pauses the set, when Performance is left", async () => {
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  const view = render(<PerformancePanel />);
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  const dispose = vi.fn(async () => {});
+  const unwire = vi.fn();
+  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, unwire });
+  view.unmount();
+  expect(dispose).toHaveBeenCalledTimes(1);
+  expect(unwire).toHaveBeenCalledTimes(1);
+  expect(useSongLibrary.getState().handover).toBeNull();
+  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
 });

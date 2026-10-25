@@ -260,3 +260,46 @@ it("says so when no other saved song has the same imported tracks, and needs the
   await useSongLibrary.getState().applyTrackSettings();
   expect(useSongLibrary.getState().error).toBe("Save the song before applying its track settings.");
 });
+
+it("releases a handed-over song that no session takes up: a claim for another song, a pause, or a release stops it", () => {
+  const held = (id: string) => {
+    const dispose = vi.fn(() => Promise.resolve());
+    const unwire = vi.fn();
+    return { handover: { id, player: { dispose } as never, countInMs: 0, unwire }, dispose, unwire };
+  };
+  const library = () => useSongLibrary.getState();
+
+  const other = held("b");
+  library().setHandover(other.handover);
+  expect(library().claimHandover("c")).toBeNull();
+  expect(other.dispose).toHaveBeenCalledTimes(1);
+  expect(other.unwire).toHaveBeenCalledTimes(1);
+  expect(library().handover).toBeNull();
+
+  // The session for the song it was handed to takes it up. The library lets go of it, and does not stop it.
+  const taken = held("b");
+  library().setHandover(taken.handover);
+  expect(library().claimHandover("b")).toBe(taken.handover);
+  expect(taken.dispose).not.toHaveBeenCalled();
+  expect(library().handover).toBeNull();
+
+  const paused = held("b");
+  useSongLibrary.setState({ playlistPlaying: true });
+  library().setHandover(paused.handover);
+  library().pausePlaylist();
+  expect(paused.dispose).toHaveBeenCalledTimes(1);
+  expect(paused.unwire).toHaveBeenCalledTimes(1);
+  expect(library().handover).toBeNull();
+  expect(library().playlistPlaying).toBe(false);
+
+  // A second hand-over replaces a held one, and releases it.
+  const first = held("b"),
+    second = held("c");
+  library().setHandover(first.handover);
+  library().setHandover(second.handover);
+  expect(first.dispose).toHaveBeenCalledTimes(1);
+  library().releaseHandover();
+  expect(second.dispose).toHaveBeenCalledTimes(1);
+  expect(second.unwire).toHaveBeenCalledTimes(1);
+  expect(library().handover).toBeNull();
+});
