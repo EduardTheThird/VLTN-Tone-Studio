@@ -8,7 +8,26 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
  */
 
 type PdfJs = typeof import("pdfjs-dist");
+type DocumentOptions = Omit<Parameters<PdfJs["getDocument"]>[0] & object, "data">;
 let pdfjs: Promise<PdfJs> | undefined;
+
+/**
+ * The options that point pdf.js at its data files: the standard fonts (charts that do not embed Helvetica, Times and the other standard
+ * faces), the WASM image decoders, and the CMaps (packed) for CJK text. `base` is the folder the files are published in (`pdfjs/`).
+ */
+export function pdfjsOptions(base: string): DocumentOptions {
+  return {
+    standardFontDataUrl: `${base}standard_fonts/`,
+    wasmUrl: `${base}wasm/`,
+    cMapUrl: `${base}cmaps/`,
+    cMapPacked: true,
+  };
+}
+
+/** The folder the renderer's pdf.js data files are served from: next to the page in the desktop app and the browser build. */
+export function pdfjsBase(): string {
+  return new URL("pdfjs/", document.baseURI).href;
+}
 
 function library(): Promise<PdfJs> {
   pdfjs ??= import("pdfjs-dist").then((lib) => {
@@ -30,7 +49,7 @@ export async function openChart(url: string): Promise<OpenChart> {
   if (!response.ok) throw new Error("The PDF is missing from the library.");
   const data = new Uint8Array(await response.arrayBuffer());
   const lib = await library();
-  const task = lib.getDocument({ data });
+  const task = lib.getDocument({ data, ...pdfjsOptions(pdfjsBase()) });
   try {
     return { doc: await task.promise, close: () => task.destroy() };
   } catch (e) {
