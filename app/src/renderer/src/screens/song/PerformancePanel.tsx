@@ -271,6 +271,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         chords={chords}
         shift={shift}
         onSaveChart={saveChart}
+        beat={{ bpm, beats, firstBeat }}
       />
       <div style={{ display: stage ? "none" : "contents" }}>
         <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} />
