@@ -113,7 +113,9 @@ export function PerformanceAnalysis({
   chordSource: StemName | "";
   onSelectChord: (name: string) => void;
 }) {
-  const cues = useSession(session, (s) => s.cues);
+  // Lyric lines are the chart's own cues: the triggers and the MIDI file's messages have no lyrics to show.
+  const sessionCues = useSession(session, (s) => s.cues);
+  const cues = useMemo(() => sessionCues.filter((cue) => !cue.trigger && !cue.fromFile), [sessionCues]);
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">

@@ -1,5 +1,6 @@
-import { midiCommand, parseChart } from "./chart";
+import { parseChart } from "./chart";
 import type { Chord } from "./chords";
+import { checkCommandText, type MidiMacro } from "./midi-macros";
 import { performanceLines } from "./reader";
 
 export interface EditableEvent {
@@ -11,25 +12,31 @@ export interface EditableEvent {
   label: string;
 }
 const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
+/** The command text of one message, for a cue that was not parsed from text (the chart's own text is kept in `tokens`). */
 function command(bytes: number[]): string {
   const channel = (bytes[0] & 15) + 1;
   const kind = ({ 0x80: "off", 0x90: "note", 0xb0: "cc", 0xc0: "pc" } as Record<number, string>)[bytes[0] & 0xf0];
+  if (bytes[0] === 0xfa) return "start";
+  if (bytes[0] === 0xfb) return "continue";
+  if (bytes[0] === 0xfc) return "stop";
+  if (bytes[0] === 0xf3) return `songselect ${bytes[1]}`;
   return bytes[0] === 0xf0 ? "sysex " + bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ") : `${kind} ${channel} ${bytes.slice(1).join(" ")}`;
 }
 
-/** Promote the displayed draft into an editable chart without losing separate MIDI timestamps. */
-export function editableEvents(chart: string, lyrics: string, estimates: Chord[]): EditableEvent[] {
-  const cues = parseChart(chart),
+/**
+ * Promote the displayed draft into an editable chart without losing separate MIDI timestamps. Macro references and triggers keep their
+ * text. A trigger has no time, so its row is left without one; it is written back as `@load pc 1 5` (or play, stop, end).
+ */
+export function editableEvents(chart: string, lyrics: string, estimates: Chord[], macros: readonly MidiMacro[] = []): EditableEvent[] {
+  const cues = parseChart(chart, macros),
     rows: EditableEvent[] = [];
-  const row = (seconds: number) => {
-    let found = rows.find((r) => r.seconds !== "" && Number(r.seconds) === seconds);
-    if (!found) {
-      found = { id: rows.length, seconds: Number.isFinite(seconds) ? String(seconds) : "", lyrics: "", chords: "", midi: "", label: "" };
-      rows.push(found);
-    }
-    return found;
+  const add = (seconds: number | null) => {
+    const created = { id: rows.length, seconds: seconds !== null && Number.isFinite(seconds) ? String(seconds) : "", lyrics: "", chords: "", midi: "", label: "" };
+    rows.push(created);
+    return created;
   };
-  for (const line of performanceLines(chart, lyrics, estimates)) {
+  const row = (seconds: number) => rows.find((r) => r.seconds !== "" && Number(r.seconds) === seconds) ?? add(seconds);
+  for (const line of performanceLines(chart, lyrics, estimates, macros)) {
     const target = row(line.time);
     target.lyrics = [target.lyrics, line.text.replace(chordPattern, "").trim()].filter(Boolean).join(" ");
     if (!Number.isFinite(line.time)) target.chords = [...line.text.matchAll(chordPattern)].map((m) => m[1]).join(" ");
@@ -41,11 +48,18 @@ export function editableEvents(chart: string, lyrics: string, estimates: Chord[]
   }
   for (const cue of cues)
     if (cue.messages.length || cue.label) {
-      const target = row(cue.time);
-      target.midi = [target.midi, ...cue.messages.map(command)].filter(Boolean).join("\n");
+      const target = cue.trigger ? add(null) : row(cue.time);
+      const lines = cue.tokens ?? cue.messages.map(command);
+      target.midi = [target.midi, ...lines].filter(Boolean).join("\n");
       target.label = [target.label, cue.label].filter(Boolean).join(" / ");
     }
   return rows.sort((a, b) => (a.seconds === "" ? Infinity : Number(a.seconds)) - (b.seconds === "" ? Infinity : Number(b.seconds)));
+}
+
+/** The chart token for one command line: `{midi:…}`, or `{midi@load: …}` for a trigger line such as `@load pc 1 5`. */
+function token(line: string): string {
+  const trigger = /^@(load|play|stop|end) (.+)$/.exec(line);
+  return trigger ? `{midi@${trigger[1]}: ${trigger[2]}}` : `{midi:${line}}`;
 }
 
 export function eventChart(rows: EditableEvent[]): string {
@@ -67,8 +81,14 @@ export function eventChart(rows: EditableEvent[]): string {
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-      if (commands.length && seconds === null) throw new Error(`Line ${index + 1}: MIDI needs a timestamp.`);
-      commands.forEach(midiCommand);
+      const triggers = commands.filter((c) => c.startsWith("@"));
+      if (commands.length > triggers.length && seconds === null) throw new Error(`Line ${index + 1}: MIDI needs a timestamp.`);
+      if (triggers.length && seconds !== null) throw new Error(`Line ${index + 1}: a MIDI trigger has no timestamp. Clear the time to use it.`);
+      for (const c of commands) {
+        const trigger = /^@(load|play|stop|end) (.+)$/.exec(c);
+        if (c.startsWith("@") && !trigger) throw new Error(`Line ${index + 1}: a MIDI trigger starts @load, @play, @stop or @end, then one command.`);
+        checkCommandText(trigger ? trigger[2] : c);
+      }
       if (/[\r\n{}]/.test(row.lyrics) || /\[\d+:[0-5]\d|\[[A-G]/.test(row.lyrics))
         throw new Error(`Line ${index + 1}: put chords and MIDI in their own fields; lyrics must be one line.`);
       if (/[{}\r\n]/.test(row.label)) throw new Error(`Line ${index + 1}: label must be one line without braces.`);
@@ -77,7 +97,7 @@ export function eventChart(rows: EditableEvent[]): string {
         ...chords.map((c) => `[${c}]`),
         row.lyrics.trim(),
         row.label.trim() ? `{label:${row.label.trim()}}` : "",
-        ...commands.map((c) => `{midi:${c}}`),
+        ...commands.map(token),
       ]
         .filter(Boolean)
         .join(" ");

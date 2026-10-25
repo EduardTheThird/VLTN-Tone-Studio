@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkCommandText, expandCommand, isLegacyCommand, macroProblems, type MidiMacro } from "./midi-macros";
+import { checkCommandText, expandCommand, isLegacyCommand, macroCodeFor, macroProblems, type MidiMacro } from "./midi-macros";
 
 const lead: MidiMacro = { code: "GP_LEAD", label: "Lead patch", commands: ["pc 16 12", "cc 1 102 127"] };
 const outro: MidiMacro = { code: "OUTRO", label: "Outro", commands: ["$GP_LEAD", "start"] };
@@ -58,5 +58,15 @@ describe("midi macros", () => {
     expect(isLegacyCommand("pc 1 5")).toBe(true);
     expect(isLegacyCommand("pc 1 5 bank 0 2")).toBe(false);
     expect(isLegacyCommand("$GP_LEAD")).toBe(false);
+  });
+});
+
+describe("macro codes", () => {
+  it("makes a code from the label, keeps it unique, and tidies odd labels", () => {
+    expect(macroCodeFor("Lead patch", [])).toBe("LEAD_PATCH");
+    expect(macroCodeFor("Lead patch", [{ code: "LEAD_PATCH", label: "", commands: [] }])).toBe("LEAD_PATCH_2");
+    expect(macroCodeFor("  ", [])).toBe("MACRO");
+    expect(macroCodeFor("150 looper", [])).toBe("M_150_LOOPER");
+    expect(macroCodeFor("x".repeat(60), [])).toHaveLength(28);
   });
 });

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { editableEvents, eventChart } from "./editor";
 import { parseChart } from "./chart";
+import type { MidiMacro } from "./midi-macros";
 
 it("preserves banks, labels, note-offs, SysEx and independent times when editing lyrics", () => {
   const original =
@@ -32,4 +33,24 @@ it("rejects invalid edits before replacing the chart", () => {
 it("keeps sub-centisecond MIDI cue timing when saving unrelated edits", () => {
   const rows = editableEvents("[01:03.12345] {midi:pc 1 12}", "", []);
   expect(parseChart(eventChart(rows))[0].time).toBe(63.12345);
+});
+
+it("round-trips triggers, macro references and the extended commands through the editor", () => {
+  const macros: MidiMacro[] = [{ code: "GP_LEAD", label: "Lead", commands: ["pc 16 12"] }];
+  const original = "{midi@load: pc 1 5}\n[00:01] {midi:$GP_LEAD} {midi:pc 1 5 bank 0 2}\n[00:02] {midi:songselect 3} {midi:start}\n{midi@end: $GP_LEAD}";
+  const rows = editableEvents(original, "", [], macros);
+  expect(rows.find((r) => r.midi.startsWith("@load"))?.seconds).toBe("");
+  const text = eventChart(rows);
+  expect(text).toContain("{midi@load: pc 1 5}");
+  expect(text).toContain("{midi:$GP_LEAD}");
+  expect(text).toContain("{midi:pc 1 5 bank 0 2}");
+  const reparsed = parseChart(text, macros);
+  expect(reparsed.map((c) => [c.trigger ?? "", c.time, c.messages])).toEqual(parseChart(original, macros).map((c) => [c.trigger ?? "", c.time, c.messages]));
+});
+it("refuses a trigger row with a time, and a macro row whose code is malformed", () => {
+  const [row] = editableEvents("{midi@load: pc 1 5}", "", []);
+  expect(() => eventChart([{ ...row, seconds: "3" }])).toThrow("no timestamp");
+  expect(() => eventChart([{ ...row, midi: "@load pc 1 5", seconds: "" }])).not.toThrow();
+  expect(() => eventChart([{ ...row, midi: "@sometimes pc 1 5", seconds: "" }])).toThrow(/trigger starts/);
+  expect(() => eventChart([{ ...row, midi: "$lower", seconds: "1" }])).toThrow(/Invalid macro reference/);
 });

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { editableEvents, eventChart, type EditableEvent } from "@/song/performance/editor";
 import type { Chord } from "@/song/performance/chords";
 import { clockPosition } from "@/song/performance/playback-clock";
+import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 
 export function PerformanceEditor({
   chart,
@@ -17,9 +18,10 @@ export function PerformanceEditor({
   onSave: (chart: string) => void;
   onCancel: () => void;
 }) {
+  const macros = useMidiConfiguration((s) => s.macros);
   const [initial] = useState(() => {
     try {
-      return { rows: editableEvents(chart, lyrics, chords), error: "" };
+      return { rows: editableEvents(chart, lyrics, chords, macros), error: "" };
     } catch {
       return { rows: [] as EditableEvent[], error: "Correct the invalid MIDI syntax in the separate chart editor before editing this page." };
     }

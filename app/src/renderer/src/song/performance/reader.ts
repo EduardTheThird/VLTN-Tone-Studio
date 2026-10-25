@@ -1,5 +1,6 @@
 import { parseChart, type Cue } from "./chart";
 import type { Chord } from "./chords";
+import type { MidiMacro } from "./midi-macros";
 
 export interface ReaderLine {
   time: number;
@@ -8,10 +9,10 @@ export interface ReaderLine {
 }
 const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
 /** Merge by time interval, without inventing word-level chord alignment or changing MIDI cues. */
-export function performanceLines(chart: string, lyrics: string, estimates: Chord[]): ReaderLine[] {
+export function performanceLines(chart: string, lyrics: string, estimates: Chord[], macros: readonly MidiMacro[] = []): ReaderLine[] {
   const safeParse = (text: string): Cue[] => {
     try {
-      return parseChart(text);
+      return parseChart(text, macros);
     } catch {
       return [];
     }
@@ -28,7 +29,7 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
       .filter((line) => !/^\[[\w]+:/.test(line))
       .map((line) =>
         line
-          .replace(/\{(?:midi|label):[^}]*\}/g, "")
+          .replace(/\{(?:midi(?:@\w+)?|label):[^}]*\}/g, "")
           .replace(/\[\d+:[0-5]\d(?:\.\d+)?\]/g, "")
           .trim(),
       )

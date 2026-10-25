@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { MIDI_CONFIG_KEY, readMidiConfiguration, rememberedPort, useMidiConfiguration } from "./midi-configuration";
+import { MIDI_CONFIG_KEY, readMidiConfiguration, removeMacro, rememberedPort, saveMacro, useMidiConfiguration } from "./midi-configuration";
 afterEach(() => {
   localStorage.clear();
   useMidiConfiguration.setState(readMidiConfiguration());
@@ -19,4 +19,21 @@ it("restores exact IDs or unique matching names, never an ambiguous replacement"
   expect(rememberedPort([port], saved)).toBe(port);
   expect(rememberedPort([port, { ...port, id: "other" }], saved)).toBeUndefined();
   expect(rememberedPort([{ ...port, state: "disconnected" }], saved)).toBeUndefined();
+});
+
+it("keeps macros with the configuration, and drops entries that are not macros", () => {
+  saveMacro({ code: "GP_LEAD", label: "Lead patch", commands: ["pc 16 12", "cc 1 102 127"] });
+  expect(readMidiConfiguration().macros).toEqual([{ code: "GP_LEAD", label: "Lead patch", commands: ["pc 16 12", "cc 1 102 127"] }]);
+  localStorage.setItem(MIDI_CONFIG_KEY, JSON.stringify({ macros: [{ code: "X", label: "x", commands: [1] }, { code: "OK", label: "ok", commands: ["start"] }] }));
+  expect(readMidiConfiguration().macros.map((m) => m.code)).toEqual(["OK"]);
+});
+it("replaces a macro with the same code and refuses a table with a problem, changing nothing", () => {
+  saveMacro({ code: "LEAD", label: "First", commands: ["pc 1 1"] });
+  saveMacro({ code: "LEAD", label: "Second", commands: ["pc 1 2"] });
+  expect(useMidiConfiguration.getState().macros).toEqual([{ code: "LEAD", label: "Second", commands: ["pc 1 2"] }]);
+  expect(() => saveMacro({ code: "LOOP", label: "Loop", commands: ["$LOOP"] })).toThrow(/refers to itself/);
+  expect(() => saveMacro({ code: "BAD", label: "Bad", commands: ["pc 1 500"] })).toThrow(/Invalid MIDI command/);
+  expect(useMidiConfiguration.getState().macros.map((m) => m.code)).toEqual(["LEAD"]);
+  removeMacro("LEAD");
+  expect(useMidiConfiguration.getState().macros).toEqual([]);
 });

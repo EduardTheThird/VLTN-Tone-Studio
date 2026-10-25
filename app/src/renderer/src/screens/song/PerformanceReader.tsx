@@ -59,16 +59,18 @@ export function PerformanceReader({
     }
   }, [stage]);
   const showCommands = useMidiConfiguration((s) => s.showCommands);
+  const macros = useMidiConfiguration((s) => s.macros);
   const lines = useMemo(() => {
-    const result = performanceLines(chart, lyrics, chords).map((line) => ({ ...line, midi: [] as Cue[] }));
+    const result = performanceLines(chart, lyrics, chords, macros).map((line) => ({ ...line, midi: [] as Cue[] }));
     if (showCommands) {
       let cues: Cue[] = [];
       try {
-        cues = parseChart(chart);
+        cues = parseChart(chart, macros);
       } catch {
         /* Editor shows validation errors. */
       }
-      for (const cue of cues.filter((c) => c.messages.length)) {
+      // A trigger has no time, so it is not put on the timeline.
+      for (const cue of cues.filter((c) => c.messages.length && !c.trigger)) {
         const existing = result.find((line) => line.time === cue.time);
         if (existing) existing.midi.push(cue);
         else result.push({ time: cue.time, text: "", chords: [], midi: [cue] });
@@ -76,7 +78,7 @@ export function PerformanceReader({
       result.sort((a, b) => (Number.isFinite(a.time) ? a.time : Infinity) - (Number.isFinite(b.time) ? b.time : Infinity));
     }
     return result;
-  }, [chart, lyrics, chords, showCommands]);
+  }, [chart, lyrics, chords, showCommands, macros]);
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
     [size, setSize] = useState(28);

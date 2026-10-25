@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { macroProblems, type MidiMacro } from "./midi-macros";
+
 export const MIDI_CONFIG_KEY = "vltn.performance.midi.v1";
 export interface PortChoice {
   id: string;
@@ -15,6 +17,8 @@ export interface MidiConfiguration {
   showCommands: boolean;
   pedal: string;
   commands: Record<string, { action: string; value: number }>;
+  /** Named command lists that charts reference as {midi:$CODE}. Shared by every song. */
+  macros: MidiMacro[];
 }
 const defaults: MidiConfiguration = {
   preset: "cues",
@@ -25,7 +29,14 @@ const defaults: MidiConfiguration = {
   showCommands: true,
   pedal: "",
   commands: {},
+  macros: [],
 };
+/** The stored shape of a macro. Whether its commands are valid is checked by `macroProblems`, so a bad one can still be shown and removed. */
+function isMacroShape(value: unknown): value is MidiMacro {
+  const macro = value as Partial<MidiMacro> | null;
+  return !!macro && typeof macro.code === "string" && typeof macro.label === "string" && Array.isArray(macro.commands) && macro.commands.every((c) => typeof c === "string");
+}
+
 export function readMidiConfiguration(): MidiConfiguration {
   try {
     const data = JSON.parse(localStorage.getItem(MIDI_CONFIG_KEY) || "{}");
@@ -45,6 +56,7 @@ export function readMidiConfiguration(): MidiConfiguration {
           ([, v]) => v && typeof v === "object" && typeof (v as { action?: unknown }).action === "string" && Number.isFinite((v as { value?: number }).value),
         ),
       ) as MidiConfiguration["commands"],
+      macros: Array.isArray(data.macros) ? data.macros.filter(isMacroShape) : [],
     };
   } catch {
     return { ...defaults };
@@ -58,6 +70,20 @@ export const useMidiConfiguration = create<MidiConfiguration & { update: (patch:
     set(patch);
   },
 }));
+/** Adds a macro, or replaces the one with its code. Refused, and nothing changes, when the table would have a problem. */
+export function saveMacro(macro: MidiMacro): void {
+  const state = useMidiConfiguration.getState();
+  const macros = [...state.macros.filter((existing) => existing.code !== macro.code), macro];
+  const [problem] = macroProblems(macros);
+  if (problem) throw new Error(problem);
+  state.update({ macros });
+}
+
+export function removeMacro(code: string): void {
+  const state = useMidiConfiguration.getState();
+  state.update({ macros: state.macros.filter((macro) => macro.code !== code) });
+}
+
 export const MIDI_SETUP_PRESETS = [
   {
     id: "gp180-bluetooth",

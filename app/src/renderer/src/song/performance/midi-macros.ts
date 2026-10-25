@@ -81,6 +81,18 @@ export function macroProblems(macros: readonly MidiMacro[]): string[] {
   return problems;
 }
 
+/**
+ * A code for a new macro, made from its label and unused in `existing`: “Lead patch” becomes LEAD_PATCH, and a repeat becomes LEAD_PATCH_2.
+ * A label with no letters or digits falls back to MACRO.
+ */
+export function macroCodeFor(label: string, existing: readonly MidiMacro[]): string {
+  const base = (label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "MACRO").replace(/^(?![A-Z])/, "M_").slice(0, 28);
+  const taken = new Set(existing.map((macro) => macro.code));
+  let code = base;
+  for (let n = 2; taken.has(code); n++) code = `${base}_${n}`;
+  return code;
+}
+
 /** Whether a command is in the original `midiCommand` grammar. Charts that use only that grammar keep their old parse output. */
 export function isLegacyCommand(text: string): boolean {
   try {
