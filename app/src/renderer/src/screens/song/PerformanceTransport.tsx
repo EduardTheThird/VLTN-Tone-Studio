@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { isMetronomeMode, METRONOME_MODES, type MetronomeMode } from "@/song/performance/rhythm";
+import { clampCrossfade } from "@/song/performance/transition";
+import { readCrossfade, writeCrossfade } from "@/song/performance/crossfade";
 import { LEAD_IN_LIMITS, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { ClockOverDuration, PositionSlider } from "./PlaybackDisplay";
 import { BeatIndicator } from "./BeatIndicator";
@@ -52,6 +55,7 @@ export function PerformanceTransport({
   metronome: MetronomeSettings;
 }) {
   const library = useSongLibrary();
+  const [crossfade, setCrossfade] = useState(readCrossfade);
   const source = useSong((s) => s.source);
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
@@ -75,6 +79,30 @@ export function PerformanceTransport({
           </Button>
           <Button variant="outline" disabled={library.busy || library.position + 1 >= library.queue.length} onClick={() => session.skip(1)}>
             Next song
+          </Button>
+          <label className="flex items-center gap-2">
+            Crossfade (s)
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={0.5}
+              className={field}
+              value={crossfade}
+              onChange={(e) => {
+                const value = clampCrossfade(Number(e.target.value));
+                setCrossfade(value);
+                writeCrossfade(value);
+              }}
+            />
+          </label>
+          <Button
+            variant="outline"
+            disabled={!playing || !library.preparedNext()}
+            title="Starts the next song now and fades this one out over the crossfade length. Needs the next song loaded."
+            onClick={() => session.crossfadeNext()}
+          >
+            Crossfade to next
           </Button>
           <Button
             variant="outline"
