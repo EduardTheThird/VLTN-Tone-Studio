@@ -6,7 +6,7 @@ import { useSongLibrary } from "@/song/library";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
-import { countInBeats, preRollStart } from "@/song/performance/rhythm";
+import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD } from "@/song/performance/midi-scheduler";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
@@ -133,6 +133,8 @@ export class PerformanceSession {
   private playPending = false;
   private startTempo: number[][] | null = null;
   private startPosition: number | null = null;
+  /** The count-in before the audio of the current start, in ms. The start tempo is due at its beginning. */
+  private countInMs = 0;
   private cancelDelay: (() => void) | null = null;
   private noteChannels = new Set<number>();
   private previousBluetooth: BleMidiConnection | null;
@@ -445,7 +447,9 @@ export class PerformanceSession {
       if (request !== this.playRequest) return;
       const requestedPosition = player.position >= player.duration ? 0 : Math.max(0, player.position);
       // The count-in is clicked before the audio starts, so it begins with the tempo message.
-      await player.play({ bpm, countInBeats: countInBeats(timing.countInBars, timing.beatsPerBar), preRollBeats: timing.preRollBeats });
+      const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
+      this.countInMs = bpm > 0 ? countIn * beatSeconds(bpm) * 1000 : 0;
+      await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats });
       if (request !== this.playRequest) {
         player.pause();
         this.terminateWorker();
@@ -738,12 +742,14 @@ export class PerformanceSession {
       // Keep the live audio clock as the origin so overdue starts still fault.
       const cuePosition = this.startPosition ?? position;
       this.startPosition = null;
+      const origin = midiNow() - position * 1000;
       const handle = startMidiScheduler(
         {
           cues: s.cues,
           position: cuePosition,
           duration: player.duration,
-          origin: midiNow() - position * 1000,
+          origin,
+          tempoAt: origin - this.countInMs,
           bpm: s.bpm,
           clock: s.clock,
           tempo: this.startTempo,

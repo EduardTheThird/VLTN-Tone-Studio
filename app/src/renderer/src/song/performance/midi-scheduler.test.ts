@@ -162,3 +162,21 @@ it("replays dropped patch changes as a chase after a stall instead of leaving th
   expect(f.replies.flatMap((r) => (r.type === "batch" ? (r.dropped ?? []) : [])).map((m) => m.bytes)).toEqual([[192, 2]]);
   expect(f.messages().map((m) => m.bytes)).toEqual([[192, 2]]);
 });
+
+it("sends the start tempo at the start of a count-in, with the first cue at the audio start two seconds later", () => {
+  // One bar at 120 BPM: the count-in starts at 1.0 s on the clock and the audio, with cue 0:00, at 3.0 s.
+  const f = fixture({
+    cues: parseChart("[00:00] {midi:pc 1 1}"),
+    position: 0,
+    duration: 2,
+    origin: 3000,
+    tempoAt: 1000,
+    lookahead: 2.5,
+    tempo: [[191, 74, 120]],
+  });
+  f.schedule.tick(1000);
+  const tempo = f.messages().find((m) => m.label === "Song tempo");
+  const cue = f.messages().find((m) => m.label === "Song cue");
+  expect(tempo?.due).toBe(1000);
+  expect(cue?.due).toBe(3000);
+});

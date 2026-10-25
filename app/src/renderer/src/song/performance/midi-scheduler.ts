@@ -16,6 +16,8 @@ export interface SchedulerConfig {
   bpm: number;
   clock: boolean;
   tempo: number[][] | null;
+  /** Clock time (the same clock as `origin`) the start tempo is due. Defaults to song position zero, which a count-in puts later than the start. */
+  tempoAt?: number;
   /** Seconds of cues to emit ahead of the audio position. Defaults to the Bluetooth value. */
   lookahead?: number;
 }
@@ -142,7 +144,7 @@ export class MidiSchedule {
       for (const bytes of this.tempo)
         candidates.push({
           bytes,
-          due: this.config.origin + Math.max(0, this.config.position) * 1000,
+          due: this.config.tempoAt ?? this.config.origin + Math.max(0, this.config.position) * 1000,
           label: "Song tempo",
           time: Math.max(0, this.config.position),
         });
