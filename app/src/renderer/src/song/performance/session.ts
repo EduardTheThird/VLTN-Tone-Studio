@@ -2,7 +2,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { StemPlayer, type Lead, type RenderedBuffers } from "@/song/stems/player";
 import { RenderQueue, isPlainSpeed } from "@/song/audio/render-queue";
-import { DEFAULT_SPEED, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
+import { DEFAULT_SPEED, clampRate, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { useSong } from "@/song/store";
 import { useSongLibrary, type HandedOverSong, type PreparedSong } from "@/song/library";
@@ -35,8 +35,25 @@ import {
   type SectionLive,
 } from "@/song/performance/sections";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
-import { rememberedPort, type PortChoice } from "@/song/performance/midi-configuration";
+import { rememberedPort, useMidiConfiguration, type PortChoice } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
+import { actionLabel, runAction, type ActionHost, type Hint, type ViewHost } from "./actions";
+import {
+  RemoteRouter,
+  defaultBindings,
+  describeBinding,
+  dialogOpen,
+  findConflict,
+  isModifierKey,
+  isTypingTarget,
+  normaliseKey,
+  stopLearn,
+  useRemoteLearn,
+  type Binding,
+  type LearnStep,
+  type LearnTarget,
+  type Route,
+} from "./bindings";
 
 /*
  * Everything that keeps a song's MIDI cues, transport and remote input running during a performance, without React.
@@ -117,13 +134,34 @@ export interface SessionState {
   rendering: { done: number; total: number } | null;
   /** The decided boundary that is still to take effect: a jump (to `target`) or a pause, and the song time it lands at */
   sectionNext: { kind: "jump" | "pause"; target: string | null; at: number } | null;
+  /** What each MIDI message or key runs. Saved with the MIDI configuration. */
+  bindings: Binding[];
 }
 
 export type SessionInputs = Pick<
   SessionState,
   "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
 > &
-  Partial<Pick<SessionState, "timing" | "sections">>;
+  Partial<Pick<SessionState, "timing" | "sections" | "bindings">>;
+
+/** The actions the session carries out itself: transport, songs, sections and arming. The screen supplies the rest (see `setView`). */
+export type SessionHost = Omit<ActionHost, keyof ViewHost>;
+
+const NOT_ON_SCREEN = (): Hint => "This control is not on screen.";
+/** The view actions before the performance screen has supplied its own. */
+const NO_VIEW: ViewHost = {
+  scrollLyrics: NOT_ON_SCREEN,
+  fontSize: NOT_ON_SCREEN,
+  toggleStage: NOT_ON_SCREEN,
+  muteGroup: NOT_ON_SCREEN,
+  toggleClick: NOT_ON_SCREEN,
+  tap: NOT_ON_SCREEN,
+};
+
+/** How far a speed key moves the rate: 5% */
+const SPEED_STEP = 0.05;
+/** Shown when Learn is given a key with a modifier, which a binding cannot match */
+const MODIFIER_HINT = "Use a key without Ctrl, Alt or Cmd.";
 
 export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {
   return (s.portId === BLUETOOTH_PORT_ID ? s.bluetooth : s.access?.outputs.get(s.portId)) ?? undefined;
@@ -231,6 +269,72 @@ export class PerformanceSession {
   private startPlay: number[][] | null = null;
   /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
   private loadedPlayer: StemPlayer | null = null;
+  /** Decides what each incoming MIDI message and key press runs, and recognises our own output coming back */
+  private readonly remote = new RemoteRouter();
+  /** The view actions, which the performance screen supplies (see `setView`) */
+  private view: ViewHost = NO_VIEW;
+  /** What the session does for the remote actions. Each returns a hint when the action does not apply now. */
+  private readonly sessionActions: SessionHost = {
+    play: () => {
+      if (!this.state.player) return "No song is loaded.";
+      this.startPlayback();
+    },
+    playPause: () => {
+      if (!this.state.player) return "No song is loaded.";
+      if (this.state.playing) this.pause();
+      else this.startPlayback();
+    },
+    stop: () => {
+      if (!this.state.player) return "No song is loaded.";
+      this.pause();
+    },
+    playFromStart: () => {
+      if (!this.state.player) return "No song is loaded.";
+      // Seeking is refused in stage mode, so the song would carry on from where it is.
+      if (this.locked) return "Seeking is locked in stage mode.";
+      void this.seek(0).then(() => this.startPlayback());
+    },
+    panic: () => this.panicAndDisarm(),
+    nextSong: () => this.skipSong(1),
+    previousSong: () => this.skipSong(-1),
+    selectSong: (n) => this.selectSong(n),
+    crossfade: () => {
+      if (!this.crossfadeNext()) return "Crossfade needs a playing playlist with the next song ready.";
+    },
+    nextSection: () => this.stepSection(1),
+    previousSection: () => this.stepSection(-1),
+    armSection: (n) => this.sectionAt(n, (id) => this.tapSection(id)),
+    jumpSection: (n) => this.sectionAt(n, (id) => this.jumpSectionNow(id)),
+    toggleSectionLoop: () => {
+      const { ids, current } = this.sectionOrder();
+      if (current < 0) return "No section is playing.";
+      this.toggleSectionLoop(ids[current]);
+    },
+    exitSectionLoop: () => {
+      if (this.sectionOrder().current < 0) return "No section is playing.";
+      this.releaseSectionLoop();
+    },
+    cancelSectionJump: () => {
+      if (!this.state.sectionLive.jump) return "No jump is armed.";
+      this.cancelSectionJump();
+    },
+    arm: () => {
+      const output = this.output;
+      if (!output || output.state !== "connected") return "Choose a connected MIDI output first.";
+      this.setArmed(true);
+    },
+    disarm: () => this.setArmed(false),
+    speed: (change) => {
+      const rate = this.state.speed.rate;
+      if (change === "reset") {
+        if (rate !== 1) this.setSpeed({ rate: 1 });
+        return;
+      }
+      const next = clampRate(Math.round((rate + (change === "up" ? SPEED_STEP : -SPEED_STEP)) * 100) / 100);
+      if (next === rate) return change === "up" ? "Speed is at its maximum." : "Speed is at its minimum.";
+      this.setSpeed({ rate: next });
+    },
+  };
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
@@ -259,6 +363,7 @@ export class PerformanceSession {
       sectionNext: null,
       speed: DEFAULT_SPEED,
       rendering: null,
+      bindings: defaultBindings(),
       ...initial,
     }));
     this.effects = this.createEffects();
@@ -582,6 +687,8 @@ export class PerformanceSession {
   };
 
   private recordQueued(bytes: number[], timestamp?: number, label = "Manual / transport") {
+    // Whatever leaves the app may come back in through a THRU input, and must not be taken for a press.
+    this.remote.echo.record(bytes);
     const queued = midiNow(),
       intended = (timestamp ?? performance.now()) + performance.timeOrigin;
     useMidiDiagnostics.getState().record({ label, intended, queued, lateMs: Math.max(0, queued - intended), bytes });
@@ -1121,6 +1228,141 @@ export class PerformanceSession {
     this.set({ sectionLive: cancelJump(this.state.sectionLive) });
   };
 
+  // ---- remote control ------------------------------------------------------------------------------------------
+
+  /** Supplies the performance screen's view actions (stage, click, mixer, tap, lyrics). Called again whenever they change. */
+  setView(view: ViewHost): void {
+    this.view = view;
+  }
+
+  /** Every key press from the window. Returns true when Learn or a binding took it; a key in a text field is never taken. */
+  keyDown = (e: KeyboardEvent): boolean => {
+    if (e.defaultPrevented || isTypingTarget(e.target) || dialogOpen()) return false;
+    const learn = useRemoteLearn.getState().target;
+    if (learn?.source === "key") {
+      if (!e.repeat) this.learnKey(e, learn);
+      e.preventDefault();
+      return true;
+    }
+    // While a MIDI message is being learned, a key does nothing: learning must not run what it is about to bind.
+    if (learn) return false;
+    // Key repeat and modified keys are not bindings: holding PageDown must not run the section jump again and again.
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return false;
+    const routes = this.remote.key(e.key, this.state.bindings);
+    if (!routes.length) return false;
+    e.preventDefault();
+    this.runRoutes(routes);
+    return true;
+  };
+
+  /** One message from the selected input: learned while Learn is open, otherwise it runs the bindings. */
+  private receiveMidi = (data: Uint8Array): void => {
+    const learn = useRemoteLearn.getState().target;
+    if (learn?.source === "midi") this.learnFromMidi(data, learn);
+    // While a key is being learned, a pedal message does nothing, for the same reason as a key during MIDI Learn.
+    else if (!learn) this.runRoutes(this.remote.midi(data, this.state.bindings));
+  };
+
+  /** Runs what the bindings matched. A first press of a double press says so, so the performer knows it is waiting for the second. */
+  private runRoutes(routes: Route[]): void {
+    for (const route of routes) {
+      const label = actionLabel(route.binding.action, route.binding.index);
+      if (route.kind === "armed") {
+        showToast({ tone: "info", title: `Press again to ${label}`, body: "The second press must come within 0.6 s." });
+        continue;
+      }
+      const hint = runAction(route.binding, this.actionHost());
+      if (hint) showToast({ tone: "info", title: hint });
+    }
+  }
+
+  private actionHost(): ActionHost {
+    return { ...this.sessionActions, ...this.view };
+  }
+
+  private learnFromMidi(data: Uint8Array, target: LearnTarget): void {
+    const step: LearnStep | null = this.remote.learnMidi(data);
+    if (!step) return;
+    useRemoteLearn.setState({ seen: step.seen });
+    if (step.kind === "match") this.capture({ ...this.learnedBase(target), source: "midi", match: step.match });
+  }
+
+  private learnKey(e: KeyboardEvent, target: LearnTarget): void {
+    if (e.key === "Escape") {
+      stopLearn("Learn cancelled.");
+      return;
+    }
+    if (isModifierKey(e.key)) {
+      useRemoteLearn.setState({ seen: "Press a key, not a modifier." });
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      useRemoteLearn.setState({ seen: MODIFIER_HINT });
+      return;
+    }
+    const key = normaliseKey(e.key);
+    useRemoteLearn.setState({ seen: `Key ${key}` });
+    this.capture({ ...this.learnedBase(target), source: "key", match: { key } });
+  }
+
+  private learnedBase(target: LearnTarget): { action: LearnTarget["action"]; index?: number } {
+    return target.index === undefined ? { action: target.action } : { action: target.action, index: target.index };
+  }
+
+  /** Binds what Learn captured, unless a binding already responds to the same input: the clash is named instead. */
+  private capture(binding: Binding): void {
+    const clash = findConflict(this.state.bindings, binding);
+    if (clash >= 0) {
+      stopLearn(`Already bound to ${describeBinding(this.state.bindings[clash])}. Remove that binding first.`);
+      return;
+    }
+    const bindings = [...this.state.bindings, binding];
+    this.set({ bindings });
+    useMidiConfiguration.getState().update({ bindings });
+    stopLearn(`Bound ${describeBinding(binding)}.`);
+  }
+
+  /** The playable sections in song order, and the index of the one the playhead is in (-1 when none). */
+  sectionOrder(): { ids: string[]; current: number } {
+    const ordered = sortedSections(this.playableSections);
+    const player = this.state.player;
+    return { ids: ordered.map((s) => s.id), current: player ? sectionIndexAt(ordered, player.position) : -1 };
+  }
+
+  private stepSection(step: 1 | -1): Hint {
+    const { ids, current } = this.sectionOrder();
+    if (!ids.length) return "This song has no sections.";
+    const target = current + step;
+    if (target < 0) return "Already at the first section.";
+    if (target >= ids.length) return "Already at the last section.";
+    this.tapSection(ids[target]);
+  }
+
+  private sectionAt(n: number, run: (id: string) => void): Hint {
+    const { ids } = this.sectionOrder();
+    if (!ids.length) return "This song has no sections.";
+    if (n > ids.length) return `This song has ${ids.length} sections.`;
+    run(ids[n - 1]);
+  }
+
+  /** Moves the playlist by `offset` songs. Outside a playlist, or past its ends, there is a hint instead. */
+  private skipSong(offset: number): Hint {
+    if (!this.state.queued) return "Songs change only in a playlist.";
+    if (offset === 0) return;
+    const library = useSongLibrary.getState(),
+      target = library.position + offset;
+    if (target < 0) return "This is the first song in the playlist.";
+    if (target >= library.queue.length) return "This is the last song in the playlist.";
+    this.skip(offset);
+  }
+
+  private selectSong(n: number): Hint {
+    if (!this.state.queued) return "Songs change only in a playlist.";
+    const library = useSongLibrary.getState();
+    if (n > library.queue.length) return `The playlist has ${library.queue.length} songs.`;
+    return this.skipSong(n - 1 - library.position);
+  }
+
   // ---- effects -------------------------------------------------------------------------------------------------
 
   private createEffects(): Effect[] {
@@ -1308,23 +1550,15 @@ export class PerformanceSession {
           if (s.armedOutput && s.armedOutput !== selectOutput(s)) this.setArmed(false);
         },
       },
-      // Remote transport input: Start/Continue/Stop, or CC80 >= 64 toggles playback.
+      // Remote input: the selected input's messages run the bindings, or are learned while Learn is open.
       {
         deps: (s) => [s.access, s.inputId, s.bluetooth],
         run: (s) => {
-          const receive = (data: Uint8Array) => {
-            if (data[0] === 250 || data[0] === 251) this.startPlayback();
-            if (data[0] === 252) this.pause();
-            if ((data[0] & 240) === 176 && data[1] === 80 && data[2] >= 64) {
-              if (this.state.player?.isPlaying) this.pause();
-              else this.startPlayback();
-            }
-          };
-          if (s.inputId === BLUETOOTH_PORT_ID) return s.bluetooth?.subscribe(receive);
+          if (s.inputId === BLUETOOTH_PORT_ID) return s.bluetooth?.subscribe(this.receiveMidi);
           const input = s.access?.inputs.get(s.inputId);
           if (!input) return;
           const handler = (e: MIDIMessageEvent) => {
-            if (e.data) receive(e.data);
+            if (e.data) this.receiveMidi(e.data);
           };
           input.addEventListener("midimessage", handler);
           return () => input.removeEventListener("midimessage", handler);

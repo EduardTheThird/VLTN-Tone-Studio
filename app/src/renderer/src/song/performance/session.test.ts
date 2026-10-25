@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
+import { defaultBindings, startLearn, stopLearn, useRemoteLearn, type Binding } from "./bindings";
+import { useMidiConfiguration } from "./midi-configuration";
 import { parseChart } from "./chart";
 import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
@@ -280,6 +282,10 @@ it("toggles playback from a CC80 remote message on the selected input", async ()
   const message = (data: number[]) => Object.assign(new Event("midimessage"), { data: Uint8Array.from(data) });
   input.dispatchEvent(message([176, 80, 127]));
   await vi.waitFor(() => expect(session.state.playing).toBe(true));
+  // A repeat within the bounce window is the same press; the next press comes after it.
+  input.dispatchEvent(message([176, 80, 127]));
+  expect(session.state.playing).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 200));
   input.dispatchEvent(message([176, 80, 127]));
   expect(session.state.playing).toBe(false);
   session.dispose();
@@ -701,5 +707,156 @@ describe("MIDI triggers", () => {
     ]);
     expect(playTriggersOf().at(-1)).toEqual([[177, 80, 127]]);
     vi.useRealTimers();
+  });
+});
+
+describe("remote actions", () => {
+  /** A session on one input, with a view that records what the screen was asked to do. */
+  function remoteSession(patch: Partial<SessionInputs> = {}) {
+    const input = Object.assign(new EventTarget(), { id: "in", state: "connected" });
+    const access = Object.assign(new EventTarget(), { outputs: new Map(), inputs: new Map([["in", input]]) }) as unknown as MIDIAccess;
+    const session = new PerformanceSession({
+      initial: inputs(patch),
+      carried: { access, portId: "", inputId: "in", armed: false, output: undefined },
+      initialClock: false,
+    });
+    session.loadSong(source, null);
+    session.bind();
+    const view = { scrollLyrics: vi.fn(), fontSize: vi.fn(), toggleStage: vi.fn(), muteGroup: vi.fn(), toggleClick: vi.fn(), tap: vi.fn() };
+    session.setView(view);
+    const message = (data: number[]) => Object.assign(new Event("midimessage"), { data: Uint8Array.from(data) });
+    return { session, input, view, message };
+  }
+  const press = (key: string, target: EventTarget = window) => {
+    const event = new KeyboardEvent("keydown", { key });
+    target.dispatchEvent(event);
+    return event;
+  };
+  const withBindings = (session: PerformanceSession, bindings: Binding[]) => session.update({ bindings });
+
+  beforeEach(() => {
+    stopLearn();
+    useMidiConfiguration.getState().update({ bindings: defaultBindings() });
+  });
+
+  it("runs the tempo tap from the T key, and the key is ignored while typing in a field", () => {
+    const { session, view } = remoteSession();
+    session.keyDown(press("t"));
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    const typed = press("t", field);
+    expect(session.keyDown(typed)).toBe(false);
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    field.remove();
+    session.dispose();
+  });
+
+  it("a binding that does not apply says why, and changes nothing", () => {
+    const { session } = remoteSession();
+    const before = session.state.sectionLive;
+    session.keyDown(press("PageDown"));
+    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "This song has no sections." });
+    expect(session.state.sectionLive).toBe(before);
+    session.dispose();
+  });
+
+  it("refuses play from start in stage mode, and leaves play and pause working", () => {
+    const { session } = remoteSession();
+    withBindings(session, [{ action: "transport.playFromStart", source: "key", match: { key: "Home" } }]);
+    session.locked = true;
+    session.keyDown(press("Home"));
+    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "Seeking is locked in stage mode." });
+    session.dispose();
+  });
+
+  it("shows the first press of a double press, and runs the action on the second", () => {
+    const { session, view } = remoteSession();
+    withBindings(session, [{ action: "tempo.tap", source: "key", match: { key: "y" }, doublePress: true }]);
+    session.keyDown(press("y"));
+    expect(mocks.toasts.at(-1)).toMatchObject({ title: "Press again to Tap tempo" });
+    expect(view.tap).not.toHaveBeenCalled();
+    session.keyDown(press("y"));
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
+  it("learns a program change with its bank as one binding on the selected input", () => {
+    const { session, message } = remoteSession();
+    startLearn({ source: "midi", action: "song.select", index: 2 });
+    const input = session.state.access?.inputs.get("in") as unknown as EventTarget;
+    input.dispatchEvent(message([0xb2, 0, 1]));
+    expect(useRemoteLearn.getState().seen).toContain("program change");
+    expect(useRemoteLearn.getState().target).not.toBeNull();
+    input.dispatchEvent(message([0xb2, 32, 3]));
+    input.dispatchEvent(message([0xc2, 9]));
+    const learned = useMidiConfiguration.getState().bindings.at(-1);
+    expect(learned).toEqual({ action: "song.select", index: 2, source: "midi", match: { status: 0xc0, channel: 3, data1: 9, bank: 131 } });
+    expect(useRemoteLearn.getState().target).toBeNull();
+    expect(useRemoteLearn.getState().result).toBe("Bound Ch 3 · Program 9 · bank 131.");
+    session.dispose();
+  });
+
+  it("names the binding a learned key already runs, and binds nothing", () => {
+    const { session } = remoteSession();
+    const before = useMidiConfiguration.getState().bindings.length;
+    startLearn({ source: "key", action: "song.next" });
+    session.keyDown(press("PageDown"));
+    expect(useRemoteLearn.getState().result).toBe("Already bound to Key PageDown. Remove that binding first.");
+    expect(useMidiConfiguration.getState().bindings).toHaveLength(before);
+    session.dispose();
+  });
+
+  it("learns a key, and Escape cancels Learn", () => {
+    const { session } = remoteSession();
+    startLearn({ source: "key", action: "view.stage" });
+    session.keyDown(press("F9"));
+    expect(useRemoteLearn.getState().result).toBe("Bound Key F9.");
+    startLearn({ source: "key", action: "view.stage" });
+    session.keyDown(press("Escape"));
+    expect(useRemoteLearn.getState().target).toBeNull();
+    expect(useRemoteLearn.getState().result).toBe("Learn cancelled.");
+    session.dispose();
+  });
+
+  it("runs Start and Stop from the input, and ignores our own Stop coming back in", async () => {
+    const { session, input, message } = remoteSession();
+    input.dispatchEvent(message([250]));
+    await vi.waitFor(() => expect(session.state.playing).toBe(true));
+    // Our own Stop, echoed by a THRU input, must not stop the song.
+    session.sendPerformance([252]);
+    input.dispatchEvent(message([252]));
+    expect(session.state.playing).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    input.dispatchEvent(message([252]));
+    expect(session.state.playing).toBe(false);
+    session.dispose();
+  });
+
+  it("does nothing with a key while a MIDI message is being learned, and a pedal while a key is", () => {
+    const { session, view, input, message } = remoteSession();
+    startLearn({ source: "midi", action: "view.stage" });
+    expect(session.keyDown(press("t"))).toBe(false);
+    expect(view.tap).not.toHaveBeenCalled();
+    stopLearn();
+    startLearn({ source: "key", action: "view.stage" });
+    input.dispatchEvent(message([0xb0, 80, 127]));
+    expect(session.state.playing).toBe(false);
+    expect(useRemoteLearn.getState().target).not.toBeNull();
+    stopLearn();
+    session.dispose();
+  });
+
+  it("steps the speed down with its key and says when it is at the limit", () => {
+    const { session } = remoteSession();
+    // The song is shared by the tests above, so its speed is set rather than assumed.
+    session.setSpeed({ rate: 1 });
+    withBindings(session, [{ action: "speed.down", source: "key", match: { key: "-" } }]);
+    session.keyDown(press("-"));
+    expect(session.state.speed.rate).toBeCloseTo(0.95);
+    for (let i = 0; i < 20; i++) session.keyDown(press("-"));
+    expect(session.state.speed.rate).toBe(0.5);
+    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "Speed is at its minimum." });
+    session.dispose();
   });
 });
