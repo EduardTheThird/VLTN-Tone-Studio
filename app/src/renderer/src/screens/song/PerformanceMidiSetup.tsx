@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { BluetoothControls } from "@/bluetooth/BluetoothControls";
 import { useMidiConfiguration, MIDI_SETUP_PRESETS, rememberedPort } from "@/song/performance/midi-configuration";
@@ -17,10 +18,16 @@ export function SessionMidiHealth({ session }: { session: PerformanceSession }) 
   const portId = useSession(session, (s) => s.portId);
   const output = useSession(session, selectOutput);
   const midiConfig = useMidiConfiguration();
+  // A trimmed song's cues are checked against the part that plays: cues outside it never fire.
+  const range = useMemo(
+    () => (player && (player.start > 0 || player.duration < player.length) ? { start: player.start, end: player.duration } : undefined),
+    [player?.start, player?.duration, player?.length],
+  );
   return (
     <MidiHealth
       cues={cues}
       duration={player?.duration ?? 0}
+      range={range}
       clock={clock}
       tempoChannel={tempoOnStart ? midiConfig.tempoChannel : undefined}
       outputName={portId === BLUETOOTH_PORT_ID ? `Bluetooth ${output?.name || ""}` : output?.name || undefined}

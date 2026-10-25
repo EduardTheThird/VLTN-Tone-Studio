@@ -122,8 +122,20 @@ export function isBarAligned(seconds: number, bpm: number, beats: number, firstB
   return Math.abs(bars - Math.round(bars)) * bar <= BAR_TOLERANCE_S;
 }
 
+/**
+ * The sections as they play inside a trimmed range: a section is cut to the range, and one that is left shorter than a section may
+ * be is dropped. Returns the same array when every section already lies inside the range, so callers can compare by identity.
+ */
+export function clampSections(sections: readonly Section[], range: { start: number; end: number }): Section[] {
+  const inside = sections.every((s) => s.start >= range.start && s.end <= range.end);
+  if (inside) return sections as Section[];
+  return sections
+    .map((s) => ({ ...s, start: Math.max(s.start, range.start), end: Math.min(s.end, range.end) }))
+    .filter((s) => s.end - s.start >= MIN_SECTION_S);
+}
+
 export interface SectionIssue {
-  code: "section-range" | "section-overlap" | "section-bar";
+  code: "section-range" | "section-overlap" | "section-bar" | "section-trim";
   text: string;
 }
 
@@ -133,11 +145,17 @@ export interface SectionIssue {
  */
 export function sectionIssues(
   sections: readonly Section[],
-  options: { duration: number; bpm?: number; beats?: number; firstBeat?: number },
+  options: { duration: number; bpm?: number; beats?: number; firstBeat?: number; range?: { start: number; end: number } },
 ): SectionIssue[] {
   const issues: SectionIssue[] = [];
   const ordered = sortedSections(sections);
+  const range = options.range;
   for (const [i, section] of ordered.entries()) {
+    if (range && (section.start < range.start - EPSILON || section.end > range.end + EPSILON))
+      issues.push({
+        code: "section-trim",
+        text: `${section.name} (${section.start.toFixed(2)}–${section.end.toFixed(2)} s) is partly outside the trimmed range, so it plays cut short.`,
+      });
     if (section.end > options.duration + EPSILON)
       issues.push({ code: "section-range", text: `${section.name} ends at ${section.end.toFixed(2)} s, after the ${options.duration.toFixed(2)} s audio.` });
     if (i > 0 && section.start < ordered[i - 1].end - EPSILON)

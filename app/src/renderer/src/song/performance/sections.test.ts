@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   armJump,
+  clampSections,
   immediateJump,
   cancelJump,
   isBarAligned,
@@ -222,5 +223,24 @@ describe("saveLiveAsDefault", () => {
   it("does not store a pending jump", () => {
     const sections = [section("a", 0, 8)];
     expect(saveLiveAsDefault(sections, armJump(NO_LIVE, "a"))).toEqual(sections);
+  });
+});
+
+describe("clampSections", () => {
+  const verse = { id: "v", name: "Verse", start: 1, end: 9, mode: "continue" as const };
+  const chorus = { id: "c", name: "Chorus", start: 9.5, end: 12, mode: "continue" as const };
+
+  it("cuts sections to the trimmed range and drops one that is left empty", () => {
+    expect(clampSections([verse, chorus], { start: 2, end: 10 })).toEqual([
+      { ...verse, start: 2, end: 9 },
+      { ...chorus, start: 9.5, end: 10 },
+    ]);
+    // A sliver of a section, shorter than the shortest section, is dropped.
+    expect(clampSections([chorus], { start: 0, end: 9.55 })).toEqual([]);
+  });
+
+  it("returns the same array when every section lies inside the range", () => {
+    const sections = [verse];
+    expect(clampSections(sections, { start: 0, end: 20 })).toBe(sections);
   });
 });

@@ -19,6 +19,7 @@ import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/son
 import {
   armJump,
   cancelJump,
+  clampSections,
   DECISION_LEAD_S,
   immediateJump,
   NO_LIVE,
@@ -201,6 +202,7 @@ export class PerformanceSession {
   /** The next playlist song, once it has been started on this song's clock */
   private chained: Chained | null = null;
   private handoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
   /** The id of the song being handed over to, from the moment the library moves on until the session adopts it */
   private handingOver: string | null = null;
 
@@ -798,6 +800,19 @@ export class PerformanceSession {
     return midiNow() + (ctx - (this.state.player?.audioNow ?? 0)) * 1000;
   }
 
+  /** The sections as they fall inside the part of the audio that plays: a trim cuts them. */
+  private get playableSections(): Section[] {
+    const { player, sections } = this.state;
+    if (!player) return sections;
+    const { start, duration } = player;
+    // The same array while nothing changes, so a decision made on it is still recognised as current.
+    const cached = this.clampedSections;
+    if (cached && cached.source === sections && cached.start === start && cached.end === duration) return cached.value;
+    const value = clampSections(sections, { start, end: duration });
+    this.clampedSections = { source: sections, start, end: duration, value };
+    return value;
+  }
+
   /** Tells the scheduler the waiting plan. Called on each decision, and when a scheduler starts while a plan waits. */
   private sendPlan(): void {
     const schedule = this.section?.schedule ?? null;
@@ -809,7 +824,8 @@ export class PerformanceSession {
 
   /** Takes a boundary decided by the planner: the audio jump is scheduled now, the MIDI schedule is held up to it. */
   private commitBoundary(boundary: SectionBoundary): void {
-    const { player, sections, sectionLive } = this.state;
+    const { player, sectionLive } = this.state;
+    const sections = this.playableSections;
     if (!player) return;
     const { action } = boundary;
     if (action.kind === "jump") {
@@ -862,7 +878,8 @@ export class PerformanceSession {
 
   /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
   private tickSections = (): void => {
-    const { player, playing, sections } = this.state;
+    const { player, playing } = this.state;
+    const sections = this.playableSections;
     if (!player || !playing) return;
     try {
       const plan = this.section;
@@ -888,7 +905,7 @@ export class PerformanceSession {
 
   /** A tap arms a jump to the section for the next boundary. While stopped it moves the playhead to the section's start instead. */
   tapSection = (id: string) => {
-    const section = this.state.sections.find((s) => s.id === id);
+    const section = this.playableSections.find((s) => s.id === id);
     if (!section) return;
     if (!this.state.playing) {
       void this.state.player?.seek(section.start);
@@ -907,7 +924,7 @@ export class PerformanceSession {
       return;
     }
     this.cancelSectionPlan();
-    const boundary = immediateJump(this.state.sections, player.position + this.lookahead(), this.state.sectionLive, id);
+    const boundary = immediateJump(this.playableSections, player.position + this.lookahead(), this.state.sectionLive, id);
     if (boundary) this.commitBoundary(boundary);
   };
 
@@ -920,8 +937,8 @@ export class PerformanceSession {
 
   /** Releases the loop of the section being played, whether it was started live or is the section's own mode. */
   releaseSectionLoop = () => {
-    const { player, sections } = this.state;
-    const ordered = sortedSections(sections);
+    const { player } = this.state;
+    const ordered = sortedSections(this.playableSections);
     const current = player ? ordered[sectionIndexAt(ordered, player.position)] : undefined;
     if (!current) return;
     this.cancelSectionPlan();

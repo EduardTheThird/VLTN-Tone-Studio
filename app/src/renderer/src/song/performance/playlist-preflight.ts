@@ -3,6 +3,15 @@ import { STEM_NAMES } from "@shared/host/song";
 import { parseChart } from "./chart";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
 import { parseSections } from "./sections";
+import { storedShape } from "./song-shape";
+import { playRange } from "./transition";
+
+/** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
+function trimRange(duration: number, options: object): { start: number; end: number } | undefined {
+  const shape = storedShape(options as Record<string, unknown>);
+  if (shape.trimStart === undefined && shape.trimEnd === undefined) return undefined;
+  return playRange(duration, shape);
+}
 export interface PlaylistCheck {
   entry: number;
   id: string;
@@ -52,6 +61,7 @@ export function playlistPreflight(
           outputName: config.outputName,
           pedals: config.pedals,
           sections: parseSections(options.sections),
+          range: trimRange(duration, options),
           bpm,
           beats: typeof options.beats === "number" ? options.beats : 4,
           firstBeat: typeof options.firstBeat === "number" ? options.firstBeat : 0,

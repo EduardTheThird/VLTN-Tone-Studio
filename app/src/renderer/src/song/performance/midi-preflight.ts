@@ -9,6 +9,8 @@ export interface PreflightOptions {
   pedals: { name: string; channel: number }[];
   /** The song's sections, checked against its tempo grid when a tempo is given */
   sections?: Section[];
+  /** The part of the audio that plays, when the song is trimmed. Cues outside it never fire. */
+  range?: { start: number; end: number };
   bpm?: number;
   beats?: number;
   firstBeat?: number;
@@ -106,7 +108,22 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
       }
     }
   }
-  for (const issue of sectionIssues(options.sections ?? [], { duration: options.duration, bpm: options.bpm, beats: options.beats, firstBeat: options.firstBeat }))
+  if (options.range) {
+    const { start, end } = options.range;
+    const outside = events.filter((c) => c.time < start || c.time > end);
+    if (outside.length)
+      add(
+        "cue-trim",
+        `${outside.length} cue${outside.length === 1 ? "" : "s"} outside the trimmed range (${start.toFixed(2)}–${end.toFixed(2)} s) will not play, starting at ${outside[0].time.toFixed(2)} s.`,
+      );
+  }
+  for (const issue of sectionIssues(options.sections ?? [], {
+    duration: options.duration,
+    bpm: options.bpm,
+    beats: options.beats,
+    firstBeat: options.firstBeat,
+    range: options.range,
+  }))
     add(issue.code, issue.text);
   for (const [note, time] of notes)
     add("note-off", `Note ${note.split(":")[1]} on channel ${note.split(":")[0]} at ${time.toFixed(2)} s has no later note-off before the audio ends.`);

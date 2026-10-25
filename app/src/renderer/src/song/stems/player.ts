@@ -206,6 +206,11 @@ export class StemPlayer {
     return this.range.end;
   }
 
+  /** The file's length in seconds, before any trim */
+  get length(): number {
+    return this.fileLength;
+  }
+
   /** Song time where the playable range starts */
   get start(): number {
     return this.range.start;

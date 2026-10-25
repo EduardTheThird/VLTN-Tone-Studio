@@ -65,3 +65,20 @@ it("warns about sections that are not on a bar line, past the audio, or overlapp
   const codes = report.issues.map((i) => i.code);
   expect(codes).toEqual(expect.arrayContaining(["section-range", "section-overlap", "section-bar"]));
 });
+
+it("warns about cues outside a trimmed range, which never fire", () => {
+  const cues = parseChart("[00:01] {midi:pc 2 1}\n[00:05] {midi:pc 2 2}\n[00:09] {midi:pc 2 3}");
+  const report = midiPreflight(cues, { ...options, range: { start: 2, end: 6 } });
+  expect(report.issues.map((i) => i.code)).toEqual(["cue-trim"]);
+  expect(report.issues[0].text).toContain("2 cues outside the trimmed range");
+  expect(report.issues[0].text).toContain("starting at 1.00 s");
+});
+
+it("warns about a section that is cut by the trimmed range", () => {
+  const report = midiPreflight([], {
+    ...options,
+    range: { start: 2, end: 6 },
+    sections: [{ id: "a", name: "Verse", start: 1, end: 4, mode: "continue" }],
+  });
+  expect(report.issues.map((i) => i.code)).toEqual(["section-trim"]);
+});

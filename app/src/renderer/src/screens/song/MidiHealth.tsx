@@ -11,6 +11,7 @@ const REFRESH_MS = 500;
 export function MidiHealth({
   cues,
   duration,
+  range,
   clock,
   tempoChannel,
   outputName,
@@ -18,6 +19,8 @@ export function MidiHealth({
 }: {
   cues: Cue[];
   duration: number;
+  /** The part of a trimmed song that plays, when the song is trimmed */
+  range?: { start: number; end: number };
   clock: boolean;
   tempoChannel?: number;
   outputName?: string;
@@ -28,12 +31,13 @@ export function MidiHealth({
     () =>
       midiPreflight(cues, {
         duration,
+        range,
         clock,
         tempoChannel,
         outputName,
         pedals: [...PEDAL_PROFILES, ...library.profiles].map((p) => ({ name: p.name, channel: library.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
       }),
-    [cues, duration, clock, tempoChannel, outputName, library.channels, library.profiles],
+    [cues, duration, range, clock, tempoChannel, outputName, library.channels, library.profiles],
   );
   const [timing, setTiming] = useState(() => useMidiDiagnostics.getState());
   const [ble, setBle] = useState(() => useBluetooth.getState().diagnostics);
