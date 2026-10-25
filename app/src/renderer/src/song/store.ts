@@ -121,7 +121,9 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
           muteGroups: track.muteGroups,
         };
         // Drop the fields that were not set, so a default still applies to them.
-        for (const field of Object.keys(nextTracks[track.key]) as (keyof TrackInfo)[]) if (nextTracks[track.key][field] === undefined) delete nextTracks[track.key][field];
+        for (const field of Object.keys(nextTracks[track.key]) as (keyof TrackInfo)[]) {
+          if (nextTracks[track.key][field] === undefined) delete nextTracks[track.key][field];
+        }
       }
       const nextSource = source ?? { name: "Imported tracks", audio: outcome.source! };
       // A track's saved pitch choice is written into the song's options now, before the session reads them for the new stems.

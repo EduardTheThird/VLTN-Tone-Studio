@@ -10,8 +10,8 @@ import { stemGains, type Mix } from "./mix";
 import { type BusName, type OutputConfig } from "../audio/outputs";
 
 // Plays a song's tracks in sync through WebAudio: one buffer source per track → its gain (mixer) → its pan → a fade (the song's
-// fades and any crossfade) → an analyser (level meter) → the track's bus. A track is a split's stem or an imported one (see tracks.ts). Pausing or seeking restarts the sources at the new
-// position.
+// fades and any crossfade) → an analyser (level meter) → the track's bus. A track is a split's stem or an imported one (see
+// tracks.ts). Pausing or seeking restarts the sources at the new position.
 //
 // The metronome is one grid of clicks. While the song plays it follows the song's timeline (see timeline.ts), so a count-in
 // (clicks before the audio) and a pre-roll (audio that starts before the requested position) keep the same bar phase, and a jump

@@ -114,7 +114,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     if (outside.length)
       add(
         "cue-trim",
-        `${outside.length} cue${outside.length === 1 ? "" : "s"} outside the trimmed range (${start.toFixed(2)}–${end.toFixed(2)} s) will not play, starting at ${outside[0].time.toFixed(2)} s.`,
+        `${outside.length} cue${outside.length === 1 ? "" : "s"} outside the trimmed range (${start.toFixed(2)}–${end.toFixed(2)} s) will not play, ` +
+          `starting at ${outside[0].time.toFixed(2)} s.`,
       );
   }
   for (const issue of sectionIssues(options.sections ?? [], {

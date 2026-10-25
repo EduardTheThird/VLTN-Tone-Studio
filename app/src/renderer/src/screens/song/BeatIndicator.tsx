@@ -53,10 +53,12 @@ export function EdgeFlash({ bpm, beats, firstBeat }: BeatGrid) {
     return () => clearTimeout(timer);
   }, [beat]);
   const downbeat = beat >= 0 && beat % beats === 0;
+  const colour = downbeat ? "border-amber-400" : "border-sky-400";
+  const visibility = lit ? "opacity-100" : "opacity-0";
   return (
     <div
       aria-hidden
-      className={`pointer-events-none fixed inset-0 z-40 border-[12px] transition-opacity duration-150 ${downbeat ? "border-amber-400" : "border-sky-400"} ${lit ? "opacity-100" : "opacity-0"}`}
+      className={`pointer-events-none fixed inset-0 z-40 border-[12px] transition-opacity duration-150 ${colour} ${visibility}`}
     />
   );
 }

@@ -19,7 +19,16 @@ it("runs the production scheduler in a separate thread while the host thread is 
     /import[^;]+from ['"]\.\/midi-scheduler['"];?/,
     "",
   );
-  const source = `import {parentPort} from 'node:worker_threads';const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};parentPort.on('message',data=>self.onmessage({data}));\n${chase}\n${speed}\n${engine}\n${entry}\nparentPort.postMessage({ready:true});`;
+  const source = [
+    "import {parentPort} from 'node:worker_threads';",
+    "const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};",
+    "parentPort.on('message',data=>self.onmessage({data}));",
+    chase,
+    speed,
+    engine,
+    entry,
+    "parentPort.postMessage({ready:true});",
+  ].join("\n");
   const worker = new Worker(new URL("data:text/javascript," + encodeURIComponent(source)));
   const messages: { reply?: { type: string; messages?: unknown[] }; at: number }[] = [];
   try {

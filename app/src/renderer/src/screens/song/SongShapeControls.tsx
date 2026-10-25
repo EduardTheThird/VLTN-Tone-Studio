@@ -57,7 +57,11 @@ export function SongShapeControls({ songKey, audio, onChange }: { songKey: strin
       <Button variant="outline" disabled={!audio} title="Trim to the audible part of the song (above −60 dBFS)." onClick={auto}>
         Auto
       </Button>
-      <Button variant="outline" disabled={shape.trimStart === undefined && shape.trimEnd === undefined} onClick={() => save({ trimStart: undefined, trimEnd: undefined })}>
+      <Button
+        variant="outline"
+        disabled={shape.trimStart === undefined && shape.trimEnd === undefined}
+        onClick={() => save({ trimStart: undefined, trimEnd: undefined })}
+      >
         Clear trim
       </Button>
       <label className="flex flex-col gap-1">

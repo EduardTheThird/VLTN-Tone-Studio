@@ -1,5 +1,11 @@
 # Notices
 
-- **soundtouchjs 0.3.0** (cutterbl/SoundTouchJS): LGPL-2.1. It is the JavaScript port of SoundTouch, which the performance speed and pitch stretch (`stretch.ts`, `stretch-worker.ts`) uses. It is used unmodified, as a dependency, and its licence text is in `node_modules/soundtouchjs/LICENSE`. A distributed build of this app must keep the library replaceable: the package is open source and the stretch imports it by name, so a replacement built from the same API works without rebuilding the app's own code.
+- **soundtouchjs 0.3.0** (cutterbl/SoundTouchJS): LGPL-2.1. It is the JavaScript port of SoundTouch, which the performance
+  speed and pitch stretch (`stretch.ts`, `stretch-worker.ts`) uses. It is used unmodified, as a dependency, and its licence
+  text is in `node_modules/soundtouchjs/LICENSE`. A distributed build of this app must keep the library replaceable: the
+  package is open source and the stretch imports it by name, so a replacement built from the same API works without
+  rebuilding the app's own code.
 
-The Rubber Band library was considered for higher-quality stretching but not used: its npm WASM build (`rubberband-wasm`) is listed as plain "GPLv2", not "GPLv2 or later". GPL-2.0-only code cannot be combined with this GPL-3.0-only app, so it stays out until its licence is confirmed.
+The Rubber Band library was considered for higher-quality stretching but not used: its npm WASM build (`rubberband-wasm`)
+is listed as plain "GPLv2", not "GPLv2 or later". GPL-2.0-only code cannot be combined with this GPL-3.0-only app, so it
+stays out until its licence is confirmed.
