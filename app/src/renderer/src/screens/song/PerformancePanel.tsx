@@ -5,7 +5,7 @@ import { defaultMix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
 import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf";
-import { chordDisplayTranspose, clampCapo, effectiveBpm } from "@/song/performance/speed";
+import { chordDisplayTranspose, clampCapo, effectiveBpm, keySpelling } from "@/song/performance/speed";
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
@@ -39,6 +39,12 @@ import { RemoteControlSettings } from "./RemoteControlSettings";
 import { SongTriggerField } from "./SongTriggerField";
 import { SongTriggerSettings } from "./SongTriggerSettings";
 import { buildViewHost } from "./remote-view";
+import { AudienceSettings } from "./AudienceSettings";
+import { useAudienceFeed } from "./use-audience-feed";
+import { useChartUrl } from "./use-chart-url";
+import { audienceModel, type AudienceSongInput } from "@/song/performance/audience";
+import { useAudienceSettings } from "@/song/performance/audience-settings";
+import { useChartPage } from "@/song/performance/pdf/current-page";
 
 function readNumber(raw: string, fallback: number, min: number, max: number): number {
   const n = raw === "" ? NaN : Number(raw);
@@ -304,6 +310,43 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     ? { songId: source.libraryId, chart: !!savedSong?.chart, revision: savedSong?.chart?.sha256 ?? "", view: chartView, onView: saveChartView }
     : undefined;
 
+  // The audience display (spec 43) shows what this screen shows: the song's lyrics and chords, or its PDF page, with the performer's settings.
+  const audienceSettings = useAudienceSettings();
+  const pdfUrl = useChartUrl(source?.libraryId, pdfState?.chart ? pdfState.revision : "");
+  const audiencePage = useChartPage((s) => (s.songId === source?.libraryId ? s.page : 1));
+  const nextAudienceTitle = queued ? (library.index.songs.find((s) => s.id === library.queue[library.position + 1])?.title ?? null) : null;
+  const audienceSong = useMemo<AudienceSongInput | null>(
+    () =>
+      source
+        ? {
+            songKey: key,
+            title: source.name,
+            nextTitle: nextAudienceTitle,
+            chart,
+            lyrics,
+            chords,
+            macros: midiConfig.macros,
+            shift: shapeShift,
+            flats: keySpelling(savedSong?.key ?? undefined, shapeShift),
+            pdf: pdfUrl && source.libraryId && pdfState?.chart && chartView === "pdf" ? { url: pdfUrl, page: audiencePage } : null,
+          }
+        : null,
+    // The song's chart and chords are the inputs; the rest is read when they change.
+    [key, source, nextAudienceTitle, chart, lyrics, chords, midiConfig.macros, shapeShift, savedSong?.key, pdfUrl, pdfState?.chart, chartView, audiencePage],
+  );
+  const audienceModelValue = useMemo(
+    () =>
+      audienceModel(audienceSong, {
+        showChords: audienceSettings.showChords,
+        fontScale: audienceSettings.fontScale,
+        rotation: audienceSettings.rotation,
+        blackout: audienceSettings.blackout,
+        blackBetweenSongs: audienceSettings.blackBetweenSongs,
+      }),
+    [audienceSong, audienceSettings.showChords, audienceSettings.fontScale, audienceSettings.rotation, audienceSettings.blackout, audienceSettings.blackBetweenSongs],
+  );
+  useAudienceFeed(session, key, audienceModelValue);
+
   const saveChart = (value: string) => {
     session.pause();
     setChart(value);
@@ -454,6 +497,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onTimecodeOffset={saveTimecodeOffset}
         />
         <SongTriggerField songId={source?.libraryId} songs={library.index.songs} inputReady={inputReady} />
+        <AudienceSettings />
         <RemoteControlSettings inputReady={inputReady} />
         <SongTriggerSettings songs={library.index.songs} inputReady={inputReady} />
         <PerformanceAnalysis

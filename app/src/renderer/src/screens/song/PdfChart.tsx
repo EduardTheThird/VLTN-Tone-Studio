@@ -9,6 +9,7 @@ import { ANNOTATION_COLOURS, addMark, clearPage, undoMark, type AnnotationTool }
 import { showsSpread, turnedPage, turnStep, visiblePages, type ChartLayout } from "@/song/performance/pdf/layout";
 import { registerPdfTurner } from "@/song/performance/pdf/turner";
 import { usePlaybackClock } from "@/song/performance/playback-clock";
+import { clearChartPage, setChartPage } from "@/song/performance/pdf/current-page";
 import { emptyAnnotations, readAnnotations, type ChartAnnotations, type Mark } from "@shared/chart-annotations";
 import { PdfPage } from "./PdfPage";
 import { PdfToolbar } from "./PdfToolbar";
@@ -69,6 +70,9 @@ export function PdfChart({ songId, follow, stage, className, onShowText }: PdfCh
   const [annotations, setAnnotations] = useState<ChartAnnotations>(emptyAnnotations());
   const [layout, setLayout] = useState<ChartLayout>(readLayout);
   const [page, setPage] = useState(1);
+  // The audience display shows the page on screen (spec 43); it is cleared when this chart goes.
+  useEffect(() => setChartPage(songId, page), [songId, page]);
+  useEffect(() => () => clearChartPage(songId), [songId]);
   const [box, setBox] = useState({ width: 0, height: 0 });
   const [tool, setTool] = useState<AnnotationTool>("none");
   const [colour, setColour] = useState<string>(ANNOTATION_COLOURS[0]);
