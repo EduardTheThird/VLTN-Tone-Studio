@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { lrcTime, midiCommand, type Cue } from "@/song/performance/chart";
 import { clockPosition } from "@/song/performance/playback-clock";
+import { saveMacro, useMidiConfiguration } from "@/song/performance/midi-configuration";
+import { macroCodeFor } from "@/song/performance/midi-macros";
+import { MacroPanel } from "./MacroPanel";
 import { PedalMidiPicker } from "./PedalMidiPicker";
 
 export function MidiCueBuilder({
@@ -21,6 +24,7 @@ export function MidiCueBuilder({
     [number, setNumber] = useState(0),
     [value, setValue] = useState(127),
     [error, setError] = useState("");
+  const macros = useMidiConfiguration((s) => s.macros);
   const field = "ml-2 rounded border border-seam bg-background p-2";
   const command = () => {
     if (!Number.isFinite(seconds) || seconds < 0) throw new Error("Cue time must be zero or more seconds.");
@@ -37,7 +41,17 @@ export function MidiCueBuilder({
       setError(e instanceof Error ? e.message : String(e));
     }
   };
-  const scheduled = cues.filter((cue) => cue.messages.length);
+  // The song's file messages are many and are shown in the MIDI file field, not in this table.
+  const scheduled = cues.filter((cue) => cue.messages.length && !cue.fromFile);
+  const saveRaw = () => {
+    try {
+      const cue = command();
+      saveMacro({ code: macroCodeFor(cue.text, macros), label: cue.text.slice(0, 60), commands: [cue.text] });
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const describe = (bytes: number[]) =>
     (bytes[0] & 0xf0) === 0xc0
       ? `PC ${bytes[1]}`
@@ -117,6 +131,15 @@ export function MidiCueBuilder({
           <Button variant="outline" disabled={!canTest} onClick={() => run(true)}>
             Send MIDI now
           </Button>
+          <Button variant="outline" onClick={saveRaw}>
+            Save as macro
+          </Button>
+        </div>
+      </details>
+      <details>
+        <summary className="cursor-pointer text-sm">MIDI macros</summary>
+        <div className="py-2">
+          <MacroPanel time={seconds} onAdd={onAdd} onTest={onTest} canTest={canTest} />
         </div>
       </details>
       <p className="text-xs text-silkscreen-3">
@@ -137,7 +160,7 @@ export function MidiCueBuilder({
             <tbody>
               {scheduled.map((cue, i) => (
                 <tr key={i} className="border-t border-seam">
-                  <td className="p-2 font-mono">{lrcTime(cue.time)}</td>
+                  <td className="p-2 font-mono">{cue.trigger ? `On ${cue.trigger}` : lrcTime(cue.time)}</td>
                   <td className="p-2">{cue.label || "Raw MIDI command"}</td>
                   <td className="p-2">{[...new Set(cue.messages.map((bytes) => (bytes[0] < 0xf0 ? (bytes[0] & 15) + 1 : "System")))].join(", ")}</td>
                   <td className="p-2 font-mono">{cue.messages.map(describe).join(" → ")}</td>

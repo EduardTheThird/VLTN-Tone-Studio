@@ -5,7 +5,8 @@ import { lrcTime, midiCommand } from "@/song/performance/chart";
 import { PEDAL_PROFILES, CUSTOM_PEDAL_TEMPLATE, actionCommands } from "@/song/performance/pedal-profiles";
 import { OpenMidiBrowser } from "./OpenMidiBrowser";
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
-import { useMidiConfiguration } from "@/song/performance/midi-configuration";
+import { saveMacro, useMidiConfiguration } from "@/song/performance/midi-configuration";
+import { macroCodeFor } from "@/song/performance/midi-macros";
 
 export function PedalMidiPicker({
   time,
@@ -27,6 +28,7 @@ export function PedalMidiPicker({
     [value, setValue] = useState(config.commands[config.pedal]?.value ?? 0),
     [assignedCC, setAssignedCC] = useState(String(library.assignments[config.pedal + ":" + (config.commands[config.pedal]?.action ?? "")] ?? "")),
     [error, setError] = useState(""),
+    [saved, setSaved] = useState(""),
     [definition, setDefinition] = useState(JSON.stringify(CUSTOM_PEDAL_TEMPLATE, null, 2));
   const [customName, setCustomName] = useState(""),
     [customSource, setCustomSource] = useState(""),
@@ -50,6 +52,22 @@ export function PedalMidiPicker({
     const current = useMidiConfiguration.getState();
     current.update({ pedal, commands: { ...current.commands, ...(pedal ? { [pedal]: { action: actionId, value } } : {}) } });
   }, [pedal, actionId, value]);
+  /** Saves the named command, with the channel and value now set, as a macro: one click, reused in any song. */
+  const saveAsMacro = () => {
+    try {
+      if (!profile || !action) throw new Error("Choose a pedal and a named command.");
+      const commands = actionCommands(action, channel, value, assignedCC === "" ? undefined : Number(assignedCC));
+      commands.forEach(midiCommand);
+      // The code comes from the pedal and the action, so saving the same command again replaces its macro.
+      const code = macroCodeFor(`${profile.id} ${action.id}`, []);
+      saveMacro({ code, label: `${profile.name}: ${action.label} (ch ${channel})`.slice(0, 60), commands });
+      setError("");
+      setSaved(`Saved as $${code}. Add it to a song with {midi:$${code}}.`);
+    } catch (e) {
+      setSaved("");
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const run = (send: boolean) => {
     try {
       if (!Number.isFinite(time) || time < 0) throw new Error("Cue time must be zero or more seconds.");
@@ -238,7 +256,11 @@ export function PedalMidiPicker({
             <Button variant="outline" disabled={!action || !canTest} onClick={() => run(true)}>
               Send pedal command now
             </Button>
+            <Button variant="outline" disabled={!action} onClick={saveAsMacro}>
+              Save as macro
+            </Button>
           </div>
+          {saved && <p role="status" className="text-sm">{saved}</p>}
           {action?.description && <p className="text-sm text-silkscreen-3">{action.description}</p>}
           <p className="text-xs text-silkscreen-3">
             Reference: {profile.id.startsWith("openmidi-") ? "OpenMIDI community data (Apache-2.0)" : profile.source}. Verify your pedal’s assignments and

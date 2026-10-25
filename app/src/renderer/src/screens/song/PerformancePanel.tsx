@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
 import { defaultMix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
-import { parseChart } from "@/song/performance/chart";
+import { songCues } from "@/song/performance/song-cues";
+import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf";
 import { chordDisplayTranspose, clampCapo, effectiveBpm } from "@/song/performance/speed";
 import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
@@ -147,13 +148,20 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
   const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
   const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
+  // The song's MIDI file is saved with its options, so it is read back here when the song is shown.
+  const [midiFile, setMidiFile] = useState<MidiFileOption | null>(() => midiFileFromOptions(options));
   const parsed = useMemo(() => {
+    const cued = songCues(chart, midiConfig.macros, midiFile);
+    return { cues: cued.cues, error: cued.error };
+  }, [chart, midiConfig.macros, midiFile]);
+  const saveMidiFile = (file: MidiFileOption | null) => {
+    setMidiFile(file);
     try {
-      return { cues: parseChart(chart), error: "" };
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), midiFile: file ?? undefined }));
     } catch (e) {
-      return { cues: [], error: String(e) };
+      session.fail(e);
     }
-  }, [chart]);
+  };
 
   const [session] = useState(
     () =>
@@ -372,7 +380,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         speedNote={speedNote(speed)}
       />
       <div style={{ display: stage ? "none" : "contents" }}>
-        <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} />
+        <PerformanceMidiSetup session={session} chart={chart} onSaveChart={saveChart} midiFile={midiFile} onMidiFile={saveMidiFile} />
         <PerformanceAnalysis
           session={session}
           stems={stems}

@@ -4,6 +4,8 @@ import { BluetoothControls } from "@/bluetooth/BluetoothControls";
 import { useMidiConfiguration, MIDI_SETUP_PRESETS, rememberedPort } from "@/song/performance/midi-configuration";
 import { BLUETOOTH_PORT_ID, selectArmed, selectOutput, useSession, type PerformanceSession } from "@/song/performance/session";
 import { MidiCueBuilder } from "./MidiCueBuilder";
+import { MidiFileField } from "./MidiFileField";
+import type { MidiFileOption } from "@/song/performance/smf";
 import { MidiHealth } from "./MidiHealth";
 
 const field = "rounded border border-seam bg-transparent p-2";
@@ -37,7 +39,19 @@ export function SessionMidiHealth({ session }: { session: PerformanceSession }) 
 }
 
 /** Output and input selection, arming, setup presets and the command library. */
-export function PerformanceMidiSetup({ session, chart, onSaveChart }: { session: PerformanceSession; chart: string; onSaveChart: (chart: string) => void }) {
+export function PerformanceMidiSetup({
+  session,
+  chart,
+  onSaveChart,
+  midiFile,
+  onMidiFile,
+}: {
+  session: PerformanceSession;
+  chart: string;
+  onSaveChart: (chart: string) => void;
+  midiFile: MidiFileOption | null;
+  onMidiFile: (file: MidiFileOption | null) => void;
+}) {
   const midiConfig = useMidiConfiguration();
   const bluetooth = useSession(session, (s) => s.bluetooth);
   const access = useSession(session, (s) => s.access);
@@ -234,6 +248,7 @@ export function PerformanceMidiSetup({ session, chart, onSaveChart }: { session:
         For GP-150 / GP-180 tempo control, use the named Set tempo (BPM) command at song start with app MIDI Clock off, GP-150 / GP-180 clock source Internal
         and TRS clock output On. Continuous app clock fluctuated in real GP-180 USB and Bluetooth tests with a TimeLine and caused audible delay changes.
       </p>
+      <MidiFileField file={midiFile} onChange={onMidiFile} />
       {midiConfig.showCommands && (
         <MidiCueBuilder
           cues={cues}

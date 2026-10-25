@@ -103,3 +103,18 @@ it("uses the rig default channels while preserving saved overrides", () => {
   fireEvent.change(screen.getByLabelText("MIDI pedal"), { target: { value: "boss-sy200" } });
   expect((screen.getByLabelText("Pedal MIDI channel") as HTMLSelectElement).value).toBe("9");
 });
+
+it("saves a named pedal command as a macro in one click, and a chart can then use it", () => {
+  const add = vi.fn();
+  render(<PedalMidiPicker time={4} onAdd={add} onTest={vi.fn()} canTest={false} />);
+  fireEvent.change(screen.getByLabelText("MIDI pedal"), { target: { value: "valeton-gp180" } });
+  fireEvent.change(screen.getByLabelText("Pedal command preset"), { target: { value: "memory-129" } });
+  fireEvent.click(screen.getByText("Save as macro"));
+  const [macro] = useMidiConfiguration.getState().macros;
+  expect(macro.commands).toEqual(["cc 1 0 1", "pc 1 0"]);
+  expect(screen.getByRole("status").textContent).toContain(`$${macro.code}`);
+  expect(parseChart(`[00:04] {midi:$${macro.code}}`, useMidiConfiguration.getState().macros)[0].messages).toEqual([
+    [0xb0, 0, 1],
+    [0xc0, 0],
+  ]);
+});
