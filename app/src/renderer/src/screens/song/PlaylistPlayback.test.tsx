@@ -281,6 +281,44 @@ it("resumes the next song after stopping a transition instead of replaying the f
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
 });
 
+it("starts the next song once, still armed on the same output, when it was not prepared before the join", async () => {
+  // B's background load never finishes before A ends, so the join is not chained: the view is re-created for B and B is loaded then.
+  mock.fetch.mockImplementationOnce(async () => file());
+  mock.fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  await act(async () => {
+    mock.players.at(-1)!.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+  expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+  expect(mock.send.mock.calls.some((c) => c[0][0] === 252)).toBe(false);
+});
+
+it("resumes a set loaded paused when Play is pressed in Performance, and the set then runs on by itself", async () => {
+  // The documented route: Load set paused, arm the output, then Play in the Performance transport.
+  await useSongLibrary.getState().load(first.id, [first.id, second.id]);
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().playlistPlaying).toBe(true));
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  await act(async () => {
+    mock.players.at(-1)!.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+  expect(mock.send.mock.calls.some((c) => c[0][0] === 252)).toBe(false);
+});
+
 it("hands the chained song over to the session for the next song, which adopts it instead of starting it again", async () => {
   await useSongLibrary.getState().playPlaylist([first.id, second.id]);
   render(<PerformancePanel />);
