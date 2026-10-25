@@ -5,6 +5,8 @@ import { useNav } from "@/state/nav";
 import {
   emptyLibrary,
   flacName,
+  trackKey,
+  trackKindOf,
   type LibraryAudio,
   type LibraryBackupPreview,
   type LibrarySong,
@@ -21,6 +23,8 @@ import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
 import { speedFromOptions } from "./performance/speed";
 import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
 import type { PcmAudio, SongSource, Stems } from "./types";
+import { savedSettingsOf, trackInfoOf, type TrackInfo } from "./tracks";
+import { mixDown } from "./import/align";
 
 /**
  * A playlist song loaded ahead of time: its audio, and a player whose buffers are already built on the shared engine. The library
@@ -32,6 +36,10 @@ export interface PreparedSong {
   source: SongSource;
   stems: Stems;
   settings: Record<string, string>;
+  /** Each track that is not the source, by key: its mixer name and its saved settings */
+  tracks: Record<string, TrackInfo>;
+  /** Tracks that could not be read, by name. The song plays without them. */
+  skipped: string[];
   player: StemPlayer;
 }
 
@@ -79,6 +87,12 @@ export function isRenderedAhead(id: string): boolean {
 }
 
 const hex = (digest: ArrayBuffer) => Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+/** The notice after a song is ready. Tracks that could not be read are named, so the song's gaps are not a mystery. */
+function readyNotice(title: string, skipped: string[]): string {
+  if (!skipped.length) return `${title} ready.`;
+  return `${title} ready. Skipped ${skipped.join(", ")}: missing or damaged audio.`;
+}
+
 /** Fetches a saved track straight from the app protocol and decodes it in a worker; nothing is copied through IPC. */
 async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
   const response = await fetch(url);
@@ -90,19 +104,49 @@ async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
     throw new Error(`Missing or damaged ${track.name} audio.`);
   return audio;
 }
-/** Loads a song's audio from the library, without changing anything in the app. */
+/**
+ * Loads a song's audio from the library, without changing anything in the app. A track that cannot be read is left out and named in
+ * `skipped`, so the song still plays. When the source is the track that cannot be read, the source is rebuilt from the tracks that can.
+ */
 async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedSong, "player">> {
   const song = index.songs.find((s) => s.id === id);
   if (!song) throw new Error("Song is missing from the library.");
   const urls = await api().audioUrls(id);
-  const loaded = await Promise.all(song.audio.map(async (track) => [track.name, await loadTrack(urls[track.name], track)] as const));
-  const tracks: Record<string, PcmAudio> = Object.fromEntries(loaded);
+  const skipped: string[] = [];
+  const loaded = await Promise.all(
+    song.audio.map(async (track) => {
+      try {
+        return [track, await loadTrack(urls[trackKey(track)], track)] as const;
+      } catch {
+        skipped.push(track.name);
+        return null;
+      }
+    }),
+  );
+  const found = loaded.filter((entry) => entry !== null);
+  const sourceEntry = found.find(([track]) => trackKindOf(track) === "source");
+  const playable = found.filter(([track]) => trackKindOf(track) !== "source");
+  if (!sourceEntry && !playable.length) throw new Error("Missing or damaged audio: none of this song's tracks can be read.");
+  let source: PcmAudio;
+  if (sourceEntry) source = sourceEntry[1];
+  else {
+    const frames = Math.max(...playable.map(([, pcm]) => pcm.channels[0].length));
+    source = { sampleRate: playable[0][1].sampleRate, channels: mixDown(playable.map(([, pcm]) => pcm.channels), frames) };
+  }
+  const stems: Record<string, PcmAudio> = {};
+  const tracks: Record<string, TrackInfo> = {};
+  for (const [track, pcm] of playable) {
+    stems[trackKey(track)] = pcm;
+    tracks[trackKey(track)] = trackInfoOf(track);
+  }
   return {
     id,
     title: song.title,
-    source: { name: song.sourceName, libraryId: song.id, audio: tracks.source },
-    stems: Object.fromEntries(Object.entries(tracks).filter(([name]) => name !== "source")) as Stems,
+    source: { name: song.sourceName, libraryId: song.id, audio: source },
+    stems: stems as Stems,
     settings: song.settings,
+    tracks,
+    skipped,
   };
 }
 /** Reads the index after moving any settings an earlier version left in localStorage into the library. */
@@ -218,8 +262,14 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     const next = await fetchSong(index, id);
     if (generation !== loadGeneration) return;
     seedSettings(song.id, song.settings);
-    set({ index, queue: [...queue], position, playlistPlaying: playlist, notice: `${song.title} ready.` });
-    useSong.setState({ source: next.source, stems: Object.keys(next.stems).length ? next.stems : null, lastSplit: null, status: { kind: "idle" } });
+    set({ index, queue: [...queue], position, playlistPlaying: playlist, notice: readyNotice(song.title, next.skipped) });
+    useSong.setState({
+      source: next.source,
+      stems: Object.keys(next.stems).length ? next.stems : null,
+      tracks: next.tracks,
+      lastSplit: null,
+      status: { kind: "idle" },
+    });
     useNav.getState().go("song", "performance");
     prefetchNext();
   };
@@ -244,10 +294,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       loadGeneration++;
       seedSettings(prepared.id, prepared.settings);
       useSong.getState().cancel();
-      set({ position: position + 1, prepared: null, notice: `${prepared.title} ready.` });
+      set({ position: position + 1, prepared: null, notice: readyNotice(prepared.title, prepared.skipped) });
       useSong.setState({
         source: prepared.source,
         stems: Object.keys(prepared.stems).length ? prepared.stems : null,
+        tracks: prepared.tracks,
         lastSplit: null,
         status: { kind: "idle" },
       });
@@ -339,23 +390,29 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           source = state.source;
         if (!source || ["decoding", "model", "splitting"].includes(state.status.kind)) throw new Error("Wait for the song to finish loading or splitting.");
         const id = source.libraryId ?? crypto.randomUUID();
-        const tracks: [string, PcmAudio][] = [["source", source.audio], ...Object.entries(state.stems ?? {})];
+        const tracks: [string, PcmAudio][] = [
+          ["source", source.audio],
+          ...Object.entries(state.stems ?? {}).filter((entry): entry is [string, PcmAudio] => entry[1] !== undefined),
+        ];
         // One track at a time keeps the encoder's copy of the audio to a single track.
         const assets: { name: string; bytes: Uint8Array }[] = [],
           audioInfo: LibraryAudio[] = [];
-        for (const [name, audio] of tracks) {
+        for (const [key, audio] of tracks) {
           const bytes = await encodeTrack(audio);
           const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>));
-          assets.push({ name: flacName(name), bytes });
+          const info = key === "source" ? undefined : state.tracks[key];
+          assets.push({ name: flacName(key), bytes });
           audioInfo.push({
-            name,
+            name: info?.name ?? key,
             sampleRate: audio.sampleRate,
             frames: audio.channels[0].length,
             channels: audio.channels.length,
-            file: flacName(name),
+            file: flacName(key),
             codec: "flac",
             bytes: bytes.length,
             sha256,
+            kind: key === "source" ? "source" : (info?.kind ?? "stem"),
+            ...savedSettingsOf(info),
           });
         }
         const song: LibrarySong = {

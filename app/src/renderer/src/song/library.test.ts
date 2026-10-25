@@ -66,14 +66,17 @@ it("loads saved source/stems and preserves queue positions for repeated entries"
   expect(useSongLibrary.getState().position).toBe(1);
   expect(useNav.getState().param).toBe("performance");
 });
-it("does not replace the current song when an asset read fails", async () => {
-  const source = { name: "Current", audio };
-  useSong.setState({ source });
+it("skips a track whose asset read fails, names it, and loads the song without blocking", async () => {
+  const current = { name: "Current", audio };
+  useSong.setState({ source: current });
   fetchFile.mockRejectedValueOnce(new Error("Missing audio"));
   await useSongLibrary.getState().load(saved.id);
-  expect(useSong.getState().source).toBe(source);
-  expect(useSongLibrary.getState().error).toBe("Missing audio");
-  expect(useNav.getState().param).toBe("songs");
+  expect(useSongLibrary.getState().error).toBe("");
+  expect(useSongLibrary.getState().notice).toContain("Skipped source: missing or damaged audio.");
+  expect(useSong.getState().source?.libraryId).toBe(saved.id);
+  expect(useSong.getState().source?.audio).not.toBe(current.audio);
+  expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["guitar"]);
+  expect(useNav.getState().param).toBe("performance");
 });
 it("saves copied audio and settings under a unique ID instead of the filename", async () => {
   const source = { name: "same.mp3", audio };
@@ -134,13 +137,13 @@ it("cancels autoplay when Stop is pressed during an audio load", async () => {
   expect(useSongLibrary.getState().position).toBe(0);
 });
 
-it("stops the playlist on missing audio instead of silently skipping songs", async () => {
+it("plays on to the next song when a track is missing", async () => {
   await useSongLibrary.getState().playPlaylist([saved.id, saved.id]);
   fetchFile.mockRejectedValueOnce(new Error("Missing audio"));
   await useSongLibrary.getState().advancePlaylist();
-  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
-  expect(useSongLibrary.getState().error).toBe("Missing audio");
-  expect(useSongLibrary.getState().position).toBe(0);
+  expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+  expect(useSongLibrary.getState().error).toBe("");
+  expect(useSongLibrary.getState().position).toBe(1);
 });
 
 it("keeps lyrics and key updates that finish during the first audio save", async () => {
@@ -203,15 +206,16 @@ it("refreshes restored copies without loading a song or arming MIDI, and reports
   expect(useSongLibrary.getState()).toMatchObject({ error: "Checksum mismatch", busy: false, transfer: "" });
 });
 
-it("refuses a saved track whose file size or decoded shape does not match the library", async () => {
+it("skips a saved track whose file size or decoded shape does not match the library", async () => {
   fetchFile.mockResolvedValueOnce(file(3));
   await useSongLibrary.getState().load(saved.id);
-  expect(useSongLibrary.getState().error).toBe("Missing or damaged source audio.");
-  expect(useSong.getState().source).toBeNull();
+  expect(useSongLibrary.getState().error).toBe("");
+  expect(useSongLibrary.getState().notice).toContain("Skipped source: missing or damaged audio.");
   codec.decodeTrack.mockResolvedValueOnce({ sampleRate: 44100, channels: [new Float32Array(2)] });
   await useSongLibrary.getState().load(saved.id);
-  expect(useSongLibrary.getState().error).toMatch(/Missing or damaged/);
-  expect(useSong.getState().source).toBeNull();
+  expect(useSongLibrary.getState().error).toBe("");
+  expect(useSongLibrary.getState().notice).toContain("Skipped source: missing or damaged audio.");
+  expect(useSong.getState().source).not.toBeNull();
 });
 it("reports a clear error for a song that is still being converted", async () => {
   api.audioUrls.mockRejectedValueOnce(new Error("This song is still being converted to the compact library format. Try again in a moment."));
