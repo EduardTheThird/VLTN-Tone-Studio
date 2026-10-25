@@ -274,3 +274,46 @@ it("does not fault on a jump, and ignores a checkpoint taken before the jump", (
   f.schedule.sync(2.9, 3990, 6000);
   expect(f.replies.some((r) => r.type === "fault" || r.type === "resync")).toBe(false);
 });
+
+it("sends each cue at its rated clock time: a song second takes 1 / rate of clock time", () => {
+  // 50% from clock 1000: the cue at song 1 s is due a clock second later.
+  const f = fixture({ rate: 0.5, duration: 4, origin: 1000 });
+  for (let t = 1000; t <= 3040; t += 20) {
+    f.schedule.sync(((t - 1000) / 1000) * 0.5, t, t);
+    f.schedule.tick(t);
+  }
+  expect(f.messages().map((m) => [m.bytes, m.due])).toEqual([
+    [[192, 1], 1000],
+    [[177, 12, 127], 3000],
+  ]);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+it.each([0.5, 0.8, 1.25])("sends 24 PPQN at the effective BPM at rate %f", (rate) => {
+  const bpm = 120;
+  const f = fixture({ bpm, rate, clock: true, cues: [], duration: 10 });
+  // The song is 10 song seconds long, which takes 10 / rate seconds on the clock.
+  const end = 1000 + 10000 / rate;
+  for (let t = 1000; t <= end + 100; t += 20) {
+    f.schedule.sync(((t - 1000) / 1000) * rate, t, t);
+    f.schedule.tick(t);
+  }
+  const clocks = f.messages().filter((m) => m.bytes[0] === 248);
+  // Pulses count song beats, so the song always has the same number of them whatever its rate.
+  expect(Math.abs(clocks.length - (10 * 24 * bpm) / 60)).toBeLessThanOrEqual(2);
+  for (let i = 1; i < clocks.length; i++) {
+    const gap = clocks[i].due - clocks[i - 1].due;
+    expect(gap).toBeCloseTo(60000 / (24 * bpm * rate), 5);
+  }
+});
+
+it("keeps the clock's pulse spacing steady across a rate-aware jump", () => {
+  const f = fixture({ bpm: 120, rate: 0.5, clock: true, cues: [], duration: 20 });
+  f.schedule.plan(null, { at: 1000 + 2000, position: 10 });
+  for (let t = 1000; t <= 4000; t += 20) {
+    f.schedule.sync(((t - 1000) / 1000) * 0.5, t, t);
+    f.schedule.tick(t);
+  }
+  const clocks = f.messages().filter((m) => m.bytes[0] === 248);
+  for (let i = 1; i < clocks.length; i++) expect(clocks[i].due - clocks[i - 1].due).toBeCloseTo(60000 / (24 * 120 * 0.5), 5);
+});

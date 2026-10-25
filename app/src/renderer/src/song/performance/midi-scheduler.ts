@@ -1,5 +1,6 @@
 import type { Cue } from "./chart";
 import { CHASE_LEAD_MS, computeChaseState } from "./midi-chase";
+import { clampRate } from "./speed";
 
 export interface ScheduledMessage {
   bytes: number[];
@@ -13,7 +14,10 @@ export interface SchedulerConfig {
   position: number;
   duration: number;
   origin: number;
+  /** The song's written tempo. The clock and the start tempo use it times `rate`. */
   bpm: number;
+  /** Playback rate (see speed.ts). A song second takes 1 / rate of clock time. Defaults to 1. */
+  rate?: number;
   clock: boolean;
   tempo: number[][] | null;
   /** Clock time (the same clock as `origin`) the start tempo is due. Defaults to song position zero, which a count-in puts later than the start. */
@@ -68,6 +72,8 @@ export class MidiSchedule {
   private lastTick: number;
   private heartbeat: number;
   private config: SchedulerConfig;
+  /** The rate the song plays at. Song time runs at this multiple of clock time. */
+  private readonly rate: number;
   private resyncs: number[] = [];
   private lastPosition: number;
   private lastAdvance: number;
@@ -88,12 +94,13 @@ export class MidiSchedule {
   ) {
     // A resync moves the origin, so keep the caller's object untouched.
     this.config = { ...config };
+    this.rate = clampRate(config.rate ?? 1);
     this.cues = config.cues.filter((c) => c.messages.length && c.time <= config.duration).sort((a, b) => a.time - b.time);
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
     this.pulseOrigin = config.origin;
     this.lastTick = now;
-    this.heartbeat = config.origin + config.position * 1000;
+    this.heartbeat = this.clockAt(config.position);
     this.lastPosition = config.position;
     this.lastAdvance = now;
     this.tempo = config.tempo;
@@ -136,8 +143,8 @@ export class MidiSchedule {
     this.heartbeat = Math.max(this.heartbeat, at);
     // A late checkpoint is still a consistent (position, time) pair, so it can re-anchor the origin.
     // A frozen position can't anchor anything; it is judged by the stall check above instead.
-    if (advanced && Math.abs(at - (this.config.origin + position * 1000)) > STALE_MS) {
-      const shift = at - position * 1000 - this.config.origin;
+    if (advanced && Math.abs(at - this.clockAt(position)) > STALE_MS) {
+      const shift = at - this.clockAt(position);
       this.config.origin += shift;
       this.pulseOrigin += shift;
       this.resync(now, position);
@@ -165,7 +172,7 @@ export class MidiSchedule {
   private jump() {
     const jump = this.pendingJump!;
     this.pendingJump = null;
-    this.config.origin = jump.at - jump.position * 1000;
+    this.config.origin = jump.at - (jump.position * 1000) / this.rate;
     this.config.position = jump.position;
     this.next = this.cursorAt(jump.position);
     this.cap = Infinity;
@@ -174,32 +181,36 @@ export class MidiSchedule {
     this.jumpAt = jump.at;
     this.chasePending = true;
   }
-  /** Clock time of pulse `k`: 24 pulses per beat, from `pulseOrigin`. */
+  /** Clock time of song position `song` (seconds), so a rated song reads its position off the clock at `rate` times the song's pace. */
+  private clockAt(song: number): number {
+    return this.config.origin + (song * 1000) / this.rate;
+  }
+  /** Clock time of pulse `k`: 24 pulses per beat, from `pulseOrigin`. The pulses follow the effective tempo, the written BPM times `rate`. */
   private pulseDue(k: number): number {
-    return this.pulseOrigin + ((k / 24) * 60 * 1000) / this.config.bpm;
+    return this.pulseOrigin + ((k / 24) * 60 * 1000) / (this.config.bpm * this.rate);
   }
   tick(now: number) {
     if (this.stopped) return;
     if (this.pendingJump && now >= this.pendingJump.at) this.jump();
-    let position = (now - this.config.origin) / 1000;
+    let position = ((now - this.config.origin) / 1000) * this.rate;
     if (now - this.lastTick > STALE_MS || now - this.heartbeat > STALE_MS) {
       this.resync(now, position);
       if (this.stopped) return;
     }
     this.lastTick = now;
-    position = (now - this.config.origin) / 1000;
+    position = ((now - this.config.origin) / 1000) * this.rate;
     const lookahead = this.config.lookahead ?? BLUETOOTH_LOOKAHEAD;
-    const until = Math.min(this.cap, this.config.duration, position + lookahead),
+    const until = Math.min(this.cap, this.config.duration, position + lookahead * this.rate),
       candidates: ScheduledMessage[] = [];
     while (this.next < this.cues.length && this.cues[this.next].time <= until) {
       const cue = this.cues[this.next++];
-      for (const bytes of cue.messages) candidates.push({ bytes, due: this.config.origin + cue.time * 1000, label: cue.label || "Song cue", time: cue.time });
+      for (const bytes of cue.messages) candidates.push({ bytes, due: this.clockAt(cue.time), label: cue.label || "Song cue", time: cue.time });
     }
     if (this.tempo) {
       for (const bytes of this.tempo)
         candidates.push({
           bytes,
-          due: this.config.tempoAt ?? this.config.origin + Math.max(0, this.config.position) * 1000,
+          due: this.config.tempoAt ?? this.clockAt(Math.max(0, this.config.position)),
           label: "Song tempo",
           time: Math.max(0, this.config.position),
         });
@@ -207,7 +218,7 @@ export class MidiSchedule {
     }
     if (this.config.clock) {
       // The clock runs on its own clock time, not on the song's, so a jump does not change its phase.
-      const horizon = Math.min(now + lookahead * 1000, this.config.origin + this.config.duration * 1000);
+      const horizon = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration));
       while (this.pulseDue(this.pulse) < horizon) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
     }
     const messages: ScheduledMessage[] = [],
@@ -228,7 +239,7 @@ export class MidiSchedule {
       const sent = new Set(messages.map((m) => m.bytes.join(",")));
       const chase = computeChaseState(this.cues, chasePosition)
         .filter((m) => !sent.has(m.bytes.join(",")))
-        .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.config.origin + chasePosition * 1000 - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
+        .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.clockAt(chasePosition) - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
       messages.unshift(...chase);
     }
     if (messages.length || dropped.length) this.emit({ type: "batch", messages, ...(dropped.length ? { dropped } : {}) });
