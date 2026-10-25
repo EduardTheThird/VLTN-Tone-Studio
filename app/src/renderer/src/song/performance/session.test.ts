@@ -1279,3 +1279,44 @@ describe("per-entry overrides on the playing song", () => {
     vi.useRealTimers();
   });
 });
+
+describe("a start from a position after a chase", () => {
+  const chartBefore = "[00:10] {midi:pc 1 4}\n[00:20] {midi:cc 1 11 90}";
+  it("holds the audio back by 100 ms so the chase goes out first, and sends Continue after the chase", async () => {
+    mocks.position = 30;
+    const out = output();
+    const { session } = armedSession(out);
+    session.update({ cues: parseChart(chartBefore) });
+    session.setClock(true);
+    await session.play();
+    expect(mocks.lead).toMatchObject({ startDelay: 0.1 });
+    // The scheduler sends its chase at once; the Continue byte is timed for when the audio begins, 100 ms later.
+    const chaseAt = performance.timeOrigin + performance.now();
+    mocks.sends.at(-1)!({ bytes: [192, 4], due: chaseAt, label: "Chase state" } as never);
+    const timeOf = (byte: number) => out.send.mock.calls.find(([bytes]) => bytes[0] === byte)![1] as number;
+    expect(timeOf(192)).toBeCloseTo(chaseAt - performance.timeOrigin, 0);
+    expect(timeOf(251) - timeOf(192)).toBeGreaterThanOrEqual(90);
+    session.pause();
+  });
+  it("does not delay a start from 0:00", async () => {
+    mocks.position = 0;
+    const out = output();
+    const { session } = armedSession(out);
+    session.update({ cues: parseChart(chartBefore) });
+    session.setClock(true);
+    await session.play();
+    expect(mocks.lead).not.toHaveProperty("startDelay");
+    expect(out.send.mock.calls.find(([bytes]) => bytes[0] === 250)![1]).toBeUndefined();
+    session.pause();
+  });
+  it("does not delay a start when no output is armed", async () => {
+    mocks.position = 30;
+    const session = new PerformanceSession({ initial: inputs(), carried: null, initialClock: false });
+    const unload = session.loadSong(source, null);
+    session.update({ cues: parseChart(chartBefore) });
+    await session.play();
+    expect(mocks.lead).not.toHaveProperty("startDelay");
+    session.pause();
+    unload();
+  });
+});

@@ -72,6 +72,8 @@ export interface Lead {
   countInBeats?: number;
   /** Audio starts this many beats before the requested position */
   preRollBeats?: number;
+  /** Seconds from the call until the audio clock starts the song, so the MIDI chase can go out first. Missing means none. */
+  startDelay?: number;
 }
 
 export type { SongShape };
@@ -298,7 +300,7 @@ export class StemPlayer {
     const bpm = lead.bpm ?? this.metronome.bpm;
     this.resumeAt = this.offset;
     if (lead.preRollBeats && beatInterval(bpm)) this.offset = preRollStart(this.offset, lead.preRollBeats, bpm);
-    this.launch(this.ctx.currentTime + 0.02, this.offset, lead, 0);
+    this.launch(this.ctx.currentTime + 0.02 + (lead.startDelay ?? 0), this.offset, lead, 0);
   }
 
   /**

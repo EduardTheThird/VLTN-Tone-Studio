@@ -75,8 +75,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
     dense = false;
   const conflicts = new Map<string, string>();
   const pressed = new Map<string, { time: number; value: number }>();
-  let warnedMomentary = false,
-    warnedUnassigned = false;
+  let warnedMomentary = false;
+  let warnedUnassigned = false;
   const warnedTriggers = new Set<string>();
   for (let i = 0; i < events.length; i++) {
     const cue = events[i];

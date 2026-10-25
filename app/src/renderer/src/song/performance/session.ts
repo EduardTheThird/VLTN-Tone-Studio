@@ -17,6 +17,7 @@ import { readCrossfade } from "@/song/performance/crossfade";
 import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
+import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } from "@/song/performance/midi-chase";
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
 import { orderForPedal } from "@/song/performance/midi-pedal-order";
@@ -264,6 +265,8 @@ export class PerformanceSession {
   private startPosition: number | null = null;
   /** The count-in before the audio of the current start, in ms. The start tempo is due at its beginning. */
   private countInMs = 0;
+  /** Epoch ms when the audio of a delayed start begins. Set only while a chase leads the audio; the transport byte goes out then. */
+  private transportAt: number | null = null;
   private cancelDelay: (() => void) | null = null;
   private noteChannels = new Set<number>();
   private previousBluetooth: BleMidiConnection | null;
@@ -821,7 +824,12 @@ export class PerformanceSession {
       const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
       // The count-in is as long as the audio it leads: beats at the song tempo times the rate.
       this.countInMs = bpm > 0 ? (countIn * beatSeconds(bpm) * 1000) / player.playbackRate : 0;
-      await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats });
+      // A chase that the pedals need before the song begins holds the audio back by CHASE_LEAD_MS, so it goes out first. Nothing is held
+      // when the output is not armed, or when there is no state to chase (a start from the beginning, or no cues before the position).
+      const chaseStart = preRollStart(requestedPosition, timing.preRollBeats, bpm);
+      const lead = armed && computeChaseState(this.state.cues, chaseStart, chaseTriggerSet(this.chaseTriggers())).length ? CHASE_LEAD_MS / 1000 : 0;
+      this.transportAt = lead ? midiNow() + lead * 1000 : null;
+      await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats, ...(lead ? { startDelay: lead } : {}) });
       if (request !== this.playRequest) {
         player.pause();
         this.terminateWorker();
@@ -1619,9 +1627,12 @@ export class PerformanceSession {
           // A song that joins a set already running sends no Start: the set's Start went out with its first song.
           const joined = this.joining;
           this.joining = false;
+          // A delayed start sends its Start or Continue when the audio begins, after the chase.
+          const at = this.transportAt;
+          this.transportAt = null;
           if (context.armed && s.clock && !s.timecode.enabled && !joined) {
             try {
-              this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251]);
+              this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251], at === null ? undefined : at - performance.timeOrigin);
             } catch (e) {
               this.fail(e);
               this.setArmed(false);
@@ -1764,6 +1775,11 @@ export class PerformanceSession {
     ];
   }
 
+  /** The trigger controllers of every configured pedal, which a chase never replays (see midi-chase.ts). */
+  private chaseTriggers(): TriggerCc[] {
+    return configuredPedals(usePedalLibrary.getState()).flatMap((pedal) => pedal.triggers);
+  }
+
   private runScheduler(s: SessionState): void | (() => void) {
     const player = s.player;
     if (!s.playing || !player) return;
@@ -1813,7 +1829,7 @@ export class PerformanceSession {
           playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
           pedalChannel: s.tempoChannel,
-          chaseTriggers: configuredPedals(usePedalLibrary.getState()).flatMap((pedal) => pedal.triggers),
+          chaseTriggers: this.chaseTriggers(),
         },
         (message) => {
           // A replaced output object (same port id) is never sent to; the statechange handler disarms.
