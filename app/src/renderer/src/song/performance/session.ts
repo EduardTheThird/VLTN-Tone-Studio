@@ -687,8 +687,9 @@ export class PerformanceSession {
   };
 
   private recordQueued(bytes: number[], timestamp?: number, label = "Manual / transport") {
-    // Whatever leaves the app may come back in through a THRU input, and must not be taken for a press.
-    this.remote.echo.record(bytes);
+    // Whatever leaves the app may come back in through a THRU input, and must not be taken for a press. A scheduled message is
+    // timed from its wire time, not from when it was queued, since USB cues are queued up to a second ahead.
+    this.remote.echo.record(bytes, timestamp ?? performance.now());
     const queued = midiNow(),
       intended = (timestamp ?? performance.now()) + performance.timeOrigin;
     useMidiDiagnostics.getState().record({ label, intended, queued, lateMs: Math.max(0, queued - intended), bytes });

@@ -156,6 +156,31 @@ describe("echo", () => {
     const filter = new EchoFilter(clock().now);
     expect(filter.consume([0xfc])).toBe(false);
   });
+
+  it("times a scheduled message from its wire time, so its echo is recognised when it comes back", () => {
+    const c = clock();
+    const filter = new EchoFilter(c.now);
+    // Queued now for a wire time 800 ms ahead, as USB cues are queued by the scheduler's lookahead.
+    filter.record([0xc0, 9], c.now() + 800);
+    c.advance(805);
+    expect(filter.consume([0xc0, 9])).toBe(true);
+  });
+
+  it("does not take a press that arrives before the scheduled message goes out", () => {
+    const c = clock();
+    const filter = new EchoFilter(c.now);
+    filter.record([0xc0, 9], c.now() + 800);
+    c.advance(300);
+    expect(filter.consume([0xc0, 9])).toBe(false);
+  });
+
+  it("keeps a scheduled record for the echo window after its wire time, and no longer", () => {
+    const c = clock();
+    const filter = new EchoFilter(c.now);
+    filter.record([0xc0, 9], c.now() + 100);
+    c.advance(100 + ECHO_MS + 1);
+    expect(filter.consume([0xc0, 9])).toBe(false);
+  });
 });
 
 describe("double press", () => {

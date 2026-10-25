@@ -23,8 +23,10 @@ export const MIDI_MODES: readonly { id: MidiMode; label: string; hint: string }[
 export const BOUNCE_MS = 150;
 /** The second press of a double press must come within this long of the first */
 export const DOUBLE_PRESS_MS = 600;
-/** Our own output is recognised coming back in for this long */
-export const ECHO_MS = 120;
+/** Our own output is recognised coming back in for this long, counted from the moment it goes out on the wire */
+export const ECHO_MS = 200;
+/** An echo cannot arrive before its wire time, but clocks drift a little, so a record is matched from this long before it */
+const ECHO_EARLY_MS = 20;
 
 /** Real-time messages that can be bound. Clock is not one of them: it would fire on every beat. */
 const REALTIME = { 0xfa: "Start", 0xfb: "Continue", 0xfc: "Stop" } as const;
@@ -118,22 +120,26 @@ export class BankTracker {
   }
 }
 
-/** Remembers what the app sent, so that the same bytes coming back soon after are not taken for a press. Each record is used once. */
+/**
+ * Remembers what the app sent, so that the same bytes coming back soon after are not taken for a press. Each record is used once.
+ * A scheduled message is recorded at its wire time, which can be up to a second after it was queued, so the echo window starts there.
+ */
 export class EchoFilter {
   private sent: { key: string; at: number }[] = [];
 
   constructor(private readonly now: () => number) {}
 
-  record(bytes: readonly number[]): void {
-    const at = this.now();
-    this.sent = this.sent.filter((s) => at - s.at <= ECHO_MS).slice(-63);
+  /** Records bytes that go out on the wire at `at` (now, when not given). A scheduled message is recorded at its future time. */
+  record(bytes: readonly number[], at: number = this.now()): void {
+    const now = this.now();
+    this.sent = this.sent.filter((s) => now - s.at <= ECHO_MS).slice(-511);
     this.sent.push({ key: bytes.join(","), at });
   }
 
   consume(data: ArrayLike<number>): boolean {
     const key = Array.from(data).join(","),
-      at = this.now(),
-      index = this.sent.findIndex((s) => s.key === key && at - s.at <= ECHO_MS);
+      now = this.now(),
+      index = this.sent.findIndex((s) => s.key === key && now - s.at <= ECHO_MS && now - s.at >= -ECHO_EARLY_MS);
     if (index < 0) return false;
     this.sent.splice(index, 1);
     return true;

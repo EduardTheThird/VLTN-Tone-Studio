@@ -827,7 +827,7 @@ describe("remote actions", () => {
     session.sendPerformance([252]);
     input.dispatchEvent(message([252]));
     expect(session.state.playing).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 250));
     input.dispatchEvent(message([252]));
     expect(session.state.playing).toBe(false);
     session.dispose();
