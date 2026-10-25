@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
 import { QUEUE_MAX, isEditable, upcoming } from "@/song/queue";
 import { formatTime } from "@/song/stems/mix";
+import { runningSeconds } from "@/song/performance/running-time";
 
 const row = "flex flex-wrap items-center gap-2 rounded border border-seam p-2";
 
@@ -17,7 +18,10 @@ export function QueuePanel() {
   const dragging = useRef<number | null>(null);
   const state = { queue: library.queue, position: library.position };
   const title = (id: string) => library.index.songs.find((s) => s.id === id)?.title ?? "Missing song";
-  const duration = (id: string) => library.index.songs.find((s) => s.id === id)?.duration ?? 0;
+  const duration = (id: string) => {
+    const song = library.index.songs.find((s) => s.id === id);
+    return song ? runningSeconds(song) : 0;
+  };
   const playing = library.position >= 0 ? library.queue[library.position] : undefined;
   const rest = upcoming(state);
   const busy = library.busy;

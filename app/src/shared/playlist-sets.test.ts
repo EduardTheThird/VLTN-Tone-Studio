@@ -31,6 +31,11 @@ describe("blocks and their totals", () => {
     ]);
   });
 
+  it("sums the time it is given for each song, so a set can show trimmed running time", () => {
+    const blocks = blockSummaries(playlist([set(5, "Set 1", 0)]), songs, (song) => song.duration / 2);
+    expect(blocks[0].seconds).toBe(325);
+  });
+
   it("counts a song that is no longer in the library as zero seconds, not an error", () => {
     const blocks = blockSummaries(playlist([set(5, "Set 1", 0)]), songs.slice(0, 2));
     expect(blocks[0].seconds).toBe(300);

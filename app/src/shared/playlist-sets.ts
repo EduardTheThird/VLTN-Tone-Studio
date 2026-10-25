@@ -19,8 +19,15 @@ export interface BlockSummary {
   seconds: number;
 }
 
-/** The blocks of a playlist, in order, with the count and running time of each. The whole playlist is one block when it has no sets. */
-export function blockSummaries(playlist: Playlist, songs: readonly LibrarySong[]): BlockSummary[] {
+/**
+ * The blocks of a playlist, in order, with the count and running time of each. The whole playlist is one block when it has no sets. Running
+ * time is `timeOf` of each song; the default is the song's length.
+ */
+export function blockSummaries(
+  playlist: Playlist,
+  songs: readonly LibrarySong[],
+  timeOf: (song: LibrarySong) => number = (song) => song.duration,
+): BlockSummary[] {
   const byId = new Map(songs.map((song) => [song.id, song]));
   const sets = [...(playlist.sets ?? [])].sort((a, b) => a.start - b.start);
   const starts: { set: PlaylistSet | null; start: number }[] = [];
@@ -29,7 +36,10 @@ export function blockSummaries(playlist: Playlist, songs: readonly LibrarySong[]
   return starts.map((block, i) => {
     const end = i + 1 < starts.length ? starts[i + 1].start : playlist.songs.length;
     const entries = playlist.songs.slice(block.start, end);
-    const seconds = entries.reduce((sum, id) => sum + (byId.get(id)?.duration ?? 0), 0);
+    const seconds = entries.reduce((sum, id) => {
+      const song = byId.get(id);
+      return song ? sum + timeOf(song) : sum;
+    }, 0);
     return { set: block.set, name: block.set?.name ?? "", start: block.start, end, count: entries.length, seconds };
   });
 }

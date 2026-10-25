@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
 import { formatTime } from "@/song/stems/mix";
+import { runningSeconds } from "@/song/performance/running-time";
 import { evaluateSmart, validateSmartRules, type SmartRules } from "@shared/library-filter";
 import type { Playlist } from "@shared/song-library";
 import { FilterBuilder } from "./FilterBuilder";
@@ -47,7 +48,7 @@ export function SmartPlaylistEditor({ playlist }: { playlist: Playlist }) {
       <p className="text-sm">
         {failed
           ? "No songs, until the rules are fixed."
-          : `${ids.length} song${ids.length === 1 ? "" : "s"} · ${formatTime(preview.songs.reduce((sum, s) => sum + s.duration, 0))}`}
+          : `${ids.length} song${ids.length === 1 ? "" : "s"} · ${formatTime(preview.songs.reduce((sum, s) => sum + runningSeconds(s), 0))}`}
         {!dirty && " · saved"}
       </p>
       <div className="flex flex-wrap items-center gap-2">

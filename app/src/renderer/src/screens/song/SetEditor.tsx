@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
+import { runningSeconds } from "@/song/performance/running-time";
 import { formatTime } from "@/song/stems/mix";
 import { addSet, blockSummaries, deleteSet, moveEntry, removeEntry, renameSet } from "@shared/playlist-sets";
 import type { LibrarySong, Playlist } from "@shared/song-library";
@@ -17,7 +18,7 @@ export function SetEditor({ playlist, songs }: { playlist: Playlist; songs: Libr
   const library = useSongLibrary();
   const [hint, setHint] = useState("");
   const byId = new Map(songs.map((song) => [song.id, song]));
-  const blocks = blockSummaries(playlist, songs);
+  const blocks = blockSummaries(playlist, songs, runningSeconds);
   const duration = blocks.reduce((sum, block) => sum + block.seconds, 0);
   // Editing the playlist never changes the queue that is playing, so only a save in progress holds the editor.
   const busy = library.busy;

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
 import { NO_BROWSE, browseSongs, folderRows, type BrowseState } from "@/song/library-browse";
 import { formatTime } from "@/song/stems/mix";
+import { runningSeconds } from "@/song/performance/running-time";
 import { SORT_KEYS, SORT_LABELS, type SmartRules, type SortKey } from "@shared/library-filter";
 import type { LibraryFolder, LibrarySong } from "@shared/song-library";
 import { FilterBuilder } from "./FilterBuilder";
@@ -32,6 +33,10 @@ export function LibraryBrowser() {
   const picked = [...selected].filter((id) => songs.some((s) => s.id === id));
   const single = picked.length === 1 ? songs.find((s) => s.id === picked[0]) : undefined;
   const playlists = library.index.playlists.filter((p) => !p.smart);
+  const selectedSeconds = (id: string) => {
+    const song = songs.find((s) => s.id === id);
+    return song ? runningSeconds(song) : 0;
+  };
   const toggle = (id: string) =>
     setSelected((current) => {
       const next = new Set(current);
@@ -170,7 +175,8 @@ export function LibraryBrowser() {
       {picked.length > 0 && (
         <section aria-label="Batch edit" className="space-y-2 rounded border border-seam p-3">
           <p className="text-sm">
-            {picked.length} selected · {formatTime(picked.reduce((sum, id) => sum + (songs.find((s) => s.id === id)?.duration ?? 0), 0))}
+            {picked.length} selected ·{" "}
+            {formatTime(picked.reduce((sum, id) => sum + selectedSeconds(id), 0))}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <select
