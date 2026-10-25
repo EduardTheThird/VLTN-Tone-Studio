@@ -19,10 +19,14 @@ export const MOMENTARY_CCS: ReadonlySet<number> = new Set([24, 64, 65, 75, 80, 8
 
 const isBank = (cc: number) => cc === 0 || cc === 32;
 
-/** Whether a message from this cue is state worth replaying when the song starts after it. Notes and clock never are. */
+/**
+ * Whether a message from this cue is state worth replaying when the song starts after it. Notes and clock never are, and neither are
+ * triggers or the Start/Continue/Stop bytes, which are one-shot actions. Song select is state (it picks the song or pattern), so it is replayed.
+ */
 export function isChased(cue: Cue, bytes: number[]): boolean {
-  if (cue.chase === false) return false;
+  if (cue.chase === false || cue.trigger) return false;
   if (bytes[0] === 0xf0) return cue.chase === true;
+  if (bytes[0] === 0xf3) return true;
   const kind = bytes[0] & 240;
   if (kind === 0xc0) return true;
   if (kind === 0xb0) return cue.chase === true || !MOMENTARY_CCS.has(bytes[1]);
@@ -31,18 +35,23 @@ export function isChased(cue: Cue, bytes: number[]): boolean {
 
 /**
  * The messages that bring the pedals to the state they would be in at `position` had the song played from the start.
- * Order: bank select + program change per channel, then controllers, then SysEx; each group in song order.
- * Only the latest value per (channel, controller) and the latest program change per channel are kept.
+ * Order: song select, then bank select + program change per channel, then controllers, then SysEx; each group in song order.
+ * Only the latest value per (channel, controller), the latest program change per channel and the latest song select are kept.
  */
 export function computeChaseState(cues: Cue[], position: number): ChaseMessage[] {
   const banks = new Map<number, Map<number, number[]>>();
   const programs = new Map<number, ChaseMessage[]>();
   const controllers = new Map<string, ChaseMessage>();
   const sysex = new Map<string, ChaseMessage>();
-  const ordered = cues.filter((cue) => cue.messages.length && cue.time < position - 0.001).sort((a, b) => a.time - b.time);
+  let songSelect: ChaseMessage | null = null;
+  const ordered = cues.filter((cue) => cue.messages.length && !cue.trigger && cue.time < position - 0.001).sort((a, b) => a.time - b.time);
   for (const cue of ordered) {
     for (const bytes of cue.messages) {
       if (!isChased(cue, bytes)) continue;
+      if (bytes[0] === 0xf3) {
+        songSelect = { bytes, time: cue.time };
+        continue;
+      }
       if (bytes[0] === 0xf0) {
         const key = bytes.join(",");
         sysex.delete(key);
@@ -65,5 +74,10 @@ export function computeChaseState(cues: Cue[], position: number): ChaseMessage[]
       controllers.set(key, { bytes, time: cue.time });
     }
   }
-  return [...[...programs.values()].flat(), ...[...controllers.values()].filter((m) => !isBank(m.bytes[1])), ...sysex.values()];
+  return [
+    ...(songSelect ? [songSelect] : []),
+    ...[...programs.values()].flat(),
+    ...[...controllers.values()].filter((m) => !isBank(m.bytes[1])),
+    ...sysex.values(),
+  ];
 }
