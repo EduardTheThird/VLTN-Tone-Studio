@@ -343,6 +343,19 @@ Choose **Enter stage mode** in Performance. The window fills with large lyrics a
 
 On the desktop, playback in stage mode keeps the computer and display awake. It lets go on pause, at the end of the set, on exit or if the app closes. It does not override a closed lid or a deliberate sleep.
 
+## Audience display
+
+The audience display is a second window for the lyrics, chords or PDF page, on a projector or a second screen. The performer keeps the controls on the main screen. Find **Audience display** under the performance controls.
+
+- **Open audience display** opens the window. Choose **Show on** first: the window fills that display with no title bar, and the app remembers the choice. If the display is not connected, the window opens on the main screen instead, and it moves to the display when the display is plugged back in. Unplugging the display mid-show moves the window to the main screen and does not stop playback.
+- **Close audience display** closes it. Closing the audience window, or the performance window, never stops or changes playback.
+- It shows the line on screen in large text, with its chords above and the next line below. It also shows the song title and **Next:** the next song of the playlist. A PDF chart on screen shows the same page. Lyrics follow playback with their own clock, so they stay in step after a seek, a loop, a speed change or a gapless join, without the performer's screen sending updates every frame.
+- **Show chords** hides or shows the chord row. **Text size** and **Rotation** (0, 90, 180 or 270 degrees, for a screen mounted sideways) are kept on this computer. **Black between songs** blanks the screen while the song is stopped at its start, which covers the time between songs of a set and before a song is played. **Blackout** hides everything. Blackout is not kept after a restart; the other choices are.
+- With no song on screen the window shows the app's name. Until the performance screen has sent it anything, and while blackout is on, the window is black.
+- An untimed chart (a plain text or a ChordPro song with no timestamps) is shown as its text from the top and does not follow the song. PDF annotations (pen, highlighter and text) stay on the performer's screen.
+
+In the browser build there is no second window or display list. **Open audience display** opens a pop-up with the same view. The browser cannot place a pop-up on a chosen display, so move the pop-up to the audience screen and press F11 to fill it. Allow pop-ups for the site. PDF charts need the desktop app.
+
 ## Troubleshooting
 
 - **Nothing reaches the pedal.** Check that **Send cues** is on, the right output is selected and the channel matches the pedal. Use **Send MIDI now** to test one command.
