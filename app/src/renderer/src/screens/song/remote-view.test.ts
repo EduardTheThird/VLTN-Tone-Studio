@@ -48,6 +48,14 @@ describe("page actions with a PDF on screen", () => {
     expect(turn).toHaveBeenCalledWith(1, true, true);
   });
 
+  it("tells the actions that a PDF is on screen, so the default section keys turn its pages", () => {
+    expect(buildViewHost(state()).pdfOnScreen()).toBe(false);
+    const pdf = shown(document.createElement("div"), true);
+    document.body.appendChild(pdf);
+    registerPdfTurner({ element: () => pdf, turn: () => undefined });
+    expect(buildViewHost(state()).pdfOnScreen()).toBe(true);
+  });
+
   it("passes on the hint of a turn that did not move", () => {
     const pdf = shown(document.createElement("div"), true);
     document.body.appendChild(pdf);

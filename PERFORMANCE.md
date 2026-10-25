@@ -275,7 +275,8 @@ Every live action can run from a MIDI message on the selected input, from a key,
 The defaults:
 
 - **Start** and **Continue** play, and **Stop** pauses. **CC 80** with a value of 64–127 on any channel plays or pauses. A footswitch that sends 127 on each press works, and repeats within 150 ms count as one press.
-- **Page Down** and the right arrow go to the next section; **Page Up** and the left arrow go to the previous one. **T** taps the tempo.
+- **Page Down** and the right arrow go to the next section; **Page Up** and the left arrow go to the previous one. While a [PDF chart](#pdf-charts) is on screen, those same keys turn its pages instead. **T** taps the tempo.
+- A key you learn to an action is never changed by this. Learn a key to **Next page** or **Previous page** to turn pages with a page-turner while the lyrics are on screen too.
 - **Page up**, **Page down**, **Previous page** and **Next page** scroll the lyrics, or turn the page of a [PDF chart](#pdf-charts) when one is on screen. They work in stage mode too, so a page-turner can turn the chart.
 
 **Learn MIDI** or **Learn key** on an action, then press the pedal, controller or key. The next message is bound. Learn shows the channel and the message it heard, such as "Ch 3 · CC 80 = 127". A message that already runs another action is not bound: Learn names that action, and you remove it first. A program change learned after a bank select (CC 0 and CC 32) is bound to that bank only.

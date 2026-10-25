@@ -170,6 +170,7 @@ const NOT_ON_SCREEN = (): Hint => "This control is not on screen.";
 /** The view actions before the performance screen has supplied its own. */
 const NO_VIEW: ViewHost = {
   scrollLyrics: NOT_ON_SCREEN,
+  pdfOnScreen: () => false,
   fontSize: NOT_ON_SCREEN,
   toggleStage: NOT_ON_SCREEN,
   muteGroup: NOT_ON_SCREEN,

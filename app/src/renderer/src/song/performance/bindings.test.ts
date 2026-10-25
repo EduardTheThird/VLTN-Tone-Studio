@@ -216,8 +216,8 @@ describe("keys", () => {
   it("matches the key a performer presses, with letters in lower case", () => {
     const router = new RemoteRouter(clock().now);
     const bindings = defaultBindings();
-    expect(firedActions(router.key("PageDown", bindings))).toEqual(["section.next"]);
-    expect(firedActions(router.key("ArrowLeft", bindings))).toEqual(["section.previous"]);
+    expect(firedActions(router.key("PageDown", bindings))).toEqual(["section.nextOrPage"]);
+    expect(firedActions(router.key("ArrowLeft", bindings))).toEqual(["section.previousOrPage"]);
     expect(firedActions(router.key("T", bindings))).toEqual(["tempo.tap"]);
     expect(firedActions(router.key("x", bindings))).toEqual([]);
   });
@@ -318,7 +318,7 @@ describe("saved bindings", () => {
     const bindings = defaultBindings();
     expect(bindings).toContainEqual({ action: "transport.play", source: "midi", match: { status: 0xfa } });
     expect(bindings).toContainEqual({ action: "transport.stop", source: "midi", match: { status: 0xfc } });
-    expect(bindings).toContainEqual({ action: "section.next", source: "key", match: { key: "PageDown" } });
+    expect(bindings).toContainEqual({ action: "section.nextOrPage", source: "key", match: { key: "PageDown" } });
     const cc80Default = bindings.find((b) => b.source === "midi" && b.match.data1 === 80);
     expect(cc80Default).toEqual({
       action: "transport.playPause",
@@ -448,5 +448,21 @@ describe("timecode and clock coming back through THRU", () => {
     router.echo.record([0xf1, 0x72], 0);
     time = 10;
     expect(router.readInput([0xf1, 0x72])).toBeNull();
+  });
+});
+
+describe("default section keys", () => {
+  it("binds PageDown, PageUp and the arrows to the page-or-section actions, so a PDF on screen turns its pages", () => {
+    const keyed = defaultBindings()
+      .filter((b) => b.source === "key")
+      .map((b) => [(b.match as { key?: string }).key, b.action]);
+    expect(keyed).toEqual(
+      expect.arrayContaining([
+        ["PageDown", "section.nextOrPage"],
+        ["PageUp", "section.previousOrPage"],
+        ["ArrowRight", "section.nextOrPage"],
+        ["ArrowLeft", "section.previousOrPage"],
+      ]),
+    );
   });
 });

@@ -766,7 +766,7 @@ describe("remote actions", () => {
     });
     session.loadSong(source, null);
     session.bind();
-    const view = { scrollLyrics: vi.fn(), fontSize: vi.fn(), toggleStage: vi.fn(), muteGroup: vi.fn(), toggleClick: vi.fn(), tap: vi.fn() };
+    const view = { scrollLyrics: vi.fn(), pdfOnScreen: vi.fn(() => false), fontSize: vi.fn(), toggleStage: vi.fn(), muteGroup: vi.fn(), toggleClick: vi.fn(), tap: vi.fn() };
     session.setView(view);
     const message = (data: number[]) => Object.assign(new Event("midimessage"), { data: Uint8Array.from(data) });
     return { session, input, view, message };

@@ -4,7 +4,7 @@ import { useReaderText } from "@/song/performance/reader-text";
 import type { MetronomeMode } from "@/song/performance/rhythm";
 import type { Mix } from "@/song/stems/mix";
 import { toggleMuteGroup, type TrackInfo } from "@/song/tracks";
-import { turnVisiblePdf } from "@/song/performance/pdf/turner";
+import { pdfOnScreen, turnVisiblePdf } from "@/song/performance/pdf/turner";
 
 /** What the performance screen holds that the remote actions reach: the stage, the click, the mixer and the tap. */
 export interface ViewState {
@@ -46,6 +46,7 @@ export function buildViewHost(state: ViewState): ViewHost {
       const step = pages ? reader.clientHeight * 0.9 : SCROLL_STEP_PX;
       reader.scrollBy({ top: direction * step, behavior: "smooth" });
     },
+    pdfOnScreen,
     fontSize: (direction) => useReaderText.getState().step(direction),
     toggleStage: () => state.setStage(!state.stage),
     muteGroup: (group) => {
