@@ -213,6 +213,8 @@ Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; 
 
 Under **Song → Songs & playlists**, make a playlist from saved songs. Entries can repeat, and edits save at once. Choose **Check playlist** to review every entry before the set (it reads saved songs, so save first), **Load set paused** to prepare, or **Play playlist** / **Play from here** to go.
 
+A playlist can be split into headed sets, and a smart playlist picks its songs by rules; **Play set** plays one set and stops at its end. The queue shows and edits what plays next without changing the song that is playing. See [Song library](SONG-LIBRARY.md#playlist-sets-and-smart-playlists) and [Queue](SONG-LIBRARY.md#queue).
+
 The set loads and starts each next song, then stops after the last one. Performance shows the position, the next title, **Previous song / Next song** and **Stop playlist**. Each next song loads in the background while the current one plays, so most joins are gapless. See [Gapless and crossfade](#gapless-and-crossfade).
 
 An armed MIDI output stays armed across songs while the same device stays connected. For cues from the first second, choose **Load set paused**, connect and switch on **Send cues**, then press **Play playlist** in Performance. Starting a playlist again from the library starts a new disarmed session.

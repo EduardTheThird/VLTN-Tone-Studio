@@ -31,7 +31,7 @@ Save a newly imported song or new stem split before exporting. Current local tex
 
 On this or another computer, choose **Restore backup…** and select the archive. Existing songs and playlists are kept. If some songs in the archive have the same source audio as songs already saved, you are asked whether to **skip songs already in the library** or **import as copies**. Skipping leaves those songs out, points playlist entries at the songs you already have, and leaves out playlists that already exist with the same name and songs, so restoring the same archive twice adds nothing. Copies and new songs receive fresh IDs, and repeated playlist entries point to the corresponding restored song. Backups made before songs were stored as FLAC carry no audio digest and are always imported as copies. Nothing starts playing or arms MIDI automatically. Connect and configure outputs on the destination computer.
 
-The archive includes `backup-manifest.json`, `library.json`, and referenced UUID audio directories. Backups made by earlier versions (raw float32 files) still restore; the restored songs are then converted to FLAC like any other older song. An archive with a version 3 index is refused by an app built before this release, as archives with a version 2 index already are. SHA-256 checksums, byte lengths, metadata, playlist references and every file path/type are checked before the restored library index is published. Links, duplicate/undeclared files and paths outside the expected audio layout are rejected. A failed restore does not replace the existing index. Export writes a temporary archive beside the chosen destination and only replaces the destination after compression succeeds, so a failed export preserves an earlier backup.
+The archive includes `backup-manifest.json`, `library.json`, and referenced UUID audio directories. Backups made by earlier versions (raw float32 files) still restore; the restored songs are then converted to FLAC like any other older song. Archives and library folders with a version 4 index (written by this release, see [Format versions](#format-versions)) are refused by apps built before this release. Archives made by earlier versions still restore into this one. SHA-256 checksums, byte lengths, metadata, playlist references and every file path/type are checked before the restored library index is published. Links, duplicate/undeclared files and paths outside the expected audio layout are rejected. A failed restore does not replace the existing index. Export writes a temporary archive beside the chosen destination and only replaces the destination after compression succeeds, so a failed export preserves an earlier backup.
 
 MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, account credentials, downloaded analysis models and application-wide preferences are not included. Song MIDI cues retain their actual commands, channels and labels and do not require the original pedal profiles for playback. This exports the song library, not a backup of physical pedal presets.
 
@@ -40,6 +40,35 @@ MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, acc
 A saved song's chart, BPM, lyrics and options are kept in the library only, and are written back a moment after you stop editing. Songs you have not saved keep theirs in the browser's local storage. Settings that an earlier version left in local storage for saved songs are moved into the library the first time the library opens, and the old entries are removed. A song's MIDI trigger, if it has one, is one of these options.
 
 The first archive format supports up to 50,000 declared files, 512 GiB of uncompressed content, and 8 MiB each for metadata/manifest. Backups can still be large because they include the full lossless audio. Allow free space for the compressed archive when exporting, and for all restored audio when importing. Keep the app open until completion. An interrupted save, restore or conversion can leave an unreferenced folder in the library. The app removes such folders, and abandoned save sessions, once they are more than an hour old, at start and every 10 minutes after. An interrupted export can still leave a temporary archive beside the destination.
+
+## Organising songs
+
+Each saved song has details you set in **Song → Songs & playlists**: its key, year, keywords, notes and a colour. The tempo is the song's saved BPM and follows it. The play count and last-played time are kept by the library.
+
+- **Search and sort.** Search matches the title, artist, notes and keywords, and every word you type must match. Sort by title, artist, date added, last played, play count, BPM, year or key. A list of more than 20 songs shows an A to Z index.
+- **Folders.** Folders nest to any depth. A song is in one folder or in the library root. Only an empty folder can be deleted.
+- **Filters.** Choose **Filter the list** and add rules on title, artist, notes, key, keyword, colour, folder, BPM, year, play count, length, date added or last played. A song must match all the rules, or any of them, as you choose. A rule that is incomplete, or cannot run, shows no songs and says why. Recent filters are remembered on this computer only.
+- **Batch edit.** Select songs to add them to a playlist, set their colour, replace their keywords, move them to a folder, or delete them. Deleting asks first, and removes the songs from every playlist.
+
+## Playlist sets and smart playlists
+
+A regular playlist can be split into headed sets, such as "Set 1" and "Encore". Each set shows its song count and running time, and the playlist shows its total. **Play set** plays only that set and stops at its end. A set heading moves with the songs around it; removing the only song of a set removes its heading. Running times use each song's length.
+
+A smart playlist holds no songs of its own. It picks songs from the library by its rules, sorted and optionally limited to a number of songs. Saving the rules changes what it picks the next time. Playing it takes a snapshot of the songs it picks at that moment, so a change to the library never reorders a set that is already playing.
+
+## Queue
+
+The queue is the list of what plays next. **Play next** puts a song straight after the one playing, **Add to queue** adds it at the end, and **Queue from here** adds the rest of a playlist from one of its entries. In the queue panel you can drag an upcoming song, move it up or down, send it to the top or bottom, or remove it. The song playing, and the songs before it, are locked.
+
+Editing the queue never stops or changes the song that is playing. If an edit changes the next song, a join already prepared for the old one is undone, the outgoing song runs to its own end, and the new next song is prepared. An edit that leaves the next song as it was keeps the join. Adding songs to a single song that is loaded on its own starts a queue, which then plays on when the song ends. The queue holds up to 128 songs, counting the songs already played.
+
+## History
+
+A song is counted as played once it reaches its halfway point. Each play records the time and, when it was part of a set, the set. The count and the last-played time follow. The history keeps the most recent 500 plays. You can clear it, or make a playlist from the plays since a date. Removing a song removes its plays from the history.
+
+## Format versions
+
+This release saves the library as version 4, adding the details, folders, history, sets and smart playlists above. Earlier libraries open and are upgraded in memory, with no saved value changed; the upgrade is written on the next save. Once a library is version 4, apps built before this release refuse to open it, so keep a backup from before the upgrade if you may need to go back. Backups from earlier versions restore into this one; their songs start with no folder, a play count of zero and no history.
 
 ## Whole-playlist preflight
 
