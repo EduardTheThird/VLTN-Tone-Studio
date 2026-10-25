@@ -29,9 +29,9 @@ const legacySix = () => ["source", "drums", "bass", "other", "vocals", "guitar",
 
 describe("v2 to v3 migration", () => {
   it("writes the kind of each saved track and keeps every file, name and digest", () => {
-    const v2: SongLibrary = { version: 2, songs: [song(legacySix())], playlists: [] };
+    const v2 = { version: 2 as const, songs: [song(legacySix())], playlists: [] };
     const v3 = upgradeIndex(v2);
-    expect(v3.version).toBe(3);
+    expect(v3.version).toBe(4);
     const before = v2.songs[0].audio;
     const after = v3.songs[0].audio;
     expect(after.map((t) => t.name)).toEqual(before.map((t) => t.name));
@@ -50,8 +50,8 @@ describe("v2 to v3 migration", () => {
     expect(upgraded).not.toHaveProperty("muteGroups");
   });
 
-  it("leaves a v3 index as it is", () => {
-    const index: SongLibrary = { version: 3, songs: [song([flacTrack("source")])], playlists: [] };
+  it("leaves a v4 index as it is", () => {
+    const index: SongLibrary = { version: 4, songs: [song([flacTrack("source")])], playlists: [], folders: [], history: [] };
     expect(upgradeIndex(index)).toBe(index);
   });
 

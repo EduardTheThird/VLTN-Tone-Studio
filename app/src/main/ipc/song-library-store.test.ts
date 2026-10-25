@@ -34,7 +34,7 @@ it("round-trips audio, charts and duplicate playlist entries across restart", as
   await store.playlists([playlist]);
   store = new SongLibraryStore(root);
   expect((await store.index()).playlists).toEqual([playlist]);
-  expect((await store.index()).songs[0]).toEqual(first.song);
+  expect((await store.index()).songs[0]).toMatchObject(first.song);
   await expectAudio(first, "source");
   await expectAudio(first, "guitar");
   await store.updateSettings(first.song.id, { ":bpm": "90" });
@@ -44,7 +44,7 @@ it("writes a v2 index and hands out protocol URLs instead of audio bytes", async
   const fixture = await flacSong();
   await saveFlacSong(store, fixture);
   const index = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
-  expect(index.version).toBe(3);
+  expect(index.version).toBe(4);
   const urls = await store.audioUrls(fixture.song.id);
   expect(Object.keys(urls).sort()).toEqual(["guitar", "source"]);
   expect(urls.source).toBe(`app://library/${index.revisions[fixture.song.id]}/source.flac`);
@@ -123,7 +123,7 @@ it("preflights saved files without loading them, deduplicates IDs and reports mi
 it("returns a clean saved snapshot for intact audio", async () => {
   const s = await flacSong();
   await saveFlacSong(store, s);
-  expect(await store.preflight([s.song.id])).toEqual([{ id: s.song.id, song: s.song, errors: [] }]);
+  expect(await store.preflight([s.song.id])).toMatchObject([{ id: s.song.id, song: s.song, errors: [] }]);
 });
 
 it("migrates a v1 library to FLAC with the same audio and settings, then removes the v1 files", async () => {
@@ -137,7 +137,7 @@ it("migrates a v1 library to FLAC with the same audio and settings, then removes
   expect(await store.migrate((p) => progress.push(`${p.phase} ${p.completed}/${p.total}`))).toEqual({ converted: 2, failed: 0 });
   expect(progress[0]).toBe("Converting saved songs 0/2");
   const index = await new SongLibraryStore(root).index();
-  expect(index.version).toBe(3);
+  expect(index.version).toBe(4);
   for (const fixture of [first, second]) {
     const song = index.songs.find((s) => s.id === fixture.song.id)!;
     expect(isLegacySong(song)).toBe(false);

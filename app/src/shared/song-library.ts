@@ -1,3 +1,5 @@
+import { validateSmartRules, type SmartRules } from "./library-filter";
+
 /** Where a saved track came from. Legacy entries carry none: the source track is `source` and every other one a `stem`. */
 export const TRACK_KINDS = ["source", "stem", "user"] as const;
 export type TrackKind = (typeof TRACK_KINDS)[number];
@@ -7,6 +9,13 @@ export const TRACK_BUSES = ["main", "click", "aux1", "aux2"] as const;
 export const MUTE_GROUPS_MAX = 6;
 /** Imported tracks per song. The song's source track is one more entry in the audio list. */
 export const USER_TRACKS_MAX = 32;
+/** The library's schema version. v4 adds song metadata, folders, play history, sets and smart playlists. */
+export const LIBRARY_VERSION = 4 as const;
+/** Play history keeps the most recent entries only, so the index stays small on a long-running rig. */
+export const HISTORY_MAX = 500;
+export const KEYWORDS_MAX = 20;
+export const FOLDERS_MAX = 500;
+export const NOTES_MAX = 2000;
 
 /** Tracks a v1 library stored as raw float32 files, one per channel. They have no `file`; the store converts them to FLAC in the background. */
 export interface LibraryAudio {
@@ -45,17 +54,85 @@ export interface LibrarySong {
   audio: LibraryAudio[];
   settings: Record<string, string>;
   updated: string;
+  /** v4: the song's key as text, such as "A minor". Entered by hand. */
+  key?: string;
+  /** v4: the tempo, mirrored from the song's `:bpm` setting whenever it is saved or changed. */
+  bpm?: number;
+  /** v4: the year the song was released or written. */
+  year?: number;
+  /** v4: the colour used to mark the song in the library, as `#rrggbb`. */
+  color?: string;
+  /** v4: words that group songs, such as "encore" or "ballad". Matched without case. */
+  keywords?: string[];
+  /** v4: free text about the song. */
+  notes?: string;
+  /** v4: the folder the song is in. Missing means the library root. */
+  folderId?: string;
+  /** v4: how many times the song has been played to the halfway point. */
+  playCount?: number;
+  /** v4: when the song was last played to the halfway point, ISO 8601. */
+  lastPlayed?: string;
+  /** v4: when the song was first saved, ISO 8601. Older songs take their `updated` time. */
+  created?: string;
+}
+/** v4: a folder in the library. Folders nest without a limit; only an empty folder can be deleted. */
+export interface LibraryFolder {
+  id: string;
+  name: string;
+  /** Missing for a folder at the top level. */
+  parentId?: string;
+}
+/** v4: one play of a song to its halfway point. The history is bounded at HISTORY_MAX entries, newest last. */
+export interface HistoryEntry {
+  songId: string;
+  /** ISO 8601 time the song passed its halfway point. */
+  at: string;
+  /** The playlist set the song played in, when it played as part of one. */
+  setId?: string;
+}
+/** v4: a headed block in a playlist. The block starts at entry `start` of the playlist and runs to the next block or the end. */
+export interface PlaylistSet {
+  id: string;
+  name: string;
+  start: number;
 }
 export interface Playlist {
   id: string;
   name: string;
   songs: string[];
+  /** v4: headed blocks such as "Set 1" and "Encore". Missing or empty means one block. */
+  sets?: PlaylistSet[];
+  /** v4: a smart playlist's rules. A smart playlist holds no entries of its own; its songs are evaluated from the library. */
+  smart?: SmartRules;
 }
 export interface SongLibrary {
-  /** 3 once any song has been saved with per-track settings; v1 and v2 indexes are still read and upgraded in memory. */
-  version: 1 | 2 | 3;
+  /** 4 once any song has been saved with the v4 metadata; v1 to v3 indexes are still read and upgraded in memory. */
+  version: 1 | 2 | 3 | 4;
   songs: LibrarySong[];
   playlists: Playlist[];
+  folders: LibraryFolder[];
+  history: HistoryEntry[];
+}
+/** An index as it may be stored: the folders and history of an older one are missing. Read it through `upgradeIndex`. */
+export type StoredLibrary = Omit<SongLibrary, "version" | "folders" | "history"> & {
+  version: 1 | 2 | 3 | 4;
+  folders?: LibraryFolder[];
+  history?: HistoryEntry[];
+};
+/** A change to the library's organisation, applied in the main process as one publish. */
+export type LibraryChange =
+  | { kind: "songs"; ids: string[]; patch: SongMetaPatch }
+  | { kind: "folders"; folders: LibraryFolder[] }
+  | { kind: "played"; id: string; at: string; setId?: string }
+  | { kind: "history"; history: HistoryEntry[] };
+/** Metadata to set on songs. `null` clears a field; a missing field is left as it is. */
+export interface SongMetaPatch {
+  key?: string | null;
+  year?: number | null;
+  color?: string | null;
+  keywords?: string[];
+  notes?: string | null;
+  folderId?: string | null;
 }
 export interface LibraryTransferProgress {
   phase: string;
@@ -102,8 +179,10 @@ export interface SongLibraryApi {
   updateSettings(id: string, patch: Record<string, string>): Promise<void>;
   /** Copies the saved track settings of song `id` onto every song with the same imported tracks. Resolves with how many songs changed. */
   applyTrackSettings(id: string): Promise<number>;
+  /** Applies one change to the library's organisation: song metadata, folders, a play, or the history. */
+  organise(change: LibraryChange): Promise<void>;
 }
-export const emptyLibrary = (): SongLibrary => ({ version: 3, songs: [], playlists: [] });
+export const emptyLibrary = (): SongLibrary => ({ version: LIBRARY_VERSION, songs: [], playlists: [], folders: [], history: [] });
 export const validId = (id: string): boolean => /^[a-f0-9-]{36}$/.test(id);
 export const TRACK_NAMES = ["source", "drums", "bass", "other", "vocals", "guitar", "piano"];
 /** Imported tracks are stored under a fixed file name, so any track name is safe on disk. */
@@ -129,10 +208,36 @@ export function withTrackKind(track: LibraryAudio): LibraryAudio {
   return track.kind === undefined ? { ...track, kind: trackKindOf(track) } : track;
 }
 
-/** An index read from an older version, with every track in the v3 model. The version is written on the next publish. */
-export function upgradeIndex<T extends SongLibrary>(index: T): T {
-  if (index.version === 3) return index;
-  return { ...index, version: 3, songs: index.songs.map((song) => ({ ...song, audio: song.audio.map(withTrackKind) })) };
+/**
+ * A song brought up to the v4 model. Nothing that was saved changes: a missing play count is 0, a missing creation time is the time it was
+ * last updated, and the tempo mirrors the saved `:bpm` setting when that is a number.
+ */
+export function withSongDefaults(song: LibrarySong): LibrarySong {
+  const bpm = Number(song.settings[":bpm"]);
+  return {
+    ...song,
+    audio: song.audio.map(withTrackKind),
+    keywords: song.keywords ?? [],
+    playCount: song.playCount ?? 0,
+    created: song.created ?? song.updated,
+    bpm: song.bpm ?? (Number.isFinite(bpm) && bpm >= BPM_MIN && bpm <= BPM_MAX ? bpm : undefined),
+  };
+}
+
+/**
+ * An index read from an older version, with every song and playlist in the v4 model. The version is written on the next publish. A v4
+ * index is returned as it is, unless its folders or history are missing (a damaged file), in which case they are filled in.
+ */
+export function upgradeIndex<T extends StoredLibrary>(index: T): T & SongLibrary {
+  if (index.version === LIBRARY_VERSION && index.folders && index.history) return index as T & SongLibrary;
+  return {
+    ...index,
+    version: LIBRARY_VERSION,
+    songs: index.songs.map(withSongDefaults),
+    playlists: index.playlists.map((playlist) => ({ ...playlist, sets: playlist.sets ?? [] })),
+    folders: index.folders ?? [],
+    history: index.history ?? [],
+  };
 }
 
 /** The track settings a song saves per track, which "apply to similar songs" copies. */
@@ -175,6 +280,9 @@ export const isLegacySong = (song: LibrarySong): boolean => song.audio.some((a) 
 
 const TRACK_NAME = /^[^\u0000-\u001f\u007f]{1,60}$/;
 const COLOUR = /^#[0-9a-fA-F]{6}$/;
+const BPM_MIN = 20;
+const BPM_MAX = 400;
+const TEXT_LINE = /^[^\u0000-\u001f\u007f]*$/;
 
 /** The optional per-track settings, checked. Nothing here can make a song unplayable: an odd value is refused, not guessed at. */
 function validateTrackSettings(track: LibraryAudio): void {
@@ -192,6 +300,38 @@ function validateTrackSettings(track: LibraryAudio): void {
       groups.some((group) => !Number.isInteger(group) || group < 1 || group > MUTE_GROUPS_MAX))
   )
     throw new Error("Invalid track mute group.");
+}
+
+/**
+ * The v4 song metadata, checked. Metadata can never stop a song from playing, but a value out of range is refused rather than stored, so
+ * the library stays readable. Missing fields are fine: older songs have none of them.
+ */
+/** The metadata fields a song or a metadata patch may carry. */
+export type SongMeta = Pick<LibrarySong, "key" | "bpm" | "year" | "color" | "notes" | "keywords" | "folderId" | "playCount" | "lastPlayed" | "created">;
+
+export function validateSongMeta(meta: SongMeta): void {
+  const bad = () => new Error("Invalid song details.");
+  if (meta.key !== undefined && (typeof meta.key !== "string" || meta.key.length > 40 || !TEXT_LINE.test(meta.key))) throw bad();
+  if (meta.bpm !== undefined && (!Number.isFinite(meta.bpm) || meta.bpm < BPM_MIN || meta.bpm > BPM_MAX)) throw bad();
+  if (meta.year !== undefined && (!Number.isInteger(meta.year) || meta.year < 1000 || meta.year > 2999)) throw bad();
+  if (meta.color !== undefined && !COLOUR.test(meta.color)) throw bad();
+  if (meta.notes !== undefined && (typeof meta.notes !== "string" || meta.notes.length > NOTES_MAX)) throw bad();
+  const keywords = meta.keywords ?? [];
+  if (
+    !Array.isArray(keywords) ||
+    keywords.length > KEYWORDS_MAX ||
+    keywords.some((word) => typeof word !== "string" || !word.trim() || word.length > 40 || !TEXT_LINE.test(word))
+  )
+    throw bad();
+  if (meta.folderId !== undefined && !validId(meta.folderId)) throw bad();
+  if (meta.playCount !== undefined && (!Number.isSafeInteger(meta.playCount) || meta.playCount < 0)) throw bad();
+  if (meta.lastPlayed !== undefined && !isIsoTime(meta.lastPlayed)) throw bad();
+  if (meta.created !== undefined && !isIsoTime(meta.created)) throw bad();
+}
+
+/** Whether a value is a readable ISO 8601 date or time. */
+export function isIsoTime(value: unknown): boolean {
+  return typeof value === "string" && value.length <= 40 && !Number.isNaN(Date.parse(value));
 }
 
 export function validateSong(song: LibrarySong): void {
@@ -228,12 +368,74 @@ export function validateSong(song: LibrarySong): void {
   }
   if (Object.entries(song.settings).some(([k, v]) => !["", ":bpm", ":lyrics", ":options"].includes(k) || typeof v !== "string"))
     throw new Error("Invalid song settings.");
+  validateSongMeta(song);
 }
+
+/** The folders of a library: unique ids, names, parents that exist, and no cycles. */
+export function validateFolders(folders: LibraryFolder[]): void {
+  if (!Array.isArray(folders) || folders.length > FOLDERS_MAX) throw new Error("Invalid folders.");
+  const ids = new Set(folders.map((f) => f.id));
+  if (ids.size !== folders.length) throw new Error("Invalid folders.");
+  const parents = new Map(folders.map((f) => [f.id, f.parentId]));
+  for (const folder of folders) {
+    if (!validId(folder.id) || !folder.name.trim() || folder.name.length > 120 || !TEXT_LINE.test(folder.name)) throw new Error("Invalid folder name.");
+    if (folder.parentId !== undefined && !ids.has(folder.parentId)) throw new Error("Invalid folders.");
+    // Walk up from the folder; a walk that comes back to where it started, or runs longer than the list, is a cycle.
+    let at = folder.parentId;
+    for (let steps = 0; at !== undefined; steps++) {
+      if (at === folder.id || steps > folders.length) throw new Error("A folder cannot sit inside itself.");
+      at = parents.get(at);
+    }
+  }
+}
+
+/** The library's organisation (folders, history and song links) checked against each other. */
+export function validateOrganisation(index: SongLibrary): void {
+  validateFolders(index.folders);
+  const folders = new Set(index.folders.map((f) => f.id));
+  const songs = new Set(index.songs.map((s) => s.id));
+  if (index.songs.some((s) => s.folderId !== undefined && !folders.has(s.folderId))) throw new Error("A song is in a folder that does not exist.");
+  if (!Array.isArray(index.history) || index.history.length > HISTORY_MAX) throw new Error("Invalid play history.");
+  for (const entry of index.history) if (!songs.has(entry.songId) || !isIsoTime(entry.at)) throw new Error("Invalid play history.");
+}
+
+/** Playlists checked against the songs: entries that exist, sets that start on an entry, and smart rules that can run. */
 export function validatePlaylists(playlists: Playlist[], songs: LibrarySong[]): void {
   const ids = new Set(songs.map((s) => s.id));
-  if (
-    new Set(playlists.map((p) => p.id)).size !== playlists.length ||
-    playlists.some((p) => !validId(p.id) || !p.name.trim() || p.name.length > 300 || p.songs.some((id) => !ids.has(id)))
-  )
-    throw new Error("Playlist contains an invalid or missing song.");
+  if (new Set(playlists.map((p) => p.id)).size !== playlists.length) throw new Error("Playlist contains an invalid or missing song.");
+  for (const p of playlists) {
+    if (!validId(p.id) || !p.name.trim() || p.name.length > 300 || p.songs.some((id) => !ids.has(id)))
+      throw new Error("Playlist contains an invalid or missing song.");
+    if (p.smart) {
+      if (p.songs.length || p.sets?.length) throw new Error("A smart playlist holds no entries of its own.");
+      validateSmartRules(p.smart);
+      continue;
+    }
+    validateSets(p);
+  }
+}
+
+/** The sets of a static playlist: unique ids, names, and starts that are in range, in order and not repeated. */
+function validateSets(playlist: Playlist): void {
+  const sets = playlist.sets ?? [];
+  if (new Set(sets.map((s) => s.id)).size !== sets.length) throw new Error("Invalid playlist sets.");
+  let previous = -1;
+  for (const set of sets) {
+    if (!validId(set.id) || !set.name.trim() || set.name.length > 120 || !TEXT_LINE.test(set.name)) throw new Error("Invalid playlist sets.");
+    if (!Number.isInteger(set.start) || set.start < 0 || set.start >= playlist.songs.length || set.start <= previous) throw new Error("Invalid playlist sets.");
+    previous = set.start;
+  }
+}
+
+/** A metadata change, checked. `null` clears a field, so it is checked as missing. */
+export function validateSongPatch(patch: SongMetaPatch): void {
+  if (!patch || typeof patch !== "object") throw new Error("Invalid song details.");
+  validateSongMeta({
+    key: patch.key ?? undefined,
+    year: patch.year ?? undefined,
+    color: patch.color ?? undefined,
+    notes: patch.notes ?? undefined,
+    folderId: patch.folderId ?? undefined,
+    keywords: patch.keywords,
+  });
 }

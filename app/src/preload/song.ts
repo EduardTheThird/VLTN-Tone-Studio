@@ -17,6 +17,7 @@ export const songApi: SongHostApi = {
     index: () => invoke('song:library:index'),
     audioUrls: id => invoke('song:library:audioUrls', id),
     playlists: playlists => invoke('song:library:playlists', playlists),
+    organise: change => invoke('song:library:organise', change),
     updateSettings: (id, patch) => invoke('song:library:updateSettings', id, patch),
     applyTrackSettings: id => invoke('song:library:applyTrackSettings', id),
     remove: id => invoke('song:library:remove', id),

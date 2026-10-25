@@ -4,7 +4,19 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import { c as createTar, Parser, type ReadEntry } from "tar";
-import { TRACK_NAMES, isTrackFileName, trackFiles, validId, validatePlaylists, validateSong, type LibraryTransferProgress } from "@shared/song-library";
+import {
+  LIBRARY_VERSION,
+  TRACK_NAMES,
+  isTrackFileName,
+  trackFiles,
+  upgradeIndex,
+  validId,
+  validateOrganisation,
+  validatePlaylists,
+  validateSong,
+  type LibraryTransferProgress,
+  type StoredLibrary,
+} from "@shared/song-library";
 import type { DiskIndex } from "./song-library-store";
 
 const MANIFEST = "backup-manifest.json",
@@ -19,8 +31,8 @@ interface BackupFile {
 }
 interface Manifest {
   format: "vltn-song-library";
-  /** 1: raw float32 files. 2: FLAC files. 3: FLAC files and per-track settings. All are read; new backups are 3. */
-  version: 1 | 2 | 3;
+  /** 1: raw float32 files. 2: FLAC files. 3: FLAC files and per-track settings. 4: song details, folders, history and sets. All are read. */
+  version: 1 | 2 | 3 | 4;
   files: BackupFile[];
 }
 type Progress = (value: LibraryTransferProgress) => void;
@@ -33,7 +45,7 @@ export function validateDiskIndex(value: unknown): DiskIndex {
   const index = value as DiskIndex;
   if (
     !index ||
-    (index.version !== 1 && index.version !== 2 && index.version !== 3) ||
+    ![1, 2, 3, 4].includes(index.version) ||
     !Array.isArray(index.songs) ||
     !Array.isArray(index.playlists) ||
     !index.revisions ||
@@ -51,7 +63,10 @@ export function validateDiskIndex(value: unknown): DiskIndex {
     for (const track of song.audio) if (!Number.isSafeInteger(track.frames * 4)) throw invalid();
   }
   validatePlaylists(index.playlists, index.songs);
-  return index;
+  // An older backup is read in the v4 model, so its folders and history are empty and the restore needs no special case.
+  const upgraded = upgradeIndex(index as StoredLibrary & { revisions: DiskIndex["revisions"] });
+  validateOrganisation(upgraded);
+  return upgraded;
 }
 function audioFiles(index: DiskIndex): Map<string, number> {
   const result = new Map<string, number>();
@@ -84,7 +99,7 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
   const metadata = await readFile(join(root, INDEX));
   if (metadata.length > MAX_METADATA) throw new Error("Library metadata exceeds the supported backup size.");
   files.set(INDEX, metadata.length);
-  const manifest: Manifest = { format: "vltn-song-library", version: 3, files: [] };
+  const manifest: Manifest = { format: "vltn-song-library", version: LIBRARY_VERSION, files: [] };
   let total = 0,
     done = 0;
   for (const [path, bytes] of files) {
@@ -171,7 +186,7 @@ export async function readBackup(file: string, stage: string, progress: Progress
               if (
                 !manifest ||
                 manifest.format !== "vltn-song-library" ||
-                (manifest.version !== 1 && manifest.version !== 2 && manifest.version !== 3) ||
+                ![1, 2, 3, 4].includes(manifest.version) ||
                 !Array.isArray(manifest.files) ||
                 !manifest.files.length ||
                 manifest.files.length > MAX_FILES

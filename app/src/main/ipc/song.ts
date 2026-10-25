@@ -21,7 +21,7 @@ import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { songSaveFilters } from './song-save-options';
 import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
-import type { LibrarySong, LibraryTransferProgress, Playlist, RestoreMode } from '@shared/song-library';
+import type { LibraryChange, LibrarySong, LibraryTransferProgress, Playlist, RestoreMode } from '@shared/song-library';
 
 // The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
 // userData/models, resumed from a `.part` file after an interrupted download, checked against its pinned SHA-256
@@ -131,6 +131,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:abort', (_e, token: string) => library.abort(token));
   handle('song:library:audioUrls', (_e, id: string) => library.audioUrls(id));
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
+  handle('song:library:organise', (_e, change: LibraryChange) => library.organise(change));
   handle('song:library:updateSettings', (_e, id: string, patch: Record<string, string>) => library.updateSettings(id, patch));
   handle('song:library:applyTrackSettings', (_e, id: string) => library.applyTrackSettings(id));
   handle('song:library:remove', (_e, id: string) => library.remove(id));

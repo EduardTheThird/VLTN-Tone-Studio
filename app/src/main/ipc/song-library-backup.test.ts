@@ -62,19 +62,19 @@ it("round-trips all audio/settings and repeated playlist entries as new copies w
   await save(restored, existing);
   expect(await restored.restoreBackup(archive)).toEqual({ songs: 2, playlists: 1 });
   const index = await new SongLibraryStore(join(temp, "restored")).index();
-  expect(index.songs[0]).toEqual(existing.song);
-  expect(index.songs[1]).toEqual({ ...first.song, id: index.songs[1].id });
+  expect(index.songs[0]).toMatchObject(existing.song);
+  expect(index.songs[1]).toMatchObject({ ...first.song, id: index.songs[1].id });
   expect(index.songs[1].id).not.toBe(first.song.id);
   expect(index.playlists[0].songs).toEqual([index.songs[1].id, index.songs[2].id, index.songs[1].id]);
   await expectAudio(join(temp, "restored"), index.songs[1].id, first);
   await restored.restoreBackup(archive);
   expect((await restored.index()).songs).toHaveLength(5);
 });
-it("writes a version 3 manifest holding the FLAC files", async () => {
+it("writes a version 4 manifest holding the FLAC files", async () => {
   await save(store, await flacSong());
   await store.exportBackup(archive);
   const manifest = JSON.parse(await readFile(join(await unpack(), "backup-manifest.json"), "utf8"));
-  expect(manifest.version).toBe(3);
+  expect(manifest.version).toBe(4);
   expect(manifest.files.map((f: { path: string }) => f.path.split("/").pop()).sort()).toEqual(["guitar.flac", "library.json", "source.flac"]);
 });
 it("restores a version 1 backup of raw float32 files and converts it to FLAC with the same audio", async () => {
@@ -129,7 +129,7 @@ it("rolls back moved audio if publishing the restored index fails", async () => 
   await expect(restored.restoreBackup(archive)).rejects.toThrow("Disk full");
   publish.mockRestore();
   expect((await readdir(destination)).sort()).toEqual(before);
-  expect((await restored.index()).songs).toEqual([existing.song]);
+  expect((await restored.index()).songs).toMatchObject([existing.song]);
   await expectAudio(destination, existing.song.id, existing);
 });
 it.each(["checksum", "missing", "version", "duplicate", "truncated", "index-digest"])(
@@ -143,7 +143,7 @@ it.each(["checksum", "missing", "version", "duplicate", "truncated", "index-dige
     if (damage === "checksum") await writeFile(join(dir, path), new Uint8Array((await readFile(join(dir, path))).length).fill(1));
     if (damage === "version") {
       const manifest = JSON.parse(await readFile(join(dir, "backup-manifest.json"), "utf8"));
-      manifest.version = 4;
+      manifest.version = 5;
       await writeFile(join(dir, "backup-manifest.json"), JSON.stringify(manifest));
     }
     if (damage === "index-digest") {
@@ -168,7 +168,7 @@ it.each(["checksum", "missing", "version", "duplicate", "truncated", "index-dige
       existing = await flacSong(3);
     await save(restored, existing);
     await expect(restored.restoreBackup(archive)).rejects.toThrow();
-    expect((await restored.index()).songs).toEqual([existing.song]);
+    expect((await restored.index()).songs).toMatchObject([existing.song]);
     await expectAudio(destination, existing.song.id, existing);
     expect((await readdir(destination)).filter((p) => p.startsWith(".restore-"))).toEqual([]);
   },
