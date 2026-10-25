@@ -397,3 +397,18 @@ it("fires a cue inside a loop once per pass, and a play trigger only at the star
   expect(bytes.filter((b) => b[0] === 192 && b[1] === 2)).toHaveLength(1);
   expect(bytes.filter((b) => b[0] === 192 && b[1] === 1)).toHaveLength(0);
 });
+
+it("sends the other pedal's message before the GP-180's when a cue is due together, and keeps cues at different times apart", () => {
+  const together = fixture({ cues: parseChart("[00:00] {midi:pc 16 68} {midi:pc 1 0}"), pedalChannel: 16 });
+  together.schedule.tick(1000);
+  expect(together.messages().map((m) => m.bytes)).toEqual([
+    [192, 0],
+    [207, 68],
+  ]);
+  const apart = fixture({ cues: parseChart("[00:00] {midi:pc 16 68}\n[00:01] {midi:pc 1 0}"), pedalChannel: 16, lookahead: 1 });
+  apart.schedule.tick(1000);
+  expect(apart.messages().map((m) => m.bytes)).toEqual([
+    [207, 68],
+    [192, 0],
+  ]);
+});

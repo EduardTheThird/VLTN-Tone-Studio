@@ -1,5 +1,6 @@
 import type { Cue } from "./chart";
 import { CHASE_LEAD_MS, computeChaseState } from "./midi-chase";
+import { orderForPedal } from "./midi-pedal-order";
 import { clampRate } from "./speed";
 import { cycleFrames, framesAt, fullFrame, quarterFrame, type TimecodeRate } from "./timecode";
 
@@ -25,6 +26,8 @@ export interface SchedulerConfig {
   tempoAt?: number;
   /** Seconds of cues to emit ahead of the audio position. Defaults to the Bluetooth value. */
   lookahead?: number;
+  /** The GP-150 / GP-180 receive channel. Messages due together go to other channels first (see midi-pedal-order.ts). Missing keeps chart order. */
+  pedalChannel?: number;
   /** The `{midi@play}` trigger messages. They are sent once, with the start tempo, and never again on a jump or loop. */
   playTriggers?: number[][];
   /**
@@ -65,6 +68,21 @@ const MAX_RESYNCS = 3;
 const RESYNC_WINDOW_MS = 5000;
 /** The audio position must advance at least this often while playing. */
 const AUDIO_STALL_MS = 1000;
+
+/**
+ * Reorders each run of messages due at the same moment for the pedal. Runs are not merged across times, so a message is never sent
+ * ahead of an earlier one that is due later.
+ */
+function orderSameTime(messages: ScheduledMessage[], pedalChannel: number | undefined): ScheduledMessage[] {
+  const ordered: ScheduledMessage[] = [];
+  for (let start = 0; start < messages.length; ) {
+    let end = start + 1;
+    while (end < messages.length && messages[end].due === messages[start].due) end++;
+    ordered.push(...orderForPedal(messages.slice(start, end), pedalChannel, (m) => m.bytes));
+    start = end;
+  }
+  return ordered;
+}
 
 /** A full-frame timecode SysEx: the only timecode message worth sending late, since it is what sets the receiver's position. */
 export function isFullFrame(bytes: number[]): boolean {
@@ -338,6 +356,7 @@ export class MidiSchedule {
         .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.clockAt(chasePosition) - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
       messages.unshift(...chase);
     }
-    if (messages.length || dropped.length) this.emit({ type: "batch", messages, ...(dropped.length ? { dropped } : {}) });
+    const ordered = orderSameTime(messages, this.config.pedalChannel);
+    if (messages.length || dropped.length) this.emit({ type: "batch", messages: ordered, ...(dropped.length ? { dropped } : {}) });
   }
 }

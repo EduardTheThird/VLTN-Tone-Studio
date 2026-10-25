@@ -149,6 +149,7 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 - Add `{chase}` to a cue to always replay its commands, or `{nochase}` to never replay them. Cues built from a pedal's trigger commands get `{nochase}` automatically. Preflight warns about a controller that is pressed and released within half a second without `{nochase}`.
 - Removing the port disarms.
 - Cues past the end of the audio are not scheduled.
+- Messages due together in a cue go to the other pedals first, because the GP-150 / GP-180 pauses briefly while it changes patch and would hold them.
 
 **MIDI preflight & timing** (collapsible) lists cues beyond the audio, conflicting or dense commands, missing note-offs and channel clashes. Warnings are advice; they never change or disable a cue. The app cannot read a pedal's receive channel, so check those yourself.
 

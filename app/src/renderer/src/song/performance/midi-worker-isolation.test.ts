@@ -6,14 +6,15 @@ import { Worker } from "node:worker_threads";
 
 it("runs the production scheduler in a separate thread while the host thread is blocked", async () => {
   const engine = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
-    /import[^;]+from ['"]\.\/(midi-chase|speed|timecode)['"];?/g,
+    /import[^;]+from ['"]\.\/(midi-chase|midi-pedal-order|speed|timecode)['"];?/g,
     "",
   );
   const chase = stripTypeScriptTypes(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
     /import[^;]+from ['"]\.\/chart['"];?/,
     "",
   );
-  // speed.ts and timecode.ts have no imports; the scheduler reads its clamp and its frame encoding, so the worker needs them too.
+  // These have no imports; the scheduler reads their clamp, frame encoding and pedal order, so the worker needs them too.
+  const pedalOrder = stripTypeScriptTypes(await readFile(new URL("./midi-pedal-order.ts", import.meta.url), "utf8"), { mode: "transform" });
   const speed = stripTypeScriptTypes(await readFile(new URL("./speed.ts", import.meta.url), "utf8"), { mode: "transform" });
   const timecode = stripTypeScriptTypes(await readFile(new URL("./timecode.ts", import.meta.url), "utf8"), { mode: "transform" });
   const entry = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler-worker.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
@@ -25,6 +26,7 @@ it("runs the production scheduler in a separate thread while the host thread is 
     "const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};",
     "parentPort.on('message',data=>self.onmessage({data}));",
     chase,
+    pedalOrder,
     speed,
     timecode,
     engine,

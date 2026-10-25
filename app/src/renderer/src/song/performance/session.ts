@@ -18,6 +18,7 @@ import { getSetting, performanceKey, setSetting } from "@/song/performance/setti
 import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
+import { orderForPedal } from "@/song/performance/midi-pedal-order";
 import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
 import {
   armJump,
@@ -587,7 +588,12 @@ export class PerformanceSession {
   private sendTriggers(kind: MidiTrigger, cues: Cue[] = this.state.cues): void {
     if (!this.armed) return;
     try {
-      for (const cue of cues) if (cue.trigger === kind) for (const bytes of cue.messages) this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
+      const messages = orderForPedal(
+        cues.filter((cue) => cue.trigger === kind).flatMap((cue) => cue.messages),
+        this.state.tempoChannel,
+        (bytes) => bytes,
+      );
+      for (const bytes of messages) this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
     } catch (e) {
       this.fail(e);
     }
@@ -1805,6 +1811,7 @@ export class PerformanceSession {
           tempo: this.startTempo,
           playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
+          pedalChannel: s.tempoChannel,
         },
         (message) => {
           // A replaced output object (same port id) is never sent to; the statechange handler disarms.
