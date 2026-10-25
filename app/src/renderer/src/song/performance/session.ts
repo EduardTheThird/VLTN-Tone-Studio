@@ -38,6 +38,7 @@ import {
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { rememberedPort, useMidiConfiguration, type PortChoice } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
+import { countsAsPlayed } from "@shared/library-history";
 import { actionLabel, runAction, type ActionHost, type Hint, type ViewHost } from "./actions";
 import {
   RemoteRouter,
@@ -83,6 +84,8 @@ export const BLUETOOTH_PORT_ID = "bluetooth-midi";
 const CHAIN_CHECK_MS = 250;
 /** The next song is chained this far before its join, so that a pause in between has time to undo it */
 const CHAIN_AHEAD_S = 5;
+/** How often the playing song is checked for having reached its halfway point, to count it as played. */
+const PLAYED_CHECK_MS = 1000;
 
 export interface LateNotice {
   dropped: number;
@@ -265,6 +268,9 @@ export class PerformanceSession {
   /** The next playlist song, once it has been started on this song's clock */
   private chained: HandedOverSong | null = null;
   private handoverTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Whether the playing song has been counted as played. Counted once per song, at its halfway point. */
+  private playedRecorded = false;
+  private playedTimer: ReturnType<typeof setInterval> | null = null;
   private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
   /** The id of the song being handed over to, from the moment the library moves on until the session that takes it over is set up */
   private handingOver: string | null = null;
@@ -417,6 +423,7 @@ export class PerformanceSession {
     const handover = this.claimHandover(source);
     if (!source) return () => {};
     this.loadedSongId = source.libraryId;
+    this.playedRecorded = false;
     this.autoplayPending = useSongLibrary.getState().takeAutoplay(source.libraryId);
     const options = getSetting(performanceKey(source), ":options");
     const shape = playerShape(shapeFromOptions(options));
@@ -440,8 +447,11 @@ export class PerformanceSession {
       // A song saved at another speed is rendered now. It plays at 100% until its render is in place.
       if (!isPlainSpeed(speed)) void this.renderSpeed(speed);
     }
+    this.playedTimer = setInterval(this.checkPlayed, PLAYED_CHECK_MS);
     return () => {
       this.dropChained();
+      if (this.playedTimer) clearInterval(this.playedTimer);
+      this.playedTimer = null;
       stopWiring();
       // A hand-over keeps the worker, which the next song's scheduler is about to use.
       if (this.handingOver === null) {
@@ -923,6 +933,19 @@ export class PerformanceSession {
     this.startChain(next, plan, countIn);
   }
 
+  /**
+   * Counts the playing song as played once it passes its halfway point, with the playlist set it came from. The check runs once a second and
+   * does no work once the song is counted, so it stays off the playback path.
+   */
+  private checkPlayed = (): void => {
+    const { player } = this.state;
+    const id = this.loadedSongId;
+    if (!player || !id || this.playedRecorded || !player.isPlaying || !countsAsPlayed(player.position, player.duration)) return;
+    this.playedRecorded = true;
+    const library = useSongLibrary.getState();
+    library.recordPlay(id, library.playlistPlaying ? (library.playingSet ?? undefined) : undefined);
+  };
+
   /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. */
   private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, countIn: number): void {
     const { player, bpm } = this.state;
@@ -938,6 +961,8 @@ export class PerformanceSession {
     }
     const countInMs = bpm > 0 ? (countInBeatsNow * beatSeconds(bpm) * 1000) / incoming.playbackRate : 0;
     this.chained = { id: next.id, player: incoming, countInMs, unwire };
+    // The library holds the chained song, so a queue edit that changes the next song undoes this chain first.
+    useSongLibrary.getState().holdChain({ id: next.id, release: () => this.dropChained() });
     // The outgoing song's quarter frames end where the next song joins, and its full frame starts there. The chain is decided several
     // seconds ahead, so no quarter frame past the join is queued yet. Dropping the chain restores them.
     this.scheduler?.endTimecode(this.clockOf(plan.startAt));
@@ -961,6 +986,7 @@ export class PerformanceSession {
     }
     outgoing.detachNext();
     this.chained = null;
+    useSongLibrary.getState().holdChain(null);
     this.handingOver = chained.id;
     // The outgoing song ends at the join: its end and stop go out before the next song's load and play.
     this.sendTriggers("end");
@@ -975,6 +1001,7 @@ export class PerformanceSession {
     const chained = this.chained;
     if (!chained) return;
     this.chained = null;
+    useSongLibrary.getState().holdChain(null);
     this.scheduler?.endTimecode(null);
     // The prepared song stays with the library: it is stopped here, and it can be chained again.
     this.state.player?.cancelChain();

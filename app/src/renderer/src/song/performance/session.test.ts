@@ -35,6 +35,9 @@ const mocks = vi.hoisted(() => ({
     position: 0,
     pausePlaylist: vi.fn(),
     rememberMidi: vi.fn(),
+    holdChain: vi.fn(),
+    recordPlay: vi.fn(),
+    playingSet: null as string | null,
     advancePlaylist: vi.fn(),
     skipPlaylist: vi.fn(async () => {}),
     busy: false,
@@ -1131,3 +1134,50 @@ describe("MIDI timecode in the session", () => {
     expect(session.state.error).toBe("MIDI timecode offset: Frames must be 0 to 23 at 24 fps.");
   });
 });
+
+it("counts a playing song as played once, at its halfway point, with the set it played in", async () => {
+  vi.useFakeTimers();
+  mocks.library.playlistPlaying = true;
+  mocks.library.playingSet = "set-1";
+  const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  const player = session.state.player! as unknown as { isPlaying: boolean };
+  player.isPlaying = true;
+  mocks.position = 10;
+  vi.advanceTimersByTime(3000);
+  expect(mocks.library.recordPlay).not.toHaveBeenCalled();
+  mocks.position = 31;
+  vi.advanceTimersByTime(3000);
+  expect(mocks.library.recordPlay).toHaveBeenCalledTimes(1);
+  expect(mocks.library.recordPlay).toHaveBeenCalledWith("a", "set-1");
+  mocks.position = 55;
+  vi.advanceTimersByTime(3000);
+  expect(mocks.library.recordPlay).toHaveBeenCalledTimes(1);
+  unload();
+  session.dispose();
+  vi.useRealTimers();
+});
+
+it("holds a chained song in the library, and lets go of it when the chain is undone", async () => {
+  vi.useFakeTimers();
+  const incoming = new StemPlayer({} as Stems);
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: incoming };
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => next as never;
+  const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(250);
+  expect(session.state.player).not.toBe(incoming);
+  const holds = mocks.library.holdChain.mock.calls as unknown as ({ id: string; release(): void } | null)[][];
+  const hold = holds.at(-1)![0]!;
+  expect(hold.id).toBe("b");
+  hold.release();
+  expect(holds.at(-1)![0]).toBeNull();
+  expect(mocks.library.advanceToPrepared).not.toHaveBeenCalled();
+  unload();
+  session.dispose();
+  vi.useRealTimers();
+});
+

@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
 import { useSongLibrary } from "./library";
@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   inspectBackup: vi.fn(),
   restoreBackup: vi.fn(),
   onTransferProgress: vi.fn(),
+  organise: vi.fn(),
 }));
 vi.mock("@/host", () => ({ host: { song: { library: api } } }));
 vi.mock("./stems/engine", () => ({ separateStems: vi.fn() }));
@@ -345,3 +346,126 @@ it("hands a MIDI autoplay request to the one song it names, once", () => {
   expect(useSongLibrary.getState().takeAutoplay("one")).toBe(true);
   expect(useSongLibrary.getState().takeAutoplay("one")).toBe(false);
 });
+
+describe("the queue, play recording and organisation", () => {
+  const songs = () => [songNamed("one", "One"), songNamed("two", "Two"), songNamed("three", "Three"), songNamed("four", "Four")];
+  const reset = (extra: Partial<ReturnType<typeof useSongLibrary.getState>> = {}) =>
+    useSongLibrary.setState({
+      index: { ...emptyLibrary(), songs: songs() },
+      queue: ["one", "two", "three"],
+      position: 0,
+      playlistPlaying: true,
+      playingSet: null,
+      chainHold: null,
+      prepared: null,
+      error: "",
+      notice: "",
+      ...extra,
+    });
+  beforeEach(() => {
+    api.organise.mockResolvedValue(undefined);
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: songs() });
+  });
+
+  it("puts a song after the playing one, and leaves the playing song and the songs before it alone", () => {
+    reset({ queue: ["one", "two", "three"], position: 1 });
+    expect(useSongLibrary.getState().playNextSong("four")).toBeNull();
+    expect(useSongLibrary.getState().queue).toEqual(["one", "two", "four", "three"]);
+    expect(useSongLibrary.getState().position).toBe(1);
+    expect(useSongLibrary.getState().removeFromQueue(1)).toBe("That song is playing or has already played.");
+    expect(useSongLibrary.getState().moveInQueue(0, 3)).toBe("That song is playing or has already played.");
+    expect(useSongLibrary.getState().queue).toEqual(["one", "two", "four", "three"]);
+  });
+
+  it("adds to the end and removes or moves upcoming entries", () => {
+    reset();
+    expect(useSongLibrary.getState().addToQueue(["four"])).toBeNull();
+    expect(useSongLibrary.getState().queue).toEqual(["one", "two", "three", "four"]);
+    expect(useSongLibrary.getState().moveInQueue(3, 1)).toBeNull();
+    expect(useSongLibrary.getState().queue).toEqual(["one", "four", "two", "three"]);
+    expect(useSongLibrary.getState().removeFromQueue(2)).toBeNull();
+    expect(useSongLibrary.getState().queue).toEqual(["one", "four", "three"]);
+  });
+
+  it("turns a lone loaded song into a queue that plays on, and refuses edits with nothing loaded", () => {
+    reset({ queue: ["one"], position: 0, playlistPlaying: false });
+    expect(useSongLibrary.getState().addToQueue(["two"])).toBeNull();
+    expect(useSongLibrary.getState()).toMatchObject({ queue: ["one", "two"], playlistPlaying: true });
+    reset({ queue: [], position: -1, playlistPlaying: false });
+    expect(useSongLibrary.getState().addToQueue(["two"])).toBe("Load a song first.");
+    expect(useSongLibrary.getState().playNextSong("two")).toBe("Load a song first.");
+    expect(useSongLibrary.getState().queue).toEqual([]);
+  });
+
+  it("releases a chained song before its prepared player is disposed, when a queue edit changes the next song", () => {
+    const order: string[] = [];
+    const prepared = { id: "two", title: "Two", player: { dispose: vi.fn(() => (order.push("dispose"), Promise.resolve())) } };
+    reset({ prepared: prepared as never, chainHold: { id: "two", release: () => order.push("release") } });
+    expect(useSongLibrary.getState().moveInQueue(2, 1)).toBeNull();
+    expect(order).toEqual(["release", "dispose"]);
+    expect(useSongLibrary.getState().chainHold).toBeNull();
+  });
+
+  it("keeps a chained song when a queue edit leaves the next song as it is", () => {
+    const prepared = { id: "two", title: "Two", player: { dispose: vi.fn(() => Promise.resolve()) } };
+    const release = vi.fn();
+    reset({ prepared: prepared as never, chainHold: { id: "two", release } });
+    expect(useSongLibrary.getState().addToQueue(["four"])).toBeNull();
+    expect(useSongLibrary.getState().removeFromQueue(3)).toBeNull();
+    expect(release).not.toHaveBeenCalled();
+    expect(prepared.player.dispose).not.toHaveBeenCalled();
+    expect(useSongLibrary.getState().chainHold).toEqual({ id: "two", release });
+  });
+
+  it("records a play with its time and set, and refreshes the index without blocking the load", async () => {
+    reset();
+    useSongLibrary.getState().recordPlay("two", "set-1");
+    await vi.waitFor(() => expect(api.organise).toHaveBeenCalledTimes(1));
+    const [change] = api.organise.mock.calls[0];
+    expect(change).toMatchObject({ kind: "played", id: "two", setId: "set-1" });
+    expect(Number.isNaN(Date.parse(change.at))).toBe(false);
+    expect(useSongLibrary.getState().busy).toBe(false);
+  });
+
+  it("records a play that fails as a log line, not an error on the screen", async () => {
+    reset();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    api.organise.mockRejectedValueOnce(new Error("Disk full"));
+    useSongLibrary.getState().recordPlay("two");
+    await vi.waitFor(() => expect(log).toHaveBeenCalledWith("Could not record the play", expect.any(Error)));
+    expect(useSongLibrary.getState().error).toBe("");
+    log.mockRestore();
+  });
+
+  it("applies one batch edit to every selected song in a single save", async () => {
+    reset();
+    await useSongLibrary.getState().organiseSongs(["one", "two"], { keywords: ["encore"] });
+    expect(api.organise).toHaveBeenCalledTimes(1);
+    expect(api.organise).toHaveBeenCalledWith({ kind: "songs", ids: ["one", "two"], patch: { keywords: ["encore"] } });
+    expect(useSongLibrary.getState().notice).toBe("Updated 2 songs.");
+  });
+
+  it("makes a playlist from the plays since a date, and clears the history", async () => {
+    api.playlists.mockResolvedValue(undefined);
+    reset({
+      index: { ...emptyLibrary(), songs: songs(), history: [{ songId: "two", at: "2026-03-01T00:00:00.000Z" }, { songId: "four", at: "2025-01-01T00:00:00.000Z" }] },
+    });
+    await useSongLibrary.getState().playlistFromHistory("  March  ", "2026-01-01");
+    expect(api.playlists).toHaveBeenCalledWith([expect.objectContaining({ name: "March", songs: ["two"], sets: [] })]);
+    await expect(useSongLibrary.getState().playlistFromHistory("Empty", "2030-01-01")).resolves.toBeUndefined();
+    expect(useSongLibrary.getState().error).toBe("No songs were played since that date.");
+    await useSongLibrary.getState().clearHistory();
+    expect(api.organise).toHaveBeenCalledWith({ kind: "history", history: [] });
+  });
+
+  it("remembers the playlist set a play came from, and forgets it when a single song loads", async () => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+    reset({ index: { ...emptyLibrary(), songs: [saved] }, playingSet: null });
+    await useSongLibrary.getState().playPlaylist([saved.id, saved.id], 0, "set-1");
+    expect(useSongLibrary.getState().playingSet).toBe("set-1");
+    await useSongLibrary.getState().load(saved.id);
+    expect(useSongLibrary.getState().error).toBe("");
+    expect(useSongLibrary.getState().playingSet).toBeNull();
+  });
+});
+
