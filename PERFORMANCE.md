@@ -132,6 +132,21 @@ All results are from a GP-180 (firmware 1.1.1) with a Strymon TimeLine on its MI
 
 The rig had the GP-180 receiving OMNI and the TimeLine on channel 1, so tempo on channel 16 reached only the GP-180. To keep downstream program changes from recalling GP-180 patches, consider setting the GP-180 to receive on 16 as well; that has not been confirmed on hardware.
 
+## Sections
+
+Name the parts of a song on the waveform in the section editor: start and end times snap to the beat when a tempo is set, and each section has a mode for its end:
+
+- **Continue:** play on. **Repeat once:** play the section twice. **Loop until released:** repeat until you release it. **Skip:** jump over it. **Pause at end:** stop there.
+
+While playing:
+
+- **Tap a section** to arm a jump to it. The strip shows when it will land, and **Cancel jump** stops it before then.
+- **Double-tap a section** to jump now. The jump lands after the MIDI lookahead (about 120 ms over Bluetooth, 1 s over USB), so cues already queued still belong to the passage being left.
+- **Loop** repeats the current section until you tap **Exit loop**. The current pass finishes, then the song moves on. A release within the last 150 ms before the end of a pass takes effect after that pass.
+- **Save as default** writes live loops and releases into the sections' stored modes. Other live changes are not saved.
+
+Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; cues in a skipped section are not sent. In Stage the sections replace the seek bar, and seeking stays locked. A section that does not start or end on a bar line is flagged in preflight, because a loop there lands off the beat.
+
 ## Playlists
 
 Under **Song → Songs & playlists**, make a playlist from saved songs. Entries can repeat, and edits save at once. Choose **Check playlist** to review every entry before the set (it reads saved songs, so save first), **Load set paused** to prepare, or **Play playlist** / **Play from here** to go.
