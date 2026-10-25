@@ -1,5 +1,6 @@
 import { STEM_NAMES, type StemName, type Stems } from "../types";
 import { beatSeconds, clicksWhilePlaying, clicksWhileStopped, preRollStart, type MetronomeMode } from "../performance/rhythm";
+import { audioTimeOf, gridClicks, gridStart, songTimeAt, type GridCursor, type Segment } from "../performance/timeline";
 import { stemGains, type Mix } from "./mix";
 import { OutputRouter, type BusName, type OutputConfig } from "../audio/outputs";
 
@@ -9,17 +10,35 @@ export type TrackBuses = Partial<Record<string, BusName>>;
 // Plays a split's stems (four or six) in sync through WebAudio: one buffer source per stem → its gain (mixer) → an analyser
 // (level meter) → the main output bus. Pausing or seeking restarts the sources at the new position.
 //
-// The metronome is one grid of clicks. While the song plays it is anchored to the audio start, so a count-in (clicks before the audio)
-// and a pre-roll (audio that starts before the requested position) keep the same bar phase. While stopped, a rehearsal grid starts from
-// the moment it is switched on and never touches the song. Clicks go to the click bus, which can be sent to its own output.
+// The metronome is one grid of clicks. While the song plays it follows the song's timeline (see timeline.ts), so a count-in
+// (clicks before the audio) and a pre-roll (audio that starts before the requested position) keep the same bar phase, and a jump
+// keeps it too. While stopped, a rehearsal grid starts from the moment it is switched on and never touches the song. Clicks go to
+// the click bus, which can be sent to its own output.
+//
+// A jump is scheduled ahead on the audio clock: the stems stop at its boundary and restart at the target, sample-accurately, so
+// nothing has to be late. The jump can be cancelled until shortly before the boundary.
 
 const RAMP_S = 0.015;
+/** A jump that would start in the past starts this far from now. */
+const JUMP_MIN_S = 0.05;
+/** A jump can be cancelled until this long before it takes effect. The metronome reads this far ahead, so a cancel must come first. */
+const JUMP_CANCEL_S = 0.15;
+/** How long a cancelled stem keeps playing: a stop far enough away that it never comes. */
+const RESTORE_S = 86400;
 
 interface Voice {
   buffer: AudioBuffer;
   gain: GainNode;
   analyser: AnalyserNode;
   source: AudioBufferSourceNode | null;
+}
+
+/** A jump waiting on the audio clock: the sources it replaces, and the song end the segment before it had. */
+interface PreparedJump {
+  when: number;
+  previous: AudioBufferSourceNode[];
+  end: number;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 export interface MetronomeSettings { mode: MetronomeMode; bpm: number; beats: number; volume: number; firstBeat?: number }
@@ -49,7 +68,9 @@ export class StemPlayer {
   /** The split's stems, STEM_NAMES order */
   readonly names: StemName[];
   private voices: Partial<Record<StemName, Voice>>;
-  private startedAt = 0;
+  /** The song's timeline on the audio clock. A jump appends a segment. Empty until something has been started. */
+  private segments: Segment[] = [];
+  private prepared: PreparedJump | null = null;
   private offset = 0;
   /** The position the last start asked for. A pause during the count-in returns here, not to the pre-roll start. */
   private resumeAt = 0;
@@ -97,7 +118,17 @@ export class StemPlayer {
   /** Playback position in seconds. Negative during a count-in. */
   get position(): number {
     if (!this.playing) return this.offset;
-    return Math.min(this.duration, this.ctx.currentTime - this.startedAt);
+    return Math.min(this.duration, songTimeAt(this.segments, this.ctx.currentTime));
+  }
+
+  /** The audio clock now, so the session can map audio times onto the MIDI clock. */
+  get audioNow(): number {
+    return this.ctx.currentTime;
+  }
+
+  /** The audio time at which song time `at` plays on the current timeline. Only meaningful while playing. */
+  audioTimeOf(at: number): number {
+    return audioTimeOf(this.segments, at);
   }
 
   async play(lead: Lead = {}): Promise<void> {
@@ -122,18 +153,8 @@ export class StemPlayer {
       source.start(start, from);
       v.source = source;
     }
-    // One source tells the end; the others end on the same sample.
-    const leader = this.voice(this.names[0]);
-    const ending = leader.source!;
-    ending.onended = () => {
-      if (!this.playing || leader.source !== ending) return;
-      this.stopSources();
-      this.playing = false;
-      this.offset = this.duration;
-      this.onEnded?.();
-      this.startRehearsal();
-    };
-    this.startedAt = start - from;
+    this.watchEnd();
+    this.segments = [{ ctxStart: start, songStart: from, songEnd: Infinity }];
     this.playing = true;
     if (lead.countInBeats) this.scheduleCountIn(when, lead.countInBeats, interval);
     this.startPlayingGrid();
@@ -157,6 +178,63 @@ export class StemPlayer {
     this.pause();
     this.offset = t;
     await this.play();
+  }
+
+  /**
+   * Schedules a jump: at song time `at` the stems stop and restart at song time `to`, sample-accurately on the audio clock.
+   * A jump that would start in the past starts JUMP_MIN_S from now. Returns the audio time it takes effect, or null when nothing
+   * plays or another jump is still waiting.
+   */
+  prepareJump(to: number, at: number): number | null {
+    if (!this.playing || this.prepared) return null;
+    const last = this.segments[this.segments.length - 1];
+    const when = Math.max(this.ctx.currentTime + JUMP_MIN_S, audioTimeOf(this.segments, at));
+    const previous: AudioBufferSourceNode[] = [];
+    for (const name of this.names) {
+      const v = this.voice(name);
+      const source = this.ctx.createBufferSource();
+      source.buffer = v.buffer;
+      source.connect(v.gain);
+      source.start(when, to);
+      previous.push(v.source!);
+      v.source = source;
+    }
+    for (const old of previous) old.stop(when);
+    this.watchEnd();
+    const end = last.songEnd;
+    last.songEnd = at;
+    this.segments.push({ ctxStart: when, songStart: to, songEnd: Infinity });
+    // The jump has taken effect once the clock passes `when`; after that it cannot be cancelled and the record is no longer needed.
+    const timer = setTimeout(() => {
+      if (this.prepared?.when === when) this.prepared = null;
+    }, (when - this.ctx.currentTime) * 1000 + 50);
+    this.prepared = { when, previous, end, timer };
+    return when;
+  }
+
+  /**
+   * Undoes a jump that is still waiting: the stems keep playing the passage they were on. Returns false when there is no jump,
+   * or when it is too close to take effect to undo cleanly. Then the jump stands.
+   */
+  cancelJump(): boolean {
+    const jump = this.prepared;
+    if (!jump || this.ctx.currentTime > jump.when - JUMP_CANCEL_S) return false;
+    clearTimeout(jump.timer);
+    this.prepared = null;
+    this.names.forEach((name, i) => {
+      const v = this.voice(name);
+      const pending = v.source!;
+      pending.onended = null;
+      pending.stop(0);
+      pending.disconnect();
+      // A later stop replaces the stop that was set for the jump's boundary.
+      jump.previous[i].stop(jump.when + RESTORE_S);
+      v.source = jump.previous[i];
+    });
+    this.segments.pop();
+    this.segments[this.segments.length - 1].songEnd = jump.end;
+    this.watchEnd();
+    return true;
   }
 
   /** Sends each track to its bus. Tracks without an entry stay on Main. */
@@ -223,39 +301,35 @@ export class StemPlayer {
     for (let beat = 0; beat < beats; beat++) this.click(when + beat * interval, beat % this.metronome.beats === 0, this.countInClicks);
   }
 
-  /** Clicks on a grid: song time `firstBeat + n × interval` at audio time `anchor + …`, not earlier than `earliest()` seconds. */
-  private startGrid(anchor: number, earliest: () => number, limit: number): void {
+  /** Clicks on the grid along the current timeline, from where the timeline is now. Re-run by the timer, so a jump is followed. */
+  private startGrid(): void {
     const { bpm, beats } = this.metronome;
-    if (!Number.isFinite(bpm) || bpm <= 0 || !Number.isInteger(beats) || beats < 1) return;
+    if (!Number.isFinite(bpm) || bpm <= 0 || !Number.isInteger(beats) || beats < 1 || !this.segments.length) return;
     const firstBeat = this.firstBeat();
     const interval = 60 / bpm;
-    const nextBeat = () => Math.max(0, Math.ceil((earliest() - firstBeat) / interval - 1e-7));
-    let beat = nextBeat();
+    let cursor: GridCursor = gridStart(this.segments, this.ctx.currentTime, firstBeat, interval);
     const fill = () => {
-      // Skip missed beats instead of playing a burst when the window resumes.
-      beat = Math.max(beat, nextBeat());
-      while (anchor + firstBeat + beat * interval < this.ctx.currentTime + 0.1 && firstBeat + beat * interval < limit) {
-        const when = Math.max(this.ctx.currentTime, anchor + firstBeat + beat * interval);
-        this.click(when, beat % beats === 0);
-        beat++;
-      }
+      const now = this.ctx.currentTime;
+      const next = gridClicks(this.segments, cursor, now, now + 0.1, firstBeat, interval);
+      cursor = next.cursor;
+      for (const click of next.clicks) this.click(click.when, click.beat % beats === 0);
     };
     fill();
     this.clickTimer = setInterval(fill, 25);
   }
 
-  /** While the song plays: the grid follows song time, so the bar phase survives pre-roll and seeks. */
+  /** While the song plays: the grid follows the song's timeline, so the bar phase survives pre-roll, seeks and jumps. */
   private startPlayingGrid(): void {
     if (!clicksWhilePlaying(this.metronome.mode)) return;
-    const anchor = this.startedAt;
-    this.startGrid(anchor, () => Math.max(this.offset, this.ctx.currentTime - anchor), this.duration);
+    this.startGrid();
   }
 
   /** While stopped: a grid that starts now, so a rehearsal keeps time without moving the song. */
   private startRehearsal(): void {
     if (!clicksWhileStopped(this.metronome.mode)) return;
     const anchor = this.ctx.currentTime + 0.02;
-    this.startGrid(anchor, () => this.ctx.currentTime - anchor, Infinity);
+    this.segments = [{ ctxStart: anchor, songStart: 0, songEnd: Infinity }];
+    this.startGrid();
   }
 
   private stopMetronome(): void {
@@ -289,6 +363,23 @@ export class StemPlayer {
     await this.ctx.close();
   }
 
+  /**
+   * The song's end: one source tells the end, the others end on the same sample. Attached to the leader, which a jump replaces, so
+   * the watch moves with it. A source that a jump has replaced ends without this firing.
+   */
+  private watchEnd(): void {
+    const leader = this.voice(this.names[0]);
+    const ending = leader.source!;
+    ending.onended = () => {
+      if (!this.playing || leader.source !== ending) return;
+      this.stopSources();
+      this.playing = false;
+      this.offset = this.duration;
+      this.onEnded?.();
+      this.startRehearsal();
+    };
+  }
+
   private stopSources() {
     this.stopMetronome();
     silence(this.countInClicks);
@@ -299,6 +390,15 @@ export class StemPlayer {
       v.source.stop();
       v.source.disconnect();
       v.source = null;
+    }
+    if (this.prepared) {
+      clearTimeout(this.prepared.timer);
+      for (const source of this.prepared.previous) {
+        source.onended = null;
+        source.stop();
+        source.disconnect();
+      }
+      this.prepared = null;
     }
   }
 }

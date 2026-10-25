@@ -386,3 +386,83 @@ it("sends each track to its assigned bus, and leaves the others on Main", async 
   expect(otherAnalyser.connect).toHaveBeenLastCalledWith(ctx.gains[0]);
   await player.dispose();
 });
+
+it("plays a planned jump at its boundary: the stems stop there and restart at the target on the same audio clock", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  // Song 5 is 5 s after the start at 10.02 on the audio clock.
+  expect(player.prepareJump(2, 5)).toBeCloseTo(15.02);
+  const [old, next] = ctx.sources;
+  expect(old.stop).toHaveBeenLastCalledWith(15.02);
+  expect(next.start).toHaveBeenCalledWith(15.02, 2);
+  ctx.currentTime = 14.9;
+  expect(player.position).toBeCloseTo(4.88);
+  ctx.currentTime = 15.5;
+  expect(player.position).toBeCloseTo(2.48);
+  // A second jump cannot be queued on top of the first.
+  expect(player.prepareJump(0, 9)).toBeNull();
+  await player.dispose();
+});
+
+it("cancels a waiting jump in time, and the stems keep their place", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  player.prepareJump(2, 5);
+  const [old, next] = ctx.sources;
+  expect(player.cancelJump()).toBe(true);
+  expect(next.stop).toHaveBeenCalledWith(0);
+  expect(old.stop).toHaveBeenLastCalledWith(15.02 + 86400);
+  ctx.currentTime = 14.9;
+  expect(player.position).toBeCloseTo(4.88);
+  // The cancelled jump leaves the timeline as it was, so a new one can be queued.
+  expect(player.prepareJump(2, 6)).toBeCloseTo(16.02);
+  await player.dispose();
+});
+
+it("refuses to cancel a jump that is already too close to take effect, and the jump then stands", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 12;
+  player.prepareJump(2, 5);
+  ctx.currentTime = 14.95;
+  expect(player.cancelJump()).toBe(false);
+  ctx.currentTime = 15.1;
+  expect(player.position).toBeCloseTo(2.08);
+  await player.dispose();
+});
+
+it("keeps the metronome on the song's bar grid through a jump, and clicks the target's beats", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({ other: { sampleRate: 100, channels: [new Float32Array(1000)] } });
+  player.setMetronome({ mode: "playing", bpm: 120, beats: 4, volume: 0.25 });
+  await player.play();
+  const ctx = Context.instances[0];
+  const step = (to: number) => {
+    for (let t = ctx.currentTime; t < to; t += 0.25) {
+      ctx.currentTime = t;
+      vi.advanceTimersByTime(25);
+    }
+    ctx.currentTime = to;
+    vi.advanceTimersByTime(25);
+  };
+  step(12);
+  player.prepareJump(2, 5);
+  step(15.6);
+  const times = ctx.oscillators.map((osc) => osc.start.mock.calls[0][0] as number);
+  // Song 2 (beat 4, a downbeat) plays again at 15.02; song 2.5 at 15.52. The old passage's beat at song 5 is not clicked.
+  const after = times.filter((t) => t >= 15);
+  expect(after).toHaveLength(2);
+  expect(after[0]).toBeCloseTo(15.02);
+  expect(after[1]).toBeCloseTo(15.52);
+  expect(ctx.oscillators.find((osc) => Math.abs((osc.start.mock.calls[0][0] as number) - 15.02) < 1e-6)!.frequency.setValueAtTime.mock.calls[0][0]).toBe(1500);
+  await player.dispose();
+});
