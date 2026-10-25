@@ -356,6 +356,25 @@ The audience display is a second window for the lyrics, chords or PDF page, on a
 
 In the browser build there is no second window or display list. **Open audience display** opens a pop-up with the same view. The browser cannot place a pop-up on a chosen display, so move the pop-up to the audience screen and press F11 to fill it. Allow pop-ups for the site. PDF charts need the desktop app.
 
+## Band sync
+
+Band sync lets bandmates follow the song on their own phones or tablets over the same Wi-Fi or Ethernet network. It is off until you start it.
+
+- **Start:** in Song → Performance, open **Band sync on this network**. Choose the network address and a port (8787 by default), then **Start band sync**. Only private network addresses are listed.
+- **Join:** the panel shows the address (for example `http://192.168.1.20:8787/`), a QR code and a six-digit PIN. A bandmate opens the address or scans the code, types the PIN, and sees the song, lyrics and chords following your playback. Each bandmate can change the text size and transpose on their own device; that changes nothing for anyone else.
+- **New PIN** disconnects every bandmate and asks for the PIN again. **Stop band sync** disconnects everyone. The sync is off the next time the app opens.
+- **Allow followers to play, pause and stop** is off by default. When it is on, a bandmate's play or pause runs as if you pressed the same action on a pedal. A stop needs a second press within 0.6 s, as a double-press binding does, so a stray tap cannot end a song.
+- Bandmates never load songs, read your library or touch files, and they hear no audio. The sync sends the song's text and the playback clock only.
+- A phone that drops off the network (a locked screen, a Wi-Fi gap) reconnects by itself, without the PIN, while the sync is still on.
+
+### Security
+
+- The sync listens on the one address you choose, and only private network addresses are offered. It is never open on the internet, and it is not a relay.
+- The traffic is **not encrypted**. The six-digit PIN is the only protection. Use band sync on a network you trust, not a shared café, hotel or venue network, and stop it when the set is over.
+- Five wrong PINs from one device lock that device out for a minute. Each later lock-out is longer, up to 15 minutes. A bandmate's session lasts 12 hours and ends when the PIN changes or the sync stops.
+- The app refuses any frame over a few kilobytes, anything it does not expect, and any action other than play, play or pause, and stop.
+- Your firewall may ask whether to let the app accept incoming connections. Allow it only on a private network.
+
 ## Troubleshooting
 
 - **Nothing reaches the pedal.** Check that **Send cues** is on, the right output is selected and the channel matches the pedal. Use **Send MIDI now** to test one command.
