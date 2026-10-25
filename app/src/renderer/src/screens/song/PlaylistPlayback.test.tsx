@@ -43,6 +43,7 @@ const mock = vi.hoisted(() => ({
   clear: vi.fn(),
   players: [] as { isPlaying: boolean; position: number; duration: number; onEnded: (() => void) | null; end(): void }[],
 }));
+vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/host", () => ({ host: { song: { library: { index: mock.index, audioUrls: mock.audioUrls, updateSettings: mock.settings } } } }));
 vi.mock("@/song/stems/engine", () => ({ separateStems: vi.fn() }));
 vi.mock("@/song/codec/flac-client", () => ({ decodeTrack: async () => ({ sampleRate: 10, channels: [new Float32Array(100)] }), encodeTrack: vi.fn() }));
@@ -193,16 +194,20 @@ it("pauses the playlist when leaving Performance", async () => {
 });
 
 it("resumes the next song after stopping a transition instead of replaying the finished song", async () => {
-  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
-  render(<PerformancePanel />);
-  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  // The first song loads at once. The next one is still loading in the background, so the join to it is a gap, and that
+  // gap's load is the one the test stops.
   let resolve!: (value: Response) => void;
+  mock.fetch.mockImplementationOnce(async () => file());
+  mock.fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
   mock.fetch.mockImplementationOnce(
     () =>
       new Promise((r) => {
         resolve = r;
       }),
   );
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  render(<PerformancePanel />);
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
   await act(async () => {
     mock.players.at(-1)!.end();
   });

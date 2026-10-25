@@ -15,7 +15,16 @@ import {
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { migrateLyricsJob } from "./performance/lyrics-jobs";
 import { flushSettings, forgetSettings, migrateLocalSettings, performanceKey, readSettings, seedSettings, writeSettings } from "./performance/settings";
-import type { PcmAudio, Stems } from "./types";
+import type { PcmAudio, SongSource, Stems } from "./types";
+
+/** A playlist song loaded ahead of time. It is not in use until the session takes it over. */
+export interface PreparedSong {
+  id: string;
+  title: string;
+  source: SongSource;
+  stems: Stems;
+  settings: Record<string, string>;
+}
 
 interface LibraryState {
   index: SongLibrary;
@@ -45,6 +54,12 @@ interface LibraryState {
   load(id: string, queue?: string[], position?: number): Promise<void>;
   playlists(value: Playlist[]): Promise<void>;
   remove(id: string): Promise<void>;
+  /** The playlist's next song, loaded in the background. Null until it has loaded, or when there is none. */
+  prepared: PreparedSong | null;
+  /** The prepared song, when it is the one after the current song */
+  preparedNext(): PreparedSong | null;
+  /** Makes the prepared song `id` the current one without a gap. Returns false, and changes nothing, when it is not ready. */
+  advanceToPrepared(id: string): boolean;
 }
 const hex = (digest: ArrayBuffer) => Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 /** Fetches a saved track straight from the app protocol and decodes it in a worker; nothing is copied through IPC. */
@@ -57,6 +72,21 @@ async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
   if (audio.channels.length !== track.channels || audio.channels[0].length !== track.frames || audio.sampleRate !== track.sampleRate)
     throw new Error(`Missing or damaged ${track.name} audio.`);
   return audio;
+}
+/** Loads a song's audio from the library, without changing anything in the app. */
+async function fetchSong(index: SongLibrary, id: string): Promise<PreparedSong> {
+  const song = index.songs.find((s) => s.id === id);
+  if (!song) throw new Error("Song is missing from the library.");
+  const urls = await api().audioUrls(id);
+  const loaded = await Promise.all(song.audio.map(async (track) => [track.name, await loadTrack(urls[track.name], track)] as const));
+  const tracks: Record<string, PcmAudio> = Object.fromEntries(loaded);
+  return {
+    id,
+    title: song.title,
+    source: { name: song.sourceName, libraryId: song.id, audio: tracks.source },
+    stems: Object.fromEntries(Object.entries(tracks).filter(([name]) => name !== "source")) as Stems,
+    settings: song.settings,
+  };
 }
 /** Reads the index after moving any settings an earlier version left in localStorage into the library. */
 async function readIndex(): Promise<SongLibrary> {
@@ -71,6 +101,9 @@ const api = () => {
 };
 export const useSongLibrary = create<LibraryState>((set, get) => {
   let loadGeneration = 0;
+  let prefetchGeneration = 0;
+  /** The id of the song being loaded in the background, if any */
+  let prefetching: string | null = null;
   const run = async (task: () => Promise<void>) => {
     if (get().busy) return;
     set({ busy: true, error: "", notice: "" });
@@ -99,10 +132,39 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
             ? `Restored ${result.songs} songs and ${result.playlists} playlists. Skipped ${result.skipped ?? 0} songs already in the library.`
             : `Restored ${result.songs} songs and ${result.playlists} playlists as new copies. Existing songs were kept.`,
       });
+      prefetchNext();
     } finally {
       unsubscribe();
       set({ transfer: "" });
     }
+  };
+  /**
+   * Loads the playlist's next song in the background, so that it can start on the same clock as the current one. Only one is held
+   * besides the current song. A failure is a notice: the next song then loads after the current one, as before.
+   */
+  const prefetchNext = () => {
+    const { index, queue, position, playlistPlaying, prepared } = get();
+    const id = playlistPlaying ? queue[position + 1] : undefined;
+    if (!id) {
+      prefetchGeneration++;
+      prefetching = null;
+      if (prepared) set({ prepared: null });
+      return;
+    }
+    if (prepared?.id === id || prefetching === id) return;
+    if (prepared) set({ prepared: null });
+    const generation = ++prefetchGeneration;
+    prefetching = id;
+    fetchSong(index, id)
+      .then((next) => {
+        if (generation === prefetchGeneration) set({ prepared: next });
+      })
+      .catch((e) => {
+        if (generation === prefetchGeneration) set({ notice: `The next song could not be loaded in advance. ${e instanceof Error ? e.message : String(e)}` });
+      })
+      .finally(() => {
+        if (generation === prefetchGeneration) prefetching = null;
+      });
   };
   const load = async (id: string, queue: string[], position: number, playlist: boolean) => {
     const generation = ++loadGeneration;
@@ -115,16 +177,13 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     // Keep the performance controls visible while advancing; Stop can cancel an in-flight load.
     if (!playlist) useNav.getState().go("song", "songs");
     useSong.getState().cancel();
-    const urls = await api().audioUrls(id);
-    const loaded = await Promise.all(song.audio.map(async (track) => [track.name, await loadTrack(urls[track.name], track)] as const));
+    const next = await fetchSong(index, id);
     if (generation !== loadGeneration) return;
-    const tracks: Record<string, PcmAudio> = Object.fromEntries(loaded);
-    const source = { name: song.sourceName, libraryId: song.id, audio: tracks.source };
     seedSettings(song.id, song.settings);
-    const stems = Object.fromEntries(Object.entries(tracks).filter(([name]) => name !== "source")) as Stems;
     set({ index, queue: [...queue], position, playlistPlaying: playlist, notice: `${song.title} ready.` });
-    useSong.setState({ source, stems: Object.keys(stems).length ? stems : null, lastSplit: null, status: { kind: "idle" } });
+    useSong.setState({ source: next.source, stems: Object.keys(next.stems).length ? next.stems : null, lastSplit: null, status: { kind: "idle" } });
     useNav.getState().go("song", "performance");
+    prefetchNext();
   };
   return {
     index: emptyLibrary(),
@@ -136,6 +195,27 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     position: -1,
     playlistPlaying: false,
     midiSession: null,
+    prepared: null,
+    preparedNext: () => {
+      const { prepared, queue, position, playlistPlaying } = get();
+      return playlistPlaying && prepared && queue[position + 1] === prepared.id ? prepared : null;
+    },
+    advanceToPrepared: (id) => {
+      const { prepared, queue, position, playlistPlaying } = get();
+      if (!prepared || prepared.id !== id || !playlistPlaying || queue[position + 1] !== id) return false;
+      loadGeneration++;
+      seedSettings(prepared.id, prepared.settings);
+      useSong.getState().cancel();
+      set({ position: position + 1, prepared: null, notice: `${prepared.title} ready.` });
+      useSong.setState({
+        source: prepared.source,
+        stems: Object.keys(prepared.stems).length ? prepared.stems : null,
+        lastSplit: null,
+        status: { kind: "idle" },
+      });
+      prefetchNext();
+      return true;
+    },
     exportBackup: () =>
       run(async () => {
         const service = api();
@@ -178,9 +258,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     pausePlaylist: () => {
       loadGeneration++;
       set({ playlistPlaying: false });
+      prefetchNext();
     },
     resumePlaylist: () => {
       if (!get().busy && get().queue.length) set({ playlistPlaying: true, error: "", notice: "" });
+      prefetchNext();
     },
     playPlaylist: (queue, position = 0) =>
       run(async () => {
@@ -196,7 +278,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           set({ playlistPlaying: false, notice: "Playlist finished." });
           return;
         }
-        await load(queue[position + 1], queue, position + 1, true);
+        const nextId = queue[position + 1];
+        if (get().advanceToPrepared(nextId)) return;
+        const loading = prefetching === nextId;
+        await load(nextId, queue, position + 1, true);
+        if (loading) set({ notice: "The next song was still loading, so it started after a gap." });
       }),
     skipPlaylist: (offset) =>
       run(async () => {
@@ -284,6 +370,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           midiSession: null,
           notice: "Song removed from the library and playlists.",
         });
+        prefetchNext();
       }),
   };
 });
