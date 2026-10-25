@@ -101,6 +101,8 @@ The reader shows the lyrics with the chords above them and follows playback. Tur
 
 To edit, choose **Edit chords, lyrics & MIDI**. Each row has a time, chords, lyrics, MIDI commands and an optional label. Playback pauses while you edit, and invalid MIDI is rejected when you save. You can also paste or import TXT, LRC or bracket-chord text under **Separate lyrics and chart editors**, and export the chart.
 
+The chart text box under **Separate lyrics and chart editors** has search and undo. Cmd+F (Ctrl+F on Windows and Linux) opens search, and Cmd+H (Ctrl+H) opens the same panel with its replace field. F3 or Cmd+G finds the next match, Shift+F3 or Shift+Cmd+G the previous, and Escape closes the panel. Cmd+Z undoes; Cmd+Shift+Z redoes on a Mac, and Ctrl+Y on Windows (Ctrl+Shift+Z on Linux). Timestamps, chords, headings, `//` comments, colour tags, MIDI commands, `$CODE` macros and `{chase}`, `{nochase}` and `{label:…}` each have their own colour. The editor loads when you first open it. While the text box has focus, remote keys do not run, so typing a letter never triggers a remote action.
+
 Give every line a timestamp so it follows playback:
 
 ```text
@@ -398,4 +400,3 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.
 - Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
 - Bluetooth editor management and RTP-MIDI are not supported.
-- The chart editor has no search and replace, no undo and redo, and no syntax highlighting.
