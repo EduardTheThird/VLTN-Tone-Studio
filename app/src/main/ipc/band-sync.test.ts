@@ -383,7 +383,14 @@ describe("signing in", () => {
     // A complete upgrade request, then a reset: the server's upgrade handler is running when the socket errors.
     const raw: Socket = netConnect(port, "127.0.0.1");
     await new Promise((resolve) => raw.once("connect", resolve));
-    const handshake = ["GET /ws HTTP/1.1", "Host: 127.0.0.1", "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13"];
+    const handshake = [
+      "GET /ws HTTP/1.1",
+      "Host: 127.0.0.1",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+      "Sec-WebSocket-Version: 13",
+    ];
     raw.write(handshake.join("\r\n") + "\r\n\r\n");
     raw.resetAndDestroy();
     // A request cut off part-way, reset as well.
