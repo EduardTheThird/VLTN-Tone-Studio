@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { performanceLines } from "./reader";
 
 it("merges chords by lyric intervals, preserving intro and uncertain passages", () => {
@@ -28,4 +28,26 @@ it("combines a chord-only chart with separate lyrics and ignores MIDI-only rows"
 it("preserves untimed reading text and tolerates invalid MIDI edits", () => {
   expect(performanceLines("", "Plain lyrics", [])[0].text).toBe("Plain lyrics");
   expect(() => performanceLines("[00:01] {midi:wrong}", "[00:02] Words", [])).not.toThrow();
+});
+describe("an untimed chart", () => {
+  it("is read as written, with its headings and comments, and the lyrics draft does not replace it", () => {
+    const lines = performanceLines("# Verse\n[C]Hello there // check the key\n\n# Chorus\n[G]Second", "[00:05] Draft words", [
+      { time: 1, name: "F", confidence: 1 },
+    ]);
+    expect(lines.map((l) => [l.text, l.chords.map((c) => c.name)])).toEqual([
+      ["# Verse", []],
+      ["[C]Hello there // check the key", ["C"]],
+      ["# Chorus", []],
+      ["[G]Second", ["G"]],
+    ]);
+    expect(lines.every((l) => Number.isNaN(l.time))).toBe(true);
+  });
+  it("is not given audio chord estimates, which have no place in untimed text", () => {
+    const lines = performanceLines("Just words\nand more", "", [{ time: 3, name: "Am", confidence: 1 }]);
+    expect(lines.flatMap((l) => l.chords)).toEqual([]);
+  });
+  it("still uses timed lines when the chart has any timing", () => {
+    const lines = performanceLines("# Verse\n[00:02] Timed line", "", []);
+    expect(lines).toEqual([{ time: 2, text: "Timed line", chords: [] }]);
+  });
 });
