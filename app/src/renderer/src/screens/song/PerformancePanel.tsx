@@ -23,6 +23,8 @@ import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceTransport } from "./PerformanceTransport";
 import { PerformanceMix } from "./PerformanceMix";
 import { TrackImport } from "./TrackImport";
+import { SongLoudnessControl } from "./SongLoudnessControl";
+import { loudnessFromOptions, normalisingGain, type SongLoudness } from "@/song/audio/loudness";
 import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
@@ -250,9 +252,12 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   useEffect(() => {
     setMix({ ...mixDefaults(tracks), ...options.mix });
   }, [player]);
+  // A normalised song is raised or lowered as a whole: every track gets the same gain, so the balance stays as it was mixed.
+  const [loudness, setLoudness] = useState<SongLoudness>(() => loudnessFromOptions(getSetting(key, ":options")));
+  const songGain = loudness.normalise && loudness.lufs !== null ? normalisingGain(loudness.lufs) : 1;
   useEffect(() => {
-    player?.setMix(mix);
-  }, [player, mix]);
+    player?.setMix(mix, songGain);
+  }, [player, mix, songGain]);
   useEffect(() => {
     player?.setTrackBuses(trackBuses);
   }, [player, trackBuses]);
@@ -332,6 +337,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         <SessionMidiHealth session={session} />
         <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
         <TrackImport />
+        <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
         <PerformanceMix
           session={session}
           stems={stems}

@@ -587,13 +587,16 @@ export class StemPlayer {
     this.router.testTone(bus);
   }
 
-  /** Volume, mute, solo and pan, all ramped so a change is heard without a click. */
-  setMix(mix: Mix): void {
+  /**
+   * Volume, mute, solo and pan, all ramped so a change is heard without a click. `master` scales every track: the song's loudness gain,
+   * when the song is normalised.
+   */
+  setMix(mix: Mix, master = 1): void {
     const gains = stemGains(mix, this.names);
     const now = this.ctx.currentTime;
     for (const name of this.names) {
       const v = this.voice(name);
-      v.gain.gain.setTargetAtTime(gains[name], now, RAMP_S);
+      v.gain.gain.setTargetAtTime(gains[name] * master, now, RAMP_S);
       v.pan.pan.setTargetAtTime(mix[name]?.pan ?? 0, now, RAMP_S);
     }
   }

@@ -679,3 +679,17 @@ it("cancelling a render swap goes back to the old rate and buffers", async () =>
   expect(player.cancelJump()).toBe(true);
   expect(player.playbackRate).toBe(1);
 });
+
+it("scales every track by the master gain, with the mix, and ramps the change", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const player = new StemPlayer({
+    drums: { sampleRate: 100, channels: [new Float32Array(1000)] },
+    other: { sampleRate: 100, channels: [new Float32Array(1000)] },
+  } as Stems);
+  const ctx = Context.instances[0];
+  player.setMix({ drums: { volume: 1, mute: false, solo: false }, other: { volume: 0.5, mute: false, solo: false } }, 2);
+  // Only the volume gains are ramped by a mix change, so they are the nodes with a target set. Drums is built first.
+  const ramped = ctx.gains.filter((g) => g.gain.setTargetAtTime.mock.calls.length > 0).map((g) => g.gain.setTargetAtTime.mock.calls[0][0]);
+  expect(ramped).toEqual([2, 1]);
+  await player.dispose();
+});
