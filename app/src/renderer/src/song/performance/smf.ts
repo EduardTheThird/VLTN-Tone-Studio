@@ -190,7 +190,8 @@ export function decodeMidiFile(file: MidiFileOption): Uint8Array {
 }
 
 /** The MIDI file saved in a song's options, or null. Anything that is not the saved shape is ignored. */
-export function midiFileFromOptions(options: Record<string, unknown>): MidiFileOption | null {
-  const file = options.midiFile as Partial<MidiFileOption> | undefined;
-  return file && typeof file === "object" && typeof file.name === "string" && typeof file.data === "string" ? { name: file.name, data: file.data } : null;
+export function midiFileFromOptions(options: object): MidiFileOption | null {
+  const file: unknown = "midiFile" in options ? options.midiFile : undefined;
+  if (!file || typeof file !== "object" || !("name" in file) || !("data" in file)) return null;
+  return typeof file.name === "string" && typeof file.data === "string" ? { name: file.name, data: file.data } : null;
 }

@@ -1,4 +1,4 @@
-import type { Cue } from "./chart";
+import { timedCues, type Cue } from "./chart";
 import { isChased } from "./midi-chase";
 import { sectionIssues, type Section } from "./sections";
 export interface PreflightOptions {
@@ -26,10 +26,15 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
   const add = (code: string, text: string) => {
     if (issues.length < 100) issues.push({ code, text });
   };
-  const events = cues
+  // Triggers have no time, so they are checked below rather than on the timeline.
+  const events = timedCues(cues)
     .filter((c) => c.messages.length)
     .slice()
     .sort((a, b) => a.time - b.time);
+  // Start, Continue and Stop are sent by the app's own clock; a cue that sends them as well gives the pedal a second one.
+  const transportCue = cues.some((c) => c.messages.some((bytes) => [250, 251, 252].includes(bytes[0])));
+  if (options.clock && transportCue)
+    add("transport-conflict", "A Start, Continue or Stop cue conflicts with app MIDI clock, which already sends Start and Stop. Turn clock off or remove the cue.");
   if (events.length && !options.outputName)
     add("output", "No MIDI output selected. Connect the intended output and explicitly enable Send cues before performing.");
   const referenced = options.pedals.filter((p) => events.some((c) => c.label?.startsWith(p.name + ":")));

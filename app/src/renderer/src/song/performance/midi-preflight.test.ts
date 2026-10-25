@@ -82,3 +82,14 @@ it("warns about a section that is cut by the trimmed range", () => {
   });
   expect(report.issues.map((i) => i.code)).toEqual(["section-trim"]);
 });
+
+it("flags Start, Continue and Stop cues when app clock is on, and checks triggers without a time", () => {
+  const cues = parseChart("[00:00] {midi:stop}\n{midi@load: start}\n[00:01] {midi:pc 1 1}");
+  expect(midiPreflight(cues, { ...options, clock: true }).issues.map((i) => i.code)).toEqual(["transport-conflict"]);
+  expect(midiPreflight(cues, options).issues.map((i) => i.code)).toEqual([]);
+});
+it("keeps triggers off the timeline, so a trigger at the start is not counted as a cue", () => {
+  const report = midiPreflight(parseChart("{midi@end: pc 1 9}\n[00:11] {midi:pc 1 1}"), options);
+  expect(report.issues.map((i) => i.code)).toEqual(["past-end"]);
+  expect(report.commands).toBe(1);
+});

@@ -1,8 +1,10 @@
 import type { LibraryPreflightSong } from "@shared/song-library";
 import { trackKey, trackKindOf } from "@shared/song-library";
-import { parseChart } from "./chart";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
+import type { MidiMacro } from "./midi-macros";
 import { parseSections } from "./sections";
+import { midiFileFromOptions } from "./smf";
+import { songCues } from "./song-cues";
 import { storedShape } from "./song-shape";
 import { playRange } from "./transition";
 import { clampSpeed, effectiveBpm } from "./speed";
@@ -33,6 +35,8 @@ export function playlistPreflight(
     pedals: PreflightOptions["pedals"];
     /** Whether a song's speed or pitch render was built in advance. Unset means the render is not checked. */
     renderReady?: (id: string) => boolean;
+    /** The MIDI macros the charts refer to. A chart that uses a missing one cannot play. */
+    macros?: readonly MidiMacro[];
   },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
@@ -80,8 +84,11 @@ export function playlistPreflight(
       const duration = tracks[0].frames / tracks[0].sampleRate;
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
-      try {
-        const report = midiPreflight(parseChart(song.settings[""] || ""), {
+      // The chart and the MIDI file are checked together, because the file's messages play beside the chart's.
+      const cued = songCues(song.settings[""] || "", config.macros ?? [], midiFileFromOptions(options));
+      if (cued.error) errors.push(`${cued.part === "midi-file" ? "MIDI file" : "Chart"} cannot play: ${cued.error}`);
+      else {
+        const report = midiPreflight(cued.cues, {
           duration,
           clock: options.clock === true,
           tempoChannel: config.tempoOnStart ? config.tempoChannel : undefined,
@@ -94,8 +101,6 @@ export function playlistPreflight(
           firstBeat: typeof options.firstBeat === "number" ? options.firstBeat : 0,
         });
         warnings.push(...report.issues.map((i) => i.text));
-      } catch (error) {
-        errors.push(`Chart cannot play: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, notes };

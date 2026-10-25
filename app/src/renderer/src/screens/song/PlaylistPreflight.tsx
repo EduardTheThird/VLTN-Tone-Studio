@@ -37,6 +37,7 @@ export function PlaylistPreflight({ ids, disabled, revision }: { ids: string[]; 
           tempoChannel: config.tempoChannel,
           outputName: config.output?.name,
           renderReady: isRenderedAhead,
+          macros: config.macros,
           pedals: [...PEDAL_PROFILES, ...pedals.profiles].map((p) => ({ name: p.name, channel: pedals.channels[p.id] ?? DEFAULT_PEDAL_CHANNELS[p.id] ?? 1 })),
         }),
       );

@@ -77,3 +77,14 @@ it("checks the tempo the song plays at, and whether its speed render is ready", 
   const [result] = playlistPreflight(["one"], [{ ...saved, song: fast }], config);
   expect(result.errors.join(" ")).toContain("375 BPM");
 });
+
+it("refuses a song whose macro is missing, and names the MIDI file when the file is damaged", () => {
+  const withSettings = (settings: Record<string, string>) => playlistPreflight(["one"], [{ ...saved, song: { ...saved.song!, settings } }], config)[0];
+  expect(withSettings({ ":bpm": "120", "": "[00:01] {midi:$NOPE}" }).errors).toEqual([expect.stringMatching(/^Chart cannot play: Unknown macro \$NOPE/)]);
+  const broken = JSON.stringify({ midiFile: { name: "broken.mid", data: btoa("nope") } });
+  expect(withSettings({ ":bpm": "120", ":options": broken, "": "[00:01] {midi:pc 1 1}" }).errors).toEqual([
+    expect.stringMatching(/^MIDI file cannot play: broken\.mid:/),
+  ]);
+  const macros = [{ code: "NOPE", label: "Nope", commands: ["pc 1 1"] }];
+  expect(playlistPreflight(["one"], [{ ...saved, song: { ...saved.song!, settings: { ":bpm": "120", "": "[00:01] {midi:$NOPE}" } } }], { ...config, macros })[0].errors).toEqual([]);
+});
