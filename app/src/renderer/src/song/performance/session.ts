@@ -248,6 +248,13 @@ export interface SessionOptions {
 /** A render swap waits at least this long (audio seconds) for its beat, so the MIDI schedule hears of it before it takes effect */
 const RENDER_SWAP_LEAD_S = 0.3;
 
+/**
+ * A start with app clock and no count-in holds the audio back this long, so Start and the first clock pulses go out before it. The
+ * scheduler starts about 100 ms after Play and anchors the pulses on the audio start. Without the hold, the pulses for that first
+ * 100 ms are already overdue when it starts, and go out in one burst. With the hold they are due on time.
+ */
+const CLOCK_LEAD_MS = 150;
+
 /** A song's options as an object. Anything that is not an object reads as empty. */
 function parseOptions(json: string): Record<string, unknown> {
   try {
@@ -890,7 +897,10 @@ export class PerformanceSession {
       // A chase that the pedals need before the song begins holds the audio back by CHASE_LEAD_MS, so it goes out first. Nothing is held
       // when the output is not armed, or when there is no state to chase (a start from the beginning, or no cues before the position).
       const chaseStart = preRollStart(requestedPosition, timing.preRollBeats, bpm);
-      const lead = armed && computeChaseState(this.state.cues, chaseStart, chaseTriggerSet(this.chaseTriggers())).length ? CHASE_LEAD_MS / 1000 : 0;
+      const chaseLead = armed && computeChaseState(this.state.cues, chaseStart, chaseTriggerSet(this.chaseTriggers())).length ? CHASE_LEAD_MS : 0;
+      // Clock without a count-in has no lead-in to cover the scheduler's start, so the hold is CLOCK_LEAD_MS.
+      const clockLead = armed && this.state.clock && !this.state.timecode.enabled && countIn === 0 ? CLOCK_LEAD_MS : 0;
+      const lead = Math.max(chaseLead, clockLead) / 1000;
       this.transportAt = lead ? midiNow() + lead * 1000 : null;
       await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats, ...(lead ? { startDelay: lead } : {}) });
       if (request !== this.playRequest) {

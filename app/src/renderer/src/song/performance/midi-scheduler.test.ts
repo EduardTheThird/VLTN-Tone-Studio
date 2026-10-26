@@ -321,6 +321,16 @@ it.each([0.5, 0.8, 1.25])("sends 24 PPQN at the effective BPM at rate %f", (rate
   }
 });
 
+it("sends the first clock pulses on the grid when the audio starts at the origin", () => {
+  // The scheduler starts with its origin at the audio start (session.ts holds the audio back by CLOCK_LEAD_MS), so no pulse is overdue.
+  const f = fixture({ clock: true, cues: [], duration: 10, origin: 1000 });
+  run(f, 1000, 1400, (now) => (now - 1000) / 1000);
+  const pulses = f.messages().filter((m) => m.bytes[0] === 248).map((m) => m.due);
+  expect(pulses.length).toBeGreaterThan(1);
+  const period = 60000 / 120 / 24;
+  pulses.forEach((due, i) => expect(due).toBeCloseTo(1000 + i * period, 6));
+});
+
 it("keeps the clock's pulse spacing steady across a rate-aware jump", () => {
   const f = fixture({ bpm: 120, rate: 0.5, clock: true, cues: [], duration: 20 });
   f.schedule.plan(null, { at: 1000 + 2000, position: 10 });
