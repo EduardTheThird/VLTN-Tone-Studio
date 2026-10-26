@@ -5,6 +5,7 @@ import { RenderQueue, isPlainSpeed } from "@/song/audio/render-queue";
 import { DEFAULT_SPEED, clampRate, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { useSongLibrary, type HandedOverSong, type PreparedSong } from "@/song/library";
+import { playableStems } from "@/song/stems/playable";
 import { useNav } from "@/state/nav";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
@@ -445,7 +446,7 @@ export class PerformanceSession {
     const options = getSetting(performanceKey(source), ":options");
     const shape = playerShape(shapeFromOptions(options));
     const speed = speedFromOptions(options);
-    this.baseStems = stems ?? { other: source.audio };
+    this.baseStems = playableStems(stems, source.audio);
     this.songSettingsKey = performanceKey(source);
     this.renders.clear();
     this.pendingRender = null;

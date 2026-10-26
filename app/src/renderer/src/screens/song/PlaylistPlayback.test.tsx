@@ -59,7 +59,9 @@ vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null 
 vi.mock("@/song/stems/player", () => ({
   yieldToMain: () => Promise.resolve(),
   StemPlayer: class {
-    static async create() {
+    static async create(stems: Record<string, unknown>) {
+      // As the real player does: a song with no stems cannot be played.
+      if (!Object.keys(stems).length) throw new Error("There are no stems to play.");
       // A prepared player is not one of the songs the test plays, so it is not recorded as one.
       const player = new this();
       mock.players.pop();
@@ -527,4 +529,23 @@ it("logs why the next set song could not be prefetched, and prefetches it again 
   } finally {
     error.mockRestore();
   }
+});
+
+it("prepares a next set song that was saved without a stem split, and the join takes that player over", async () => {
+  // Both test songs have only their source audio, so neither has stems. The preload must play the source, as the session does.
+  await useSongLibrary.getState().load(first.id, [first.id, second.id], 0);
+  render(<PerformancePanel />);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+  await act(async () => {
+    mock.players.at(-1)!.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+  // The join took the prepared song over: it was not fetched again, and the song store holds no split stems for it.
+  expect(mock.audioUrls.mock.calls.filter(([id]) => id === second.id)).toHaveLength(1);
+  expect(useSong.getState().stems).toBeNull();
+  expect(useSongLibrary.getState().prepared).toBeNull();
+  expect(useSongLibrary.getState().position).toBe(1);
 });

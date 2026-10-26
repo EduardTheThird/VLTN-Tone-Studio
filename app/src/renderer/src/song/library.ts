@@ -24,6 +24,7 @@ import { migrateLyricsJob } from "./performance/lyrics-jobs";
 import { playerShape, shapeFromOptions } from "./performance/song-shape";
 import { sharedPlaybackEngine } from "./audio/playback-engine";
 import { StemPlayer, yieldToMain } from "./stems/player";
+import { playableStems } from "./stems/playable";
 import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
 import { speedFromOptions } from "./performance/speed";
 import {
@@ -322,9 +323,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         // A song saved at another speed or pitch is rendered here too, so the join plays it without waiting for a render.
         const options = next.settings[":options"] ?? "";
         const speed = speedFromOptions(options);
-        let stems = next.stems;
+        // A song saved without a stem split plays its whole source, as the session does when it loads the song.
+        const playable = playableStems(next.stems, next.source.audio);
+        let stems = playable;
         if (!isPlainSpeed(speed)) {
-          stems = (await new RenderQueue().render(next.stems, speed)) ?? next.stems;
+          stems = (await new RenderQueue().render(playable, speed)) ?? playable;
           renderedAhead.add(next.id);
         }
         const player = await StemPlayer.create(stems, sharedPlaybackEngine(), playerShape(shapeFromOptions(options)), yieldToMain, speed.rate);
