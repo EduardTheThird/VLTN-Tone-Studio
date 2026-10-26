@@ -50,6 +50,11 @@ export interface SchedulerJump {
   position: number;
   /** The rate from the jump on, when it changes (a speed swap). Missing keeps the current rate. */
   rate?: number;
+  /**
+   * The song position does not change (a speed swap at the position the audio is already at). The pedals already have that state, so
+   * the jump sends no chase and keeps the cue cursor.
+   */
+  keepsPosition?: boolean;
 }
 export type SchedulerReply =
   | { type: "batch"; messages: ScheduledMessage[]; dropped?: ScheduledMessage[] }
@@ -317,14 +322,16 @@ export class MidiSchedule {
     }
     this.config.origin = jump.at - (jump.position * 1000) / this.rate;
     this.config.position = jump.position;
-    this.next = this.cursorAt(jump.position);
+    // Keeping the position keeps the cursor too: a cue on the swap's own beat was already sent before the swap, and must not go out twice.
+    if (!jump.keepsPosition) this.next = this.cursorAt(jump.position);
     this.cap = Infinity;
     this.lastPosition = jump.position;
     this.lastAdvance = jump.at;
     this.jumpAt = jump.at;
     this.driftChecks = 0;
     this.driftSign = 0;
-    this.chasePending = true;
+    // A jump that moves the song chases the state at its new position. A speed swap at the same position does not.
+    if (!jump.keepsPosition) this.chasePending = true;
     // Timecode follows song time, so a jump, loop wrap or rate change starts it again: a full frame at the new position, then piece 0.
     this.restartTimecode(jump.at, jump.position);
   }

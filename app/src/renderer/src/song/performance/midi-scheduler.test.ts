@@ -336,7 +336,7 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
   const f = fixture({ cues, bpm: 120, rate: 1, clock: true, duration: 10, origin: 1000 });
   // Until the swap the song plays at 1x, holding cues after song 3 s. The swap lands at clock 4000 on song 3 s, at 50%.
-  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5 });
+  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5, keepsPosition: true });
   for (let t = 1000; t <= 16000; t += 20) {
     const song = t < 4000 ? (t - 1000) / 1000 : 3 + (t - 4000) / 2000;
     f.schedule.sync(song, t, t);
@@ -347,7 +347,8 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   // Song 5 s is 2 s of song after the swap at 50%, so 4 s of clock after the swap.
   expect(cueSent(5)).toBeCloseTo(8000, 0);
   expect(cueSent(8)).toBeCloseTo(14000, 0);
-  // The jump also resends the pedal state at song 3 s as a chase, so only the song cues are checked for repeats.
+  // The swap keeps the song position, so the pedals keep their state and nothing is chased.
+  expect(f.messages().some((m) => m.label === "Chase state")).toBe(false);
   const cueMessages = f.messages().filter((m) => m.label === "Song cue");
   expect(new Set(cueMessages.map((m) => m.bytes[1])).size).toBe(cueMessages.length);
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
@@ -357,6 +358,17 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   const after = clocks.filter((t) => t > 4100);
   for (let i = 1; i < before.length; i++) expect(before[i] - before[i - 1]).toBeCloseTo(60000 / (24 * 120), 3);
   for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120 * 0.5), 3);
+});
+
+it("a section jump to another position still chases the state there", () => {
+  const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
+  const f = fixture({ cues, duration: 10, origin: 1000 });
+  // From song 3 s the section jumps to song 6 s at clock 4000. The pedals last saw patch 2 at song 2 s and patch 5 at song 5 s.
+  const audio = (now: number) => (now < 4000 ? (now - 1000) / 1000 : 6 + (now - 4000) / 1000);
+  run(f, 1000, 6000, audio, [[4000, () => f.schedule.plan(null, { at: 4000, position: 6 })]]);
+  const atJump = f.messages().filter((m) => m.label === "Chase state" && m.due >= 4000);
+  expect(atJump.map((m) => m.bytes)).toEqual([[194, 5]]);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
 });
 
 describe("MIDI triggers and file cues in the schedule", () => {

@@ -1188,7 +1188,7 @@ export class PerformanceSession {
   private renderSchedule(): { cap: number; jump: SchedulerJump | null } | null {
     const swap = this.renderSwap;
     if (!swap) return null;
-    return { cap: swap.at, jump: { at: this.clockOf(swap.ctxAt), position: swap.at, rate: swap.rate } };
+    return { cap: swap.at, jump: { at: this.clockOf(swap.ctxAt), position: swap.at, rate: swap.rate, keepsPosition: true } };
   }
 
   /** Takes a boundary decided by the planner: the audio jump is scheduled now, the MIDI schedule is held up to it. */
