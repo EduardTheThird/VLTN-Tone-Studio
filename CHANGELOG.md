@@ -42,6 +42,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- A section loop or jump no longer sends the cue at its boundary twice. The cue at the old end of the passage is not sent, and a chase leaves out the patch and controllers that the cue at the new position sets, so the pedal is left on the right patch.
 - A speed change no longer re-sends the pedals' patch and controller state. The song position does not move at a speed swap, so the pedals already have that state.
 - With app MIDI clock on and no count-in, Start and the first clock pulses go out on time at the start of the audio. The audio is held back 150 ms, so the pulses are not sent as one burst. A start with a count-in is unchanged.
 - The song BPM field takes a typed value. Typing keeps the text, and it is committed (clamped to 30–300) on blur or Enter; Escape restores the current BPM. Stepping with the arrows still sets the value at once.

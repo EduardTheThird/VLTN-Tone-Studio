@@ -49,12 +49,53 @@ export function isChased(cue: Cue, bytes: number[], triggers: ReadonlySet<string
 }
 
 /**
+ * What the cues at one position send themselves: the channels that get a program change (their bank selects go with it) and the
+ * controllers (channel and CC number) they send. A chase to that position leaves these out. The cue's own message is the newer state,
+ * and a chase sent at the same moment can land after it, so the pedal is left on the old patch.
+ */
+export interface SettledState {
+  programChannels: ReadonlySet<number>;
+  controllers: ReadonlySet<string>;
+}
+
+/** What the cues at `position` (within 1 ms) send, as the scheduler sends them. Cues that never send (triggers) are left out. */
+export function settledAt(cues: Cue[], position: number): SettledState {
+  const programChannels = new Set<number>();
+  const controllers = new Set<string>();
+  for (const cue of cues) {
+    if (!cue.messages.length || cue.trigger || Math.abs(cue.time - position) > 0.001) continue;
+    for (const bytes of cue.messages) {
+      const kind = bytes[0] & 240;
+      const channel = bytes[0] & 15;
+      if (kind === 0xc0) programChannels.add(channel);
+      else if (kind === 0xb0) controllers.add(`${channel}:${bytes[1]}`);
+    }
+  }
+  return { programChannels, controllers };
+}
+
+/** Whether a chased message is one the cues at the chase position send themselves (see `SettledState`). */
+function isSettled(bytes: number[], settled: SettledState): boolean {
+  const kind = bytes[0] & 240;
+  const channel = bytes[0] & 15;
+  if (kind === 0xc0) return settled.programChannels.has(channel);
+  if (kind !== 0xb0) return false;
+  return (isBank(bytes[1]) && settled.programChannels.has(channel)) || settled.controllers.has(`${channel}:${bytes[1]}`);
+}
+
+/**
  * The messages that bring the pedals to the state they would be in at `position` had the song played from the start.
  * Order: song select, then bank select + program change per channel, then controllers, then SysEx; each group in song order.
  * Only the latest value per (channel, controller), the latest program change per channel and the latest song select are kept.
  * `triggers` lists the assigned trigger controllers (see `chaseTriggerSet`), which are never replayed unless a cue says `{chase}`.
+ * `settled` lists what the cues at `position` send (see `settledAt`), which is left out so the cue's own message is not overridden.
  */
-export function computeChaseState(cues: Cue[], position: number, triggers: ReadonlySet<string> = new Set()): ChaseMessage[] {
+export function computeChaseState(
+  cues: Cue[],
+  position: number,
+  triggers: ReadonlySet<string> = new Set(),
+  settled: SettledState = { programChannels: new Set(), controllers: new Set() },
+): ChaseMessage[] {
   const banks = new Map<number, Map<number, number[]>>();
   const programs = new Map<number, ChaseMessage[]>();
   const controllers = new Map<string, ChaseMessage>();
@@ -63,7 +104,7 @@ export function computeChaseState(cues: Cue[], position: number, triggers: Reado
   const ordered = cues.filter((cue) => cue.messages.length && !cue.trigger && cue.time < position - 0.001).sort((a, b) => a.time - b.time);
   for (const cue of ordered) {
     for (const bytes of cue.messages) {
-      if (!isChased(cue, bytes, triggers)) continue;
+      if (!isChased(cue, bytes, triggers) || isSettled(bytes, settled)) continue;
       if (bytes[0] === 0xf3) {
         songSelect = { bytes, time: cue.time };
         continue;

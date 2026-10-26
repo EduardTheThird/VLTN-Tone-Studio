@@ -411,6 +411,34 @@ it("still cancels a jump that is not due yet", () => {
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
 });
 
+it("a loop wrap sends the cue at the loop start once, and chases no state that cue sets", () => {
+  // Pedal 16 gets the 68/69 patches on every 4 s, and pedal 1 gets the matching 0/1 patches with them.
+  const cues = parseChart(
+    [
+      "[00:00] {midi:pc 16 68} {midi:pc 1 0}",
+      "[00:04] {midi:pc 16 69} {midi:pc 1 1}",
+      "[00:08] {midi:pc 16 68} {midi:pc 1 0}",
+      "[00:12] {midi:pc 16 69} {midi:pc 1 1}",
+      "[00:16] {midi:pc 16 68} {midi:pc 1 0}",
+      "[00:20] {midi:pc 16 69} {midi:pc 1 1}",
+      "[00:24] {midi:pc 16 68} {midi:pc 1 0}",
+      "[00:28] {midi:pc 16 69} {midi:pc 1 1}",
+      "[00:32] {midi:pc 16 68} {midi:pc 1 0}",
+    ].join("\n"),
+  );
+  const f = fixture({ cues, duration: 40, origin: 1000, pedalChannel: 16, lookahead: BLUETOOTH_LOOKAHEAD });
+  // Section 16–32 loops: the audio jumps from song 32 s back to 16 s at clock 33000.
+  const audio = (now: number) => (now < 33000 ? (now - 1000) / 1000 : 16 + (now - 33000) / 1000);
+  run(f, 1000, 40000, audio, [[31000, () => f.schedule.plan(32, { at: 33000, position: 16 }, 31000)]]);
+  // The cue at 32 is held (it is not sent), and the cue at 16 goes out with no chase for pedal 1 or pedal 16 at the same time.
+  expect(f.messages().filter((m) => m.due === 33000).map((m) => m.bytes)).toEqual([
+    [192, 0],
+    [207, 68],
+  ]);
+  expect(f.messages().some((m) => m.label === "Chase state")).toBe(false);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
 it("a cue at a pause boundary is held while paused and fires on resume, not before the pause", () => {
   const cues = parseChart("[00:03] {midi:pc 1 2}");
   // Playing to song 3 s at clock 4000. The plan holds the cue on the boundary, then the pause stops this schedule.
@@ -439,6 +467,20 @@ it("a cue at a speed-swap position is sent once, at the swap's clock time", () =
   expect(atSwap.map((m) => m.due)).toEqual([4000]);
   expect(f.messages().some((m) => m.label === "Chase state")).toBe(false);
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+it("a start at exactly a cue time sends no chase for the channels and controllers that cue sets", () => {
+  const cues = parseChart(
+    "[00:00] {midi:pc 16 68} {midi:pc 1 0}\n[00:12] {midi:pc 16 69} {midi:cc 1 7 100} {midi:pc 1 1}\n[00:16] {midi:pc 16 68} {midi:pc 1 0} {midi:cc 1 7 90}",
+  );
+  // Starting at song 16 s, on the clock at 1000. The chase would otherwise bring pedal 16 to 69 and pedal 1 to 1 and volume to 100.
+  const f = fixture({ cues, position: 16, origin: 1000 - 16_000, duration: 40, pedalChannel: 16 });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => [m.bytes, m.label])).toEqual([
+    [[192, 0], "Song cue"],
+    [[176, 7, 90], "Song cue"],
+    [[207, 68], "Song cue"],
+  ]);
 });
 
 it("a section jump to another position still chases the state there", () => {

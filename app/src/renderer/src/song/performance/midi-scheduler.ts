@@ -1,5 +1,5 @@
 import type { Cue } from "./chart";
-import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } from "./midi-chase";
+import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, settledAt, type TriggerCc } from "./midi-chase";
 import { orderForPedal } from "./midi-pedal-order";
 import { clampRate } from "./speed";
 import { cycleFrames, framesAt, fullFrame, quarterFrame, type TimecodeRate } from "./timecode";
@@ -438,7 +438,8 @@ export class MidiSchedule {
       const chasePosition = this.chasePending ? this.config.position : position;
       this.chasePending = false;
       const sent = new Set(messages.map((m) => m.bytes.join(",")));
-      const chase = computeChaseState(this.cues, chasePosition, this.chaseTriggers)
+      // A cue at the chase position sends its own state at that moment, so the chase leaves those channels and controllers out.
+      const chase = computeChaseState(this.cues, chasePosition, this.chaseTriggers, settledAt(this.cues, chasePosition))
         .filter((m) => !sent.has(m.bytes.join(",")))
         .map((m) => ({ bytes: m.bytes, due: Math.max(now, this.clockAt(chasePosition) - CHASE_LEAD_MS), label: "Chase state", time: m.time }));
       messages.unshift(...chase);

@@ -55,14 +55,8 @@ it.each([0, 10])("preserves cues at the requested %s-second offset after a delay
   await act(async () => {
     fireEvent.click(screen.getByText("Play song"));
   });
-  expect(mocks.send.mock.calls.map((c) => c[0])).toEqual(
-    offset === 0
-      ? [[192, 7]]
-      : [
-          [192, 7],
-          [192, 8],
-        ],
-  ); // starting at 10 s chases the earlier patch first
+  // Starting on the cue at 10 s sends that cue's patch alone: the chase leaves out the channel the cue sets, so the earlier patch is not sent first.
+  expect(mocks.send.mock.calls.map((c) => c[0])).toEqual(offset === 0 ? [[192, 7]] : [[192, 8]]);
 });
 it("drops an opening cue that is overdue at start without disarming the session", async () => {
   mocks.playAdvance = 0.3;
