@@ -293,6 +293,10 @@ export class PerformanceSession {
   private joining = false;
   /** Set while a song that ends hands the set on to the next song: the set goes on, so the outgoing song sends no transport Stop */
   private endingIntoSet = false;
+  /** The output a transport Stop was last sent to, until a Start or Continue goes out. One stop sends one Stop, however many cleanups run. */
+  private stoppedOn: MidiOutput | undefined;
+  /** Set while a song that missed its loop pass restarts from its start. The restart is a loop pass, so it sends no play trigger. */
+  private restartingLoop = false;
   /** The stems at 100%, which every render is made from */
   private baseStems: Stems | null = null;
   /** The settings key of the song loaded, under which its speed is stored */
@@ -512,6 +516,7 @@ export class PerformanceSession {
       if (this.behaviourOf(player) === "loop") {
         this.set({ playing: false });
         setClockPosition(player.start);
+        this.restartingLoop = true;
         void player.seek(player.start).then(() => this.play());
         return;
       }
@@ -744,9 +749,10 @@ export class PerformanceSession {
           this.recordQueued(bytes, undefined, "Note cleanup");
         }
       this.noteChannels.clear();
-      if (clock) {
+      if (clock && this.stoppedOn !== output) {
         output.send([252]);
         this.recordQueued([252], undefined, "Transport Stop");
+        this.stoppedOn = output;
       }
     } catch (e) {
       useMidiDiagnostics.getState().fault(String(e));
@@ -816,6 +822,8 @@ export class PerformanceSession {
   };
 
   play = async () => {
+    const loopPass = this.restartingLoop;
+    this.restartingLoop = false;
     const { player } = this.state;
     if (!player || this.state.parseError || this.playPending || player.isPlaying) return;
     const request = ++this.playRequest;
@@ -855,7 +863,8 @@ export class PerformanceSession {
         return;
       }
       this.startTempo = tempoMessages;
-      this.startPlay = this.triggerBytes("play");
+      // Every start and resume sends the play trigger, except a loop pass, which is not a new play press.
+      this.startPlay = loopPass ? null : this.triggerBytes("play");
       // Cues start from where the audio really starts: a pre-roll puts that before the requested position.
       this.startPosition = armed ? preRollStart(requestedPosition, timing.preRollBeats, bpm) : null;
       this.set({ playing: true });
@@ -1651,6 +1660,7 @@ export class PerformanceSession {
           this.transportAt = null;
           if (context.armed && s.clock && !s.timecode.enabled && !joined) {
             try {
+              this.stoppedOn = undefined;
               this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251], at === null ? undefined : at - performance.timeOrigin);
             } catch (e) {
               this.fail(e);

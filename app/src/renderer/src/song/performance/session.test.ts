@@ -777,7 +777,7 @@ describe("speed", () => {
 });
 
 describe("MIDI triggers", () => {
-  const sent = (out: { send: { mock: { calls: unknown[][] } } }) => out.send.mock.calls.map(([bytes]) => bytes);
+  const sent = (out: { send: { mock: { calls: unknown[][] } } }) => out.send.mock.calls.map(([bytes]) => bytes as number[]);
   const chartA = "{midi@load: pc 1 1}\n{midi@play: cc 1 80 127}\n{midi@stop: cc 1 81 127}\n{midi@end: pc 1 9}";
   const chartB = "{midi@load: pc 2 5}\n{midi@play: cc 2 80 127}\n{midi@stop: cc 2 81 127}\n{midi@end: pc 2 6}";
   const playTriggersOf = () => mocks.configs.filter((config) => config.playTriggers?.length).map((config) => config.playTriggers);
@@ -798,6 +798,53 @@ describe("MIDI triggers", () => {
     expect(playTriggersOf()).toHaveLength(2);
   });
 
+  it("sends one transport Stop per pause, and Panic adds none after it", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    session.setClock(true);
+    await session.play();
+    session.pause();
+    expect(sent(out).filter((bytes) => bytes[0] === 252)).toHaveLength(1);
+    session.panicAndDisarm();
+    expect(sent(out).filter((bytes) => bytes[0] === 252)).toHaveLength(1);
+  });
+  it("sends one transport Stop when Panic is pressed during playback", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    session.setClock(true);
+    await session.play();
+    session.panicAndDisarm();
+    expect(sent(out).filter((bytes) => bytes[0] === 252)).toHaveLength(1);
+  });
+  it("sends one transport Stop when a playlist is stopped mid-song", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA), playlistPlaying: true, queued: true });
+    session.setClock(true);
+    await session.play();
+    session.pause();
+    expect(sent(out).filter((bytes) => bytes[0] === 252)).toHaveLength(1);
+    expect(mocks.library.pausePlaylist).toHaveBeenCalled();
+  });
+  it("sends the play trigger once per press on a resume, after a Continue", async () => {
+    const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
+    session.setClock(true);
+    await session.play();
+    mocks.position = 30;
+    session.pause();
+    await session.play();
+    expect(playTriggersOf()).toHaveLength(2);
+    expect(sent(out).filter((bytes) => bytes[0] === 251)).toHaveLength(1);
+  });
+  it("sends no play trigger when the song restarts from its start after missing its loop pass", async () => {
+    const { session } = armedSession(output(), { cues: parseChart(chartA) });
+    await session.play();
+    expect(playTriggersOf()).toHaveLength(1);
+    const player = mocks.players.at(-1)! as unknown as { setEndBehaviour: (behaviour: string) => void; isPlaying: boolean; onEnded?: () => void };
+    player.setEndBehaviour("loop");
+    player.isPlaying = false;
+    player.onEnded?.();
+    await vi.waitFor(() => expect(mocks.lead).toBeDefined());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(playTriggersOf()).toHaveLength(1);
+    session.pause();
+  });
   it("sends load again when the session disarms and arms for the same song", () => {
     const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
     session.setArmed(false);
