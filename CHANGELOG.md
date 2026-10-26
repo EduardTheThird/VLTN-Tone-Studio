@@ -60,6 +60,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Each pause or stop sends one MIDI Stop, and each resume sends the play trigger.
 - The USB MIDI output recovers after the computer sleeps. A dead port disarms with a message instead of silently sending nothing.
 - A slow-starting audio output no longer disarms cues as a stall.
+- A steady audio offset of 30 ms or more is followed after three checkpoints, so cues and MIDI clock stay on the audio instead of running early for the whole song. It no longer uses up the resync margin for later hitches.
 
 ## [0.8.1] - 2026-10-21
 

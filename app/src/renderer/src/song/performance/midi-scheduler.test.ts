@@ -473,3 +473,57 @@ describe("the audio start-up grace", () => {
     expect(faults).toEqual([{ type: "fault", error: "MIDI timing interrupted: the audio clock stopped advancing." }]);
   });
 });
+
+it("follows a steady +105 ms audio offset: later cues and clock pulses move 105 ms, with no resync and no fault", () => {
+  const f = fixture({ cues: parseChart("[00:00.50] {midi:pc 1 1}\n[00:02.00] {midi:pc 1 2}"), clock: true, duration: 4 });
+  // The audio reports song time 105 ms behind the clock from the first checkpoint on.
+  for (let t = 1200; t <= 3300; t += 50) {
+    f.schedule.sync((t - 1105) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  const cues = f.messages().filter((m) => m.label !== "MIDI clock");
+  expect(cues.map((m) => m.due)).toEqual([1605, 3105]);
+  const pulses = f.messages().filter((m) => m.bytes[0] === 248 && m.due >= 2000);
+  expect(pulses.length).toBeGreaterThan(0);
+  // Pulse k is due 1105 ms plus k pulse periods; the shift moves the whole grid, not only the pulses after it.
+  const period = 60000 / 120 / 24;
+  pulses.forEach((p) => expect((p.due - 1105) / period).toBeCloseTo(Math.round((p.due - 1105) / period), 3));
+  expect(f.replies.some((r) => r.type === "resync")).toBe(false);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+it("does not move anything for one checkpoint 100 ms late, followed by on-time checkpoints", () => {
+  const f = fixture({ cues: parseChart("[00:02.00] {midi:pc 1 2}"), duration: 4 });
+  for (let t = 1200; t <= 3300; t += 50) {
+    // Only the checkpoint at 1300 is late. Its position still advances, so it is judged by the drift rule.
+    f.schedule.sync((t - 1000) / 1000, t === 1300 ? t + 100 : t, t);
+    f.schedule.tick(t);
+  }
+  expect(f.messages().map((m) => m.due)).toEqual([3000]);
+  expect(f.replies.some((r) => r.type === "resync")).toBe(false);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+it("still resyncs on each drift above STALE_MS and faults on the third", () => {
+  const f = fixture({ cues: [], duration: 10 });
+  // Each checkpoint is 300 ms later than the origin the previous resync left behind.
+  let late = 0;
+  for (let t = 1100; t <= 1300; t += 50) {
+    late += 300;
+    f.schedule.sync((t - 1000) / 1000, t + late, t);
+    f.schedule.tick(t);
+  }
+  expect(f.replies.filter((r) => r.type === "resync")).toHaveLength(2);
+  expect(f.replies.filter((r) => r.type === "fault")).toHaveLength(1);
+});
+
+it("follows a steady -60 ms audio offset (audio ahead), so later cues fire 60 ms earlier", () => {
+  const f = fixture({ cues: parseChart("[00:02.00] {midi:pc 1 2}"), duration: 4 });
+  for (let t = 1200; t <= 3300; t += 50) {
+    f.schedule.sync((t - 940) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  expect(f.messages().map((m) => m.due)).toEqual([2940]);
+  expect(f.replies.some((r) => r.type === "resync")).toBe(false);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});

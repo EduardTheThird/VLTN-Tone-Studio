@@ -75,6 +75,13 @@ export const SYSTEM_LOOKAHEAD = 0.2;
 export const BLUETOOTH_LOOKAHEAD = 0.12;
 /** A message later than this is dropped instead of sent out of place. */
 export const STALE_MS = 250;
+/**
+ * A steady audio offset larger than this is followed by moving the origin. Below STALE_MS it is never a resync, so without this it would
+ * stay in place for the whole song and eat the resync margin for later hitches.
+ */
+const DRIFT_MS = 30;
+/** Consecutive checkpoints that must show the same offset before it is followed. One jittery checkpoint does not move the clock. */
+const DRIFT_CHECKPOINTS = 3;
 /** This many resyncs inside RESYNC_WINDOW_MS means timing is not recovering and the session is faulted. */
 const MAX_RESYNCS = 3;
 const RESYNC_WINDOW_MS = 5000;
@@ -136,6 +143,9 @@ export class MidiSchedule {
   /** The rate the song plays at. Song time runs at this multiple of clock time. */
   private rate: number;
   private resyncs: number[] = [];
+  /** How many consecutive advancing checkpoints have shown an offset above DRIFT_MS, all with the sign in `driftSign`. */
+  private driftChecks = 0;
+  private driftSign = 0;
   private lastPosition: number;
   private lastAdvance: number;
   /** A checkpoint has arrived since this start. */
@@ -240,13 +250,41 @@ export class MidiSchedule {
     this.heartbeat = Math.max(this.heartbeat, at);
     // A late checkpoint is still a consistent (position, time) pair, so it can re-anchor the origin.
     // A frozen position can't anchor anything; it is judged by the stall check above instead.
-    if (advanced && Math.abs(at - this.clockAt(position)) > STALE_MS) {
-      const shift = at - this.clockAt(position);
-      this.config.origin += shift;
-      this.pulseAnchor.time += shift;
-      if (this.timecode) this.timecode.anchor.time += shift;
-      this.resync(now, position);
+    if (advanced) {
+      const drift = at - this.clockAt(position);
+      if (Math.abs(drift) > STALE_MS) {
+        this.driftChecks = 0;
+        this.shiftOrigin(drift);
+        this.resync(now, position);
+      } else this.followDrift(drift);
     }
+  }
+  /**
+   * Follows a steady offset between DRIFT_MS and STALE_MS without counting it as a resync. The offset must hold for DRIFT_CHECKPOINTS
+   * checkpoints in a row with the same sign. A checkpoint inside DRIFT_MS, or one with the other sign, starts the count again.
+   */
+  private followDrift(drift: number) {
+    if (Math.abs(drift) <= DRIFT_MS) {
+      this.driftChecks = 0;
+      return;
+    }
+    if (Math.sign(drift) !== this.driftSign) {
+      this.driftSign = Math.sign(drift);
+      this.driftChecks = 0;
+    }
+    this.driftChecks++;
+    if (this.driftChecks < DRIFT_CHECKPOINTS) return;
+    this.driftChecks = 0;
+    this.shiftOrigin(drift);
+  }
+  /**
+   * Moves the origin and everything anchored to it by the same amount, so the clock, the pulse grid and the timecode stay in step with
+   * the audio. Nothing is re-sent; later messages are simply due at the new times.
+   */
+  private shiftOrigin(shift: number) {
+    this.config.origin += shift;
+    this.pulseAnchor.time += shift;
+    if (this.timecode) this.timecode.anchor.time += shift;
   }
   private resync(now: number, position: number) {
     this.resyncs = this.resyncs.filter((t) => now - t < RESYNC_WINDOW_MS);
@@ -284,6 +322,8 @@ export class MidiSchedule {
     this.lastPosition = jump.position;
     this.lastAdvance = jump.at;
     this.jumpAt = jump.at;
+    this.driftChecks = 0;
+    this.driftSign = 0;
     this.chasePending = true;
     // Timecode follows song time, so a jump, loop wrap or rate change starts it again: a full frame at the new position, then piece 0.
     this.restartTimecode(jump.at, jump.position);
