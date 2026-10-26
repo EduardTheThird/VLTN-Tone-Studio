@@ -52,6 +52,13 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Starting or seeking mid-song no longer replays controller messages that a pedal profile assigns to triggers (such as the RC-10R looper). Preflight warns about a controller it cannot tell apart from a trigger, and says how to decide.
 - Starting mid-song waits 100 ms after the pedal state is sent before the audio starts, and Start and Continue are sent after it.
 - Playlist joins no longer send MIDI Stop, and the set keeps playing with its USB output armed across a join instead of pausing.
+- The next playlist song is preloaded even when it has no stem split, so joins into plain backing tracks are gapless.
+- Chord names follow the song's key override (or the library key) when transposed or using a capo, so a flat key shows Eb rather than D#.
+- USB MIDI is queued at most 0.2 s ahead, so Pause stops queued cues almost at once.
+- MIDI tokens inside `//` comment lines in a chart are ignored, so they no longer break the chart.
+- Each pause or stop sends one MIDI Stop, and each resume sends the play trigger.
+- The USB MIDI output recovers after the computer sleeps. A dead port disarms with a message instead of silently sending nothing.
+- A slow-starting audio output no longer disarms cues as a stall.
 
 ## [0.8.1] - 2026-10-21
 
