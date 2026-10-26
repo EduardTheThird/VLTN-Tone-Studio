@@ -411,6 +411,36 @@ it("still cancels a jump that is not due yet", () => {
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
 });
 
+it("a cue at a pause boundary is held while paused and fires on resume, not before the pause", () => {
+  const cues = parseChart("[00:03] {midi:pc 1 2}");
+  // Playing to song 3 s at clock 4000. The plan holds the cue on the boundary, then the pause stops this schedule.
+  const playing = fixture({ cues, duration: 10, origin: 1000 });
+  playing.schedule.plan(3, null, 1000);
+  run(playing, 1000, 4000, (now) => Math.min((now - 1000) / 1000, 3));
+  playing.schedule.stop();
+  expect(playing.messages().some((m) => m.bytes[1] === 2)).toBe(false);
+  // Resuming from song 3 s at clock 5000 starts a new schedule there, so the cue is due at the start.
+  const resumed = fixture({ cues, position: 3, origin: 2000, duration: 10 });
+  resumed.schedule.tick(5000);
+  expect(resumed.messages().map((m) => [m.bytes, m.due])).toEqual([[[192, 2], 5000]]);
+});
+
+it("a cue at a speed-swap position is sent once, at the swap's clock time", () => {
+  const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:03] {midi:pc 3 3}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
+  const f = fixture({ cues, bpm: 120, rate: 1, clock: true, duration: 10, origin: 1000 });
+  // The swap lands at clock 4000 on song 3 s, at 50%. The cue on song 3 s is held by the plan, then sent by the swap.
+  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5, keepsPosition: true }, 1000);
+  for (let t = 1000; t <= 16000; t += 20) {
+    const song = t < 4000 ? (t - 1000) / 1000 : 3 + (t - 4000) / 2000;
+    f.schedule.sync(song, t, t);
+    f.schedule.tick(t);
+  }
+  const atSwap = f.messages().filter((m) => m.label === "Song cue" && m.bytes[1] === 3);
+  expect(atSwap.map((m) => m.due)).toEqual([4000]);
+  expect(f.messages().some((m) => m.label === "Chase state")).toBe(false);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
 it("a section jump to another position still chases the state there", () => {
   const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
   const f = fixture({ cues, duration: 10, origin: 1000 });

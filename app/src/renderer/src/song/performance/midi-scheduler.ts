@@ -166,7 +166,7 @@ export class MidiSchedule {
   private chaseTriggers: ReadonlySet<string>;
   /** Starting after the first cue means the pedals have to be brought to the state they would be in. */
   private chasePending = true;
-  /** Cues after this song time are held back. A planned jump sets it so the old passage stops at the boundary. */
+  /** Cues from this song time on are held back. A planned jump sets it so the old passage stops at the boundary. */
   private cap = Infinity;
   private pendingJump: SchedulerJump | null = null;
   /** Checkpoints taken before this clock time were taken before the last jump, so they describe the old passage. */
@@ -219,7 +219,7 @@ export class MidiSchedule {
     return next;
   }
   /**
-   * Holds cues after song time `cap` (null lifts the hold). With a `jump`, the schedule moves to `jump.position` at clock time
+   * Holds cues at or after song time `cap` (null lifts the hold). With a `jump`, the schedule moves to `jump.position` at clock time
    * `jump.at`. Cues in the skipped span are never sent; the pedals get the state they would have had at the new position.
    * Setting a new plan replaces the old one, so a cancelled jump is a plan with no jump. A jump already due at `now` is carried out
    * first: the session clears its plan once the audio passes the boundary, and a clear that arrives before the next tick must not drop it.
@@ -384,9 +384,10 @@ export class MidiSchedule {
     const lookahead = this.config.lookahead ?? BLUETOOTH_LOOKAHEAD;
     // Once checkpoints show the audio has not moved, cues after the start position are held, so a late start does not fire them early.
     const holdAt = this.audioReported && !this.started ? this.config.position : Infinity;
-    const until = Math.min(this.cap, this.config.duration, position + lookahead * this.rate, holdAt),
+    const until = Math.min(this.config.duration, position + lookahead * this.rate, holdAt),
       candidates: ScheduledMessage[] = [];
-    while (this.next < this.cues.length && this.cues[this.next].time <= until) {
+    // The cap is exclusive: a cue on the boundary waits for the plan, so a jump at that boundary never sends the passage after it.
+    while (this.next < this.cues.length && this.cues[this.next].time <= until && this.cues[this.next].time < this.cap - 0.001) {
       const cue = this.cues[this.next++];
       for (const bytes of cue.messages) candidates.push({ bytes, due: this.clockAt(cue.time), label: cue.label || "Song cue", time: cue.time });
     }
