@@ -453,3 +453,78 @@ it("stops a handed-over song that nothing took up, and pauses the set, when Perf
   expect(useSongLibrary.getState().handover).toBeNull();
   expect(useSongLibrary.getState().playlistPlaying).toBe(false);
 });
+
+it("keeps the next set song prepared through a paused load, a seek, and Play under StrictMode", async () => {
+  // The device flow: Load set paused, then seek song A while paused, then Play. Song B must be prepared before the join.
+  await useSongLibrary.getState().load(first.id, [first.id, second.id], 0);
+  render(
+    <StrictMode>
+      <PerformancePanel />
+    </StrictMode>,
+  );
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  fireEvent.change(screen.getByLabelText("Song position"), { target: { value: "6.5" } });
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(useSongLibrary.getState().prepared?.id).toBe(second.id);
+  await act(async () => {
+    mock.players.at(-1)!.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+  expect(useSongLibrary.getState().position).toBe(1);
+});
+
+it("prefetches the next set song again after a short pause and resume during playback", async () => {
+  await useSongLibrary.getState().load(first.id, [first.id, second.id], 0);
+  render(<PerformancePanel />);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+  fireEvent.click(screen.getByText("Pause"));
+  expect(useSongLibrary.getState().prepared).toBeNull();
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+});
+
+it("prefetches the next set song again after a seek during playback", async () => {
+  await useSongLibrary.getState().load(first.id, [first.id, second.id], 0);
+  render(<PerformancePanel />);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+  fireEvent.change(screen.getByLabelText("Song position"), { target: { value: "6.5" } });
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+});
+
+it("logs why the next set song could not be prefetched, and prefetches it again on the next Play", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await useSongLibrary.getState().load(first.id, [first.id, second.id], 0);
+    mock.fetch.mockImplementationOnce(() => Promise.reject(new Error("FLAC fetch failed")));
+    render(<PerformancePanel />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Play playlist"));
+    });
+    await waitFor(() => expect(error).toHaveBeenCalledWith(expect.stringContaining(second.id), expect.any(Error)));
+    // The track's own reason reaches the console, not just the generic message that the notice shows.
+    expect(error.mock.calls.some(([, reason]) => reason instanceof Error && reason.message === "FLAC fetch failed")).toBe(true);
+    expect(useSongLibrary.getState().prepared).toBeNull();
+    fireEvent.click(screen.getByText("Pause"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("Play playlist"));
+    });
+    await waitFor(() => expect(useSongLibrary.getState().prepared?.id).toBe(second.id));
+  } finally {
+    error.mockRestore();
+  }
+});

@@ -198,7 +198,9 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
     song.audio.map(async (track) => {
       try {
         return [track, await loadTrack(urls[trackKey(track)], track)] as const;
-      } catch {
+      } catch (e) {
+        // The song still plays without this track, so the reason is kept for the console rather than shown in the notice.
+        console.error(`Could not read the ${track.name} audio of ${song.title}`, e);
         skipped.push(track.name);
         return null;
       }
@@ -303,6 +305,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     const { index, queue, position, playlistPlaying, prepared } = get();
     const id = playlistPlaying ? queue[position + 1] : undefined;
     if (!id) {
+      if (import.meta.env.DEV && prefetching) console.debug(`[prefetch] ${prefetching} dropped: the set has no next song`);
       prefetchGeneration++;
       prefetching = null;
       dropPrepared();
@@ -312,6 +315,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     dropPrepared();
     const generation = ++prefetchGeneration;
     prefetching = id;
+    if (import.meta.env.DEV) console.debug(`[prefetch] ${id} started`);
     fetchSong(index, id)
       .then(async (next) => {
         // The buffers are built here, well before the join, a channel at a time. The join then only starts them.
@@ -325,13 +329,18 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         }
         const player = await StemPlayer.create(stems, sharedPlaybackEngine(), playerShape(shapeFromOptions(options)), yieldToMain, speed.rate);
         if (generation !== prefetchGeneration) {
+          if (import.meta.env.DEV) console.debug(`[prefetch] ${id} dropped: superseded while loading`);
           await player.dispose();
           return;
         }
+        if (import.meta.env.DEV) console.debug(`[prefetch] ${id} ready`);
         set({ prepared: { ...next, player } });
       })
       .catch((e) => {
-        if (generation === prefetchGeneration) set({ notice: `The next song could not be loaded in advance. ${e instanceof Error ? e.message : String(e)}` });
+        // The notice alone is easy to miss, so the reason also goes to the console. The next play or resume prefetches again.
+        const reason = e instanceof Error ? e.message : String(e);
+        console.error(`Could not prefetch the next set song ${id}`, e);
+        if (generation === prefetchGeneration) set({ notice: `The next song could not be loaded in advance. ${reason}` });
       })
       .finally(() => {
         if (generation === prefetchGeneration) prefetching = null;
