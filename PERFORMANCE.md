@@ -219,7 +219,7 @@ Name the parts of a song on the waveform in the section editor: start and end ti
 While playing:
 
 - **Tap a section** to arm a jump to it. The strip shows when it will land, and **Cancel jump** stops it before then.
-- **Double-tap a section** to jump now. The jump lands after the MIDI lookahead (about 120 ms over Bluetooth, 1 s over USB), so cues already queued still belong to the passage being left.
+- **Double-tap a section** to jump now. The jump lands after the MIDI lookahead (about 120 ms over Bluetooth, 0.2 s over USB), so cues already queued still belong to the passage being left.
 - **Loop** repeats the current section until you tap **Exit loop**. The current pass finishes, then the song moves on. A release within the last 150 ms before the end of a pass takes effect after that pass.
 - **Save as default** writes live loops and releases into the sections' stored modes. Other live changes are not saved.
 

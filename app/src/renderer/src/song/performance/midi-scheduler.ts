@@ -62,8 +62,12 @@ export type SchedulerRequest =
   | { type: "timecode-end"; at: number | null }
   | { type: "stop" };
 
-/** USB / system MIDI: Web MIDI queues timestamped messages on the browser's MIDI thread, so renderer jank cannot delay them. */
-export const SYSTEM_LOOKAHEAD = 1;
+/**
+ * USB / system MIDI: Web MIDI queues timestamped messages on the browser's MIDI thread, so renderer jank cannot delay them. 0.2 s covers
+ * ten worker ticks (20 ms each), enough for a short renderer stall, and is short enough that a Pause (which Chromium cannot recall from
+ * the OS) leaves at most 0.2 s of queued cues to fire.
+ */
+export const SYSTEM_LOOKAHEAD = 0.2;
 /** Bluetooth MIDI has no receiver-side timestamping, so cues are held in renderer timers and must stay close to their due time. */
 export const BLUETOOTH_LOOKAHEAD = 0.12;
 /** A message later than this is dropped instead of sent out of place. */

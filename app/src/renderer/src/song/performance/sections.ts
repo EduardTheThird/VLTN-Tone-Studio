@@ -36,7 +36,7 @@ export const MAX_SECTIONS = 64;
 export const MAX_SECTION_NAME = 40;
 /** A section shorter than this is not a section. */
 export const MIN_SECTION_S = 0.1;
-/** Decisions are taken this long before their boundary. Keep it above the USB MIDI lookahead (1 s). */
+/** Decisions are taken this long before their boundary. Keep it above the USB MIDI lookahead (0.2 s). */
 export const DECISION_LEAD_S = 2;
 /** Times closer than this are the same time. */
 const EPSILON = 0.001;

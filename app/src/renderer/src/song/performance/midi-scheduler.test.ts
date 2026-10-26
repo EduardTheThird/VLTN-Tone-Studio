@@ -121,17 +121,29 @@ it("sends a late note-off, drops a late note-on and silently drops late clock pu
   ).toBe(true);
   expect(dropped.some((m) => m.bytes[0] === 248)).toBe(false);
 });
-it("emits system MIDI cues up to a second ahead with exact due times, and only 120 ms ahead for Bluetooth", () => {
-  const cues = parseChart("[00:00.05] {midi:pc 1 1}\n[00:00.90] {midi:pc 1 2}\n[00:02.00] {midi:pc 1 3}");
+it("emits system MIDI cues 0.2 s ahead with exact due times, and only 120 ms ahead for Bluetooth", () => {
+  const cues = parseChart("[00:00.05] {midi:pc 1 1}\n[00:00.15] {midi:pc 1 2}\n[00:00.40] {midi:pc 1 3}");
   const usb = fixture({ cues, duration: 5, lookahead: SYSTEM_LOOKAHEAD });
   usb.schedule.tick(1000);
   expect(usb.messages().map((m) => [m.bytes, m.due])).toEqual([
     [[192, 1], 1050],
-    [[192, 2], 1900],
+    [[192, 2], 1150],
   ]);
   const ble = fixture({ cues, duration: 5, lookahead: BLUETOOTH_LOOKAHEAD });
   ble.schedule.tick(1000);
   expect(ble.messages().map((m) => m.bytes)).toEqual([[192, 1]]);
+});
+
+it("a pause emits nothing after it, even for a USB cue that is inside the 0.2 s window", () => {
+  const cues = parseChart("[00:00.10] {midi:pc 1 1}\n[00:00.30] {midi:pc 1 2}");
+  const f = fixture({ cues, duration: 5, lookahead: SYSTEM_LOOKAHEAD });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => m.bytes)).toEqual([[192, 1]]);
+  // The 0.30 s cue is due at 1300 and inside the window from 1150 on, but the pause has already stopped the schedule.
+  f.schedule.stop();
+  f.schedule.tick(1150);
+  f.schedule.tick(1300);
+  expect(f.messages()).toHaveLength(1);
 });
 it("does not apply the start tempo late: it is dropped and the session carries on", () => {
   const replies: SchedulerReply[] = [];

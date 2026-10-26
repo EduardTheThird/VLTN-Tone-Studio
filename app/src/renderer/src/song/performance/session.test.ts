@@ -706,9 +706,9 @@ describe("sections", () => {
   it("a second tap jumps now, after the MIDI lookahead, so the cues already queued still belong to the passage being left", () => {
     const { session } = playing([verse("continue")], 5);
     session.jumpSectionNow("verse");
-    // USB lookahead is one second: the jump is at song 6, and the cap holds the schedule there.
-    expect(mocks.jumps).toEqual([{ to: 8, at: 6 }]);
-    expect(mocks.plans.at(-1)).toMatchObject({ cap: 6, jump: { position: 8 } });
+    // USB lookahead is 0.2 s: the jump is at song 5.2, and the cap holds the schedule there.
+    expect(mocks.jumps).toEqual([{ to: 8, at: 5.2 }]);
+    expect(mocks.plans.at(-1)).toMatchObject({ cap: 5.2, jump: { position: 8 } });
   });
 
   it("starts a live loop, then releases it: the performer's release is kept for the rest of the pass", () => {
