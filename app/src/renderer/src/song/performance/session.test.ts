@@ -10,6 +10,7 @@ import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
+import { useNav } from "@/state/nav";
 
 const mocks = vi.hoisted(() => ({
   song: { source: null as unknown },
@@ -525,6 +526,8 @@ it("carries the armed output into the next song's session after an unchained joi
 });
 
 it("does not pause the set when the outgoing song tears down at a join, because the playlist position has already moved", () => {
+  vi.useFakeTimers();
+  useNav.getState().go("song", "performance");
   mocks.library.playlistPlaying = true;
   mocks.library.queue = ["a", "b"];
   mocks.library.position = 0;
@@ -533,23 +536,43 @@ it("does not pause the set when the outgoing song tears down at a join, because 
   mocks.library.position = 1;
   mocks.song.source = source;
   unload();
+  vi.runOnlyPendingTimers();
   expect(mocks.library.pausePlaylist).not.toHaveBeenCalled();
   expect(session.armed).toBe(true);
   mocks.library.position = 0;
   mocks.song.source = null;
   session.dispose();
+  vi.useRealTimers();
+});
+
+it("does not pause the set when the song's teardown runs on the same screen, as a StrictMode re-run does", () => {
+  vi.useFakeTimers();
+  useNav.getState().go("song", "performance");
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.position = 0;
+  const { unload, session } = armedSession(output(), { queued: true, playlistPlaying: true });
+  unload();
+  vi.runOnlyPendingTimers();
+  expect(mocks.library.pausePlaylist).not.toHaveBeenCalled();
+  session.dispose();
+  vi.useRealTimers();
 });
 
 it("pauses the set when the song is left while the set is playing at its own position", () => {
+  vi.useFakeTimers();
+  useNav.getState().go("rig");
   mocks.library.playlistPlaying = true;
   mocks.library.queue = ["a", "b"];
   mocks.library.position = 0;
   mocks.song.source = source;
   const { unload, session } = armedSession(output(), { queued: true, playlistPlaying: true });
   unload();
+  vi.runOnlyPendingTimers();
   expect(mocks.library.pausePlaylist).toHaveBeenCalledTimes(1);
   mocks.song.source = null;
   session.dispose();
+  vi.useRealTimers();
 });
 
 it("keeps the carry reset when panic and disarm runs inside a playing queued set", () => {

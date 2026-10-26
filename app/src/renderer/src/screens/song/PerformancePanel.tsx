@@ -9,7 +9,7 @@ import { chordDisplayTranspose, clampCapo, effectiveBpm, keySpelling } from "@/s
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
-import { PerformanceSession, useSession, type Timing } from "@/song/performance/session";
+import { PerformanceSession, leftPerformance, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
 import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
@@ -80,10 +80,12 @@ export function PerformancePanel() {
   const generation = useMemo(() => ++sessionId, [source]);
   const [stage, setStage] = useState(false);
   // A song handed over to the next song's session is held by the library until that session takes it up. Leaving Performance
-  // before then pauses the set, which stops the held song.
+  // before then pauses the set, which stops the held song. Checked later, so a StrictMode re-run does not pause it.
   useEffect(
     () => () => {
-      if (useSongLibrary.getState().handover) useSongLibrary.getState().pausePlaylist();
+      setTimeout(() => {
+        if (leftPerformance() && useSongLibrary.getState().handover) useSongLibrary.getState().pausePlaylist();
+      }, 0);
     },
     [],
   );

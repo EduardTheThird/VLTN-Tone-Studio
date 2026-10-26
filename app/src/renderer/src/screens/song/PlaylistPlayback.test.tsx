@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
@@ -5,6 +6,7 @@ import { useSong } from "@/song/store";
 import { clearSettingsCache } from "@/song/performance/settings";
 import { useSongLibrary } from "@/song/library";
 import { useBluetooth, type BleMidiConnection } from "@/bluetooth/connection";
+import { useNav } from "@/state/nav";
 import { PerformancePanel } from "./PerformancePanel";
 import type { SchedulerConfig, ScheduledMessage } from "@/song/performance/midi-scheduler";
 // jsdom has no browser Worker; exercise the production schedule through the bridge mock.
@@ -244,8 +246,9 @@ it("pauses the playlist when leaving Performance", async () => {
   await useSongLibrary.getState().playPlaylist([first.id, second.id]);
   const view = render(<PerformancePanel />);
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  useNav.getState().go("rig");
   view.unmount();
-  expect(useSongLibrary.getState().playlistPlaying).toBe(false);
+  await waitFor(() => expect(useSongLibrary.getState().playlistPlaying).toBe(false));
   expect(mock.players.at(-1)?.isPlaying).toBe(false);
 });
 
@@ -358,6 +361,61 @@ it("keeps a USB output armed and selected across an unprepared join, with clock 
   }
 });
 
+it("keeps a set playing across a join under StrictMode, which re-runs each teardown once", async () => {
+  mock.fetch.mockImplementationOnce(async () => file());
+  mock.fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+  const gp180Send = vi.fn();
+  const access = Object.assign(new EventTarget(), {
+    outputs: new Map([["gp180", { id: "gp180", name: "GP-180", state: "connected", send: gp180Send, clear: vi.fn() }]]),
+    inputs: new Map(),
+  });
+  const realNavigator = navigator;
+  vi.stubGlobal("navigator", { requestMIDIAccess: async () => access });
+  try {
+    await useSongLibrary.getState().load(first.id, [first.id, second.id]);
+    render(
+      <StrictMode>
+        <PerformancePanel />
+      </StrictMode>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText("Enable USB / system MIDI"));
+    });
+    fireEvent.change(screen.getByLabelText("MIDI output"), { target: { value: "gp180" } });
+    fireEvent.click(screen.getByLabelText("Send cues"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("Play playlist"));
+    });
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    await act(async () => {
+      mock.players.at(-1)!.end();
+    });
+    await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(second.id));
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    // Give any deferred teardown a turn to run: the set must still be playing and armed.
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+    expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("MIDI output") as HTMLSelectElement).value).toBe("gp180");
+  } finally {
+    vi.stubGlobal("navigator", realNavigator);
+  }
+});
+
+it("does not pause a held hand-over when the panel is torn down on the same screen", async () => {
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  const view = render(<PerformancePanel />);
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  const dispose = vi.fn(async () => {});
+  const unwire = vi.fn();
+  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, unwire });
+  // Still on Performance: a remount is not leaving, so the held song is not stopped and the set is not paused.
+  view.unmount();
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+  expect(dispose).not.toHaveBeenCalled();
+});
+
 it("hands the chained song over to the session for the next song, which adopts it instead of starting it again", async () => {
   await useSongLibrary.getState().playPlaylist([first.id, second.id]);
   render(<PerformancePanel />);
@@ -388,8 +446,9 @@ it("stops a handed-over song that nothing took up, and pauses the set, when Perf
   const dispose = vi.fn(async () => {});
   const unwire = vi.fn();
   useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, unwire });
+  useNav.getState().go("rig");
   view.unmount();
-  expect(dispose).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(dispose).toHaveBeenCalledTimes(1));
   expect(unwire).toHaveBeenCalledTimes(1);
   expect(useSongLibrary.getState().handover).toBeNull();
   expect(useSongLibrary.getState().playlistPlaying).toBe(false);

@@ -4,8 +4,8 @@ import { StemPlayer, type Lead, type RenderedBuffers } from "@/song/stems/player
 import { RenderQueue, isPlainSpeed } from "@/song/audio/render-queue";
 import { DEFAULT_SPEED, clampRate, clampSpeed, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
-import { useSong } from "@/song/store";
 import { useSongLibrary, type HandedOverSong, type PreparedSong } from "@/song/library";
+import { useNav } from "@/state/nav";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
 import type { SongSource, Stems } from "@/song/types";
@@ -245,6 +245,12 @@ function parseOptions(json: string): Record<string, unknown> {
   }
 }
 
+/** Whether the app has moved off Performance. A remount on the same screen is not leaving. */
+export function leftPerformance(): boolean {
+  const nav = useNav.getState();
+  return nav.screen !== "song" || nav.param !== "performance";
+}
+
 export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
   private effects: Effect[];
@@ -472,9 +478,13 @@ export class PerformanceSession {
         this.terminateWorker();
       }
       void player.dispose();
-      // Leaving Performance pauses the set. An advance moves the playlist position before the song store changes, so it is not a leaving.
-      const library = useSongLibrary.getState();
-      if (useSong.getState().source === source && library.playlistPlaying && library.queue[library.position] === source.libraryId) library.pausePlaylist();
+      // Leaving Performance pauses the set. Checked later, so that a remount on the same screen (StrictMode's re-run, an advance) is not
+      // taken for leaving: the screen is still Performance, and the set is still on this song or has moved on.
+      const id = source.libraryId;
+      setTimeout(() => {
+        const library = useSongLibrary.getState();
+        if (leftPerformance() && library.playlistPlaying && library.queue[library.position] === id) library.pausePlaylist();
+      }, 0);
     };
   }
 
