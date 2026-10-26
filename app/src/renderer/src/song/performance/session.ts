@@ -193,9 +193,12 @@ const MODIFIER_HINT = "Use a key without Ctrl, Alt or Cmd.";
 /** Shown after a sleep re-enumerated the port and the session was armed: the cues must be armed again to send. */
 const RECONNECTED_STATUS = "MIDI output reconnected after sleep. Send cues to arm again.";
 
-/** A port that can no longer take messages. A closed connection counts even when the browser still lists the port as connected. */
+/**
+ * A port that can no longer take messages. Only a port whose state is not "connected" is dead. A Web MIDI output starts with
+ * connection "closed" until it is opened or first sent to, and sending opens it, so that is not a dead port.
+ */
 function portIsDead(output: MidiOutput | undefined): boolean {
-  return !output || output.state !== "connected" || ("connection" in output && output.connection === "closed");
+  return !output || output.state !== "connected";
 }
 
 export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {

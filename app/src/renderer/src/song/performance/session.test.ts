@@ -343,6 +343,24 @@ it("disarms with a fault when a message is sent to a port that is no longer conn
   expect(useMidiDiagnostics.getState().lastFailure).toContain("no longer connected");
 });
 
+it("arms and sends to a port that is connected but not yet opened", () => {
+  // A Web MIDI output starts with connection "closed"; sending to it opens it, so it is not a dead port.
+  const unopened = Object.assign(output(), { connection: "closed" });
+  const access = Object.assign(new EventTarget(), { outputs: new Map([["usb", unopened]]), inputs: new Map() }) as unknown as MIDIAccess;
+  const session = new PerformanceSession({
+    initial: inputs(),
+    carried: { access, portId: "usb", inputId: "", armed: true, output: unopened },
+    initialClock: false,
+  });
+  session.loadSong(source, null);
+  session.bind();
+  expect(selectArmed(session.state)).toBe(true);
+  session.sendPerformance([192, 1]);
+  expect(unopened.send).toHaveBeenCalledWith([192, 1], undefined);
+  expect(selectArmed(session.state)).toBe(true);
+  expect(useMidiDiagnostics.getState().failures).toBe(0);
+});
+
 it("disarms with a fault when a send throws", () => {
   const { session, out } = armedSession();
   out.send.mockImplementation(() => {
