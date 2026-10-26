@@ -972,6 +972,44 @@ describe("MIDI triggers", () => {
     expect(sent(out).filter((bytes) => bytes[0] === 252)).toHaveLength(1);
     expect(mocks.library.pausePlaylist).toHaveBeenCalled();
   });
+  // A Bluetooth-like output: writes wait in a buffer, and clear() drops what is buffered but not yet written, as the BLE sender does.
+  const buffered = () => {
+    let queued: number[][] = [];
+    const written: number[][] = [];
+    return {
+      id: "ble",
+      name: "BLE",
+      state: "connected",
+      send: vi.fn((bytes: number[]) => {
+        queued.push(bytes);
+      }),
+      clear: vi.fn(() => {
+        queued = [];
+      }),
+      write: () => written.push(...queued.splice(0)),
+      written,
+    };
+  };
+  it("delivers a stop trigger once on pause, after the buffered output is cleared", async () => {
+    const out = buffered();
+    const { session } = armedSession(out as never, { cues: parseChart("{midi@stop: pc 1 1}") });
+    await session.play();
+    session.pause();
+    out.write();
+    expect(out.clear).toHaveBeenCalled();
+    expect(out.written).toEqual([[192, 1]]);
+  });
+  it("delivers an end trigger once, then the stop trigger, after the buffered output is cleared", async () => {
+    const out = buffered();
+    const { session } = armedSession(out as never, { cues: parseChart("{midi@stop: cc 1 81 127}\n{midi@end: pc 16 69}") });
+    await session.play();
+    session.state.player?.onEnded?.();
+    out.write();
+    expect(out.written).toEqual([
+      [207, 69],
+      [176, 81, 127],
+    ]);
+  });
   it("sends the play trigger once per press on a resume, after a Continue", async () => {
     const { session, out } = armedSession(output(), { cues: parseChart(chartA) });
     session.setClock(true);

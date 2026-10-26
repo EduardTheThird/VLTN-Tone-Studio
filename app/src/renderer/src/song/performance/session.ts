@@ -280,6 +280,8 @@ export class PerformanceSession {
   private flushing = false;
   private dirty = false;
   private batchDepth = 0;
+  /** Stop and end messages waiting for the effects that the stop caused to finish (see `sendTriggers`). */
+  private heldTriggers: { bytes: number[]; kind: MidiTrigger }[] = [];
   private unsubscribe: (() => void) | null = null;
   private unsubscribeResume: (() => void) | null = null;
   /** Set when the remembered system port was lost while armed. Its return re-acquires it, since the object from before is not trusted. */
@@ -542,12 +544,13 @@ export class PerformanceSession {
         void player.seek(player.start).then(() => this.play());
         return;
       }
-      // The song has reached its end, so its end and stop triggers go out before the playlist moves on.
-      if (this.state.playing) {
-        this.sendTriggers("end");
-        this.sendTriggers("stop");
-      }
       this.batch(() => {
+        // The song has reached its end, so its end and stop triggers go out before the playlist moves on. They are held until the effects
+        // of this batch, which clear the output, have run.
+        if (this.state.playing) {
+          this.sendTriggers("end");
+          this.sendTriggers("stop");
+        }
         this.set({ playing: false });
         setClockPosition(player.duration);
         const library = useSongLibrary.getState();
@@ -637,6 +640,10 @@ export class PerformanceSession {
   /**
    * Sends the song's `{midi@…}` messages of one kind, once each. Nothing is sent unless the session is armed, and a failed send is reported
    * rather than thrown, because a trigger must never stop the transport.
+   *
+   * A stop or end is sent only after the batch that caused it has run its effects. That stop clears the output, and the transport's cleanup
+   * clears it again, which would drop a message still waiting in a Bluetooth buffer. So while a batch is open or its effects are running,
+   * these messages are held and sent by `flush`, once the effects are done.
    */
   private sendTriggers(kind: MidiTrigger, cues: Cue[] = this.state.cues): void {
     if (!this.armed) return;
@@ -646,9 +653,25 @@ export class PerformanceSession {
         this.state.tempoChannel,
         (bytes) => bytes,
       );
+      if ((kind === "stop" || kind === "end") && (this.batchDepth > 0 || this.flushing)) {
+        for (const bytes of messages) this.heldTriggers.push({ bytes, kind });
+        return;
+      }
       for (const bytes of messages) this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
     } catch (e) {
       this.fail(e);
+    }
+  }
+
+  /** Sends the stop and end messages held by `sendTriggers`, in the order they were queued. */
+  private sendHeldTriggers(): void {
+    while (this.heldTriggers.length) {
+      const { bytes, kind } = this.heldTriggers.shift()!;
+      try {
+        this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
+      } catch (e) {
+        this.fail(e);
+      }
     }
   }
 
@@ -670,7 +693,11 @@ export class PerformanceSession {
   }
 
   private flush() {
-    if (!this.bound || this.batchDepth > 0) return;
+    if (this.batchDepth > 0) return;
+    if (!this.bound) {
+      this.sendHeldTriggers();
+      return;
+    }
     if (this.flushing) {
       this.dirty = true;
       return;
@@ -696,6 +723,7 @@ export class PerformanceSession {
     } finally {
       this.flushing = false;
     }
+    this.sendHeldTriggers();
   }
 
   private context(): PanicContext {
@@ -1095,9 +1123,12 @@ export class PerformanceSession {
     this.chained = null;
     useSongLibrary.getState().holdChain(null);
     this.handingOver = chained.id;
-    // The outgoing song ends at the join: its end and stop go out before the next song's load and play.
-    this.sendTriggers("end");
-    this.sendTriggers("stop");
+    // The outgoing song ends at the join: its end and stop go out before the next song's load and play. The batch holds them until the
+    // effects have run, so no clear that follows can drop them.
+    this.batch(() => {
+      this.sendTriggers("end");
+      this.sendTriggers("stop");
+    });
     library.setHandover(chained);
     library.advanceToPrepared(chained.id);
   };
