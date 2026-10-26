@@ -373,3 +373,39 @@ describe("headings, comments and colour in the text", () => {
     expect(cue.text).toBe("# Chorus {color:red}Loud{/color} // note");
   });
 });
+
+describe("comments are inert for MIDI", () => {
+  const note = "// The grammar has four triggers: {midi@load:}, {midi@play:}, {midi@stop:} and {midi@end:}. {midi:pc 16 1} {chase} $GP_LEAD";
+
+  it("parses a chart whose whole-line comment holds an empty trigger and a MIDI command", () => {
+    const chart = `${note}\n[00:05] [C]Verse {midi:pc 1 5}\n{midi@load: pc 2 3}`;
+    const cues = parseChart(chart);
+    expect(cues.map((c) => [c.time, c.trigger, c.messages])).toEqual([
+      [0, "load", [[193, 3]]],
+      [5, undefined, [[192, 5]]],
+    ]);
+  });
+  it("sends nothing from a comment, even one with a timestamp", () => {
+    const cues = parseChart("[00:02] // {midi:pc 16 1} {chase}\n[00:03] {midi:pc 1 2}");
+    expect(cues.map((c) => [c.time, c.messages, c.chase])).toEqual([
+      [2, [], undefined],
+      [3, [[192, 2]], undefined],
+    ]);
+  });
+  it("ignores a trailing comment after content, so its tokens are not parsed", () => {
+    const [cue] = parseChart("[00:04] [Am]Hello {midi:cc 1 0 0} // {midi:pc 9 9} {nochase}");
+    expect(cue.messages).toEqual([[176, 0, 0]]);
+    expect(cue.chase).toBeUndefined();
+  });
+  it("still rejects an invalid token on a line that is not a comment, with its line number", () => {
+    expect(() => parseChart("// {midi:pc 16 1}\n[00:01] {midi:}")).toThrow(/Line 2: MIDI commands need nonempty/);
+    expect(() => parseChart("// {midi@load:}\n\n{midi@load:}")).toThrow(/Line 3: MIDI triggers need contents/);
+  });
+  it("keeps the comment byte for byte in the parsed text, so the editor and saved chart show it", () => {
+    const line = "[00:06] Lyric  //  {midi:pc 9 9} keep   this  ";
+    const [cue] = parseChart(line);
+    expect(cue.text).toBe("Lyric  //  {midi:pc 9 9} keep   this");
+    expect(stageText(cue.text)).toBe("Lyric");
+    expect(line.slice(line.indexOf("//"))).toBe("//  {midi:pc 9 9} keep   this  ");
+  });
+});

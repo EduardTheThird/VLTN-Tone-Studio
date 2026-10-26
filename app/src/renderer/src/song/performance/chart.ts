@@ -67,8 +67,13 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
   return text
     .split(/\r?\n/)
     .flatMap((line, index) => {
+      // A `//` comment is an editor note, so only the code before it is parsed. The comment stays in the text, where the editor shows it and the stage hides it.
+      const commentAt = line.search(COMMENT),
+        code = commentAt < 0 ? line : line.slice(0, commentAt),
+        comment = commentAt < 0 ? "" : line.slice(commentAt),
+        gap = code.slice(code.trimEnd().length);
       let label = "";
-      const content = line.replace(/\{label:([^}]+)\}/g, (_, value: string) => {
+      const content = code.replace(/\{label:([^}]+)\}/g, (_, value: string) => {
         label = value.trim().slice(0, 400);
         return "";
       });
@@ -106,7 +111,7 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
       const kept = tokens.some((token) => !isLegacyCommand(token)) ? { tokens } : {};
       return timestamps.map((t) => ({
         time: Number(t[1]) * 60 + Number(t[2]),
-        text: body,
+        text: `${body}${gap}${comment}`.trim(),
         messages,
         ...labelled,
         ...(hasChase || hasNoChase ? { chase: hasChase } : {}),
