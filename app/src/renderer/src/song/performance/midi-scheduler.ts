@@ -77,6 +77,12 @@ const MAX_RESYNCS = 3;
 const RESYNC_WINDOW_MS = 5000;
 /** The audio position must advance at least this often while playing. */
 const AUDIO_STALL_MS = 1000;
+/**
+ * Time allowed after the planned audio start for the audio to begin. A Mac output can take about two seconds to wake, and
+ * `AudioContext.resume` adds more, so the stall rule only applies once the audio has advanced at least once.
+ */
+const START_GRACE_MS = 5000;
+const START_FAULT = "The audio did not start. Cues disarmed.";
 
 /**
  * Reorders each run of messages due at the same moment for the pedal. Runs are not merged across times, so a message is never sent
@@ -129,6 +135,12 @@ export class MidiSchedule {
   private resyncs: number[] = [];
   private lastPosition: number;
   private lastAdvance: number;
+  /** A checkpoint has arrived since this start. */
+  private audioReported = false;
+  /** The audio position has advanced at least once since this start. Until then the stall rule does not apply. */
+  private started = false;
+  /** Clock time by which the audio must have advanced once. Set from the planned start, not from the Play request. */
+  private startDeadline: number;
   private stopped = false;
   private tempo: number[][] | null;
   private playTriggers: number[][];
@@ -165,6 +177,7 @@ export class MidiSchedule {
     this.heartbeat = this.clockAt(config.position);
     this.lastPosition = config.position;
     this.lastAdvance = now;
+    this.startDeadline = this.clockAt(config.position) + START_GRACE_MS;
     this.tempo = config.tempo;
     if (config.timecode) this.restartTimecode(this.clockAt(Math.max(0, config.position)), config.position);
   }
@@ -205,10 +218,18 @@ export class MidiSchedule {
       return;
     }
     if (at < this.jumpAt) return;
+    this.audioReported = true;
     const advanced = position > this.lastPosition + 0.001;
     if (advanced) {
+      this.started = true;
       this.lastPosition = position;
       this.lastAdvance = at;
+    } else if (!this.started) {
+      // Before the first advance the audio may still be waking up, so only the start-up grace applies.
+      if (at > this.startDeadline) {
+        this.fault(START_FAULT);
+        return;
+      }
     } else if (at - this.lastAdvance > AUDIO_STALL_MS) {
       this.fault("MIDI timing interrupted: the audio clock stopped advancing.");
       return;
@@ -309,7 +330,9 @@ export class MidiSchedule {
     this.lastTick = now;
     position = ((now - this.config.origin) / 1000) * this.rate;
     const lookahead = this.config.lookahead ?? BLUETOOTH_LOOKAHEAD;
-    const until = Math.min(this.cap, this.config.duration, position + lookahead * this.rate),
+    // Once checkpoints show the audio has not moved, cues after the start position are held, so a late start does not fire them early.
+    const holdAt = this.audioReported && !this.started ? this.config.position : Infinity;
+    const until = Math.min(this.cap, this.config.duration, position + lookahead * this.rate, holdAt),
       candidates: ScheduledMessage[] = [];
     while (this.next < this.cues.length && this.cues[this.next].time <= until) {
       const cue = this.cues[this.next++];

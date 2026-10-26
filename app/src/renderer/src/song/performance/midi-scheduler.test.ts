@@ -66,8 +66,10 @@ it.each([90, 120, 180])("keeps 24 PPQN at %i BPM despite checkpoint jitter", (bp
 });
 it("faults once when the audio clock stops advancing and never produces catch-up commands", () => {
   const f = fixture({ cues: parseChart("[00:03] {midi:pc 1 2}"), duration: 10 });
-  for (let t = 1000; t <= 2100; t += 20) {
-    f.schedule.sync(0, t, t);
+  // The audio plays to song 0.5 at clock 1500, then freezes.
+  const audio = (t: number) => (t < 1500 ? (t - 1000) / 1000 : 0.5);
+  for (let t = 1000; t <= 2600; t += 20) {
+    f.schedule.sync(audio(t), t, t);
     f.schedule.tick(t);
   }
   f.schedule.tick(3000);
@@ -435,4 +437,39 @@ it("skips an assigned trigger controller in the chase, and sends the chase CHASE
   });
   f.schedule.tick(1000);
   expect(f.messages().map((m) => [m.bytes, m.label, m.due])).toEqual([[[176, 11, 90], "Chase state", 1900]]);
+});
+
+describe("the audio start-up grace", () => {
+  it("does not fault when the audio starts two seconds late, and re-anchors the cues on the actual start", () => {
+    // Planned start at clock 1000. The output wakes and the audio only starts at clock 3000, so song position stays at 0 until then.
+    const f = fixture({ cues: parseChart("[00:00] {midi:pc 1 1}\n[00:01] {midi:cc 2 12 127}"), duration: 10, lookahead: SYSTEM_LOOKAHEAD });
+    const audio = (now: number) => Math.max(0, (now - 3000) / 1000);
+    run(f, 1000, 4500, audio);
+    expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+    expect(f.replies.some((r) => r.type === "resync")).toBe(true);
+    // The 1 s cue is held while the audio is silent, so it is never due before the actual start.
+    const later = f.messages().find((m) => m.bytes[0] === 177);
+    expect(later?.due).toBeCloseTo(4000, 6);
+  });
+
+  it("faults with the start-up message when the audio never starts within the grace", () => {
+    const f = fixture({ cues: [], duration: 10 });
+    run(f, 1000, 6100, () => 0);
+    const faults = f.replies.filter((r) => r.type === "fault");
+    expect(faults).toEqual([{ type: "fault", error: "The audio did not start. Cues disarmed." }]);
+  });
+
+  it("does not fault before the grace ends", () => {
+    const f = fixture({ cues: [], duration: 10 });
+    run(f, 1000, 5900, () => 0);
+    expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  });
+
+  it("still faults on a 1.2 s freeze once the audio has started", () => {
+    const f = fixture({ cues: [], duration: 10 });
+    const audio = (now: number) => (Math.min(now, 2000) - 1000) / 1000;
+    run(f, 1000, 3300, audio);
+    const faults = f.replies.filter((r) => r.type === "fault");
+    expect(faults).toEqual([{ type: "fault", error: "MIDI timing interrupted: the audio clock stopped advancing." }]);
+  });
 });

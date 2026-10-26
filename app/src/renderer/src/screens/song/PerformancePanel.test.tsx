@@ -80,6 +80,8 @@ it("drops an opening cue that is overdue at start without disarming the session"
 it("keeps timing faults and disarming visible in expanded performance view", async () => {
   vi.useFakeTimers();
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  // The audio moves once, then freezes: a stall only counts after the audio has started.
+  mocks.playAdvance = 0.3;
   render(<PerformancePanel />);
   fireEvent.click(screen.getByLabelText("Send cues"));
   await act(async () => {
@@ -290,6 +292,8 @@ it("drops stale patch changes after a renderer stall, chases the latest one and 
 it("disarms when audio time stops advancing instead of sending cues early", async () => {
   vi.useFakeTimers();
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  // The audio moves once, then freezes: a stall only counts after the audio has started.
+  mocks.playAdvance = 0.3;
   render(<PerformancePanel />);
   fireEvent.click(screen.getByLabelText("Send cues"));
   await act(async () => {
