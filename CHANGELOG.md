@@ -47,6 +47,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - A stall no longer disarms MIDI for the rest of the song. Late program changes, controllers and notes are dropped (note-offs are always sent), the schedule re-syncs, and a notice shows what was dropped. USB cues are queued up to a second ahead with exact timestamps. MIDI only disarms when timing cannot recover.
 - GP-180 backups keep the connected pedal model rather than defaulting to GP-150.
 - Our own scheduled MIDI that comes back through a THRU input is now recognised by its wire time. A USB cue is queued up to a second early, so its echo used to be missed and could fire a binding. The echo window is 200 ms.
+- On the GP-150 and GP-180, cues for other pedals now go out before the pedal's own, so they reach the other pedals on time instead of after the pedal's next message.
+- Saved songs no longer fail to load with "Missing or damaged audio".
+- Starting or seeking mid-song no longer replays controller messages that a pedal profile assigns to triggers (such as the RC-10R looper). Preflight warns about a controller it cannot tell apart from a trigger, and says how to decide.
+- Starting mid-song waits 100 ms after the pedal state is sent before the audio starts, and Start and Continue are sent after it.
+- Playlist joins no longer send MIDI Stop, and the set keeps playing with its USB output armed across a join instead of pausing.
 
 ## [0.8.1] - 2026-10-21
 
