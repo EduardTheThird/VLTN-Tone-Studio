@@ -389,6 +389,7 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - **Tempo jumps.** Turn **Send MIDI Clock** off and use the one-time tempo command.
 - **A pedal answers the wrong command.** Two pedals share a channel, or the pedal is on OMNI. Give each its own channel.
 - **A looper stops by itself.** Pause and panic only release channels that sent notes, because blanket CC 64 is the GP-180 looper Stop.
+- **USB output silent after the Mac sleeps.** The app requests the system's MIDI ports again on wake, and if the pedal came back as a new device the cues stay disarmed until you arm them again.
 - **USB editor does not connect.** Connect the powered pedal by USB and use **Look for the pedal**. Make sure its MIDI input allows USB and close other MIDI apps.
 - **Bug reports.** **Copy diagnostic report** and **Save log** in Diagnostics include Bluetooth state, write and notification counts and MIDI traffic. The **Bluetooth clock timing** and **Reset timing counters** controls show queue lateness.
 

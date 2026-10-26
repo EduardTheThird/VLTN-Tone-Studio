@@ -1,4 +1,4 @@
-import { app, net, powerSaveBlocker, type BrowserWindow } from "electron";
+import { app, net, powerMonitor, powerSaveBlocker, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -122,6 +122,8 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     stagePower.update(owner, token, enabled);
   });
   app.once('will-quit', () => stagePower.close());
+  // After sleep the USB MIDI ports are re-enumerated. The renderer asks the browser for them again rather than trusting the old ones.
+  powerMonitor.on('resume', () => getWindow()?.webContents.send('song:systemResume'));
   const library = new SongLibraryStore(libraryRoot());
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());

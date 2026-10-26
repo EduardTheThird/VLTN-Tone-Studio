@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
   sends: [] as ((message: { bytes: number[]; due: number; label: string }) => void)[],
+  /** The callback the session gave the host for system resume */
+  resume: null as null | (() => void),
   library: {
     playlistPlaying: false,
     queue: [] as string[],
@@ -93,6 +95,16 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/app/notify", () => ({ showToast: (spec: unknown) => mocks.toasts.push(spec) }));
+vi.mock("@/host", () => ({
+  host: {
+    song: {
+      onSystemResume: (cb: () => void) => {
+        mocks.resume = cb;
+        return () => {};
+      },
+    },
+  },
+}));
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
@@ -245,6 +257,7 @@ beforeEach(() => {
   mocks.players.length = 0;
   mocks.faults.length = 0;
   mocks.sends.length = 0;
+  mocks.resume = null;
   mocks.library.playlistPlaying = false;
   mocks.library.queue = [];
   mocks.rate = 1;
@@ -253,7 +266,10 @@ beforeEach(() => {
   mocks.configs.length = 0;
   useMidiDiagnostics.getState().reset();
 });
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
+});
 
 it("restores arming handed over by the previous song only for the same output object", () => {
   const { session, out } = armedSession();
@@ -296,12 +312,85 @@ it("disarms and panics when the scheduler reports a fault", async () => {
   expect(out.clear).toHaveBeenCalled();
 });
 
-it("disarms when the output is replaced and does not carry arming to the new object", () => {
+it("disarms without a fault when the same port id is re-enumerated as a new object", () => {
   const { session, access } = armedSession();
-  (access.outputs as unknown as Map<string, unknown>).set("usb", output());
+  const reenumerated = output();
+  (access.outputs as unknown as Map<string, unknown>).set("usb", reenumerated);
   access.dispatchEvent(new Event("statechange"));
   expect(selectArmed(session.state)).toBe(false);
-  expect(useMidiDiagnostics.getState().lastFailure).toContain("disconnected or replaced");
+  expect(session.state.midiStatus).toBe("MIDI output reconnected after sleep. Send cues to arm again.");
+  expect(useMidiDiagnostics.getState().failures).toBe(0);
+  expect(reenumerated.send).not.toHaveBeenCalled();
+});
+
+it("disarms with a fault when the armed output disconnects", () => {
+  const { session, access, out } = armedSession();
+  out.state = "disconnected";
+  access.dispatchEvent(new Event("statechange"));
+  expect(selectArmed(session.state)).toBe(false);
+  expect(useMidiDiagnostics.getState().lastFailure).toBe("System MIDI output disconnected. Cues disarmed.");
+});
+
+it("disarms with a fault when a message is sent to a port that is no longer connected", async () => {
+  const { session, out } = armedSession();
+  await session.play();
+  out.send.mockClear();
+  out.state = "disconnected";
+  mocks.sends[0]({ bytes: [192, 1], due: performance.timeOrigin + performance.now(), label: "Patch" });
+  expect(out.send).not.toHaveBeenCalled();
+  expect(selectArmed(session.state)).toBe(false);
+  expect(session.state.error).toContain("no longer connected");
+  expect(useMidiDiagnostics.getState().lastFailure).toContain("no longer connected");
+});
+
+it("disarms with a fault when a send throws", () => {
+  const { session, out } = armedSession();
+  out.send.mockImplementation(() => {
+    throw new Error("port closed");
+  });
+  session.sendPerformance([192, 1]);
+  expect(selectArmed(session.state)).toBe(false);
+  expect(session.state.error).toBe("MIDI send failed: port closed. Cues disarmed.");
+  expect(useMidiDiagnostics.getState().lastFailure).toBe("MIDI send failed: port closed. Cues disarmed.");
+});
+
+it("Enable requests fresh access and keeps the remembered port by its id", async () => {
+  const { session } = armedSession();
+  const fresh = Object.assign(new EventTarget(), { outputs: new Map([["usb", output()]]), inputs: new Map() }) as unknown as MIDIAccess;
+  const requestMIDIAccess = vi.fn(async () => fresh);
+  vi.stubGlobal("navigator", { requestMIDIAccess });
+  await session.connectMidi();
+  expect(requestMIDIAccess).toHaveBeenCalledWith({ sysex: true });
+  expect(session.state.access).toBe(fresh);
+  expect(session.state.portId).toBe("usb");
+  expect(selectArmed(session.state)).toBe(false);
+  expect(session.state.midiStatus).toBe("MIDI output reconnected after sleep. Send cues to arm again.");
+});
+
+it("a system resume requests MIDI access again", async () => {
+  const { session } = armedSession();
+  const fresh = Object.assign(new EventTarget(), { outputs: new Map([["usb", output()]]), inputs: new Map() }) as unknown as MIDIAccess;
+  const requestMIDIAccess = vi.fn(async () => fresh);
+  vi.stubGlobal("navigator", { requestMIDIAccess });
+  expect(mocks.resume).toBeTypeOf("function");
+  mocks.resume?.();
+  await vi.waitFor(() => expect(session.state.access).toBe(fresh));
+  expect(requestMIDIAccess).toHaveBeenCalledTimes(1);
+});
+
+it("takes up a lost remembered port again when it connects", async () => {
+  const { session, access, out } = armedSession();
+  const outputs = access.outputs as unknown as Map<string, unknown>;
+  outputs.delete("usb");
+  access.dispatchEvent(new Event("statechange"));
+  expect(selectArmed(session.state)).toBe(false);
+  const back = output();
+  const fresh = Object.assign(new EventTarget(), { outputs: new Map([["usb", back]]), inputs: new Map() }) as unknown as MIDIAccess;
+  vi.stubGlobal("navigator", { requestMIDIAccess: vi.fn(async () => fresh) });
+  outputs.set("usb", back);
+  access.dispatchEvent(new Event("statechange"));
+  await vi.waitFor(() => expect(session.state.access).toBe(fresh));
+  expect(out.send).not.toHaveBeenCalled();
 });
 
 it("toggles playback from a CC80 remote message on the selected input", async () => {

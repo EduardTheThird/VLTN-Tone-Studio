@@ -9,6 +9,7 @@ import { playableStems } from "@/song/stems/playable";
 import { useNav } from "@/state/nav";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { showToast } from "@/app/notify";
+import { host } from "@/host";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue, MidiTrigger } from "@/song/performance/chart";
 import { setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
@@ -189,6 +190,14 @@ const SPEED_STEP = 0.05;
 /** Shown when Learn is given a key with a modifier, which a binding cannot match */
 const MODIFIER_HINT = "Use a key without Ctrl, Alt or Cmd.";
 
+/** Shown after a sleep re-enumerated the port and the session was armed: the cues must be armed again to send. */
+const RECONNECTED_STATUS = "MIDI output reconnected after sleep. Send cues to arm again.";
+
+/** A port that can no longer take messages. A closed connection counts even when the browser still lists the port as connected. */
+function portIsDead(output: MidiOutput | undefined): boolean {
+  return !output || output.state !== "connected" || ("connection" in output && output.connection === "closed");
+}
+
 export function selectOutput(s: Pick<SessionState, "portId" | "bluetooth" | "access">): MidiOutput | undefined {
   return (s.portId === BLUETOOTH_PORT_ID ? s.bluetooth : s.access?.outputs.get(s.portId)) ?? undefined;
 }
@@ -262,6 +271,9 @@ export class PerformanceSession {
   private dirty = false;
   private batchDepth = 0;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeResume: (() => void) | null = null;
+  /** Set when the remembered system port was lost while armed. Its return re-acquires it, since the object from before is not trusted. */
+  private portLost = false;
   private scheduler: ReturnType<typeof startMidiScheduler> | null = null;
   private prepared: ReturnType<typeof prepareMidiScheduler> | null = null;
   private readyWorker: Worker | null = null;
@@ -579,6 +591,7 @@ export class PerformanceSession {
   bind() {
     this.bound = true;
     this.unsubscribe = this.store.subscribe(() => this.flush());
+    this.unsubscribeResume = host.song.onSystemResume?.(this.resumeMidi) ?? null;
     this.flush();
   }
 
@@ -588,6 +601,8 @@ export class PerformanceSession {
     this.dropChained();
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeResume?.();
+    this.unsubscribeResume = null;
     for (const effect of this.effects) {
       effect.cleanup?.();
       effect.cleanup = undefined;
@@ -771,10 +786,28 @@ export class PerformanceSession {
 
   sendPerformance = (bytes: number[], timestamp?: number, label = "Manual / transport") => {
     this.clearedOutput = undefined;
-    this.output?.send(bytes, timestamp);
+    if (this.state.armedOutput && portIsDead(this.output)) {
+      this.deadOutput("MIDI output is no longer connected. Cues disarmed.");
+      return;
+    }
+    try {
+      this.output?.send(bytes, timestamp);
+    } catch (e) {
+      this.deadOutput(`MIDI send failed: ${e instanceof Error ? e.message : String(e)}. Cues disarmed.`);
+      return;
+    }
     this.recordQueued(bytes, timestamp, label);
     if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) this.noteChannels.add(bytes[0] & 15);
   };
+
+  /** Disarms because the output can no longer take messages. Armed cues are never dropped without a visible fault. */
+  private deadOutput(message: string): void {
+    useMidiDiagnostics.getState().fault(message);
+    this.batch(() => {
+      this.setArmed(false);
+      this.fail(message);
+    });
+  }
 
   private degraded = (event: SchedulerDegraded) => {
     const diagnostics = useMidiDiagnostics.getState(),
@@ -1085,22 +1118,35 @@ export class PerformanceSession {
     if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
   };
 
-  connectMidi = async () => {
+  /** Enable USB / system MIDI. Always asks for a fresh access, so a port re-enumerated since then is the object sent to. */
+  connectMidi = () => this.openMidi();
+
+  /** After sleep the ports from before are stale, so the system's ports are requested again. */
+  private resumeMidi = () => {
+    if (this.state.access) void this.openMidi();
+  };
+
+  private async openMidi(): Promise<void> {
+    // Read before the request: the armed output is compared with the new one once access is replaced.
+    const wasArmed = !!this.state.armedOutput;
     this.set({ midiStatus: "Opening USB / system MIDI…" });
     try {
       const next = await navigator.requestMIDIAccess({ sysex: true });
       const connectedOutputs = [...next.outputs.values()].filter((p) => p.state === "connected");
-      this.set({
-        access: next,
-        midiStatus: connectedOutputs.length
-          ? `USB / system MIDI ready: ${connectedOutputs.map((p) => p.name || p.id).join(", ")}. Select an output and enable Send cues.`
-          : "USB / system MIDI is enabled, but no outputs are available. Connect the pedal and close other MIDI apps, then try again.",
-      });
+      const { portId } = this.state;
+      const remembered = portId !== BLUETOOTH_PORT_ID && next.outputs.get(portId)?.state === "connected";
+      if (portId !== BLUETOOTH_PORT_ID) this.portLost = !remembered;
+      let midiStatus = connectedOutputs.length
+        ? `USB / system MIDI ready: ${connectedOutputs.map((p) => p.name || p.id).join(", ")}. Select an output and enable Send cues.`
+        : "USB / system MIDI is enabled, but no outputs are available. Connect the pedal and close other MIDI apps, then try again.";
+      if (wasArmed && remembered) midiStatus = RECONNECTED_STATUS;
+      else if (wasArmed) useMidiDiagnostics.getState().fault("System MIDI output disconnected. Cues disarmed.");
+      this.set({ access: next, midiStatus });
     } catch (e) {
       this.set({ midiStatus: "USB / system MIDI could not be opened." });
       this.fail(e);
     }
-  };
+  }
 
   // ---- sections ------------------------------------------------------------------------------------------------
 
@@ -1730,7 +1776,8 @@ export class PerformanceSession {
         deps: (s) => [s.playing, s.player, armedOf(s), selectOutput(s), s.clock, s.bpm, s.cues, s.timecode],
         run: (s) => this.runScheduler(s),
       },
-      // A USB output that goes away or is replaced disarms the session.
+      // A USB output that goes away disarms the session. The same port id re-enumerated as a new object is the same device:
+      // it disarms without a fault, since the cues were never sent to the new object.
       {
         deps: (s) => [s.access, s.portId, s.armedOutput],
         run: (s) => {
@@ -1739,14 +1786,21 @@ export class PerformanceSession {
           const update = () => {
             const { portId, armedOutput } = this.state;
             this.set({ portsVersion: this.state.portsVersion + 1 });
-            if (
-              portId !== BLUETOOTH_PORT_ID &&
-              armedOutput &&
-              (access.outputs.get(portId)?.state !== "connected" || access.outputs.get(portId) !== armedOutput)
-            ) {
-              useMidiDiagnostics.getState().fault("System MIDI output disconnected or replaced. Cues disarmed.");
-              this.setArmed(false);
+            if (portId === BLUETOOTH_PORT_ID) return;
+            const current = access.outputs.get(portId);
+            if (!armedOutput) {
+              // The remembered port is back: take it up again, so Enable and arming work from the new object.
+              if (this.portLost && current?.state === "connected") void this.openMidi();
+              return;
             }
+            if (current === armedOutput && current.state === "connected") return;
+            if (current?.state === "connected") {
+              this.set({ midiStatus: RECONNECTED_STATUS });
+            } else {
+              useMidiDiagnostics.getState().fault("System MIDI output disconnected. Cues disarmed.");
+              this.portLost = true;
+            }
+            this.setArmed(false);
           };
           access.addEventListener("statechange", update);
           return () => access.removeEventListener("statechange", update);
@@ -1814,6 +1868,8 @@ export class PerformanceSession {
     if (!s.playing || !player) return;
     const output = selectOutput(s);
     if (!this.armed || output?.state !== "connected") {
+      // Armed, but the port went away: a silent stop would look like cues that never sounded.
+      if (s.armedOutput && portIsDead(output)) this.deadOutput("MIDI output is no longer connected. Cues disarmed.");
       this.startPosition = null;
       this.startTempo = null;
       this.startPlay = null;

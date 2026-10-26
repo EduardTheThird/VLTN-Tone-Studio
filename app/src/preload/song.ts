@@ -37,6 +37,11 @@ export const songApi: SongHostApi = {
   downloadModel: (id) => invoke("song:downloadModel", id),
   modelFile: (file) => invoke("song:modelFile", file),
   deleteModel: (id) => invoke("song:deleteModel", id),
+  onSystemResume(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("song:systemResume", listener);
+    return () => ipcRenderer.removeListener("song:systemResume", listener);
+  },
   onModelProgress: (cb) => {
     const handler = (_e: IpcRendererEvent, p: ModelProgress) => cb(p);
     ipcRenderer.on("song:modelProgress", handler);

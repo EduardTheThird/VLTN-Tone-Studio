@@ -163,6 +163,8 @@ export interface SongHostApi {
   modelFile(file: string): Promise<Uint8Array>;
   /** Delete model `id`'s files (files another model shares go too) and partial downloads, to free disk space */
   deleteModel(id: SeparationModelId): Promise<void>;
+  /** Desktop-only: fires when the system wakes from sleep, when USB MIDI ports may have been re-enumerated. Returns the unsubscribe function. */
+  onSystemResume?(cb: () => void): () => void;
   /** Download progress of downloadModel(); returns the unsubscribe function */
   onModelProgress(cb: (p: ModelProgress) => void): () => void;
   /**
