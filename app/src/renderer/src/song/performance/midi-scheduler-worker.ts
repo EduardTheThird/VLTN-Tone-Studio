@@ -18,7 +18,7 @@ self.onmessage = (event: MessageEvent<SchedulerRequest>) => {
     schedule?.sync(request.position, request.at, now());
     self.postMessage({ type: "heartbeat" });
   } else if (request.type === "plan") {
-    schedule?.plan(request.cap, request.jump);
+    schedule?.plan(request.cap, request.jump, now());
   } else if (request.type === "timecode-end") {
     schedule?.endTimecode(request.at);
   }

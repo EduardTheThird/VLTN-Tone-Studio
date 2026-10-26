@@ -56,7 +56,7 @@ describe("MIDI timecode in the schedule", () => {
   it("restarts at a jump with a full frame at the new position and piece 0, and sends nothing of the old passage after it", () => {
     const f = fixture();
     f.schedule.tick(1000);
-    f.schedule.plan(null, { at: 1500, position: 2 });
+    f.schedule.plan(null, { at: 1500, position: 2 }, 1000);
     f.schedule.tick(1400);
     // Quarters due before the jump still belong to the old passage, and none is due at or after it.
     expect(f.timecode().filter((m) => m.due >= 1500)).toEqual([]);
@@ -71,7 +71,7 @@ describe("MIDI timecode in the schedule", () => {
   it("follows a speed swap: quarter spacing scales by 1 / rate (10 ms at 1x becomes 8 ms at 1.25x), and the restart is a full frame", () => {
     const f = fixture();
     f.schedule.tick(1000);
-    f.schedule.plan(null, { at: 1500, position: 2, rate: 1.25 });
+    f.schedule.plan(null, { at: 1500, position: 2, rate: 1.25 }, 1000);
     f.schedule.tick(1500);
     const after = f.timecode().filter((m) => m.due >= 1500);
     expect(after[0].bytes[0]).toBe(0xf0);

@@ -225,7 +225,7 @@ it("loops a section three times with the clock running: no Stop, a continuous pu
   });
   // Pass ends at clock 17000, 25000, 33000. Audio: song 0–16 first, then 8–16 on each pass of the loop.
   const audio = (now: number) => (now < 17000 ? (now - 1000) / 1000 : 8 + ((now - 17000) % 8000) / 1000);
-  const loopPlan = (boundary: number) => () => f.schedule.plan(16, { at: boundary, position: 8 });
+  const loopPlan = (boundary: number) => () => f.schedule.plan(16, { at: boundary, position: 8 }, boundary - 2000);
   run(f, 1000, 36000, audio, [
     [15000, loopPlan(17000)],
     [23000, loopPlan(25000)],
@@ -245,10 +245,10 @@ it("loops a section three times with the clock running: no Stop, a continuous pu
 
 it("does not send cues beyond the cap until the plan lifts it", () => {
   const f = fixture({ cues: parseChart("[00:06.00] {midi:pc 1 9}"), duration: 10, origin: 1000 });
-  f.schedule.plan(5, null);
+  f.schedule.plan(5, null, 1000);
   run(f, 1000, 8000, (now) => (now - 1000) / 1000);
   expect(f.messages().some((m) => m.bytes[1] === 9)).toBe(false);
-  f.schedule.plan(null, null);
+  f.schedule.plan(null, null, 8000);
   run(f, 8020, 8200, (now) => (now - 1000) / 1000);
   expect(f.messages().filter((m) => m.bytes[0] === 192 && m.bytes[1] === 9)).toHaveLength(1);
 });
@@ -264,7 +264,7 @@ it("a backward jump chases the state at the new position once, with no duplicate
   // Plays 0–20 on clock 1000–21000. A jump at 21000 returns to song 15, so the cue at 17.00 plays again.
   const audio = (now: number) => (now < 21000 ? (now - 1000) / 1000 : 15 + (now - 21000) / 1000);
   run(f, 1000, 19000, (now) => (now - 1000) / 1000);
-  f.schedule.plan(20, { at: 21000, position: 15 });
+  f.schedule.plan(20, { at: 21000, position: 15 }, 19000);
   run(f, 19020, 24000, audio);
   const chase = f.messages().filter((m) => m.label === "Chase state");
   // Two chases: the start, and the jump. The jump's is the one at clock 21000.
@@ -281,7 +281,7 @@ it("a backward jump chases the state at the new position once, with no duplicate
 it("does not fault on a jump, and ignores a checkpoint taken before the jump", () => {
   const f = fixture({ cues: parseChart("[00:01.00] {midi:pc 1 2}"), duration: 30, origin: 1000 });
   run(f, 1000, 4000, (now) => (now - 1000) / 1000);
-  f.schedule.plan(3, { at: 4000, position: 1 });
+  f.schedule.plan(3, { at: 4000, position: 1 }, 4000);
   // A jump backwards: the position falls from 3 to 1 on the clock. Without the jump the stall check would fire.
   run(f, 4020, 6000, (now) => (now < 4000 ? 3 : 1 + (now - 4000) / 1000));
   // A checkpoint sampled just before the jump arrives late: it describes the old passage and must be ignored.
@@ -333,7 +333,7 @@ it("sends the first clock pulses on the grid when the audio starts at the origin
 
 it("keeps the clock's pulse spacing steady across a rate-aware jump", () => {
   const f = fixture({ bpm: 120, rate: 0.5, clock: true, cues: [], duration: 20 });
-  f.schedule.plan(null, { at: 1000 + 2000, position: 10 });
+  f.schedule.plan(null, { at: 1000 + 2000, position: 10 }, 1000);
   for (let t = 1000; t <= 4000; t += 20) {
     f.schedule.sync(((t - 1000) / 1000) * 0.5, t, t);
     f.schedule.tick(t);
@@ -346,7 +346,7 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
   const f = fixture({ cues, bpm: 120, rate: 1, clock: true, duration: 10, origin: 1000 });
   // Until the swap the song plays at 1x, holding cues after song 3 s. The swap lands at clock 4000 on song 3 s, at 50%.
-  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5, keepsPosition: true });
+  f.schedule.plan(3, { at: 4000, position: 3, rate: 0.5, keepsPosition: true }, 1000);
   for (let t = 1000; t <= 16000; t += 20) {
     const song = t < 4000 ? (t - 1000) / 1000 : 3 + (t - 4000) / 2000;
     f.schedule.sync(song, t, t);
@@ -370,12 +370,53 @@ it("re-anchors cues and clock pulses at a speed swap, with no duplicates and no 
   for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120 * 0.5), 3);
 });
 
+it("carries out a due speed-swap jump when the plan is cleared before the next tick", () => {
+  const f = fixture({ bpm: 120, rate: 1, clock: true, cues: [], duration: 20, origin: 1000 });
+  f.schedule.plan(null, { at: 4000, position: 3, rate: 0.77, keepsPosition: true }, 1000);
+  for (let t = 1000; t <= 3980; t += 20) {
+    f.schedule.sync((t - 1000) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  // The audio passes the swap at clock 4000 and the session clears the plan at 4010, before the worker's next tick at 4020.
+  f.schedule.plan(null, null, 4010);
+  for (let t = 4020; t <= 12000; t += 20) {
+    f.schedule.sync(3 + ((t - 4000) / 1000) * 0.77, t, t);
+    f.schedule.tick(t);
+  }
+  const clocks = f.messages().filter((m) => m.bytes[0] === 248).map((m) => m.due);
+  // Pulses after the swap follow the new rate, not the 120 BPM spacing the clear would have left behind.
+  const after = clocks.filter((t) => t > 4100);
+  expect(after.length).toBeGreaterThan(10);
+  for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120 * 0.77), 3);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+it("still cancels a jump that is not due yet", () => {
+  const f = fixture({ bpm: 120, rate: 1, clock: true, cues: [], duration: 20, origin: 1000 });
+  f.schedule.plan(null, { at: 4000, position: 3, rate: 0.77, keepsPosition: true }, 1000);
+  for (let t = 1000; t <= 3980; t += 20) {
+    f.schedule.sync((t - 1000) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  // The clear arrives at 3990, before the swap is due, so the swap is cancelled and the song keeps its 1x rate.
+  f.schedule.plan(null, null, 3990);
+  for (let t = 4000; t <= 8000; t += 20) {
+    f.schedule.sync((t - 1000) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  const clocks = f.messages().filter((m) => m.bytes[0] === 248).map((m) => m.due);
+  const after = clocks.filter((t) => t > 4100);
+  expect(after.length).toBeGreaterThan(10);
+  for (let i = 1; i < after.length; i++) expect(after[i] - after[i - 1]).toBeCloseTo(60000 / (24 * 120), 3);
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
 it("a section jump to another position still chases the state there", () => {
   const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
   const f = fixture({ cues, duration: 10, origin: 1000 });
   // From song 3 s the section jumps to song 6 s at clock 4000. The pedals last saw patch 2 at song 2 s and patch 5 at song 5 s.
   const audio = (now: number) => (now < 4000 ? (now - 1000) / 1000 : 6 + (now - 4000) / 1000);
-  run(f, 1000, 6000, audio, [[4000, () => f.schedule.plan(null, { at: 4000, position: 6 })]]);
+  run(f, 1000, 6000, audio, [[4000, () => f.schedule.plan(null, { at: 4000, position: 6 }, 4000)]]);
   const atJump = f.messages().filter((m) => m.label === "Chase state" && m.due >= 4000);
   expect(atJump.map((m) => m.bytes)).toEqual([[194, 5]]);
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
@@ -385,7 +426,7 @@ describe("MIDI triggers and file cues in the schedule", () => {
   it("sends play triggers once with the start, and not again when a loop jumps back over the start", () => {
     const f = fixture({ cues: [], duration: 10, playTriggers: [[177, 80, 127]] });
     f.schedule.tick(1000);
-    f.schedule.plan(null, { at: 1500, position: 0 });
+    f.schedule.plan(null, { at: 1500, position: 0 }, 1000);
     for (let t = 1020; t <= 2600; t += 20) {
       f.schedule.sync((t - 1000) / 1000, t, t);
       f.schedule.tick(t);
@@ -422,11 +463,11 @@ it("fires a cue inside a loop once per pass, and a play trigger only at the star
   const f = fixture({ cues, duration: 10, playTriggers: [[192, 2]] });
   f.schedule.tick(1000);
   // Loop back to the start at 1.0 s of song time, three times over.
-  f.schedule.plan(null, { at: 1600, position: 0 });
+  f.schedule.plan(null, { at: 1600, position: 0 }, 1000);
   for (let t = 1020; t <= 4000; t += 20) {
     f.schedule.sync(Math.max(0, (t - 1000) / 1000), t, t);
     f.schedule.tick(t);
-    if (t === 2600) f.schedule.plan(null, { at: 2700, position: 0 });
+    if (t === 2600) f.schedule.plan(null, { at: 2700, position: 0 }, t);
   }
   const bytes = f.messages().map((m) => m.bytes);
   expect(bytes.filter((b) => b[0] === 192 && b[1] === 7)).toHaveLength(3);

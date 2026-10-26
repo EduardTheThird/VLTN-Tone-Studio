@@ -230,7 +230,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
         return {
           stop: () => schedule.stop(),
           sync: (position: number) => schedule.sync(position, midiNow(), midiNow()),
-          plan: (cap: number | null, jump: unknown) => schedule.plan(cap, jump as never),
+          plan: (cap: number | null, jump: unknown) => schedule.plan(cap, jump as never, midiNow()),
           endTimecode: (at: number | null) => schedule.endTimecode(at),
         };
       }

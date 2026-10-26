@@ -221,10 +221,12 @@ export class MidiSchedule {
   /**
    * Holds cues after song time `cap` (null lifts the hold). With a `jump`, the schedule moves to `jump.position` at clock time
    * `jump.at`. Cues in the skipped span are never sent; the pedals get the state they would have had at the new position.
-   * Setting a new plan replaces the old one, so a cancelled jump is a plan with no jump.
+   * Setting a new plan replaces the old one, so a cancelled jump is a plan with no jump. A jump already due at `now` is carried out
+   * first: the session clears its plan once the audio passes the boundary, and a clear that arrives before the next tick must not drop it.
    */
-  plan(cap: number | null, jump: SchedulerJump | null) {
+  plan(cap: number | null, jump: SchedulerJump | null, now: number) {
     if (this.stopped) return;
+    if (this.pendingJump && now >= this.pendingJump.at) this.jump();
     this.cap = cap ?? Infinity;
     this.pendingJump = jump;
   }
