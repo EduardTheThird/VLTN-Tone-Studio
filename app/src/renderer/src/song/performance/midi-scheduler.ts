@@ -22,7 +22,10 @@ export interface SchedulerConfig {
   rate?: number;
   clock: boolean;
   tempo: number[][] | null;
-  /** Clock time (the same clock as `origin`) the start tempo is due. Defaults to song position zero, which a count-in puts later than the start. */
+  /**
+   * Clock time (the same clock as `origin`) the start tempo and play trigger are due: the start of the count-in. A start from the middle of a
+   * song is due at its position's clock time less the count-in, not at song position zero, which is long past by then. Defaults to the start position's clock time.
+   */
   tempoAt?: number;
   /** Seconds of cues to emit ahead of the audio position. Defaults to the Bluetooth value. */
   lookahead?: number;

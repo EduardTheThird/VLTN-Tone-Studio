@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
+import type { MidiSchedule } from "./midi-scheduler";
 import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
 import { SONG_TRIGGER_DEFAULTS, type SongTriggerSettings } from "./song-triggers";
 import { defaultBindings, startLearn, stopLearn, useRemoteLearn, type Binding } from "./bindings";
@@ -30,6 +31,13 @@ const mocks = vi.hoisted(() => ({
   swapAt: 2.5,
   swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
+  /** Runs the real MidiSchedule instead of a stub, and collects the messages it drops as late. */
+  realSchedule: false,
+  schedules: [] as MidiSchedule[],
+  dropped: [] as { bytes: number[]; label: string }[],
+  /** With `realTime`, the player's position runs on the clock from the start of the audio, as the real player's does. */
+  realTime: false,
+  segment: null as null | { songStart: number; ctxStart: number },
   sends: [] as ((message: { bytes: number[]; due: number; label: string }) => void)[],
   /** The callback the session gave the host for system resume */
   resume: null as null | (() => void),
@@ -126,6 +134,7 @@ vi.mock("@/song/stems/player", () => ({
       return Promise.resolve();
     }
     get position() {
+      if (mocks.realTime && mocks.segment) return mocks.segment.songStart + (performance.now() - mocks.segment.ctxStart) / 1000;
       return mocks.position;
     }
     get playbackRate() {
@@ -141,11 +150,17 @@ vi.mock("@/song/stems/player", () => ({
       mocks.swaps.push(render);
       return { at: mocks.swapAt, when: mocks.swapWhen };
     }
-    async play(lead?: unknown) {
+    async play(lead?: { bpm?: number; countInBeats?: number; startDelay?: number }) {
       mocks.lead = lead;
       this.isPlaying = true;
+      if (mocks.realTime) {
+        const countIn = ((lead?.countInBeats ?? 0) * 60) / (lead?.bpm ?? 120);
+        mocks.segment = { songStart: mocks.position, ctxStart: performance.now() + ((lead?.startDelay ?? 0) + countIn) * 1000 };
+      }
     }
     pause() {
+      if (mocks.realTime && mocks.segment) mocks.position = this.position;
+      mocks.segment = null;
       this.isPlaying = false;
     }
     async seek(value: number) {
@@ -190,21 +205,44 @@ vi.mock("@/song/audio/render-queue", () => ({
 vi.mock("@/song/library", () => ({
   useSongLibrary: { getState: () => mocks.library, setState: (patch: object) => Object.assign(mocks.library, patch) },
 }));
-vi.mock("@/song/performance/midi-scheduler-client", () => ({
-  midiNow: () => performance.timeOrigin + performance.now(),
-  prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
-  startMidiScheduler: (config: (typeof mocks.configs)[number], send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
-    mocks.configs.push(config);
-    mocks.sends.push(send);
-    mocks.faults.push(fault);
-    return {
-      stop: vi.fn(),
-      sync: vi.fn(),
-      plan: (cap: number | null, jump: { at: number; position: number } | null) => mocks.plans.push({ cap, jump }),
-      endTimecode: vi.fn(),
-    };
-  },
-}));
+vi.mock("@/song/performance/midi-scheduler-client", async () => {
+  const { MidiSchedule, lateAction, STALE_MS } = await vi.importActual<typeof import("./midi-scheduler")>("./midi-scheduler");
+  const midiNow = () => performance.timeOrigin + performance.now();
+  return {
+    midiNow,
+    prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
+    startMidiScheduler: (config: (typeof mocks.configs)[number], send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
+      mocks.configs.push(config);
+      mocks.sends.push(send);
+      mocks.faults.push(fault);
+      if (mocks.realSchedule) {
+        // As the client does: a message that is late and not one that must go out anyway is dropped, not sent.
+        const schedule = new MidiSchedule(config as never, midiNow(), (reply) => {
+          if (reply.type !== "batch") return;
+          mocks.dropped.push(...(reply.dropped ?? []));
+          for (const message of reply.messages) {
+            if (midiNow() - message.due > STALE_MS && lateAction(message.bytes) !== "send") mocks.dropped.push(message);
+            else send(message);
+          }
+        });
+        mocks.schedules.push(schedule);
+        schedule.tick(midiNow());
+        return {
+          stop: () => schedule.stop(),
+          sync: (position: number) => schedule.sync(position, midiNow(), midiNow()),
+          plan: (cap: number | null, jump: unknown) => schedule.plan(cap, jump as never),
+          endTimecode: (at: number | null) => schedule.endTimecode(at),
+        };
+      }
+      return {
+        stop: vi.fn(),
+        sync: vi.fn(),
+        plan: (cap: number | null, jump: { at: number; position: number } | null) => mocks.plans.push({ cap, jump }),
+        endTimecode: vi.fn(),
+      };
+    },
+  };
+});
 
 const source = { name: "song.wav", libraryId: "a" as string | undefined, audio: { sampleRate: 44100, channels: [new Float32Array(10)] } };
 const output = () => ({ id: "usb", name: "USB", state: "connected", send: vi.fn(), clear: vi.fn() });
@@ -265,6 +303,11 @@ beforeEach(() => {
   mocks.applied.length = 0;
   mocks.configs.length = 0;
   useMidiDiagnostics.getState().reset();
+  mocks.realSchedule = false;
+  mocks.realTime = false;
+  mocks.segment = null;
+  mocks.schedules.length = 0;
+  mocks.dropped.length = 0;
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -1575,5 +1618,53 @@ describe("a start from a position after a chase", () => {
     expect(mocks.lead).not.toHaveProperty("startDelay");
     session.pause();
     unload();
+  });
+});
+
+describe("the play trigger through the real schedule", () => {
+  const chart = "{midi@play: cc 1 80 127}\n{midi@stop: cc 1 81 127}";
+  const playsSent = (out: ReturnType<typeof output>) => out.send.mock.calls.filter(([bytes]) => bytes[0] === 176 && bytes[1] === 80).length;
+  /** Lets the schedule run for a few ticks, as its worker timer does. */
+  const pump = async () => {
+    for (let i = 0; i < 4; i++) {
+      mocks.schedules.at(-1)?.tick(performance.timeOrigin + performance.now());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+  beforeEach(() => {
+    mocks.realSchedule = true;
+    mocks.realTime = true;
+  });
+  afterEach(() => {
+    mocks.realSchedule = false;
+    mocks.realTime = false;
+  });
+  it("sends the play trigger on a start from the middle and on each resume", async () => {
+    const out = output();
+    const { session } = armedSession(out);
+    session.update({ cues: parseChart(chart), timing: { countInBars: 1, beatsPerBar: 4, preRollBeats: 0, startDelay: 0 } });
+    session.setClock(true);
+    mocks.position = 30;
+    await session.play();
+    await pump();
+    expect(playsSent(out)).toBe(1);
+    session.pause();
+    await session.play();
+    await pump();
+    expect(playsSent(out)).toBe(2);
+    expect(mocks.dropped.map((m) => m.bytes)).toEqual([]);
+    session.pause();
+  });
+  it("sends the play trigger on a start from the middle with no count-in", async () => {
+    const out = output();
+    const { session } = armedSession(out);
+    session.update({ cues: parseChart(chart), timing: { countInBars: 0, beatsPerBar: 4, preRollBeats: 0, startDelay: 0 } });
+    session.setClock(true);
+    mocks.position = 30;
+    await session.play();
+    await pump();
+    expect(playsSent(out)).toBe(1);
+    expect(mocks.dropped.map((m) => m.bytes)).toEqual([]);
+    session.pause();
   });
 });

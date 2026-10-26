@@ -1908,7 +1908,9 @@ export class PerformanceSession {
           position: cuePosition,
           duration: player.duration,
           origin,
-          tempoAt: origin - this.countInMs,
+          // The start tempo and play trigger are due at the start of the count-in: the start position's clock time less the count-in. Song position
+          // zero is not that time when starting mid-song, so the message would be older than STALE_MS and dropped.
+          tempoAt: origin + (cuePosition * 1000) / rate - this.countInMs,
           bpm: s.bpm,
           rate,
           clock: s.clock && offset === null,
