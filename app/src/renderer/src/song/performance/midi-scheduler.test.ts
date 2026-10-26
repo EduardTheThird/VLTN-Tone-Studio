@@ -483,6 +483,27 @@ it("a start at exactly a cue time sends no chase for the channels and controller
   ]);
 });
 
+it("a start on a cue that sends only a program change keeps the bank in force, and not the chased program", () => {
+  // Pedal 16 is on bank 1 from 2 s. The cue at 16 s sends a bare program change, so the bank must still be sent before it.
+  const cues = parseChart("[00:02] {midi:cc 16 0 1} {midi:pc 16 5}\n[00:16] {midi:pc 16 9}");
+  const f = fixture({ cues, position: 16, origin: 1000 - 16_000, duration: 40, pedalChannel: 16 });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => m.bytes)).toEqual([
+    [191, 0, 1],
+    [207, 9],
+  ]);
+});
+
+it("a start on a cue that sends its own bank leaves the chased bank out", () => {
+  const cues = parseChart("[00:02] {midi:cc 16 0 1} {midi:pc 16 5}\n[00:16] {midi:cc 16 0 0} {midi:pc 16 9}");
+  const f = fixture({ cues, position: 16, origin: 1000 - 16_000, duration: 40, pedalChannel: 16 });
+  f.schedule.tick(1000);
+  expect(f.messages().map((m) => [m.bytes, m.label])).toEqual([
+    [[191, 0, 0], "Song cue"],
+    [[207, 9], "Song cue"],
+  ]);
+});
+
 it("a section jump to another position still chases the state there", () => {
   const cues = parseChart("[00:02] {midi:pc 3 2}\n[00:05] {midi:pc 3 5}\n[00:08] {midi:pc 3 8}");
   const f = fixture({ cues, duration: 10, origin: 1000 });

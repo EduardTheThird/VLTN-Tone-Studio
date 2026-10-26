@@ -49,9 +49,10 @@ export function isChased(cue: Cue, bytes: number[], triggers: ReadonlySet<string
 }
 
 /**
- * What the cues at one position send themselves: the channels that get a program change (their bank selects go with it) and the
- * controllers (channel and CC number) they send. A chase to that position leaves these out. The cue's own message is the newer state,
- * and a chase sent at the same moment can land after it, so the pedal is left on the old patch.
+ * What the cues at one position send themselves: the channels that get a program change and the controllers (channel and CC number)
+ * they send. A chase to that position leaves these out. The cue's own message is the newer state, and a chase sent at the same moment
+ * can land after it, so the pedal is left on the old patch. A channel's program change is left out, but the bank in force on that
+ * channel is still sent, unless the cue sends that bank itself: the cue's program change lands in the bank the pedal should be in.
  */
 export interface SettledState {
   programChannels: ReadonlySet<number>;
@@ -79,8 +80,7 @@ function isSettled(bytes: number[], settled: SettledState): boolean {
   const kind = bytes[0] & 240;
   const channel = bytes[0] & 15;
   if (kind === 0xc0) return settled.programChannels.has(channel);
-  if (kind !== 0xb0) return false;
-  return (isBank(bytes[1]) && settled.programChannels.has(channel)) || settled.controllers.has(`${channel}:${bytes[1]}`);
+  return kind === 0xb0 && settled.controllers.has(`${channel}:${bytes[1]}`);
 }
 
 /**
@@ -96,7 +96,7 @@ export function computeChaseState(
   triggers: ReadonlySet<string> = new Set(),
   settled: SettledState = { programChannels: new Set(), controllers: new Set() },
 ): ChaseMessage[] {
-  const banks = new Map<number, Map<number, number[]>>();
+  const banks = new Map<number, Map<number, ChaseMessage>>();
   const programs = new Map<number, ChaseMessage[]>();
   const controllers = new Map<string, ChaseMessage>();
   const sysex = new Map<string, ChaseMessage>();
@@ -118,12 +118,12 @@ export function computeChaseState(
       const channel = bytes[0] & 15;
       if ((bytes[0] & 240) === 0xc0) {
         const selected = [...(banks.get(channel)?.entries() ?? [])].sort((a, b) => a[0] - b[0]).map((entry) => entry[1]);
-        programs.set(channel, [...selected.map((bank) => ({ bytes: bank, time: cue.time })), { bytes, time: cue.time }]);
+        programs.set(channel, [...selected.map((bank) => ({ bytes: bank.bytes, time: cue.time })), { bytes, time: cue.time }]);
         continue;
       }
       if (isBank(bytes[1])) {
-        const channelBanks = banks.get(channel) ?? new Map<number, number[]>();
-        channelBanks.set(bytes[1], bytes);
+        const channelBanks = banks.get(channel) ?? new Map<number, ChaseMessage>();
+        channelBanks.set(bytes[1], { bytes, time: cue.time });
         banks.set(channel, channelBanks);
       }
       const key = `${channel}:${bytes[1]}`;
@@ -131,8 +131,13 @@ export function computeChaseState(
       controllers.set(key, { bytes, time: cue.time });
     }
   }
+  // A channel whose program change a cue sends itself still gets the bank in force, so that program change lands in the right bank.
+  const bankInForce = [...banks.entries()]
+    .filter(([channel]) => settled.programChannels.has(channel))
+    .flatMap(([, channelBanks]) => [...channelBanks.entries()].sort((a, b) => a[0] - b[0]).map((entry) => entry[1]));
   return [
     ...(songSelect ? [songSelect] : []),
+    ...bankInForce,
     ...[...programs.values()].flat(),
     ...[...controllers.values()].filter((m) => !isBank(m.bytes[1])),
     ...sysex.values(),
