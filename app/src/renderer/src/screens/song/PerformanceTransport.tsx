@@ -21,6 +21,46 @@ const limit = (key: LeadInKey, text: string): number => {
 
 const bars = (count: number): string => (count === 0 ? "off" : `${count} bar${count === 1 ? "" : "s"}`);
 
+const inBpmRange = (value: number): boolean => value >= 30 && value <= 300;
+
+/**
+ * The song BPM as a text field. Typing keeps the text, so a half-typed value is not clamped:
+ * a whole number in range is set at once, anything else is committed, clamped to 30–300, on blur or Enter.
+ * Escape drops the typed text and shows the current BPM again.
+ */
+export function BpmField({ bpm, disabled, onBpm }: { bpm: number; disabled: boolean; onBpm: (value: number) => void }) {
+  // The typed text while editing; null shows the BPM itself, so a change from outside shows while not editing.
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = (text: string) => {
+    if (text.trim() !== "" && Number.isFinite(Number(text))) onBpm(Math.max(30, Math.min(300, Number(text))));
+    setDraft(null);
+  };
+  return (
+    <input
+      className={field + " w-20"}
+      aria-label="BPM"
+      title="Set the recording’s BPM while stopped. Audio speed and cue timestamps stay unchanged."
+      type="number"
+      min="30"
+      max="300"
+      disabled={disabled}
+      value={draft ?? bpm}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        if (/^\d+$/.test(text) && inBpmRange(Number(text))) onBpm(Number(text));
+      }}
+      onBlur={() => {
+        if (draft !== null) commit(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit(e.currentTarget.value);
+        if (e.key === "Escape") setDraft(null);
+      }}
+    />
+  );
+}
+
 export interface MetronomeSettings {
   metronome: MetronomeMode;
   onMetronome: (value: MetronomeMode) => void;
@@ -145,17 +185,7 @@ export function PerformanceTransport({
         <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
           <label>
             Song BPM{" "}
-            <input
-              className={field + " w-20"}
-              aria-label="BPM"
-              title="Set the recording’s BPM while stopped. Audio speed and cue timestamps stay unchanged."
-              type="number"
-              min="30"
-              max="300"
-              disabled={playing}
-              value={bpm}
-              onChange={(e) => onBpm(Math.max(30, Math.min(300, Number(e.target.value) || 120)))}
-            />
+            <BpmField bpm={bpm} disabled={playing} onBpm={onBpm} />
           </label>
           <Button variant="outline" disabled={playing} title="Tap the tempo (T). Sets the song BPM while stopped." onClick={onTap}>
             Tap tempo

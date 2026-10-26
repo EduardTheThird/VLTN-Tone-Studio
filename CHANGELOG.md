@@ -42,6 +42,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- The song BPM field takes a typed value. Typing keeps the text, and it is committed (clamped to 30–300) on blur or Enter; Escape restores the current BPM. Stepping with the arrows still sets the value at once.
 - A Bluetooth MIDI command that arrives more than 250 ms late is now dropped and counted instead of closing the Bluetooth connection.
 - Pause and panic only release channels that sent notes, so they no longer trigger the GP-180 looper Stop.
 - A stall no longer disarms MIDI for the rest of the song. Late program changes, controllers and notes are dropped (note-offs are always sent), the schedule re-syncs, and a notice shows what was dropped. USB cues are queued up to a second ahead with exact timestamps. MIDI only disarms when timing cannot recover.
