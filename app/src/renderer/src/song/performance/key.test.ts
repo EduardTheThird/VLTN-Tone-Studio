@@ -1,5 +1,5 @@
-import { expect, it } from "vitest";
-import { detectKey, keyAudio, keyFromChroma, KEY_NAMES } from "./key";
+import { describe, expect, it } from "vitest";
+import { detectKey, effectiveSongKey, keyAudio, keyFromChroma, KEY_NAMES, type KeyEstimate } from "./key";
 import type { PcmAudio } from "../types";
 const major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const minor = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -68,4 +68,23 @@ it("does not report a key for broadband noise", () => {
     return (state / 2 ** 32 - 0.5) * 0.1;
   });
   expect(detectKey({ sampleRate: 44100, channels: [channel] })).toBeNull();
+});
+
+describe("effectiveSongKey", () => {
+  const strong: KeyEstimate = { name: "A minor", tonic: 9, mode: "minor", correlation: 0.8, margin: 0.2, confidence: "strong", alternatives: [] };
+  const tentative: KeyEstimate = { ...strong, name: "D major", confidence: "tentative" };
+  it("uses the override over the library key and a strong estimate", () => {
+    expect(effectiveSongKey("Bb major", "E major", strong)).toBe("Bb major");
+  });
+  it("uses the library key when there is no override", () => {
+    expect(effectiveSongKey("", "Bb", strong)).toBe("Bb");
+  });
+  it("uses a strong automatic estimate only when nothing is saved", () => {
+    expect(effectiveSongKey("", undefined, strong)).toBe("A minor");
+    expect(effectiveSongKey("", undefined, tentative)).toBeUndefined();
+  });
+  it("is undefined when no key is known, so the chords keep their spelling", () => {
+    expect(effectiveSongKey("", undefined, null)).toBeUndefined();
+    expect(effectiveSongKey("", "", null)).toBeUndefined();
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
-import { KEY_NAMES, SONG_KEYS, keyAudio, type KeyEstimate } from "@/song/performance/key";
+import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
 
 interface KeySettings {
@@ -8,7 +8,23 @@ interface KeySettings {
   detectedKey: KeyEstimate | null;
   keyAudioSource: string;
 }
-export function SongKey({ stems, original, storageKey, shift = 0 }: { stems: Stems | null; original?: PcmAudio; storageKey: string; shift?: number }) {
+/** The song's key readout and override. It reports the key the chord names are spelled by, so the panel's screens follow the same key. */
+export function SongKey({
+  stems,
+  original,
+  storageKey,
+  shift = 0,
+  libraryKey,
+  onSpellingKey,
+}: {
+  stems: Stems | null;
+  original?: PcmAudio;
+  storageKey: string;
+  shift?: number;
+  /** The key saved on the song's library entry, used when there is no override and no strong estimate */
+  libraryKey?: string;
+  onSpellingKey?: (key: string | undefined) => void;
+}) {
   const [saved] = useState(() => readOptions<KeySettings>(storageKey, { songKey: "", detectedKey: null, keyAudioSource: "" }));
   const [override, setOverride] = useState(SONG_KEYS.includes(saved.songKey) ? saved.songKey : "");
   const [estimate, setEstimate] = useState<KeyEstimate | null>(saved.detectedKey && SONG_KEYS.includes(saved.detectedKey.name) ? saved.detectedKey : null);
@@ -67,6 +83,8 @@ export function SongKey({ stems, original, storageKey, shift = 0 }: { stems: Ste
       setError("Could not save the song key.");
     }
   }, [storageKey, override, estimate, analysisSource]);
+  const spellingKey = effectiveSongKey(override, libraryKey, estimate);
+  useEffect(() => onSpellingKey?.(spellingKey), [spellingKey, onSpellingKey]);
   const name = override || estimate?.name;
   const root = name ? KEY_NAMES.indexOf(name.split(" ")[0]) : -1;
   const displayed = root < 0 ? "" : `${KEY_NAMES[(((root + shift) % 12) + 12) % 12]} ${name!.split(" ")[1]}`;

@@ -89,10 +89,12 @@ describe("headings, comments, colour and key spelling", () => {
     expect(screen.getByText("loud").className).toContain("text-red-400");
   });
   it("spells the chords by the song's key, so an A# in a flat key shows as Bb", () => {
-    useSongLibrary.setState({ index: { songs: [{ id: "s1", key: "Bb", duration: 120 }] } } as never);
-    useSong.setState({ source: { libraryId: "s1" } } as never);
-    render(<PerformanceReader title="Song" chart={"[00:01] [A#] Hello"} lyrics="" chords={[]} shift={0} />);
+    render(<PerformanceReader title="Song" chart={"[00:01] [A#] Hello"} lyrics="" chords={[]} shift={0} songKey="Bb" />);
     expect(within(screen.getByLabelText("Chords")).getByText("Bb")).toBeTruthy();
+  });
+  it("keeps the chords' own spelling when no song key is known", () => {
+    render(<PerformanceReader title="Song" chart={"[00:01] [A#] Hello"} lyrics="" chords={[]} shift={0} />);
+    expect(within(screen.getByLabelText("Chords")).getByText("A#")).toBeTruthy();
   });
   it("shows an untimed chart's headings and inline chords, and the chord names are transposed", () => {
     render(<PerformanceReader title="Song" chart={"# Verse\n[C]Hello there"} lyrics="" chords={[]} shift={2} />);

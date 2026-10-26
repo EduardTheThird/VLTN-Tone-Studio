@@ -120,15 +120,31 @@ export function flatsForKey(key: string | undefined): boolean | undefined {
   return (parts.minor ? FLAT_MINOR_PITCHES : FLAT_MAJOR_PITCHES).has(parts.pitch);
 }
 
+/** The pitch classes whose sharp and flat names are one note, C#/Db and F#/Gb. Only these depend on which side of the fifths the key is on. */
+const ENHARMONIC_PITCHES = new Set([1, 6]);
+
+/**
+ * Which side of the circle of fifths a key sits on: 1 for sharps, -1 for flats, 0 for C or A minor, which have neither. The fifths count
+ * is `7 × pitch` mod 12, read as a number from -5 to 6, so E major (4 sharps) is 4 and Bb major (2 flats) is -2.
+ */
+function keySide(parts: { pitch: number; minor: boolean; accidental: string }): number {
+  if (parts.accidental) return parts.accidental === "b" ? -1 : 1;
+  const fifths = ((parts.pitch + (parts.minor ? 3 : 0)) * 7) % 12;
+  return fifths === 0 ? 0 : fifths > 6 ? -1 : 1;
+}
+
 /**
  * The spelling a song's chord names use once its key is moved by `steps`. The shifted key's pitch decides it, so A minor up a semitone is
- * Bb minor, written with flats, and C up a semitone is Db, with flats. Undefined when no key is known.
+ * Bb minor, written with flats, and C up a semitone is Db, with flats. Where the shifted pitch has two names, the song's own side of the
+ * circle decides it: E major capo 3 shows C# with sharps, not Db. Undefined when no key is known.
  */
 export function keySpelling(key: string | undefined, steps: number): boolean | undefined {
   const parts = keyParts(key ?? "");
   if (!parts) return undefined;
   if (!steps) return flatsForKey(key);
   const pitch = (((parts.pitch + steps) % 12) + 12) % 12;
+  const side = keySide(parts);
+  if (ENHARMONIC_PITCHES.has(pitch) && side !== 0) return side < 0;
   return (parts.minor ? FLAT_MINOR_PITCHES : FLAT_MAJOR_PITCHES).has(pitch);
 }
 

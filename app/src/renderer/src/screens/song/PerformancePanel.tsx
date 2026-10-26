@@ -231,6 +231,8 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   const inputReady = useSession(session, (s) => s.inputId !== "");
   // The chord names and shapes on screen: the chart transpose, plus the pitch when the chords follow it, less the capo.
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
+  // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
+  const [spellingKey, setSpellingKey] = useState<string | undefined>();
   const { chords, analysing } = useChordAnalysis(session, stems, chordSource);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
@@ -331,12 +333,12 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
             chords,
             macros: midiConfig.macros,
             shift: shapeShift,
-            flats: keySpelling(savedSong?.key ?? undefined, shapeShift),
+            flats: keySpelling(spellingKey, shapeShift),
             pdf: pdfUrl && source.libraryId && pdfState?.chart && chartView === "pdf" ? { url: pdfUrl, page: audiencePage } : null,
           }
         : null,
     // The song's chart and chords are the inputs; the rest is read when they change.
-    [key, source, nextAudienceTitle, chart, lyrics, chords, midiConfig.macros, shapeShift, savedSong?.key, pdfUrl, pdfState?.chart, chartView, audiencePage],
+    [key, source, nextAudienceTitle, chart, lyrics, chords, midiConfig.macros, shapeShift, spellingKey, pdfUrl, pdfState?.chart, chartView, audiencePage],
   );
   const audienceModelValue = useMemo(
     () =>
@@ -454,7 +456,14 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         <SpeedControls session={session} bpm={bpm} />
         <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
         <SessionMidiHealth session={session} />
-        <SongKey stems={stems} original={source?.audio} storageKey={key} shift={shift} />
+        <SongKey
+          stems={stems}
+          original={source?.audio}
+          storageKey={key}
+          shift={shift}
+          libraryKey={savedSong?.key ?? undefined}
+          onSpellingKey={setSpellingKey}
+        />
         <TrackImport playing={playing || library.playlistPlaying} />
         <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
         <PerformanceMix
@@ -485,6 +494,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
         lyrics={lyrics}
         chords={chords}
         shift={shapeShift}
+        songKey={spellingKey}
         onSaveChart={saveChart}
         onImportMetadata={applyImportedMetadata}
         beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat }}
@@ -514,6 +524,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
           onSaveChart={saveChart}
           shift={shift}
           onShift={setShift}
+          songKey={spellingKey}
           capo={capo}
           onCapo={(value) => setCapo(clampCapo(value))}
           onLyrics={setLyrics}

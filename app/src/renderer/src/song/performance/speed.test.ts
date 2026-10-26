@@ -177,9 +177,20 @@ describe("spelling a transposed chord by key", () => {
     ["C", 1, true],
     ["D", 0, false],
     ["Eb", 0, true],
+    ["E", -3, false],
+    ["D", 4, false],
+    ["Db", 5, true],
     [undefined, 3, undefined],
     ["", 1, undefined],
   ])("the song in %j moved by %i uses flats %s", (key, steps, expected) => {
     expect(keySpelling(key, steps)).toBe(expected);
+  });
+  it("respells a flat key's chords with flats when a capo lowers them: Bb major, capo 2, shows Ab Db Eb Ab", () => {
+    const flats = keySpelling("Bb major", -2);
+    expect(["Bb", "Eb", "F", "Bb"].map((name) => transposeChordName(name, -2, flats))).toEqual(["Ab", "Db", "Eb", "Ab"]);
+  });
+  it("keeps sharps for a sharp key moved by a capo: E major, capo 3, shows C#", () => {
+    const flats = keySpelling("E major", -3);
+    expect(transposeChordName("E", -3, flats)).toBe("C#");
   });
 });

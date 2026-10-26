@@ -4,7 +4,7 @@ import { host } from "@/host";
 import { lrcTime, transpose, type Cue } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
 import { useActiveIndex } from "@/song/performance/playback-clock";
-import { CAPO_MAX } from "@/song/performance/speed";
+import { CAPO_MAX, keySpelling } from "@/song/performance/speed";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { STEM_NAMES, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
@@ -40,11 +40,11 @@ function chartLine(text: string, onChord: (name: string) => void) {
     );
 }
 /** The plain lyrics preview. It owns the active-line subscription so the panel does not re-render on line changes. */
-function ChartLines({ cues, shift, onChord }: { cues: Cue[]; shift: number; onChord: (name: string) => void }) {
+function ChartLines({ cues, shift, flats, onChord }: { cues: Cue[]; shift: number; flats?: boolean; onChord: (name: string) => void }) {
   const active = useActiveIndex(useMemo(() => cues.map((cue) => cue.time), [cues]));
   return cues.map((cue, i) => (
     <p key={i} className={i === active ? "rounded bg-white/10 font-bold" : "text-silkscreen-3"}>
-      {chartLine(transpose(cue.text, shift) || "♪", onChord)}
+      {chartLine(transpose(cue.text, shift, flats) || "♪", onChord)}
     </p>
   ));
 }
@@ -87,6 +87,7 @@ export function PerformanceAnalysis({
   onSaveChart,
   shift,
   onShift,
+  songKey,
   capo,
   onCapo,
   onLyrics,
@@ -105,6 +106,8 @@ export function PerformanceAnalysis({
   onSaveChart: (chart: string) => void;
   shift: number;
   onShift: (value: number) => void;
+  /** The song's key, which the chord names are spelled by */
+  songKey?: string;
   capo: number;
   onCapo: (value: number) => void;
   onLyrics: (text: string) => void;
@@ -119,6 +122,7 @@ export function PerformanceAnalysis({
   // Lyric lines are the chart's own cues: the triggers and the MIDI file's messages have no lyrics to show.
   const sessionCues = useSession(session, (s) => s.cues);
   const cues = useMemo(() => sessionCues.filter((cue) => !cue.trigger && !cue.fromFile), [sessionCues]);
+  const flats = keySpelling(songKey, shift);
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
@@ -193,9 +197,9 @@ export function PerformanceAnalysis({
           </div>
           <div className="max-h-96 overflow-auto rounded border border-seam p-4 text-2xl leading-relaxed" aria-label="Performance lyrics">
             {cues.length ? (
-              <ChartLines cues={cues} shift={shift} onChord={onSelectChord} />
+              <ChartLines cues={cues} shift={shift} flats={flats} onChord={onSelectChord} />
             ) : (
-              <pre className="whitespace-pre-wrap font-sans">{chartLine(transpose(chart, shift), onSelectChord)}</pre>
+              <pre className="whitespace-pre-wrap font-sans">{chartLine(transpose(chart, shift, flats), onSelectChord)}</pre>
             )}
           </div>
         </div>
@@ -235,10 +239,10 @@ export function PerformanceAnalysis({
                       <button
                         type="button"
                         className="cursor-pointer rounded text-sky-400 hover:bg-sky-400/15"
-                        aria-label={`Show ${transpose(`[${c.name}]`, shift).slice(1, -1)} guitar voicings`}
-                        onClick={() => onSelectChord(transpose(`[${c.name}]`, shift).slice(1, -1))}
+                        aria-label={`Show ${transpose(`[${c.name}]`, shift, flats).slice(1, -1)} guitar voicings`}
+                        onClick={() => onSelectChord(transpose(`[${c.name}]`, shift, flats).slice(1, -1))}
                       >
-                        {transpose(`[${c.name}]`, shift)}
+                        {transpose(`[${c.name}]`, shift, flats)}
                       </button>
                     )}
                   </span>

@@ -21,6 +21,7 @@ export function StageView({
   lyrics,
   chords,
   shift,
+  songKey,
   onSaveChart,
   onImportMetadata,
   beat,
@@ -34,6 +35,7 @@ export function StageView({
   lyrics: string;
   chords: Chord[];
   shift: number;
+  songKey?: string;
   onSaveChart: (chart: string) => void;
   onImportMetadata?: (metadata: ChartMetadata) => void;
   /** The song's beat grid, for the beat light and the edge flash */
@@ -69,6 +71,7 @@ export function StageView({
         lyrics={lyrics}
         chords={chords}
         shift={shift}
+        songKey={songKey}
         title={source?.name ?? "Performance"}
         onEditStart={session.pause}
         onSaveChart={stage ? undefined : onSaveChart}

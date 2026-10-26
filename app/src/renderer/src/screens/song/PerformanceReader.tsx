@@ -52,6 +52,7 @@ export function PerformanceReader({
   lyrics,
   chords,
   shift,
+  songKey,
   title,
   transport,
   status,
@@ -70,6 +71,8 @@ export function PerformanceReader({
   lyrics: string;
   chords: Chord[];
   shift: number;
+  /** The song's key, which the chord names are spelled by (see SongKey) */
+  songKey?: string;
   title: string;
   transport?: ReactNode;
   status?: ReactNode;
@@ -111,10 +114,10 @@ export function PerformanceReader({
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
     size = useReaderText((s) => s.size);
-  // The song's key and length, from its library entry, for the chord spelling and the constant-speed fit.
+  // The song's length, from its library entry, for the constant-speed fit.
   const libraryId = useSong((s) => s.source?.libraryId);
   const librarySong = useSongLibrary((s) => s.index?.songs.find((song) => song.id === libraryId));
-  const spelling = keySpelling(librarySong?.key ?? undefined, shift);
+  const spelling = keySpelling(songKey, shift);
   const duration = librarySong?.duration ?? 0;
   const autoscrollMode = useAutoscroll((s) => s.mode),
     linesPerMinute = useAutoscroll((s) => s.linesPerMinute);

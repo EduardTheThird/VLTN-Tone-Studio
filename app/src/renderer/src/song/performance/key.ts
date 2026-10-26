@@ -4,6 +4,16 @@ import { hasSignal } from "./sources";
 
 export const KEY_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 export const SONG_KEYS = KEY_NAMES.flatMap((root) => [`${root} major`, `${root} minor`]);
+
+/**
+ * The key a song's chord names are spelled by: the performer's Key override when set, else the key saved on the library entry (an import
+ * or the song details), else the automatic estimate, but only a strong one. Undefined when none is known, so the chords keep their spelling.
+ */
+export function effectiveSongKey(override: string, libraryKey: string | undefined, estimate: KeyEstimate | null): string | undefined {
+  if (override) return override;
+  if (libraryKey) return libraryKey;
+  return estimate?.confidence === "strong" ? estimate.name : undefined;
+}
 export interface KeyEstimate {
   name: string;
   tonic: number;
