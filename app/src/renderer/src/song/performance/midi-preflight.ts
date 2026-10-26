@@ -111,7 +111,9 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
         if (previous)
           add(
             previous === value ? "duplicate" : "conflict",
-            `${previous === value ? "Repeated" : "Conflicting"} ${kind === 192 ? "program change" : "CC" + bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s. Verify intentional trigger/order.`,
+            `${previous === value ? "Repeated" : "Conflicting"} ${kind === 192 ? "program change" : "CC" + bytes[1]} ` +
+              `on channel ${channel} at ${cue.time.toFixed(2)} s. ` +
+              `Verify intentional trigger/order.`,
           );
         conflicts.set(id, value);
       }
@@ -124,13 +126,17 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
           warnedTriggers.add(key);
           add(
             "chase-assigned-trigger",
-            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s is an assigned trigger, so it is not replayed when starting mid-song. Add {chase} to the cue to replay it.`,
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s is an assigned trigger, so it is not replayed when starting mid-song. ` +
+              `Add {chase} to the cue to replay it.`,
           );
         } else if (!triggers.has(key) && unassigned.length && isChased(cue, bytes, triggers) && !warnedUnassigned) {
           add(
             "chase-unassigned-trigger",
-            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s would be replayed when starting mid-song, but ${unassigned.map((pedal) => pedal.name).join(", ")} ` +
-              `has trigger commands with no CC assigned, so the app cannot tell whether it is one. Set the pedal’s CC assignments in Performance, or add {nochase} to the cue.`,
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s would be replayed when starting mid-song, ` +
+              `but ${unassigned.map((pedal) => pedal.name).join(", ")} ` +
+              `has trigger commands with no CC assigned, so the app cannot tell whether it is one. ` +
+              `Set the pedal’s CC assignments in Performance, ` +
+              `or add {nochase} to the cue.`,
           );
           warnedUnassigned = true;
         }
@@ -142,7 +148,8 @@ export function midiPreflight(cues: Cue[], options: PreflightOptions) {
         if (last && cue.time - last.time <= 0.5 && last.value !== bytes[2] && (last.value === 0 || bytes[2] === 0)) {
           add(
             "chase-momentary",
-            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s looks like a press and release but would be replayed when starting mid-song. Add {nochase} to the cue.`,
+            `CC${bytes[1]} on channel ${channel} at ${cue.time.toFixed(2)} s looks like a press and release but would be replayed when starting mid-song. ` +
+              `Add {nochase} to the cue.`,
           );
           warnedMomentary = true;
         }
