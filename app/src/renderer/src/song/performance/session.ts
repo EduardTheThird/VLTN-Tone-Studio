@@ -472,8 +472,9 @@ export class PerformanceSession {
         this.terminateWorker();
       }
       void player.dispose();
-      // Leaving Performance pauses the set; replacing its source during advance does not.
-      if (useSong.getState().source === source && useSongLibrary.getState().playlistPlaying) useSongLibrary.getState().pausePlaylist();
+      // Leaving Performance pauses the set. An advance moves the playlist position before the song store changes, so it is not a leaving.
+      const library = useSongLibrary.getState();
+      if (useSong.getState().source === source && library.playlistPlaying && library.queue[library.position] === source.libraryId) library.pausePlaylist();
     };
   }
 

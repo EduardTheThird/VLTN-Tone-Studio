@@ -12,6 +12,7 @@ import { useOutputSettings } from "@/song/audio/output-settings";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 
 const mocks = vi.hoisted(() => ({
+  song: { source: null as unknown },
   position: 0,
   audioNow: 0,
   jumps: [] as { to: number; at: number }[],
@@ -162,7 +163,7 @@ vi.mock("@/song/stems/player", () => ({
     }
   },
 }));
-vi.mock("@/song/store", () => ({ useSong: { getState: () => ({ source: null }) } }));
+vi.mock("@/song/store", () => ({ useSong: { getState: () => mocks.song } }));
 // Renders are built on the same thread here: the worker is tested in render-queue.test.ts
 vi.mock("@/song/audio/render-queue", () => ({
   RenderQueue: class {
@@ -521,6 +522,34 @@ it("carries the armed output into the next song's session after an unchained joi
   unloadNext();
   next.dispose();
   vi.useRealTimers();
+});
+
+it("does not pause the set when the outgoing song tears down at a join, because the playlist position has already moved", () => {
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.position = 0;
+  const { unload, session } = armedSession(output(), { queued: true, playlistPlaying: true });
+  // The advance moves the playlist position first; the song store still holds the outgoing song until the next one loads.
+  mocks.library.position = 1;
+  mocks.song.source = source;
+  unload();
+  expect(mocks.library.pausePlaylist).not.toHaveBeenCalled();
+  expect(session.armed).toBe(true);
+  mocks.library.position = 0;
+  mocks.song.source = null;
+  session.dispose();
+});
+
+it("pauses the set when the song is left while the set is playing at its own position", () => {
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.position = 0;
+  mocks.song.source = source;
+  const { unload, session } = armedSession(output(), { queued: true, playlistPlaying: true });
+  unload();
+  expect(mocks.library.pausePlaylist).toHaveBeenCalledTimes(1);
+  mocks.song.source = null;
+  session.dispose();
 });
 
 it("keeps the carry reset when panic and disarm runs inside a playing queued set", () => {
