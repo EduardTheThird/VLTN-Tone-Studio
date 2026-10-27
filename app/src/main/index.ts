@@ -125,7 +125,9 @@ function saveBounds(w: BrowserWindow): void {
 }
 
 function sendEvent(event: AppEvent) {
-  win?.webContents.send("app:event", event);
+  // Focus events can arrive while the window is closing, after it is destroyed.
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send("app:event", event);
 }
 
 async function createWindow() {

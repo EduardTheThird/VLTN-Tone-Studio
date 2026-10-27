@@ -313,6 +313,14 @@ function createAudienceWindow(mode: AudienceMode, bounds: Rect, hooks: AudienceW
   };
 }
 
+/** Sends the audience status to the performance window. The controller closes during quit, after that window may already be destroyed. */
+export function sendAudienceStatus(getWindow: () => BrowserWindow | null, status: AudienceStatus): void {
+  const window = getWindow();
+  if (!window || window.isDestroyed()) return;
+  const contents = window.webContents;
+  if (!contents.isDestroyed()) contents.send("audience:status", status);
+}
+
 /** Registers the audience IPC and the display events. Only the performance window may call it; the audience window has no access. */
 export function registerDisplayIpc(getWindow: () => BrowserWindow | null): { close(): void; dispose(): void } {
   const file = () => join(app.getPath("userData"), AUDIENCE_FILE);
@@ -322,10 +330,7 @@ export function registerDisplayIpc(getWindow: () => BrowserWindow | null): { clo
     createWindow: createAudienceWindow,
     loadDisplayId: () => readDisplayId(file()),
     saveDisplayId: (displayId) => writeDisplayId(file(), displayId),
-    onStatus: (status) => {
-      const contents = getWindow()?.webContents;
-      if (contents && !contents.isDestroyed()) contents.send("audience:status", status);
-    },
+    onStatus: (status) => sendAudienceStatus(getWindow, status),
   });
   const mainOnly = (event: IpcMainInvokeEvent) => {
     if (event.sender.id !== getWindow()?.webContents.id) throw new HostError("unauthorized", "Only the performance screen controls the audience display.");

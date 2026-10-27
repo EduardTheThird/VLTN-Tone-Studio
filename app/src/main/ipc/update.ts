@@ -29,7 +29,9 @@ const snapshot = (): UpdateSnapshot => ({ mode, current: app.getVersion(), state
 
 function setState(next: UpdateState): void {
   state = next;
-  getWindow()?.webContents.send("update:state", snapshot());
+  const win = getWindow();
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send("update:state", snapshot());
 }
 
 /** Builds electron-updater can replace in place. macOS needs a signed app (Squirrel.Mac) and the .deb a package manager. */

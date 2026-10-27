@@ -16,7 +16,7 @@ vi.mock("electron", () => ({
   screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: () => {}, removeListener: () => {} },
 }));
 
-import { AudienceController, isAudienceContents, parseDisplayId, readDisplayId, registerDisplayIpc, writeDisplayId, type AudienceWindowHooks } from "./display";
+import { AudienceController, isAudienceContents, parseDisplayId, readDisplayId, registerDisplayIpc, sendAudienceStatus, writeDisplayId, type AudienceWindowHooks } from "./display";
 
 const main = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, workArea: { x: 0, y: 25, width: 1440, height: 875 } };
 const projector = { id: 7, bounds: { x: 1440, y: 0, width: 1920, height: 1080 }, workArea: { x: 1440, y: 0, width: 1920, height: 1080 } };
@@ -269,5 +269,28 @@ describe("audience content check", () => {
   it("recognises no web contents until an audience window exists", () => {
     expect(isAudienceContents({ id: 3 })).toBe(false);
     expect(isAudienceContents(null)).toBe(false);
+  });
+});
+
+describe("sendAudienceStatus", () => {
+  const status = { open: false, displayId: null } as AudienceStatus;
+
+  it("sends nothing when the performance window is gone, as it is during quit", () => {
+    const send = vi.fn();
+    sendAudienceStatus(() => null, status);
+    sendAudienceStatus(() => ({ isDestroyed: () => true, webContents: { send, isDestroyed: () => false } }) as never, status);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the performance window's web contents are destroyed", () => {
+    const send = vi.fn();
+    sendAudienceStatus(() => ({ isDestroyed: () => false, webContents: { send, isDestroyed: () => true } }) as never, status);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("sends the status to the performance window otherwise", () => {
+    const send = vi.fn();
+    sendAudienceStatus(() => ({ isDestroyed: () => false, webContents: { send, isDestroyed: () => false } }) as never, status);
+    expect(send).toHaveBeenCalledWith("audience:status", status);
   });
 });
