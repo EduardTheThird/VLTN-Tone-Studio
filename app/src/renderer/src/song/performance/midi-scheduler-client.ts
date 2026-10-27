@@ -66,6 +66,7 @@ export function startMidiScheduler(
   const worker = prepared ?? new Worker(new URL("./midi-scheduler-worker.ts", import.meta.url), { type: "module" });
   const failed = failedWorkers.get(worker);
   if (failed) throw failed;
+  // The worker's clock is set from this time, so the schedule and the audio checkpoints read one clock.
   const requestedAt = midiNow();
   let active = true,
     started = false,
@@ -124,7 +125,7 @@ export function startMidiScheduler(
       fault(started ? "MIDI scheduler stopped responding. Cues disarmed." : "MIDI scheduler did not acknowledge playback. Cues disarmed.");
   }, 50);
   try {
-    worker.postMessage({ type: "start", config: { ...config, cues: config.cues.filter((c) => c.messages.length && !c.trigger).map((c) => ({ ...c, text: "" })) } });
+    worker.postMessage({ type: "start", at: requestedAt, config: { ...config, cues: config.cues.filter((c) => c.messages.length && !c.trigger).map((c) => ({ ...c, text: "" })) } });
   } catch (error) {
     stop();
     throw error;

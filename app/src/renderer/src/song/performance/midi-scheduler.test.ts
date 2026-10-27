@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLUETOOTH_LOOKAHEAD, MidiSchedule, SYSTEM_LOOKAHEAD, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
+import { alignedClock, BLUETOOTH_LOOKAHEAD, MidiSchedule, SYSTEM_LOOKAHEAD, type SchedulerConfig, type SchedulerReply } from "./midi-scheduler";
 import { parseChart } from "./chart";
 const config = (patch: Partial<SchedulerConfig> = {}): SchedulerConfig => ({
   cues: parseChart("[00:00] {midi:pc 1 1}\n[00:01] {midi:cc 2 12 127}"),
@@ -682,4 +682,43 @@ it("follows a steady -60 ms audio offset (audio ahead), so later cues fire 60 ms
   expect(f.messages().map((m) => m.due)).toEqual([2940]);
   expect(f.replies.some((r) => r.type === "resync")).toBe(false);
   expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+});
+
+describe("worker clock", () => {
+  const HOURS = 3 * 3600 * 1000;
+  const RENDERER_START = 1000;
+  /**
+   * Runs a worker's schedule against the renderer's checkpoints for two seconds. `workerNow(t)` is the worker's clock when the renderer's
+   * clock reads `t`: the same instant, read on the worker's clock.
+   */
+  function runWorker(workerNow: (t: number) => number) {
+    const replies: SchedulerReply[] = [];
+    const schedule = new MidiSchedule(config({ origin: RENDERER_START }), workerNow(RENDERER_START), (r) => replies.push(r));
+    schedule.tick(workerNow(RENDERER_START));
+    for (let t = RENDERER_START + 20; t <= RENDERER_START + 2000; t += 20) {
+      schedule.sync((t - RENDERER_START) / 1000, t, workerNow(t));
+      schedule.tick(workerNow(t));
+    }
+    return { replies, messages: () => replies.flatMap((r) => (r.type === "batch" ? r.messages : [])) };
+  }
+
+  it("a schedule whose clock is hours from the renderer's faults on start, which is the sleep fault", () => {
+    const { replies } = runWorker((t) => t + HOURS);
+    expect(replies.some((r) => r.type === "fault")).toBe(true);
+  });
+
+  it("a worker whose own time origin is hours away still runs on the renderer's clock, from the start request", () => {
+    // The worker's clock counts from its own start, so its time origin plays no part once the request's clock time anchors it.
+    let elapsed = 0;
+    const clock = alignedClock(RENDERER_START, () => elapsed);
+    const { replies, messages } = runWorker((t) => {
+      elapsed = t - RENDERER_START;
+      return clock();
+    });
+    expect(replies.some((r) => r.type === "fault" || r.type === "resync")).toBe(false);
+    expect(messages().map((m) => [m.bytes, m.due])).toEqual([
+      [[192, 1], 1000],
+      [[177, 12, 127], 2000],
+    ]);
+  });
 });

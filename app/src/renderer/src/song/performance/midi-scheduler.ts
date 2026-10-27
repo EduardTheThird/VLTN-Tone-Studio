@@ -63,8 +63,18 @@ export type SchedulerReply =
   | { type: "ready" }
   | { type: "started" }
   | { type: "heartbeat" };
+/**
+ * The worker's clock on the renderer's timeline. `at` is the renderer's clock (`midiNow`) when playback was requested, and `perfNow` is the
+ * worker's own monotonic clock. Only the difference between them is kept, so the worker's time origin plays no part: a worker created before
+ * a sleep, or after the wall clock moved, reads the same time as the renderer. Reading `timeOrigin + now` directly would put it hours away.
+ */
+export function alignedClock(at: number, perfNow: () => number): () => number {
+  const offset = at - perfNow();
+  return () => perfNow() + offset;
+}
+
 export type SchedulerRequest =
-  | { type: "start"; config: SchedulerConfig }
+  | { type: "start"; config: SchedulerConfig; at: number }
   | { type: "sync"; position: number; at: number }
   | { type: "plan"; cap: number | null; jump: SchedulerJump | null }
   | { type: "timecode-end"; at: number | null }

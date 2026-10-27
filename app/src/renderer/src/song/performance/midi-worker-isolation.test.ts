@@ -44,6 +44,7 @@ it("runs the production scheduler in a separate thread while the host thread is 
     const start = performance.timeOrigin + performance.now();
     worker.postMessage({
       type: "start",
+      at: start,
       config: { cues: [{ time: 0.1, text: "", messages: [[192, 1]] }], position: 0, duration: 1, origin: start, bpm: 120, clock: false, tempo: null },
     });
     // Deliberately block this test's host thread; production code never does this.

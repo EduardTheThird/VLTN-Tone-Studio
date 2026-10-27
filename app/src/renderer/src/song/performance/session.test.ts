@@ -14,6 +14,7 @@ import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 import { useNav } from "@/state/nav";
 
 const mocks = vi.hoisted(() => ({
+  warm: [] as { cancel: () => void }[],
   song: { source: null as unknown },
   position: 0,
   audioNow: 0,
@@ -210,7 +211,11 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
   const midiNow = () => performance.timeOrigin + performance.now();
   return {
     midiNow,
-    prepareMidiScheduler: () => ({ worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() }),
+    prepareMidiScheduler: () => {
+      const warm = { worker: { terminate: vi.fn() }, ready: Promise.resolve(), cancel: vi.fn() };
+      mocks.warm.push(warm);
+      return warm;
+    },
     startMidiScheduler: (config: (typeof mocks.configs)[number], send: (typeof mocks.sends)[number], fault: (message: string) => void) => {
       mocks.configs.push(config);
       mocks.sends.push(send);
@@ -289,6 +294,7 @@ beforeEach(() => {
   mocks.audioNow = 0;
   mocks.jumps.length = 0;
   mocks.plans.length = 0;
+  mocks.warm.length = 0;
   mocks.cancelOk = true;
   mocks.outputs.length = 0;
   mocks.toasts.length = 0;
@@ -426,6 +432,14 @@ it("Enable requests fresh access and keeps the remembered port by its id", async
   expect(session.state.portId).toBe("usb");
   expect(selectArmed(session.state)).toBe(false);
   expect(session.state.midiStatus).toBe("MIDI output reconnected after sleep. Send cues to arm again.");
+});
+
+it("a system resume drops the warm scheduler worker, so Play builds one from the resumed clock", () => {
+  armedSession();
+  const warm = mocks.warm.at(-1)!;
+  expect(warm).toBeDefined();
+  mocks.resume?.();
+  expect(warm.cancel).toHaveBeenCalledTimes(1);
 });
 
 it("a system resume requests MIDI access again", async () => {

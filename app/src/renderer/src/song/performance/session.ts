@@ -1175,8 +1175,15 @@ export class PerformanceSession {
   /** Enable USB / system MIDI. Always asks for a fresh access, so a port re-enumerated since then is the object sent to. */
   connectMidi = () => this.openMidi();
 
-  /** After sleep the ports from before are stale, so the system's ports are requested again. */
+  /**
+   * After sleep the ports from before are stale, so the system's ports are requested again. A warm scheduler worker from before the sleep
+   * is dropped too, so Play builds a fresh one.
+   */
   private resumeMidi = () => {
+    if (this.prepared) {
+      this.prepared.cancel();
+      this.prepared = null;
+    }
     if (this.state.access) void this.openMidi();
   };
 
