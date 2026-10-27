@@ -67,6 +67,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - A slow-starting audio output no longer disarms cues as a stall.
 - A steady audio offset of 30 ms or more is followed after three checkpoints, so cues and MIDI clock stay on the audio instead of running early for the whole song. It no longer uses up the resync margin for later hitches.
 - A speed change or section jump that falls due as the audio passes it is always carried out, so the MIDI clock and cues move to the new rate and position instead of staying on the old one.
+- A song loaded by hand, or by a program change or remote binding, keeps the USB or system MIDI access, output and input of the song before it. Song triggers and remote bindings keep working after a load. Cues start disarmed, as before, until you arm them.
 
 ## [0.8.1] - 2026-10-21
 

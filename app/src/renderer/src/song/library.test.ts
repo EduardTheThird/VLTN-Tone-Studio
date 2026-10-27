@@ -68,6 +68,12 @@ it("loads saved source/stems and preserves queue positions for repeated entries"
   expect(useSongLibrary.getState().position).toBe(1);
   expect(useNav.getState().param).toBe("performance");
 });
+it("keeps the MIDI remembered by the last song when a song is loaded by hand", async () => {
+  const midi = { access: null, portId: "usb", inputId: "in", armed: false, output: undefined };
+  useSongLibrary.getState().rememberMidi(midi);
+  await useSongLibrary.getState().load(saved.id);
+  expect(useSongLibrary.getState().midiSession).toEqual(midi);
+});
 it("skips a track whose asset read fails, names it, and loads the song without blocking", async () => {
   const current = { name: "Current", audio };
   useSong.setState({ source: current });

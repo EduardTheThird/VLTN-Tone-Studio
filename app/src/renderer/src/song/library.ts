@@ -362,7 +362,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     // Loading a song replaces the set, so a song held for the next one of the old set is released.
     get().releaseHandover();
     const generation = ++loadGeneration;
-    if (!playlist) set({ playlistPlaying: false, midiSession: null });
+    // A song loaded by hand keeps the MIDI remembered by the last one; its session takes the access, ports and input, not the arming.
+    if (!playlist) set({ playlistPlaying: false });
     // Switching songs mid-set must not wait on a failed write; the edits stay queued and are retried.
     await flushSettings().catch((e) => console.error("Could not save song settings", e));
     const index = await readIndex(),

@@ -147,6 +147,7 @@ vi.mock("@/song/library", () => ({
             queueOverrides: [],
             position: -1,
             playlistPlaying: false,
+            rememberMidi: vi.fn(),
             preparedNext: (): unknown => null,
             claimHandover: (): unknown => null,
             takeAutoplay: (): boolean => false,

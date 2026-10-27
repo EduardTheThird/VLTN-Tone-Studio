@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
 import type { MidiSchedule } from "./midi-scheduler";
-import { PerformanceSession, selectArmed, type SessionInputs } from "./session";
+import { PerformanceSession, carriedInto, selectArmed, type SessionInputs } from "./session";
 import { SONG_TRIGGER_DEFAULTS, type SongTriggerSettings } from "./song-triggers";
 import { defaultBindings, startLearn, stopLearn, useRemoteLearn, type Binding } from "./bindings";
 import { useMidiConfiguration } from "./midi-configuration";
@@ -675,6 +675,32 @@ it("carries the armed output into the next song's session after an unchained joi
   vi.useRealTimers();
 });
 
+it("carries the access, output and input into a song loaded by hand, but not the arming", () => {
+  mocks.library.midiSession = null;
+  const { session, out, access, unload } = armedSession(output());
+  session.setInputId("in");
+  unload();
+  session.dispose();
+  expect(mocks.library.midiSession).toMatchObject({ portId: "usb", inputId: "in", armed: true, output: out });
+  const next = new PerformanceSession({ initial: inputs(), carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }), initialClock: false });
+  const unloadNext = next.loadSong(source, null);
+  next.bind();
+  expect(next.state.access).toBe(access);
+  expect(next.state.portId).toBe("usb");
+  expect(next.state.inputId).toBe("in");
+  expect(next.armed).toBe(false);
+  unloadNext();
+  next.dispose();
+});
+
+it("disarms a song loaded by hand but keeps the arming for a playlist join", () => {
+  const midi = { access: null, portId: "usb", inputId: "", armed: true, output: undefined };
+  expect(carriedInto(midi, { queued: false, playlistPlaying: false })).toMatchObject({ portId: "usb", armed: false });
+  expect(carriedInto(midi, { queued: true, playlistPlaying: false })).toMatchObject({ armed: false });
+  expect(carriedInto(midi, { queued: true, playlistPlaying: true })).toMatchObject({ portId: "usb", armed: true });
+  expect(carriedInto(null, { queued: true, playlistPlaying: true })).toBeNull();
+});
+
 it("does not pause the set when the outgoing song tears down at a join, because the playlist position has already moved", () => {
   vi.useFakeTimers();
   useNav.getState().go("song", "performance");
@@ -1293,6 +1319,22 @@ describe("song triggers", () => {
     send([0xc1, 9]);
     expect(mocks.library.load).toHaveBeenCalledWith("b");
     session.dispose();
+  });
+
+  it("keeps the input listening after a program change loads a song, so the next program change loads another", () => {
+    mocks.library.midiSession = null;
+    const first = triggerSession();
+    first.send([0xc1, 9]);
+    expect(mocks.library.load).toHaveBeenCalledWith("b");
+    first.session.dispose();
+    // The view is re-created for the song that loaded: it takes the input the one before had selected.
+    const next = new PerformanceSession({ initial: inputs(), carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }), initialClock: false });
+    next.loadSong(source, null);
+    next.bind();
+    expect(next.state.inputId).toBe("in");
+    next.state.access!.inputs.get("in")!.dispatchEvent(message([0xc1, 10]));
+    expect(mocks.library.load).toHaveBeenLastCalledWith("c");
+    next.dispose();
   });
 
   it("does nothing with a program change while song triggers are off, and with a program no song uses", () => {

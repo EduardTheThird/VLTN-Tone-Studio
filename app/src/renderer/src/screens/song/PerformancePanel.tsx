@@ -9,7 +9,7 @@ import { chordDisplayTranspose, clampCapo, effectiveBpm, keySpelling } from "@/s
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
 import { defaultChordSource } from "@/song/performance/sources";
-import { PerformanceSession, leftPerformance, useSession, type Timing } from "@/song/performance/session";
+import { PerformanceSession, carriedInto, leftPerformance, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
 import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
@@ -205,7 +205,7 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
     () =>
       new PerformanceSession({
         initialClock: !midiConfig.tempoOnStart && options.clock === true,
-        carried: queued && library.playlistPlaying ? library.midiSession : null,
+        carried: carriedInto(library.midiSession, { queued, playlistPlaying: !!library.playlistPlaying }),
         initial: {
           bluetooth,
           tempoOnStart: midiConfig.tempoOnStart,

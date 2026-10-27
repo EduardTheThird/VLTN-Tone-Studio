@@ -101,13 +101,22 @@ export interface LateNotice {
   at: number;
 }
 
-/** What a playlist carries from one song to the next so arming survives the transition. */
+/** What one song carries to the next: the access, ports and input, and whether the outputs were armed. */
 export interface CarriedMidi {
   access: MIDIAccess | null;
   portId: string;
   inputId: string;
   armed: boolean;
   output: unknown;
+}
+
+/**
+ * The MIDI a song takes from the one before it. Arming carries only into a playlist that is playing, so a song loaded by hand
+ * starts disarmed and its cues wait for the user to arm them.
+ */
+export function carriedInto(midi: CarriedMidi | null, next: { queued: boolean; playlistPlaying: boolean }): CarriedMidi | null {
+  if (!midi) return null;
+  return { ...midi, armed: midi.armed && next.queued && next.playlistPlaying };
 }
 
 /** The lead-in before a start: whole bars of count-in, beats of pre-roll, and a delay before either (seconds). */
@@ -411,8 +420,9 @@ export class PerformanceSession {
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
     const bluetooth = initial.bluetooth;
+    // An empty carried id means nothing was carried, so the saved choice still applies to a song loaded by hand.
     const portId =
-      carried?.portId ?? (initial.savedOutput?.transport === "system" ? initial.savedOutput.id : bluetooth?.state === "connected" ? bluetooth.id : "");
+      carried?.portId || (initial.savedOutput?.transport === "system" ? initial.savedOutput.id : bluetooth?.state === "connected" ? bluetooth.id : "");
     const access = carried?.access ?? null;
     const first = selectOutput({ portId, bluetooth, access });
     this.previousBluetooth = bluetooth;
@@ -421,7 +431,7 @@ export class PerformanceSession {
       playing: false,
       access,
       portId,
-      inputId: carried?.inputId ?? (initial.savedInput?.transport === "bluetooth" ? BLUETOOTH_PORT_ID : ""),
+      inputId: carried?.inputId || (initial.savedInput?.transport === "bluetooth" ? BLUETOOTH_PORT_ID : ""),
       armedOutput: carried?.armed && carried.output === first && first?.state === "connected" ? first : null,
       clock: options.initialClock,
       midiStatus: "",
@@ -1728,11 +1738,11 @@ export class PerformanceSession {
           }
         },
       },
-      // Carry arming to the next playlist song.
+      // Carry the MIDI to the next song: arming to the next playlist song, and the access, output and input to any song loaded next.
       {
         deps: (s) => [s.queued, s.playlistPlaying, s.busy, s.access, s.portId, s.inputId, armedOf(s), selectOutput(s)],
         run: (s) => {
-          if (s.queued && s.playlistPlaying && !s.busy)
+          if (!s.busy && (!s.queued || s.playlistPlaying))
             useSongLibrary.getState().rememberMidi({ access: s.access, portId: s.portId, inputId: s.inputId, armed: armedOf(s), output: selectOutput(s) });
         },
       },
