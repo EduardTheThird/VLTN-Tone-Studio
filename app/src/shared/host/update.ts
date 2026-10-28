@@ -1,9 +1,9 @@
-// App updates (owner: shell). Releases are the GitHub Releases of RELEASE_REPO, published by .github/workflows/release.yml.
+// App updates (owner: shell). Releases are the GitHub Releases of RELEASE_REPO, published by .github/workflows/fork-release.yml.
 // "install": electron-updater downloads the installer, checks its SHA-512 against latest*.yml and installs it when
 // the user restarts (Windows NSIS, Linux AppImage). "notify": the app only says a newer release exists and links to
 // it (macOS until builds are signed, the .deb, development runs). "unsupported": the web build.
 
-export const RELEASE_REPO = { owner: "grzmol", repo: "VLTN-Tone-Studio" } as const;
+export const RELEASE_REPO = { owner: "EduardTheThird", repo: "VLTN-Tone-Studio" } as const;
 
 export type UpdateMode = "install" | "notify" | "unsupported";
 

@@ -1,6 +1,6 @@
 # Packaging for VLTN Tone Studio (design/electron.md › Packaging and updates).
 # Build: `npm run dist` (electron-vite build, then electron-builder for the current OS).
-# Releases: .github/workflows/release.yml builds every OS on a push to main and publishes v<version>.
+# Releases: .github/workflows/fork-release.yml builds macOS and Windows from main and publishes v<version>.
 appId: app.vltntonestudio.desktop
 productName: VLTN Tone Studio
 copyright: Copyright © 2026 VLTN Tone Studio contributors
@@ -36,7 +36,7 @@ extraResources:
 # are signed and the updater also verifies the Authenticode publisher.
 publish:
   provider: github
-  owner: grzmol
+  owner: EduardTheThird
   repo: VLTN-Tone-Studio
   releaseType: release
 
