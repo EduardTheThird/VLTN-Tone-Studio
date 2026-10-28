@@ -75,7 +75,8 @@ function readGlobalMetronome(): MetronomeMode {
 
 const NO_TRACKS: Record<string, TrackInfo> = {};
 
-export function PerformancePanel() {
+/** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
+export function PerformancePanel({ shown = true }: { shown?: boolean }) {
   const source = useSong((s) => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
   const [stage, setStage] = useState(false);
@@ -89,11 +90,11 @@ export function PerformancePanel() {
     },
     [],
   );
-  return <PerformanceView key={generation} stage={stage} setStage={setStage} />;
+  return <PerformanceView key={generation} stage={stage} setStage={setStage} shown={shown} />;
 }
 
 /** Composes the performance screen. The MIDI session, scheduler and transport live in `PerformanceSession`. */
-function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value: boolean) => void }) {
+function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage: (value: boolean) => void; shown: boolean }) {
   const bluetooth = useBluetooth((s) => s.connection);
   const midiConfig = useMidiConfiguration();
   const source = useSong((s) => s.source),
@@ -239,6 +240,9 @@ function PerformanceView({ stage, setStage }: { stage: boolean; setStage: (value
   useEffect(() => {
     session.locked = stage;
   }, [session, stage]);
+  useEffect(() => {
+    session.shown = shown;
+  }, [session, shown]);
   useEffect(() => {
     session.bind();
     return () => session.dispose();

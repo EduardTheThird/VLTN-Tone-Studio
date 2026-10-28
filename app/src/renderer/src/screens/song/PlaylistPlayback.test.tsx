@@ -8,6 +8,7 @@ import { useSongLibrary } from "@/song/library";
 import { useBluetooth, type BleMidiConnection } from "@/bluetooth/connection";
 import { useNav } from "@/state/nav";
 import { PerformancePanel } from "./PerformancePanel";
+import { SongScreen } from "./SongScreen";
 import type { SchedulerConfig, ScheduledMessage } from "@/song/performance/midi-scheduler";
 // jsdom has no browser Worker; exercise the production schedule through the bridge mock.
 vi.mock("@/song/performance/midi-scheduler-client", async () => {
@@ -55,6 +56,10 @@ vi.mock("@/song/codec/flac-client", () => ({ decodeTrack: async () => ({ sampleR
 vi.stubGlobal("fetch", mock.fetch);
 const file = () => new Response(new Uint8Array(8));
 vi.mock("./LyricsTrack", () => ({ LyricsTrack: () => null }));
+// The other Song tabs are not under test here; the queue is edited through the library store, as its panel would.
+vi.mock("./SongLibraryPanel", () => ({ SongLibraryPanel: () => null }));
+vi.mock("./stems/StemsPanel", () => ({ StemsPanel: () => null }));
+vi.mock("./tonematch/ToneMatchPanel", () => ({ ToneMatchPanel: () => null }));
 vi.mock("@/bluetooth/BluetoothControls", () => ({ BluetoothControls: () => null }));
 vi.mock("@/song/stems/player", () => ({
   yieldToMain: () => Promise.resolve(),
@@ -585,4 +590,41 @@ it("prepares a next set song that was saved without a stem split, and the join t
   expect(useSong.getState().stems).toBeNull();
   expect(useSongLibrary.getState().prepared).toBeNull();
   expect(useSongLibrary.getState().position).toBe(1);
+});
+
+it("keeps a set playing when another Song tab is shown, and plays the queue as edited while hidden", async () => {
+  const third = song("third", 110, 33);
+  mock.index.mockResolvedValue({ ...emptyLibrary(), songs: [first, second, third] });
+  await useSongLibrary.getState().playPlaylist([first.id, second.id]);
+  useNav.getState().go("song", "performance");
+  render(<SongScreen />);
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  const player = mock.players.at(-1)! as unknown as Player;
+  const panel = document.querySelector<HTMLElement>("[role='tabpanel'][aria-labelledby$='trigger-performance']")!;
+  const position = () => (screen.getByLabelText("Song position") as HTMLInputElement).value;
+  const before = position();
+
+  act(() => useNav.getState().go("song", "songs"));
+  expect(panel.hidden).toBe(true);
+  expect(player.isPlaying).toBe(true);
+  expect(player.stopped).toBe(false);
+  expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+
+  act(() => {
+    useSongLibrary.getState().addToQueue([third.id]);
+    useSongLibrary.getState().moveInQueue(2, 1);
+  });
+  const queued = useSongLibrary.getState();
+  expect(queued.queue[queued.position + 1]).toBe(third.id);
+  expect(player.isPlaying).toBe(true);
+
+  act(() => useNav.getState().go("song", "performance"));
+  expect(panel.hidden).toBe(false);
+  expect(position()).toBe(before);
+  expect(player.isPlaying).toBe(true);
+
+  await act(async () => {
+    player.end();
+  });
+  await waitFor(() => expect(useSong.getState().source?.libraryId).toBe(third.id));
 });

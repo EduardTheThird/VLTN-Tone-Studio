@@ -1230,6 +1230,21 @@ describe("remote actions", () => {
     session.dispose();
   });
 
+  it("runs no view key while the screen is hidden by another Song tab, but still runs the section keys", () => {
+    const { session, view } = remoteSession();
+    view.pdfOnScreen.mockReturnValue(true);
+    session.shown = false;
+    session.keyDown(press("t"));
+    session.keyDown(press("PageDown"));
+    expect(view.tap).not.toHaveBeenCalled();
+    expect(view.scrollLyrics).not.toHaveBeenCalled();
+    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "This song has no sections." });
+    session.shown = true;
+    session.keyDown(press("t"));
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
   it("a focused checkbox does not block a binding, but a focused slider does", () => {
     const { session, view } = remoteSession();
     const checkbox = document.createElement("input");

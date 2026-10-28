@@ -194,6 +194,20 @@ const NO_VIEW: ViewHost = {
   tap: NOT_ON_SCREEN,
 };
 
+/**
+ * The view actions while the performance screen is hidden by another Song tab. A key does nothing to a view that is not on screen, and
+ * a section key turns no PDF page (it moves the section, as it does with no PDF up).
+ */
+const HIDDEN_VIEW: ViewHost = {
+  scrollLyrics: () => undefined,
+  pdfOnScreen: () => false,
+  fontSize: () => undefined,
+  toggleStage: () => undefined,
+  muteGroup: () => undefined,
+  toggleClick: () => undefined,
+  tap: () => undefined,
+};
+
 /** How far a speed key moves the rate: 5% */
 const SPEED_STEP = 0.05;
 /** Shown when Learn is given a key with a modifier, which a binding cannot match */
@@ -274,7 +288,10 @@ function parseOptions(json: string): Record<string, unknown> {
   }
 }
 
-/** Whether the app has moved off Performance. A remount on the same screen is not leaving. */
+/**
+ * Whether the app has moved off Performance. A remount on the same screen is not leaving. Only the panel's teardown asks this, and a
+ * switch to another Song tab keeps the panel mounted, so it does not pause the set.
+ */
 export function leftPerformance(): boolean {
   const nav = useNav.getState();
   return nav.screen !== "song" || nav.param !== "performance";
@@ -285,6 +302,11 @@ export class PerformanceSession {
   private effects: Effect[];
   /** Stage mode: seeking is refused however it is requested. */
   locked = false;
+  /**
+   * Whether the performance screen is on screen. Another Song tab hides it without stopping anything; while hidden, a key runs only the
+   * transport, song and section actions (see `HIDDEN_VIEW`). MIDI and Bluetooth messages are not changed by this.
+   */
+  shown = true;
   private bound = false;
   private flushing = false;
   private dirty = false;
@@ -1489,7 +1511,7 @@ export class PerformanceSession {
     const routes = this.remote.key(e.key, this.state.bindings);
     if (!routes.length) return false;
     e.preventDefault();
-    this.runRoutes(routes);
+    this.runRoutes(routes, this.shown ? this.actionHost() : { ...this.sessionActions, ...HIDDEN_VIEW });
     return true;
   };
 
@@ -1607,14 +1629,14 @@ export class PerformanceSession {
   }
 
   /** Runs what the bindings matched. A first press of a double press says so, so the performer knows it is waiting for the second. */
-  private runRoutes(routes: Route[]): void {
+  private runRoutes(routes: Route[], host: ActionHost = this.actionHost()): void {
     for (const route of routes) {
       const label = actionLabel(route.binding.action, route.binding.index);
       if (route.kind === "armed") {
         showToast({ tone: "info", title: `Press again to ${label}`, body: "The second press must come within 0.6 s." });
         continue;
       }
-      const hint = runAction(route.binding, this.actionHost());
+      const hint = runAction(route.binding, host);
       if (hint) showToast({ tone: "info", title: hint });
     }
   }
