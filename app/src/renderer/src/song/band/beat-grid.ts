@@ -426,6 +426,47 @@ export function detectBeatGrid(sources: readonly PcmAudio[], sampleRate: number,
   return makeGrid(beatsPerBar, beats, downbeat);
 }
 
+/** The most beats in a bar the stored grid may have. Anything larger is not a meter the engine knows. */
+const MAX_BEATS_PER_BAR = 12;
+
+/**
+ * Reads a beat grid saved in a song's options. Anything that is not a grid of finite, non-negative, strictly increasing beat times, with
+ * a whole number of beats per bar and a downbeat inside that bar, gives null, so the song simply has no grid. The tempo and the steady fit
+ * are worked out again from the beats rather than trusted from storage.
+ */
+export function parseBeatGrid(value: unknown): BeatGrid | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const saved = value as Record<string, unknown>;
+  const beatsPerBar = saved.beatsPerBar as number,
+    downbeat = saved.downbeat as number;
+  if (!Number.isInteger(beatsPerBar) || beatsPerBar < 1 || beatsPerBar > MAX_BEATS_PER_BAR) return null;
+  if (!Number.isInteger(downbeat) || downbeat < 0 || downbeat >= beatsPerBar) return null;
+  if (!Array.isArray(saved.beats) || saved.beats.length === 0) return null;
+  const beats = saved.beats as unknown[];
+  for (let i = 0; i < beats.length; i++) {
+    const beat = beats[i];
+    if (typeof beat !== "number" || !Number.isFinite(beat) || beat < 0) return null;
+    if (i > 0 && !(beat > (beats[i - 1] as number))) return null;
+  }
+  return makeGrid(beatsPerBar, beats as number[], downbeat);
+}
+
+/**
+ * A grid that follows the song's fixed tempo: a beat every 60 / bpm seconds, on the metronome's first beat, from the start of the song to
+ * its end. `firstBeat` is a beat of the grid, so the bar phase is the one the metronome counts. Returns an empty grid for a tempo that
+ * cannot be used.
+ */
+export function fixedBeatGrid(bpm: number, firstBeat: number, beatsPerBar: number, songEnd: number): BeatGrid {
+  const bar = Math.max(1, Math.floor(beatsPerBar));
+  if (!(bpm > 0) || !(songEnd > 0) || !Number.isFinite(firstBeat) || firstBeat < 0) return makeGrid(bar, [], 0);
+  const interval = 60 / bpm;
+  const count = Math.floor(firstBeat / interval);
+  const start = Math.max(0, firstBeat - count * interval);
+  const beats: number[] = [];
+  for (let i = 0; start + i * interval < songEnd; i++) beats.push(start + i * interval);
+  return makeGrid(bar, beats, count % bar);
+}
+
 /** Keeps every other beat, starting with the downbeat's beat, so the tempo halves and the bar keeps its beats per bar. */
 export function halveTempo(grid: BeatGrid): BeatGrid {
   const bar = Math.max(1, Math.floor(grid.beatsPerBar));

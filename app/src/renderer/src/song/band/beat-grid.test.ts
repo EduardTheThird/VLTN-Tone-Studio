@@ -5,9 +5,11 @@ import {
   doubleTempo,
   estimateTempo,
   fitSteady,
+  fixedBeatGrid,
   halveTempo,
   nudgeGrid,
   onsetStrength,
+  parseBeatGrid,
   pickDownbeat,
   shiftDownbeat,
   trackBeats,
@@ -276,5 +278,58 @@ describe("tempo corrections with a downbeat that is not the first beat", () => {
     const oldDownbeat = doubled.beats.indexOf(1.5);
     expect(oldDownbeat).toBeGreaterThanOrEqual(0);
     expect((((oldDownbeat - doubled.downbeat) % 4) + 4) % 4).toBe(0);
+  });
+});
+
+describe("parseBeatGrid", () => {
+  const stored = { beatsPerBar: 4, beats: [0.5, 1, 1.5, 2, 2.5], downbeat: 1, bpm: 120, steady: null };
+
+  it("reads a valid saved grid and works out its tempo again", () => {
+    const grid = parseBeatGrid(stored);
+    expect(grid).toEqual({ beatsPerBar: 4, beats: [0.5, 1, 1.5, 2, 2.5], downbeat: 1, bpm: 120, steady: { bpm: 120, firstBeat: 0.5 } });
+  });
+
+  it("rejects garbage", () => {
+    for (const value of [null, undefined, "grid", 42, [], { beatsPerBar: 4 }, { ...stored, beats: "0.5,1" }, { ...stored, beats: [] }]) {
+      expect(parseBeatGrid(value)).toBeNull();
+    }
+    expect(parseBeatGrid({ ...stored, beats: [0.5, "1", 1.5] })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beats: [0.5, Number.NaN, 1.5] })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beats: [-0.5, 1] })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beatsPerBar: 4.5 })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beatsPerBar: 0 })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beatsPerBar: 40 })).toBeNull();
+  });
+
+  it("rejects beats that do not increase", () => {
+    expect(parseBeatGrid({ ...stored, beats: [0.5, 1, 1] })).toBeNull();
+    expect(parseBeatGrid({ ...stored, beats: [1, 0.5] })).toBeNull();
+  });
+
+  it("rejects a downbeat outside the bar", () => {
+    expect(parseBeatGrid({ ...stored, downbeat: 4 })).toBeNull();
+    expect(parseBeatGrid({ ...stored, downbeat: -1 })).toBeNull();
+    expect(parseBeatGrid({ ...stored, downbeat: 1.5 })).toBeNull();
+  });
+});
+
+describe("fixedBeatGrid", () => {
+  it("lays a beat every 60 / bpm seconds from the metronome's first beat to the end of the song", () => {
+    const grid = fixedBeatGrid(120, 0.25, 4, 2);
+    expect(grid.beats).toEqual([0.25, 0.75, 1.25, 1.75]);
+    expect(grid.downbeat).toBe(0);
+    expect(grid.bpm).toBeCloseTo(120, 6);
+  });
+
+  it("keeps the bar phase of a first beat that is later in the song", () => {
+    const grid = fixedBeatGrid(120, 1.25, 4, 2);
+    expect(grid.beats[0]).toBeCloseTo(0.25, 9);
+    expect(grid.downbeat).toBe(2);
+    expect(grid.beats[grid.downbeat]).toBeCloseTo(1.25, 9);
+  });
+
+  it("gives an empty grid for a tempo that cannot be used", () => {
+    expect(fixedBeatGrid(0, 0, 4, 10).beats).toEqual([]);
+    expect(fixedBeatGrid(120, 0, 4, 0).beats).toEqual([]);
   });
 });

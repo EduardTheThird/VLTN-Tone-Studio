@@ -3,6 +3,7 @@ import { findModel } from "@shared/host/song";
 import { decodeSong } from "./decode";
 import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
 import { detectMissingParts, type MissingParts } from "./band/detect";
+import { GENERATED_PART_NAMES } from "./band/generated-names";
 import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
 import { freeTrackKeys, importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
 import { mergeTrackDefaults, type TrackInfo } from "./tracks";
@@ -57,8 +58,8 @@ const BUSY_NOTICE = "Wait for the song to finish loading or splitting before gen
 const PART_KINDS = ["drums", "bass"] as const;
 type PartKind = (typeof PART_KINDS)[number];
 const PART_TRACK: Record<PartKind, { name: string; transpose: boolean }> = {
-  drums: { name: "Drums (generated)", transpose: false },
-  bass: { name: "Bass (generated)", transpose: true },
+  drums: { name: GENERATED_PART_NAMES.drums, transpose: false },
+  bass: { name: GENERATED_PART_NAMES.bass, transpose: true },
 };
 
 /**
