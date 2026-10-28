@@ -114,13 +114,24 @@ describe("missing parts on load", () => {
     }));
   });
 
-  it("checks a loaded split for drums and bass", async () => {
+  it("a hand load leaves the check empty, even for a split song, until the Band panel asks for it", async () => {
     await useSongLibrary.getState().load(split.id);
+    expect(useSong.getState().missingParts).toBeNull();
+    useSong.getState().checkMissingParts();
     expect(useSong.getState().missingParts).toMatchObject({ drums: "absent", bass: "present" });
   });
 
-  it("forgets the check when the next song has no drums or bass stem", async () => {
+  it("a playlist advance leaves the check empty", async () => {
+    await useSongLibrary.getState().playPlaylist([plain.id, split.id]);
+    await useSongLibrary.getState().advancePlaylist();
+    expect(useSong.getState().source?.libraryId).toBe(split.id);
+    expect(useSong.getState().stems?.drums).toBeDefined();
+    expect(useSong.getState().missingParts).toBeNull();
+  });
+
+  it("loading a song clears the check of the song before", async () => {
     await useSongLibrary.getState().load(split.id);
+    useSong.getState().checkMissingParts();
     expect(useSong.getState().missingParts).not.toBeNull();
     await useSongLibrary.getState().load(plain.id);
     expect(useSong.getState().missingParts).toBeNull();

@@ -27,6 +27,11 @@ export interface SongStore extends SongState {
   lastSplit: SplitInfo | null;
   /** Whether the split has drums or bass, set when a split finishes. Null until then. */
   missingParts: MissingParts | null;
+  /**
+   * Computes `missingParts` for the loaded stems if it is still null and the stems include drums or bass. Not run at song load, which
+   * happens while a set is walked; the Band panel calls it when it opens, while stopped.
+   */
+  checkMissingParts(): void;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -149,6 +154,12 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       setSetting(key, ":options", mergeTrackDefaults(getSetting(key, ":options"), nextTracks));
       set({ source: nextSource, stems: nextStems, tracks: nextTracks, status: { kind: "idle" } });
       return outcome.notices;
+    },
+
+    checkMissingParts() {
+      const { source, stems, missingParts } = get();
+      if (!source || !stems || missingParts || !(stems.drums || stems.bass)) return;
+      set({ missingParts: detectMissingParts(source.audio, stems) });
     },
 
     setTrackInfo(key, patch) {

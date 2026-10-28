@@ -177,6 +177,30 @@ describe("song store", () => {
     expect(useSong.getState().missingParts).toBeNull();
   });
 
+  it("checkMissingParts fills in the check for loaded stems with a silent drums stem", () => {
+    const length = 88200;
+    const tone = () => new Float32Array(length).map((_, i) => 0.5 * Math.sin(i * 0.05));
+    const useSong = store();
+    useSong.setState({
+      source: { name: "a.wav", audio: { sampleRate: 44100, channels: [tone(), tone()] } },
+      stems: {
+        drums: { sampleRate: 44100, channels: [new Float32Array(length), new Float32Array(length)] },
+        bass: { sampleRate: 44100, channels: [tone(), tone()] },
+      },
+      missingParts: null,
+    });
+    useSong.getState().checkMissingParts();
+    expect(useSong.getState().missingParts).toMatchObject({ drums: "absent", bass: "present" });
+  });
+
+  it("checkMissingParts does nothing without drums or bass stems", () => {
+    const useSong = store();
+    const other = { sampleRate: 44100, channels: [new Float32Array(88200)] };
+    useSong.setState({ source: { name: "a.wav", audio: other }, stems: { other }, missingParts: null });
+    useSong.getState().checkMissingParts();
+    expect(useSong.getState().missingParts).toBeNull();
+  });
+
   it("split without a song does nothing", async () => {
     const separate = vi.fn();
     const useSong = store({ separate });
