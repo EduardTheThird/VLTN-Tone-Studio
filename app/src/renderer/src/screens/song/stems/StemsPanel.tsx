@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
+import { STEM_NAMES } from "@/song/types";
 import { findModel, missingBytes, type SeparationModel } from "@shared/host/song";
 import { StemMixer } from "./StemMixer";
 import { megabytes, SplitOptions, useDownloadedFiles } from "./SplitOptions";
@@ -47,7 +48,9 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
   }, [source, stems, status.kind]);
   const splitButton = <Button onClick={() => void useSong.getState().split()}>{missing ? `Download ${missing} MB and split` : "Split into stems"}</Button>;
 
-  if (stems && source) return <StemMixer key={source.libraryId ?? source.name} stems={stems} songName={source.name} />;
+  // A song with only imported tracks (no split stem) has nothing to mix: show the split prompt instead.
+  const hasStems = !!stems && STEM_NAMES.some((n) => stems[n]);
+  if (stems && source && hasStems) return <StemMixer key={source.libraryId ?? source.name} stems={stems} songName={source.name} />;
 
   if (status.kind === "decoding") return <Working title="Reading the song" />;
   if (status.kind === "model") {
