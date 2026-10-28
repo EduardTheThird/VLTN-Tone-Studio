@@ -7,6 +7,7 @@ import {
   fitSteady,
   fixedBeatGrid,
   halveTempo,
+  HOP,
   nudgeGrid,
   onsetStrength,
   parseBeatGrid,
@@ -54,14 +55,21 @@ function render(hits: Hit[], seconds = SECONDS): PcmAudio {
   return { sampleRate: RATE, channels: [out] };
 }
 
-/** Click track: a noise burst on every beat, and a low thump on beats with index % thumpEvery === 0. */
-function clickAudio(beats: number[], thumpEvery: number): PcmAudio {
+/** Click track: a noise burst on every beat, and a low thump on beats with index % thumpEvery === thumpOffset. */
+function clickAudio(beats: number[], thumpEvery: number, thumpOffset = 0): PcmAudio {
   const hits: Hit[] = [];
   beats.forEach((at, i) => {
     hits.push({ at, amplitude: 0.5, decay: 0.012 });
-    if (i % thumpEvery === 0) hits.push({ at, amplitude: 0.8, decay: 0.08, tone: 55 });
+    if (i % thumpEvery === thumpOffset) hits.push({ at, amplitude: 0.8, decay: 0.08, tone: 55 });
   });
   return render(hits);
+}
+
+/** Beats at a constant tempo from `first`, one every 60 / bpm seconds, up to the end of a clip that is `seconds` long. */
+function beatsFrom(first: number, bpm: number, seconds = SECONDS): number[] {
+  const beats: number[] = [];
+  for (let k = 0; first + (k * 60) / bpm < seconds - 0.5; k++) beats.push(first + (k * 60) / bpm);
+  return beats;
 }
 
 /** Beats at a constant tempo, starting at FIRST_BEAT. */
@@ -119,6 +127,47 @@ describe("click track at 120 BPM", () => {
     expect(steady).not.toBeNull();
     expect(Math.abs(steady!.bpm - 120)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(steady!.firstBeat - FIRST_BEAT)).toBeLessThanOrEqual(0.02);
+  });
+});
+
+describe("onset peak of a single click", () => {
+  it("peaks within one hop of the click, not one hop early as it did with frames centred on t × HOP", () => {
+    const { onset, frameRate } = onsetStrength([render([{ at: 1, amplitude: 0.5, decay: 0.012 }], 2)], RATE);
+    let peak = 0;
+    for (let t = 0; t < onset.length; t++) if (onset[t] > onset[peak]) peak = t;
+    expect(Math.abs(peak / frameRate - 1)).toBeLessThanOrEqual(HOP / RATE);
+    expect(peak / frameRate).toBeGreaterThan(1 - HOP / RATE / 2);
+  });
+});
+
+describe("click track that starts at exactly 0 s", () => {
+  const truth = beatsFrom(0, 120);
+  const audio = clickAudio(truth, 4);
+
+  it("puts the first beat within 3 ms of 0 and every beat within 3 ms of its click", () => {
+    const grid = detectBeatGrid([audio], RATE, 4);
+    expect(grid.beats).toHaveLength(truth.length);
+    grid.beats.forEach((beat, i) => expect(Math.abs(beat - truth[i])).toBeLessThanOrEqual(0.003));
+  });
+
+  it("puts the downbeat on the accented first click and fits a steady 120 BPM line", () => {
+    const grid = detectBeatGrid([audio], RATE, 4);
+    expect(grid.downbeat).toBe(0);
+    expect(grid.steady).not.toBeNull();
+    expect(Math.abs(grid.steady!.bpm - 120)).toBeLessThanOrEqual(0.1);
+  });
+});
+
+describe("click track with a pickup at 0.25 s", () => {
+  // The bar starts on the second click, at 0.75 s, so the first click at 0.25 s is a pickup and must not be turned into a bar of its own.
+  const truth = beatsFrom(0.25, 120);
+  const audio = clickAudio(truth, 4, 1);
+
+  it("keeps the pickup at 0.25 s and puts the downbeat on the accent at 0.75 s", () => {
+    const grid = detectBeatGrid([audio], RATE, 4);
+    expect(Math.abs(grid.beats[0] - 0.25)).toBeLessThanOrEqual(0.003);
+    expect(grid.downbeat).toBe(1);
+    expect(Math.abs(grid.beats[grid.downbeat] - 0.75)).toBeLessThanOrEqual(0.003);
   });
 });
 
@@ -193,6 +242,27 @@ describe("fitSteady", () => {
 
   it("returns the tempo and first beat of an exact line", () => {
     expect(fitSteady([1, 1.5, 2, 2.5])).toEqual({ bpm: 120, firstBeat: 1 });
+  });
+
+  it("ignores one stray last beat when the rest of the line fits", () => {
+    const beats = Array.from({ length: 20 }, (_, i) => i * 0.5);
+    beats[19] += 0.06;
+    const steady = fitSteady(beats);
+    expect(steady).not.toBeNull();
+    expect(steady!.bpm).toBeCloseTo(120, 1);
+    expect(steady!.firstBeat).toBeCloseTo(0, 2);
+  });
+
+  it("ignores one stray first beat when the rest of the line fits", () => {
+    const beats = Array.from({ length: 20 }, (_, i) => 1 + i * 0.5);
+    beats[0] -= 0.06;
+    expect(fitSteady(beats)).not.toBeNull();
+  });
+
+  it("does not drop a stray beat in the middle", () => {
+    const beats = Array.from({ length: 20 }, (_, i) => i * 0.5);
+    beats[10] += 0.06;
+    expect(fitSteady(beats)).toBeNull();
   });
 });
 

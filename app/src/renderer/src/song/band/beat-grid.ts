@@ -7,7 +7,7 @@ import type { PcmAudio } from "../types";
 
 /** Samples in one analysis frame. */
 export const FFT_SIZE = 2048;
-/** Samples between frames. At 44.1 kHz that is about 86 frames a second. Frame t is centred on sample t × HOP. */
+/** Samples between frames. At 44.1 kHz that is about 86 frames a second. The analysis window of frame t is centred on sample (t − 1) × HOP. */
 export const HOP = 512;
 /** Log-spaced mel bands the onset strength sums over. */
 export const MEL_BANDS = 40;
@@ -51,6 +51,13 @@ export const CHORD_WINDOW_SECONDS = 0.07;
 export const CHORD_WEIGHT = 0.5;
 /** A song is steady when every beat is this close (seconds) to a straight line through all of them. */
 export const STEADY_TOLERANCE_SECONDS = 0.015;
+/** A beat at either end of the grid must have an onset peak this close (seconds), or it is trimmed or not added. */
+export const EXTEND_PEAK_SECONDS = 0.07;
+/**
+ * An onset peak counts only when it reaches this share of a typical tracked beat's onset. This keeps the noise floor of a quiet tail
+ * from growing a grid across silence.
+ */
+export const EXTEND_MIN_SHARE = 0.25;
 /** The largest shift one nudge may make, in seconds. */
 export const NUDGE_MAX_SECONDS = 0.1;
 
@@ -129,14 +136,18 @@ function melBands(sampleRate: number): MelBand[] {
   });
 }
 
-/** Half-wave rectified change from the previous frame, summed over the bands. Frame 0 has no previous frame and reads as zero. */
+/**
+ * Half-wave rectified change from the previous frame, summed over the bands. Before the first frame the level is silence, so a sound
+ * that is already playing at the start of the audio still counts as an onset.
+ */
 function spectralFlux(levels: Float64Array, bands: number): Float64Array {
   const frames = levels.length / bands;
   const flux = new Float64Array(frames);
-  for (let t = 1; t < frames; t++) {
+  for (let t = 0; t < frames; t++) {
     let sum = 0;
     for (let b = 0; b < bands; b++) {
-      const rise = levels[t * bands + b] - levels[(t - 1) * bands + b];
+      const before = t > 0 ? levels[(t - 1) * bands + b] : 0;
+      const rise = levels[t * bands + b] - before;
       if (rise > 0) sum += rise;
     }
     flux[t] = sum;
@@ -181,7 +192,10 @@ export function onsetStrength(sources: readonly PcmAudio[], sampleRate: number):
   // Scales |X| so a full-scale sine reads about 1, whatever the frame length.
   const scale = 4 / FFT_SIZE;
   for (let t = 0; t < frames; t++) {
-    const start = t * HOP - half;
+    // The rise into frame t is largest while its window is still climbing onto a click, about one hop (FFT_SIZE / 4 samples) before the
+    // click. Centring frame t on (t − 1) × HOP, so the rise into it is stored one hop later, puts a click's peak on the click. Measured
+    // on single clicks, the peak was 11 ms early with frames centred on t × HOP and is within 2 ms with this.
+    const start = (t - 1) * HOP - half;
     for (let i = 0; i < FFT_SIZE; i++) {
       const s = start + i;
       frame[i] = s >= 0 && s < mono.length ? mono[s] : 0;
@@ -381,25 +395,44 @@ export function pickDownbeat(
   return bestPhase;
 }
 
-/** A straight line through the beats, if every beat is within STEADY_TOLERANCE_SECONDS of it. Needs at least four beats. */
-export function fitSteady(beats: readonly number[]): { bpm: number; firstBeat: number } | null {
-  const n = beats.length;
-  if (n < 4) return null;
+/** Least-squares line through beats[i] at each index i in `indices`. Null when the indices do not spread out. */
+function fitLine(beats: readonly number[], indices: readonly number[]): { slope: number; intercept: number } | null {
+  const n = indices.length;
   let sx = 0,
     sy = 0,
     sxx = 0,
     sxy = 0;
-  for (let i = 0; i < n; i++) {
+  for (const i of indices) {
     sx += i;
     sy += beats[i];
     sxx += i * i;
     sxy += i * beats[i];
   }
-  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx),
-    intercept = (sy - slope * sx) / n;
-  if (!(slope > 0)) return null;
-  for (let i = 0; i < n; i++) if (Math.abs(beats[i] - (intercept + slope * i)) > STEADY_TOLERANCE_SECONDS) return null;
-  return { bpm: 60 / slope, firstBeat: intercept };
+  const denominator = n * sxx - sx * sx;
+  if (!(denominator > 0)) return null;
+  const slope = (n * sxy - sx * sy) / denominator;
+  return { slope, intercept: (sy - slope * sx) / n };
+}
+
+/**
+ * A straight line through the beats, if the beats fit it. The line is fitted to every beat first. The first and the last beat may be
+ * dropped, but only when each one alone is off the line by more than STEADY_TOLERANCE_SECONDS, because a tracker can end on a stray
+ * beat. The line is then refitted, and every beat that is kept must be within tolerance. Needs at least four beats.
+ */
+export function fitSteady(beats: readonly number[]): { bpm: number; firstBeat: number } | null {
+  const n = beats.length;
+  if (n < 4) return null;
+  const all = beats.map((_, i) => i);
+  const line = fitLine(beats, all);
+  if (!line) return null;
+  const off = (fit: { slope: number; intercept: number }, i: number) => Math.abs(beats[i] - (fit.intercept + fit.slope * i)) > STEADY_TOLERANCE_SECONDS;
+  const outliers = all.filter((i) => off(line, i));
+  if (outliers.some((i) => i !== 0 && i !== n - 1)) return null;
+  const kept = all.filter((i) => !outliers.includes(i));
+  const fit = outliers.length ? fitLine(beats, kept) : line;
+  if (!fit || kept.length < 4 || !(fit.slope > 0)) return null;
+  if (kept.some((i) => off(fit, i))) return null;
+  return { bpm: 60 / fit.slope, firstBeat: fit.intercept };
 }
 
 /** Median beat interval as a tempo. Zero when there are fewer than two beats. */
@@ -417,11 +450,97 @@ function makeGrid(beatsPerBar: number, beats: number[], downbeat: number): BeatG
   return { beatsPerBar, beats, downbeat, bpm: medianBpm(beats), steady: fitSteady(beats) };
 }
 
-/** The whole pipeline: onset strength, tempo, beats, then the downbeat. Chord changes are optional and in seconds. */
+/** Median of a list of numbers. Zero for an empty list. */
+function median(values: readonly number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+/** Whether the onset curve has a local peak at or above `threshold` within EXTEND_PEAK_SECONDS of `time`. */
+function hasOnsetPeak(onset: Float64Array, time: number, frameRate: number, threshold: number): boolean {
+  const centre = Math.round(time * frameRate),
+    reach = Math.ceil(EXTEND_PEAK_SECONDS * frameRate);
+  for (let f = Math.max(0, centre - reach); f <= Math.min(onset.length - 1, centre + reach); f++) {
+    const before = f > 0 ? onset[f - 1] : 0,
+      after = f + 1 < onset.length ? onset[f + 1] : 0;
+    if (onset[f] >= threshold && onset[f] > 0 && onset[f] >= before && onset[f] > after) return true;
+  }
+  return false;
+}
+
+/**
+ * Trims the tracked beats at either end that have no onset peak, then adds beats before the first and after the last, one local period
+ * at a time, up to the end of the audio. The tracker can carry its path across silence after the last onset, so trimming is needed as
+ * well as adding. A stretch before the start stops at a quarter period, and a beat in it is moved to 0, so a song whose first click is
+ * at 0 keeps that click.
+ */
+function extendBeats(beats: readonly number[], onset: Float64Array, frameRate: number, duration: number): number[] {
+  if (beats.length < 2) return [...beats];
+  const typical = median(beats.map((beat) => Math.max(...[-1, 0, 1].map((d) => onset[Math.round(beat * frameRate) + d] ?? 0))));
+  const threshold = EXTEND_MIN_SHARE * typical;
+  const supported = (time: number) => hasOnsetPeak(onset, time, frameRate, threshold);
+  let first = 0,
+    last = beats.length - 1;
+  while (first < last && !supported(beats[first])) first++;
+  while (last > first && !supported(beats[last])) last--;
+  const core = beats.slice(first, last + 1);
+  if (core.length < 2) return core;
+  const intervals = core.slice(1).map((beat, i) => beat - core[i]);
+  const startPeriod = median(intervals.slice(0, 4)),
+    endPeriod = median(intervals.slice(-4));
+  const front: number[] = [];
+  let time = core[0];
+  while (time > 0 && time - startPeriod >= -startPeriod / 4) {
+    const candidate = Math.max(0, time - startPeriod);
+    if (!supported(candidate)) break;
+    front.unshift(candidate);
+    time = candidate;
+  }
+  const back: number[] = [];
+  for (let next = core[core.length - 1] + endPeriod; next <= duration && supported(next); next += endPeriod) back.push(next);
+  return [...front, ...core, ...back];
+}
+
+/** How far either side of a tracked beat the attack is searched for, in seconds. Frame-based onsets are only good to a few milliseconds. */
+export const ATTACK_SEARCH_SECONDS = 0.012;
+/** Length of the envelope the attack is read from, in samples. About 0.7 ms at 44.1 kHz, short enough to find the start of a click. */
+const ATTACK_ENVELOPE_SAMPLES = 32;
+
+/**
+ * Moves each beat to the attack of the audio near it. The attack is the first sample whose short envelope reaches half of the envelope's
+ * peak inside the search window. A frame-based onset puts the peak in a frame, which is only good to a few milliseconds; the attack is
+ * read from the samples themselves.
+ */
+export function snapToAttack(mono: ArrayLike<number>, sampleRate: number, beats: readonly number[]): number[] {
+  const reach = Math.round(ATTACK_SEARCH_SECONDS * sampleRate);
+  return beats.map((beat) => {
+    const centre = Math.round(beat * sampleRate);
+    const from = Math.max(0, centre - reach),
+      to = Math.min(mono.length - ATTACK_ENVELOPE_SAMPLES, centre + reach);
+    if (to <= from) return beat;
+    const env: number[] = [];
+    let peak = 0;
+    for (let i = from; i <= to; i++) {
+      let sum = 0;
+      for (let k = 0; k < ATTACK_ENVELOPE_SAMPLES; k++) sum += Math.abs(mono[i + k]);
+      env.push(sum / ATTACK_ENVELOPE_SAMPLES);
+      peak = Math.max(peak, env[env.length - 1]);
+    }
+    if (!(peak > 0)) return beat;
+    const half = env.findIndex((v) => v >= 0.5 * peak);
+    // The envelope is read forward, so its half-way point lags the attack by half its length.
+    return (from + half + ATTACK_ENVELOPE_SAMPLES / 2) / sampleRate;
+  });
+}
+
+/** The whole pipeline: onset strength, tempo, beats, the grid's ends, then the downbeat. Chord changes are optional and in seconds. */
 export function detectBeatGrid(sources: readonly PcmAudio[], sampleRate: number, beatsPerBar: number, chordChanges: readonly number[] = []): BeatGrid {
   const { onset, low, frameRate } = onsetStrength(sources, sampleRate);
   const { bpm } = estimateTempo(onset, frameRate);
-  const beats = trackBeats(onset, frameRate, bpm);
+  const tracked = trackBeats(onset, frameRate, bpm);
+  const duration = sources.reduce((max, source) => Math.max(max, (source.channels[0]?.length ?? 0) / sampleRate), 0);
+  const beats = snapToAttack(monoSum(sources), sampleRate, extendBeats(tracked, onset, frameRate, duration));
   const downbeat = pickDownbeat(beats, low, frameRate, beatsPerBar, chordChanges);
   return makeGrid(beatsPerBar, beats, downbeat);
 }
