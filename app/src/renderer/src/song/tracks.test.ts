@@ -15,6 +15,7 @@ import {
   NAMED_COLOURS,
   orderedKeys,
   parseTrackName,
+  setSolo,
   silenceGroupmates,
   toggleMuteGroup,
 } from "./tracks";
@@ -141,6 +142,34 @@ describe("mute groups", () => {
     mix.b = { volume: 0.4, mute: false, solo: false, pan: 0.5 };
     const next = silenceGroupmates(mix, { a: [1], b: [1] }, "a");
     expect(next.b).toEqual({ volume: 0.4, mute: true, solo: false, pan: 0.5 });
+  });
+
+  it("soloing a muted track in a group unmutes it and mutes the rest of the group", () => {
+    const mix = defaultMix(["bass", "keys", "other"]);
+    mix.bass = { ...mix.bass, mute: true };
+    const groups = { bass: [1], keys: [1], other: [] as number[] };
+    const next = setSolo(mix, groups, "bass", true);
+    expect(next.bass).toMatchObject({ mute: false, solo: true });
+    expect(next.keys.mute).toBe(true);
+    expect(next.other.mute).toBe(false);
+    expect(stemGains(next, ["bass", "keys", "other"])).toEqual({ bass: 1, keys: 0, other: 0 });
+  });
+
+  it("soloing a muted track in no group keeps its mute, so it stays silent", () => {
+    const mix = defaultMix(["a", "b"]);
+    mix.a = { ...mix.a, mute: true };
+    const next = setSolo(mix, { a: [], b: [] }, "a", true);
+    expect(next.a.solo).toBe(true);
+    expect(next.a.mute).toBe(true);
+    expect(stemGains(next, ["a", "b"])).toEqual({ a: 0, b: 0 });
+  });
+
+  it("clearing a solo changes only the solo flag", () => {
+    const mix = defaultMix(["a", "b"]);
+    mix.a = { ...mix.a, solo: true };
+    const next = setSolo(mix, { a: [1], b: [1] }, "a", false);
+    expect(next.a.solo).toBe(false);
+    expect(next.b.mute).toBe(false);
   });
 });
 

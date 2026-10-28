@@ -65,6 +65,15 @@ describe("performance mixer", () => {
     expect(next.track0.mute).toBe(false);
   });
 
+  it("soloing a muted track in a mute group plays it alone, unmuting it", () => {
+    const { onMix } = renderMix();
+    fireEvent.click(screen.getByLabelText("Keys solo"));
+    const next = (onMix.mock.calls[0][0] as (m: Mix) => Mix)(mix);
+    expect(next.track1).toMatchObject({ mute: false, solo: true });
+    expect(next.track2.mute).toBe(true);
+    expect(next.track0.mute).toBe(false);
+  });
+
   it("the group button plays its members and mutes the rest", () => {
     const { onMix } = renderMix();
     fireEvent.click(screen.getByRole("button", { name: "Group 1" }));

@@ -4,7 +4,7 @@ import type { Stems } from "@/song/types";
 import { BUS_LABELS, BUS_NAMES, type BusName } from "@/song/audio/outputs";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { followsPitch } from "@/song/performance/speed";
-import { clickStretchWarning, silenceGroupmates, type TrackInfo } from "@/song/tracks";
+import { clickStretchWarning, setSolo, silenceGroupmates, type TrackInfo } from "@/song/tracks";
 
 /** The mute groups a track belongs to, by key, as the exclusive rule reads them. */
 function groupsOf(tracks: Record<string, TrackInfo>): Record<string, number[]> {
@@ -111,10 +111,7 @@ export function PerformanceMix({
                   checked={entry.solo}
                   onChange={(e) => {
                     const solo = e.target.checked;
-                    onMix((m) => {
-                      const soloed = { ...m, [name]: { ...(m[name] ?? defaultStemMix()), solo } };
-                      return solo ? silenceGroupmates(soloed, groups, name) : soloed;
-                    });
+                    onMix((m) => setSolo(m, groups, name, solo));
                   }}
                 />
                 Solo

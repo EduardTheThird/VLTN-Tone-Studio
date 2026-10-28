@@ -244,6 +244,18 @@ export function silenceGroupmates(mix: Mix, groups: Readonly<Record<string, read
 }
 
 /**
+ * Sets or clears the solo of `key`. Soloing a muted track in a mute group also unmutes it, so it plays alone, the same as an unmute
+ * does, and its group-mates are muted. A muted track in no group keeps its mute, so its solo stays silent.
+ */
+export function setSolo(mix: Mix, groups: Readonly<Record<string, readonly number[]>>, key: string, solo: boolean): Mix {
+  const current = mix[key] ?? defaultStemMix();
+  if (!solo) return { ...mix, [key]: { ...current, solo: false } };
+  const grouped = (groups[key] ?? []).length > 0;
+  const soloed = { ...mix, [key]: { ...current, solo: true, mute: grouped ? false : current.mute } };
+  return silenceGroupmates(soloed, groups, key);
+}
+
+/**
  * Mutes the tracks of mute group `group`, or unmutes them when every one is muted already. For the remote actions: a pedal toggles a
  * group without the mixer. Returns a hint, and no mix, when no track is in the group.
  */

@@ -43,6 +43,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- Soloing a muted track in a mute group now plays it alone. The solo also unmutes that track and mutes the rest of its group, the same as an unmute does. Before, the track's solo was set but it stayed silent, because the mute won.
 - Importing tracks into a song that has no split keeps the song's own audio as a track, so it still plays and stays in the mixer beside the imported tracks. Before, the mixer and playback dropped it once tracks were added.
 - Quitting the app no longer shows an "Object has been destroyed" error. The audience display closes after the performance window has gone, and its status and the other messages sent to that window during quit are now skipped instead of throwing.
 - A song's `@stop` and `@end` triggers now reach the pedal over Bluetooth MIDI. They were dropped when the output was cleared straight after a pause, a playlist stop or the end of a song, so only USB sent them.
