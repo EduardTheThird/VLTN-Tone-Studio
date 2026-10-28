@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BAND_SETTINGS, planSections } from "./arrangement";
+import { DEFAULT_BAND_SETTINGS, planSections, type BandSettings } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { DRUM_PITCHES } from "./note";
 import { parseChordName, type ChordAtBeat } from "./harmony";
@@ -117,5 +117,48 @@ describe("transferables", () => {
 
   it("lists nothing for a result without audio", () => {
     expect(transferables({ notes: { drums: [], bass: [] } })).toEqual([]);
+  });
+});
+
+describe("runBandJob with follow-my-playing", () => {
+  /** A mono click track with a click on every beat, the bar's downbeat loudest, so every bar repeats the same pattern. */
+  const clicks = (seconds = SONG_SECONDS): PcmAudio => {
+    const channel = new Float32Array(seconds * RATE);
+    for (let beat = 0; beat < seconds * 2; beat++) channel[Math.round(beat * 0.5 * RATE)] = beat % 4 === 0 ? 1 : beat % 2 === 0 ? 0.6 : 0.3;
+    return { sampleRate: RATE, channels: [channel] };
+  };
+  const followed = (settings: Partial<BandSettings>, audio: PcmAudio) =>
+    request({ settings: { ...DEFAULT_BAND_SETTINGS, ...settings }, follow: { source: "guitar", audio } });
+
+  it("follows a song that repeats its accents, and says which source it read", () => {
+    const result = runBandJob(followed({}, clicks()), stubSamples());
+    expect(result.follow).toEqual({ source: "guitar", following: true });
+  });
+
+  it("gives the same audio for the same seed, with the feel", () => {
+    const first = runBandJob(followed({}, clicks()), stubSamples());
+    const again = runBandJob(followed({}, clicks()), stubSamples());
+    expect(again.notes).toEqual(first.notes);
+    expect(again.drums?.channels[0]).toEqual(first.drums?.channels[0]);
+  });
+
+  it("gives the same notes as follow-my-playing off when auto finds no clear accents", () => {
+    const flat = constant(0.1, SONG_SECONDS * RATE);
+    const result = runBandJob(followed({}, { sampleRate: RATE, channels: [flat.channels[0]] }), stubSamples());
+    const off = runBandJob(followed({ followPlaying: false }, flat), stubSamples());
+    expect(result.follow).toEqual({ source: "guitar", following: false });
+    expect(result.notes).toEqual(off.notes);
+    expect(result.drums?.channels[0]).toEqual(off.drums?.channels[0]);
+  });
+
+  it("follows even a flat source when the source is chosen by hand", () => {
+    const flat = constant(0.1, SONG_SECONDS * RATE);
+    const result = runBandJob(followed({ followSource: "guitar" }, { sampleRate: RATE, channels: [flat.channels[0]] }), stubSamples());
+    expect(result.follow).toEqual({ source: "guitar", following: true });
+  });
+
+  it("leaves the result without a follow report when the setting is off", () => {
+    const result = runBandJob(followed({ followPlaying: false }, clicks()), stubSamples());
+    expect(result.follow).toBeUndefined();
   });
 });

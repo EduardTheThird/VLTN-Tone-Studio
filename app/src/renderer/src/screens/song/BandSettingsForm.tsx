@@ -1,7 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_MODES, BASS_RANGES, BASS_SOUNDS, type BandSettings } from "@/song/band/arrangement";
+import { BASS_MODES, BASS_RANGES, BASS_SOUNDS, type BandSettings, type FollowSource } from "@/song/band/arrangement";
 import { STYLE_IDS, STYLES, type Style, type StyleId } from "@/song/band/styles";
 
 const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
@@ -13,18 +13,21 @@ const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
 };
 const BASS_SOUND_LABELS: Record<(typeof BASS_SOUNDS)[number], string> = { finger: "Finger", pick: "Pick" };
 const BASS_RANGE_LABELS: Record<(typeof BASS_RANGES)[number], string> = { low: "Low", normal: "Normal", high: "High" };
+const FOLLOW_LABELS: Record<FollowSource, string> = { auto: "Auto", guitar: "Guitar", piano: "Piano", other: "Other", mix: "Mix" };
 
 export interface BandSettingsFormProps {
   settings: BandSettings;
   /** The style the settings name, for the walking bass option. */
   style: Style;
+  /** The follow sources the song can read: auto, then the stems that were split, then the mix. */
+  followSources: readonly FollowSource[];
   onChange(patch: Partial<BandSettings>): void;
   /** Changes the style, which also sets its swing default. */
   onStyle(id: StyleId): void;
 }
 
 /** The song-wide band settings. Changing one saves it; nothing is generated until Generate. */
-export function BandSettingsForm({ settings, style, onChange, onStyle }: BandSettingsFormProps) {
+export function BandSettingsForm({ settings, style, followSources, onChange, onStyle }: BandSettingsFormProps) {
   return (
     <section aria-label="Band settings" className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
       <h3 className="font-semibold sm:col-span-2">Settings</h3>
@@ -131,6 +134,29 @@ export function BandSettingsForm({ settings, style, onChange, onStyle }: BandSet
       <label className="flex items-center gap-2">
         <Switch aria-label="Lock bass to kick" checked={settings.lockToKick} onCheckedChange={(on) => onChange({ lockToKick: on })} />
         Lock bass to kick
+      </label>
+      <label className="flex items-center gap-2">
+        <Switch aria-label="Follow my playing" checked={settings.followPlaying} onCheckedChange={(on) => onChange({ followPlaying: on })} />
+        Follow my playing
+      </label>
+      <label className="flex items-center gap-3">
+        Follow source
+        <Select
+          value={followSources.includes(settings.followSource) ? settings.followSource : "auto"}
+          disabled={!settings.followPlaying}
+          onValueChange={(value) => onChange({ followSource: value as FollowSource })}
+        >
+          <SelectTrigger aria-label="Follow source" className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {followSources.map((source) => (
+              <SelectItem key={source} value={source}>
+                {FOLLOW_LABELS[source]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
     </section>
   );

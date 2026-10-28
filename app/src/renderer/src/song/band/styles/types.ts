@@ -28,7 +28,7 @@ export interface DrumHit {
   velocity: number;
   /**
    * Which complexity level plays it. Untagged hits are the core of the groove and always play. A "lean" hit plays from complexity
-   * 1/3 up, and a "busy" hit from 2/3 up. See playsAt in ../drums.ts.
+   * 1/3 up, and a "busy" hit from 2/3 up. See playsAt below.
    */
   tier?: Tier;
   /** A ghost note: dropped when ghost notes are off. */
@@ -72,4 +72,16 @@ export interface Style {
    */
   fills: { half: DrumPattern[]; bar: DrumPattern[] };
   bass: BassStyle;
+}
+
+/** A "lean" hit plays from this complexity up. */
+export const LEAN_FROM = 1 / 3;
+/** A "busy" hit plays from this complexity up. */
+export const BUSY_FROM = 2 / 3;
+
+/** Whether a hit plays at this complexity. Untagged hits are the core of the groove and always play. */
+export function playsAt(hit: DrumHit, complexity: number): boolean {
+  if (hit.tier === "busy") return complexity >= BUSY_FROM;
+  if (hit.tier === "lean") return complexity >= LEAN_FROM;
+  return true;
 }

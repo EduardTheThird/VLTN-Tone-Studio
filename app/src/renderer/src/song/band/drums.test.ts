@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, type BandSettings, type SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
-import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { generateDrums, playsAt } from "./drums";
+import { rankGrooves, type Feel } from "./feel";
+import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { findStyle, STYLES } from "./styles";
 import { STYLE_IDS, type DrumGroove, type DrumHit } from "./styles/types";
 
@@ -327,5 +328,80 @@ describe("generateDrums", () => {
     const notes = generateDrums(grid, [plan(0, 16, { style: "rock", energy: 2, fill: false })], settingsFor(), 28);
     // Steps 4 and 12 are beats 2 and 4 of the bar, so beats 1 and 3 of the grid.
     expect(notes.some((note) => note.pitch === SNARE && note.time === grid.beats[1])).toBe(true);
+  });
+});
+
+describe("generateDrums with follow-my-playing", () => {
+  /** A feel with no accents of its own, so only the stops and hits change the notes. */
+  const feelOf = (overrides: Partial<Feel>): Feel => ({
+    profiles: [{ weights: new Float64Array(16), confidence: 0 }],
+    stops: new Set(),
+    hits: new Set(),
+    ...overrides,
+  });
+  /** A profile with the given steps at full weight. */
+  const accents = (steps: number[]) => {
+    const weights = new Float64Array(16);
+    for (const step of steps) weights[step] = 1;
+    return { weights, confidence: 1 };
+  };
+  /** The bar at `bar`'s kick steps, on the 16th grid of a bar of 2 s. */
+  const kickSteps = (notes: readonly NoteEvent[], grid: BeatGrid, bar: number): number[] => {
+    const start = grid.beats[bar * 4];
+    return notes
+      .filter((note) => note.pitch === KICK && note.time >= start - 1e-9 && note.time < start + 2 - 1e-9)
+      .map((note) => Math.round((note.time - start) / 0.125))
+      .sort((a, b) => a - b);
+  };
+  /** The kick steps a groove plays at half complexity, which is when the feel adds no pushes. */
+  const grooveKicks = (groove: DrumGroove): number[] =>
+    groove.hits
+      .filter((hit) => hit.pitch === KICK && playsAt(hit, 0.5))
+      .map((hit) => hit.step)
+      .sort((a, b) => a - b);
+
+  it("is silent on a stop, and a hit after it gets a crash and a kick", () => {
+    const grid = steady(17);
+    const feel = feelOf({ stops: new Set([4, 5, 6, 7]), hits: new Set([8]) });
+    const notes = generateDrums(grid, [plan(0, 17)], settingsFor(), 3, feel);
+    expect(notes.filter((note) => note.time >= 2 && note.time < 4)).toEqual([]);
+    const hit = notes.filter((note) => note.time === 4).map((note) => note.pitch);
+    expect(hit).toContain(CRASH);
+    expect(hit).toContain(KICK);
+  });
+
+  it("adds a kick on a strong off-beat accent at complexity two thirds and up, and not below", () => {
+    const grid = steady(33);
+    const feel = feelOf({ profiles: [accents([2])] });
+    const pushedAt = (complexity: number) => {
+      const notes = generateDrums(grid, [plan(0, 33)], settingsFor({ complexity }), 11, feel);
+      return [0, 1, 2, 3, 4, 5, 6, 7].map((bar) => kickSteps(notes, grid, bar).includes(2));
+    };
+    expect(pushedAt(1).every(Boolean)).toBe(true);
+    expect(pushedAt(0.5).some(Boolean)).toBe(false);
+  });
+
+  it("gives each section a variation from the best two fits to its own accents", () => {
+    const grid = steady(33);
+    const verse = accents([0, 10]);
+    const chorus = accents([0, 6, 12]);
+    const feel = feelOf({ profiles: [verse, chorus] });
+    const notes = generateDrums(grid, [plan(0, 16), plan(16, 33)], settingsFor({ complexity: 0.5 }), 13, feel);
+    const grooves = STYLES.rock.grooves[2];
+    const best = (weights: Float64Array) =>
+      rankGrooves(grooves, weights, 0.5)
+        .slice(0, 2)
+        .map((index) => grooveKicks(grooves[index]));
+    const verseBest = best(verse.weights);
+    const chorusBest = best(chorus.weights);
+    for (let bar = 0; bar < 4; bar++) expect(verseBest).toContainEqual(kickSteps(notes, grid, bar));
+    for (let bar = 4; bar < 8; bar++) expect(chorusBest).toContainEqual(kickSteps(notes, grid, bar));
+  });
+
+  it("gives the same notes for the same seed, and with a stop and a hit in the song", () => {
+    const grid = steady(33);
+    const feel = feelOf({ profiles: [accents([0, 6, 12])], stops: new Set([8, 9]), hits: new Set([10]) });
+    const plans = [plan(0, 33)];
+    expect(generateDrums(grid, plans, settingsFor(), 5, feel)).toEqual(generateDrums(grid, plans, settingsFor(), 5, feel));
   });
 });

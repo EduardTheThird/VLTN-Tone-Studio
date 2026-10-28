@@ -176,3 +176,21 @@ describe("isBandSettings and parseBandSettings", () => {
     expect(DEFAULT_BAND_SETTINGS.parts.drums).toBe(true);
   });
 });
+
+describe("follow-my-playing settings", () => {
+  it("are on and automatic by default, and a saved choice is kept", () => {
+    expect(DEFAULT_BAND_SETTINGS.followPlaying).toBe(true);
+    expect(DEFAULT_BAND_SETTINGS.followSource).toBe("auto");
+    expect(parseBandSettings({ followPlaying: false, followSource: "piano" })).toMatchObject({ followPlaying: false, followSource: "piano" });
+  });
+
+  it("falls back to the defaults for a damaged or older follow setting", () => {
+    expect(parseBandSettings({ followPlaying: "yes", followSource: "bass" })).toMatchObject({ followPlaying: true, followSource: "auto" });
+    expect(parseBandSettings({ bassMode: "roots" })).toMatchObject({ followPlaying: true, followSource: "auto" });
+  });
+
+  it("makes a settings object with a bad follow source fail the full check", () => {
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, followSource: "drums" })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, followPlaying: false, followSource: "mix" })).toBe(true);
+  });
+});

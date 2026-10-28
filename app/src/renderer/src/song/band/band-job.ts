@@ -3,15 +3,25 @@
 // gives the same audio.
 
 import type { BandSettings, SectionPlan } from "./arrangement";
-import type { BeatGrid } from "./beat-grid";
+import { onsetStrength, type BeatGrid } from "./beat-grid";
 import { generateBass } from "./bass";
 import { generateDrums } from "./drums";
+import { followFeel, type Feel } from "./feel";
 import type { ChordAtBeat } from "./harmony";
 import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
 import type { SampleSet } from "./samples";
 import { barBeats, beatSpan } from "./timing";
 import type { PcmAudio } from "../types";
+
+/**
+ * The audio that follow-my-playing reads, and the name the panel shows for it ("guitar", "piano", "other" or "mix"). Only the mono sum
+ * is sent to the worker, so the client sums it before it posts the request.
+ */
+export interface BandFollow {
+  source: string;
+  audio: PcmAudio;
+}
 
 /** Everything a job needs. It is plain data, so it can be sent to the worker as it is. */
 export interface BandRequest {
@@ -25,6 +35,14 @@ export interface BandRequest {
   parts: { drums: boolean; bass: boolean };
   /** Where the worker fetches each sample file, by its path in map.json. */
   sampleUrls: Record<string, string>;
+  /** The stem that follow-my-playing reads, when the setting is on. */
+  follow?: BandFollow;
+}
+
+/** What follow-my-playing did for a render: which source it read, and whether the parts were made to follow it. */
+export interface FollowReport {
+  source: string;
+  following: boolean;
 }
 
 /** The steps a job reports, in order. */
@@ -35,6 +53,8 @@ export interface BandResult {
   drums?: PcmAudio;
   bass?: PcmAudio;
   notes: { drums: NoteEvent[]; bass: NoteEvent[] };
+  /** Present when follow-my-playing was on for the request. */
+  follow?: FollowReport;
 }
 
 /** A span of the song, in seconds. */
@@ -48,19 +68,38 @@ interface Notes {
   bass: NoteEvent[];
 }
 
+interface Generated {
+  notes: Notes;
+  follow?: FollowReport;
+}
+
+/**
+ * The feel of the request, from its follow stem, or none. In auto a song whose sections repeat no clear accents is not followed, and the
+ * report says so. The onset is read here, in the worker, so the window never does it.
+ */
+function feelFor(request: BandRequest): { feel?: Feel; follow?: FollowReport } {
+  const { follow, settings } = request;
+  if (!follow || !settings.followPlaying) return {};
+  const onset = onsetStrength([follow.audio], follow.audio.sampleRate);
+  const { feel } = followFeel(onset, request.grid, request.plans, settings.followSource === "auto");
+  return { feel: feel ?? undefined, follow: { source: follow.source, following: feel !== null } };
+}
+
 /**
  * The notes of the parts the request asks for. Drums are always generated, even when only the bass is wanted, because the bass locks to
  * the kick. Drums that were not asked for are not returned.
  */
-function generate(request: BandRequest): Notes {
-  const drums = generateDrums(request.grid, request.plans, request.settings, request.seed);
-  const bass = request.parts.bass ? generateBass(request.grid, request.harmony, request.plans, request.settings, drums, request.seed) : [];
-  return { drums: request.parts.drums ? drums : [], bass };
+function generate(request: BandRequest): Generated {
+  const { feel, follow } = feelFor(request);
+  const drums = generateDrums(request.grid, request.plans, request.settings, request.seed, feel);
+  const bass = request.parts.bass ? generateBass(request.grid, request.harmony, request.plans, request.settings, drums, request.seed, feel) : [];
+  return { notes: { drums: request.parts.drums ? drums : [], bass }, follow };
 }
 
-function render(request: BandRequest, notes: Notes, samples: SampleSet, lengthFrames: number, onStage?: (stage: BandStage) => void): BandResult {
+function render(request: BandRequest, generated: Generated, samples: SampleSet, lengthFrames: number, onStage?: (stage: BandStage) => void): BandResult {
   onStage?.("rendering");
-  const result: BandResult = { notes };
+  const { notes } = generated;
+  const result: BandResult = generated.follow ? { notes, follow: generated.follow } : { notes };
   if (request.parts.drums) result.drums = renderPart(notes.drums, "drums", samples, lengthFrames, RENDER_RATE).audio;
   if (request.parts.bass) result.bass = renderPart(notes.bass, "bass", samples, lengthFrames, RENDER_RATE).audio;
   return result;
@@ -93,13 +132,14 @@ export function previewWindow(grid: BeatGrid, fromTime: number, bars: number): P
  */
 export function runBandPreview(request: BandRequest, samples: SampleSet, fromTime: number, bars = 4, onStage?: (stage: BandStage) => void): BandResult {
   onStage?.("generating");
-  const notes = generate(request);
+  const generated = generate(request);
   const { start, end: windowEnd } = previewWindow(request.grid, fromTime, bars);
   const end = Math.min(windowEnd, request.lengthFrames / RENDER_RATE);
   const frames = Math.max(1, Math.round((end - start) * RENDER_RATE));
   const inWindow = (list: NoteEvent[]): NoteEvent[] =>
     list.filter((note) => note.time >= start && note.time < end).map((note) => ({ ...note, time: note.time - start }));
-  return render(request, { drums: inWindow(notes.drums), bass: inWindow(notes.bass) }, samples, frames, onStage);
+  const windowed = { ...generated, notes: { drums: inWindow(generated.notes.drums), bass: inWindow(generated.notes.bass) } };
+  return render(request, windowed, samples, frames, onStage);
 }
 
 /** The buffers of a result, so the worker can transfer them to the window instead of copying them. */

@@ -6,8 +6,9 @@ import type { Chord } from "../performance/chords";
 import type { Section } from "../performance/sections";
 import type { PcmAudio, Stems } from "../types";
 import { planSections, type BandSettings } from "./arrangement";
-import type { BandRequest, BandResult } from "./band-job";
+import type { BandFollow, BandRequest, BandResult } from "./band-job";
 import type { BeatGrid } from "./beat-grid";
+import { FOLLOW_STEMS, resolveFollowSource } from "./feel";
 import { chartChordEvents, harmonyForSong } from "./harmony";
 
 /**
@@ -63,12 +64,29 @@ export interface BandInputs {
   /** The song's length in samples. The parts are rendered to exactly this length. */
   lengthFrames: number;
   sampleUrls: Record<string, string>;
+  /** The follow-my-playing audio, from followFor. Absent when the setting is off. */
+  follow?: BandFollow;
+}
+
+/** The follow sources the song has: the stems among FOLLOW_STEMS that were split, then the mix, which is always there. */
+export function followSourcesIn(stems: Stems | null): string[] {
+  return [...FOLLOW_STEMS.filter((name) => stems?.[name] !== undefined), "mix"];
+}
+
+/**
+ * The audio follow-my-playing reads for these settings, or undefined when it is off. The source is the stem the choice names, or the one
+ * auto picks; the mix stands in when no stem is there.
+ */
+export function followFor(settings: BandSettings, stems: Stems | null, mix: PcmAudio): BandFollow | undefined {
+  if (!settings.followPlaying) return undefined;
+  const source = resolveFollowSource(settings.followSource, followSourcesIn(stems));
+  return { source, audio: (source !== "mix" ? stems?.[source] : undefined) ?? mix };
 }
 
 /** The request for the whole song: the harmony snapped to the grid, the plans from the sections, and the settings' seed. */
 export function bandRequest(input: BandInputs): BandRequest {
   const harmony = harmonyForSong(input.grid, [...input.cues], [...input.chords], input.songEnd);
-  return {
+  const request: BandRequest = {
     grid: input.grid,
     harmony,
     plans: planSections(input.sections, input.songEnd, input.settings),
@@ -78,6 +96,8 @@ export function bandRequest(input: BandInputs): BandRequest {
     parts: { ...input.settings.parts },
     sampleUrls: input.sampleUrls,
   };
+  if (input.follow) request.follow = input.follow;
+  return request;
 }
 
 /**

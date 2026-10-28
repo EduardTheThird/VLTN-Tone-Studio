@@ -170,6 +170,33 @@ describe("Band panel", () => {
     expect(mocks.startBandRender).not.toHaveBeenCalled();
   });
 
+  it("the follow switch saves the setting, and the source select lists only the stems that exist", () => {
+    useSong.setState({ stems: { guitar: song().audio, drums: song().audio } as never });
+    renderPanel();
+    expect((screen.getByRole("switch", { name: "Follow my playing" }) as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Follow source" }), { key: "Enter" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Auto", "Guitar", "Mix"]);
+    fireEvent.click(screen.getByRole("option", { name: "Mix" }));
+    expect(savedOptions().band.followSource).toBe("mix");
+    fireEvent.click(screen.getByRole("switch", { name: "Follow my playing" }));
+    expect(savedOptions().band.followPlaying).toBe(false);
+  });
+
+  it("says after Generate whether the parts followed the playing, or why they did not", async () => {
+    useSong.setState({ stems: { guitar: song().audio } as never });
+    stored({ beatGrid: grid, bandOutOfDate: true });
+    const silent = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums: silent, bass: silent, notes: { drums: [], bass: [] }, follow: { source: "guitar", following: false } }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(screen.getByText("Follow my playing: not enough clear rhythm in the guitar")).toBeTruthy());
+    expect(mocks.startBandRender.mock.calls[0][0].follow.source).toBe("guitar");
+  });
+
   it("finds the beat through the beat tracker and shows the tempo", async () => {
     mocks.startBeatGrid.mockReturnValue({ done: Promise.resolve(grid), cancel: vi.fn() });
     renderPanel();

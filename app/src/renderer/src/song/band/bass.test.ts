@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, type BandSettings, type BassMode, type BassRange, type SectionPlan } from "./arrangement";
 import { generateBass } from "./bass";
 import type { BeatGrid } from "./beat-grid";
+import type { Feel } from "./feel";
 import { parseChordName, type ChordAtBeat } from "./harmony";
 import type { NoteEvent } from "./note";
 
@@ -232,5 +233,39 @@ describe("generateBass", () => {
     const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 21);
     expect(notes.length).toBeGreaterThan(3);
     for (let i = 1; i < notes.length; i++) expect(Math.abs(notes[i].pitch - notes[i - 1].pitch)).toBeLessThanOrEqual(7);
+  });
+});
+
+describe("generateBass with follow-my-playing", () => {
+  const chords = barsOf("C", "Am", "F", "G");
+  const harmony = harmonyFor(chords);
+  const grid = gridOf(chords.length);
+  /** A feel whose accents are the given steps of a bar, with no stops or hits unless a test gives them. */
+  const feelOf = (steps: number[], overrides: Partial<Feel> = {}): Feel => {
+    const weights = new Float64Array(16);
+    for (const step of steps) weights[step] = 1;
+    return { profiles: [{ weights, confidence: 1 }], stops: new Set(), hits: new Set(), ...overrides };
+  };
+  /** The steps, on the 16th grid, where the notes of bar `bar` start. */
+  const stepsIn = (notes: readonly NoteEvent[], bar: number): number[] =>
+    [...new Set(inBar(notes, bar).map((note) => Math.round((note.time - bar * 2) / 0.125)))].sort((a, b) => a - b);
+
+  it("follows the accents in each bar, and always plays on step 0", () => {
+    const notes = generateBass(grid, harmony, [planFor(16)], settingsFor(), [], 4, feelOf([0, 6, 10]));
+    for (const bar of [0, 1, 2]) expect(stepsIn(notes, bar)).toEqual([0, 6, 10]);
+  });
+
+  it("is silent on a stop, and plays a note on the hit after it", () => {
+    // Beats 4 to 7 are a stop (the second bar), and beat 8 is the hit after it.
+    const notes = generateBass(grid, harmony, [planFor(16)], settingsFor(), [], 4, feelOf([0], { stops: new Set([4, 5, 6, 7]), hits: new Set([8]) }));
+    expect(notes.filter((note) => note.time >= 2 && note.time < 4)).toEqual([]);
+    expect(notes.some((note) => Math.abs(note.time - 4) < 1e-9)).toBe(true);
+  });
+
+  it("gives the same notes for the same seed with a feel", () => {
+    const feel = feelOf([0, 6, 10], { stops: new Set([4]), hits: new Set([8]) });
+    expect(generateBass(grid, harmony, [planFor(16)], settingsFor(), [], 9, feel)).toEqual(
+      generateBass(grid, harmony, [planFor(16)], settingsFor(), [], 9, feel),
+    );
   });
 });

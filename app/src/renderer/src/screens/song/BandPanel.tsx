@@ -12,12 +12,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useSong } from "@/song/store";
-import { planSections, WHOLE_SONG_ID, type BandSettings, type SectionPlan } from "@/song/band/arrangement";
+import { planSections, WHOLE_SONG_ID, type BandSettings, type FollowSource, type SectionPlan } from "@/song/band/arrangement";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
 import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
-import { bandRequest, beatSources, chartChordTimes, chordSource, previewMix } from "@/song/band/request";
+import { bandRequest, beatSources, chartChordTimes, chordSource, followFor, followSourcesIn, previewMix } from "@/song/band/request";
+import { followStatus } from "@/song/band/feel";
 import { startChordDetection } from "@/song/band/chord-detect-client";
 import { findStyle, STYLES, type StyleId } from "@/song/band/styles";
 import type { BandStage } from "@/song/band/band-job";
@@ -137,6 +138,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   }, []);
 
   const source = useSong((s) => s.source);
+  const stems = useSong((s) => s.stems);
   const tracks = useSong((s) => s.tracks);
   const missing = useSong((s) => s.missingParts);
   const cues = useMemo<Cue[]>(() => parseChart(chart), [chart]);
@@ -148,6 +150,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
   const style = findStyle(settings.style) ?? STYLES.rock;
+  const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
   const save = (next: BandSettings) => {
     setSettings(next);
@@ -252,6 +255,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         songEnd,
         lengthFrames: current.audio.channels[0].length,
         sampleUrls: bandSampleUrls(),
+        follow: followFor(using, useSong.getState().stems, current.audio),
       };
       let request = bandRequest(input);
       const notes: string[] = [];
@@ -275,6 +279,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       job.current = rendering;
       rendering.onProgress((stage) => setWork(stageText(stage)));
       const result = await rendering.done;
+      if (result.follow) notes.push(followStatus(result.follow));
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
       const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass: result.bass }, { playing: playingNow.current, remove: turnedOff });
@@ -310,6 +315,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         songEnd,
         lengthFrames: current.audio.channels[0].length,
         sampleUrls: bandSampleUrls(),
+        follow: followFor(settings, useSong.getState().stems, current.audio),
       });
       const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
       job.current = rendering;
@@ -372,7 +378,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         onSetTempo={setTo}
       />
 
-      <BandSettingsForm settings={settings} style={style} onChange={change} onStyle={changeStyle} />
+      <BandSettingsForm settings={settings} style={style} followSources={followSources} onChange={change} onStyle={changeStyle} />
 
       <section aria-label="Sections" className="flex flex-col gap-2">
         <h3 className="font-semibold">Sections</h3>

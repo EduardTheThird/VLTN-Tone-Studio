@@ -8,6 +8,7 @@
 
 import type { BandSettings, BassRange, SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
+import { bassRhythmFromAccents, hitSteps, isAccented, type Feel } from "./feel";
 import type { ChordQuality, ChordSeventh, ChordAtBeat, ParsedChord } from "./harmony";
 import type { NoteEvent } from "./note";
 import { createRandom, type Random } from "./random";
@@ -214,7 +215,8 @@ function quarterSteps(steps: number, perBar: number): number[] {
 
 /**
  * The steps that can sound, in time order, for every bar with bass on. A bar belongs to the plan covering its first beat. The pickup is
- * silent, and the last bar of the song is one held note on its downbeat.
+ * silent, and the last bar of the song is one held note on its downbeat. With `feel`, the rhythm follows the accents unless the bass
+ * locks to the kick, a stop is silent, and a hit beat always gets a note.
  */
 function buildSlots(
   grid: BeatGrid,
@@ -223,6 +225,7 @@ function buildSlots(
   settings: BandSettings,
   kick: readonly NoteEvent[],
   random: Random,
+  feel: Feel | undefined,
 ): Slot[] {
   const beats = grid.beats;
   const perBar = barBeats(grid);
@@ -247,21 +250,23 @@ function buildSlots(
     const end = barEnd(beats, start, perBar);
     const nextBarBass = chordAt(start + perBar)?.bass ?? null;
     if (k === starts.length - 1) {
-      slots.push({
-        time: beats[start],
-        beat: start,
-        chord: chordAt(start),
-        style,
-        energy: plan.energy,
-        index: 0,
-        last: true,
-        strong: true,
-        forced: false,
-        fifth: false,
-        ending: true,
-        barEnd: end,
-        nextBarBass,
-      });
+      if (!feel?.stops.has(start)) {
+        slots.push({
+          time: beats[start],
+          beat: start,
+          chord: chordAt(start),
+          style,
+          energy: plan.energy,
+          index: 0,
+          last: true,
+          strong: true,
+          forced: false,
+          fifth: false,
+          ending: true,
+          barEnd: end,
+          nextBarBass,
+        });
+      }
       previousBeat = start;
       continue;
     }
@@ -278,9 +283,13 @@ function buildSlots(
     const walking = settings.bassMode === "walking" && style.bass.walking;
     let rhythm = walking ? quarterSteps(steps, perBar) : variations[segment.rhythm];
     const kicks = settings.lockToKick ? kick.filter((note) => note.time >= beats[start] - LOCK_WINDOW && note.time < end - LOCK_WINDOW) : [];
+    const accent = feel ? feel.profiles[planIndex] : undefined;
     if (kicks.length > 0) rhythm = lockedSteps(kicks, points);
+    else if (isAccented(accent) && !walking) rhythm = bassRhythmFromAccents(accent.weights, style.meter.stepsPerBeat, perBar);
+    if (feel) rhythm = [...rhythm, ...hitSteps(feel, start, perBar, steps)];
 
-    const stepList = [...new Set(rhythm)].filter((step) => step >= 0 && step < steps).sort((a, b) => a - b);
+    const silent = (step: number): boolean => feel?.stops.has(points[step].beat) ?? false;
+    const stepList = [...new Set(rhythm)].filter((step) => step >= 0 && step < steps && !silent(step)).sort((a, b) => a - b);
     let offBeat = 0;
     stepList.forEach((step, index) => {
       const point = points[step];
@@ -321,12 +330,13 @@ export function generateBass(
   settings: BandSettings,
   kick: readonly NoteEvent[],
   seed: number,
+  feel?: Feel,
 ): NoteEvent[] {
   const notes: NoteEvent[] = [];
   if (grid.beats.length === 0 || plans.length === 0) return notes;
 
   const random = createRandom(seed);
-  const slots = buildSlots(grid, harmony, plans, settings, kick, random);
+  const slots = buildSlots(grid, harmony, plans, settings, kick, random, feel);
   const range = BASS_NOTE_RANGES[settings.bassRange];
   let previous = range.centre;
 

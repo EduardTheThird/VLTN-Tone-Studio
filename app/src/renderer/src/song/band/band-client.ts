@@ -3,6 +3,7 @@
 // which also drops those samples. Starting a job while another runs cancels the other one. Call these only while playback is stopped.
 
 import type { BandRequest, BandResult, BandStage } from "./band-job";
+import { monoSum } from "./beat-grid";
 import { sampleFileUrls } from "./samples";
 
 /** What the client sends. With `preview`, the worker renders `bars` bars from `fromTime`; without it, the whole song. */
@@ -79,6 +80,17 @@ function workerFor(): Worker {
   return created;
 }
 
+/**
+ * The request with its follow audio summed to one channel, the same as the beat grid's source. Only that mono buffer is sent, and it is
+ * transferred rather than copied.
+ */
+function withMonoFollow(request: BandRequest): BandRequest {
+  if (!request.follow) return request;
+  const { source, audio } = request.follow;
+  const mono = monoSum([audio]);
+  return { ...request, follow: { source, audio: { sampleRate: audio.sampleRate, channels: [mono] } } };
+}
+
 function start(body: Omit<BandWorkerMessage, "id">): BandJob {
   current?.cancel();
   const id = nextId++;
@@ -102,7 +114,8 @@ function start(body: Omit<BandWorkerMessage, "id">): BandJob {
     },
   };
   current = job;
-  workerFor().postMessage({ id, ...body } satisfies BandWorkerMessage);
+  const transfer = body.request.follow ? body.request.follow.audio.channels.map((channel) => channel.buffer as ArrayBuffer) : [];
+  workerFor().postMessage({ id, ...body } satisfies BandWorkerMessage, transfer);
   return {
     done,
     onProgress: (listener) => {
@@ -114,10 +127,10 @@ function start(body: Omit<BandWorkerMessage, "id">): BandJob {
 
 /** Generates and renders the whole song's drum and bass parts, as the request asks. */
 export function startBandRender(request: BandRequest): BandJob {
-  return start({ request });
+  return start({ request: withMonoFollow(request) });
 }
 
 /** Renders `bars` bars of the parts from `fromTime`, for listening. Nothing is saved. */
 export function renderPreview(request: BandRequest, fromTime: number, bars = 4): BandJob {
-  return start({ request, preview: { fromTime, bars } });
+  return start({ request: withMonoFollow(request), preview: { fromTime, bars } });
 }
