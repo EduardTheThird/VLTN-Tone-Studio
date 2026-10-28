@@ -11,6 +11,19 @@ export interface ScheduledMessage {
   /** Song position in seconds the message belongs to. Unlike `due`, it is unaffected by a resync. */
   time?: number;
 }
+/**
+ * A quarter-frame stream: quarter frame `next` is due at `anchor.time` plus its share of a quarter at `rate`, and carries the frame
+ * count of its cycle. The worker reports the stream it is sending, so a hand-over can carry it on.
+ */
+export interface TimecodeStream {
+  anchor: { time: number; frames: number };
+  next: number;
+  fps: TimecodeRate;
+  rate: number;
+}
+/** The outgoing song's stream, carried into the incoming song's schedule up to the join at clock time `end`. */
+export type TimecodeTail = TimecodeStream & { end: number };
+
 export interface SchedulerConfig {
   cues: Cue[];
   position: number;
@@ -43,6 +56,8 @@ export interface SchedulerConfig {
    * jump, seek or rate change restarts them with a full frame. Nothing is sent before song position zero, so a count-in is silent.
    */
   timecode?: { fps: TimecodeRate; offset: number };
+  /** The outgoing song's quarter frames, sent until its join before this schedule's own timecode starts. See `TimecodeTail`. */
+  timecodeTail?: TimecodeTail;
 }
 /** A planned jump: from clock time `at` the song is at `position`. */
 export interface SchedulerJump {
@@ -57,7 +72,7 @@ export interface SchedulerJump {
   keepsPosition?: boolean;
 }
 export type SchedulerReply =
-  | { type: "batch"; messages: ScheduledMessage[]; dropped?: ScheduledMessage[] }
+  | { type: "batch"; messages: ScheduledMessage[]; dropped?: ScheduledMessage[]; timecode?: TimecodeStream | null }
   | { type: "resync"; position: number }
   | { type: "fault"; error: string }
   | { type: "ready" }
@@ -185,6 +200,8 @@ export class MidiSchedule {
   private timecode: { anchor: { time: number; frames: number }; next: number; fullPending: boolean } | null = null;
   /** Quarter frames stop at this clock time. A hand-over ends the outgoing song's timecode where the next song's begins. */
   private timecodeEnd = Infinity;
+  /** The outgoing song's quarter frames, until its join. They come before this schedule's own full frame. */
+  private tail: TimecodeTail | null = null;
   constructor(
     config: SchedulerConfig,
     now: number,
@@ -208,6 +225,7 @@ export class MidiSchedule {
     this.startDeadline = this.clockAt(config.position) + START_GRACE_MS;
     this.tempo = config.tempo;
     if (config.timecode) this.restartTimecode(this.clockAt(Math.max(0, config.position)), config.position);
+    if (config.timecodeTail) this.tail = { ...config.timecodeTail, anchor: { ...config.timecodeTail.anchor } };
   }
   /** Starts the timecode from a song position at a clock time: a full frame there, then quarter frames from piece 0. */
   private restartTimecode(at: number, position: number) {
@@ -346,12 +364,15 @@ export class MidiSchedule {
     if (!jump.keepsPosition) this.chasePending = true;
     // Timecode follows song time, so a jump, loop wrap or rate change starts it again: a full frame at the new position, then piece 0.
     this.restartTimecode(jump.at, jump.position);
+    // A seek moves the song away from the hand-over, so the outgoing song's quarter frames stop there.
+    this.tail = null;
   }
   /**
    * Quarter frames due before `limit` (clock time). Frames are two-frame cycles of eight pieces. Stale quarter frames are skipped
    * without being sent. One summary entry is returned for them, so the notice counts the stall once.
    */
   private timecodeMessages(now: number, limit: number, candidates: ScheduledMessage[]): ScheduledMessage | null {
+    this.tailMessages(limit, candidates);
     const tc = this.timecode;
     if (!tc || !this.config.timecode || tc.anchor.time >= limit) return null;
     const { fps } = this.config.timecode;
@@ -372,6 +393,28 @@ export class MidiSchedule {
       candidates.push({ bytes, due, label: "MIDI timecode" });
     }
     return skipped;
+  }
+  /**
+   * The outgoing song's quarter frames due before `limit` and before its join. Only quarter frames run here: the tail has no cues, clock
+   * or full frame, so it ends at the join and this schedule's own full frame comes after it.
+   */
+  private tailMessages(limit: number, candidates: ScheduledMessage[]) {
+    const tail = this.tail;
+    if (!tail) return;
+    const end = Math.min(limit, tail.end);
+    for (;;) {
+      const due = tail.anchor.time + (tail.next * 1000) / (4 * tail.fps * tail.rate);
+      if (due >= end) break;
+      candidates.push({ bytes: quarterFrame(tail.next, cycleFrames(tail.next, tail.anchor.frames), tail.fps), due, label: "MIDI timecode" });
+      tail.next++;
+    }
+    if (end >= tail.end) this.tail = null;
+  }
+  /** The quarter-frame stream this schedule is sending, for a hand-over to carry on. Null when it sends no timecode. */
+  timecodeStream(): TimecodeStream | null {
+    const tc = this.timecode;
+    if (!tc || !this.config.timecode) return null;
+    return { anchor: { ...tc.anchor }, next: tc.next, fps: this.config.timecode.fps, rate: this.rate };
   }
   /** Clock time of song position `song` (seconds), so a rated song reads its position off the clock at `rate` times the song's pace. */
   private clockAt(song: number): number {
@@ -455,6 +498,6 @@ export class MidiSchedule {
       messages.unshift(...chase);
     }
     const ordered = orderSameTime(messages, this.config.pedalChannel);
-    if (messages.length || dropped.length) this.emit({ type: "batch", messages: ordered, ...(dropped.length ? { dropped } : {}) });
+    if (messages.length || dropped.length) this.emit({ type: "batch", messages: ordered, ...(dropped.length ? { dropped } : {}), timecode: this.timecodeStream() });
   }
 }

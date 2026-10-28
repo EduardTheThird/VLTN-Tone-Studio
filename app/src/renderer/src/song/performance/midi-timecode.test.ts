@@ -129,6 +129,46 @@ describe("MIDI timecode in the schedule", () => {
   });
 });
 
+describe("timecode across a join", () => {
+  // Song A plays at 0.84x with 25 fps, so its quarter frames are 11.9 ms apart. The join is clock time 1500, where song B's origin puts
+  // B's song position zero. The hand-over comes 500 ms earlier, at 1000.
+  const interval = 1000 / (4 * 25 * 0.84);
+  const join = 1500;
+  const outgoing = { anchor: { time: 1000, frames: 3600 * 25 }, next: 0, fps: 25 as const, rate: 0.84, end: join };
+  const incoming = { origin: join, timecode: { fps: 25 as const, offset: 0 }, lookahead: 0.2, timecodeTail: outgoing };
+
+  /** Ticks the incoming schedule every 20 ms from the hand-over to `to`, and returns the timecode it sent in order. */
+  function sentFrom(patch: Partial<SchedulerConfig>, to = 1600, stopAt?: number) {
+    const f = fixture(patch);
+    let before = 0;
+    for (let t = 1000; t <= to; t += 20) {
+      if (t === stopAt) {
+        f.schedule.stop();
+        before = f.timecode().length;
+      }
+      f.schedule.tick(t);
+    }
+    return { sent: f.timecode(), before };
+  }
+
+  it("carries the outgoing quarter frames to the join, then the incoming full frame, with no gap larger than one quarter frame", () => {
+    const { sent } = sentFrom(incoming);
+    const full = sent.find((m) => m.bytes[0] === 0xf0)!;
+    const before = sent.filter((m) => m.bytes[0] === 0xf1 && m.due < join);
+    expect(full.due).toBe(join);
+    expect(before[0].due).toBe(1000);
+    expect(join - Math.max(...before.map((m) => m.due))).toBeLessThanOrEqual(interval + 1);
+    // Nothing of the outgoing song is sent after the incoming full frame.
+    expect(sent.slice(sent.indexOf(full) + 1).some((m) => m.due < join)).toBe(false);
+  });
+
+  it("stops the outgoing quarter frames when the schedule is stopped during the tail", () => {
+    const { sent, before } = sentFrom(incoming, 1600, 1040);
+    expect(before).toBeGreaterThan(0);
+    expect(sent.length).toBe(before);
+  });
+});
+
 describe("late timecode in lateAction", () => {
   it("drops late quarter frames", () => {
     expect(lateAction([0xf1, 0x72])).toBe("drop");

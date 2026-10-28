@@ -284,7 +284,7 @@ it("releases a handed-over song that no session takes up: a claim for another so
   const held = (id: string) => {
     const dispose = vi.fn(() => Promise.resolve());
     const unwire = vi.fn();
-    return { handover: { id, player: { dispose } as never, countInMs: 0, unwire }, dispose, unwire };
+    return { handover: { id, player: { dispose } as never, countInMs: 0, join: 0, unwire }, dispose, unwire };
   };
   const library = () => useSongLibrary.getState();
 

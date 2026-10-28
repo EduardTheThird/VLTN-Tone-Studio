@@ -21,7 +21,7 @@ import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/perform
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } from "@/song/performance/midi-chase";
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
-import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump } from "@/song/performance/midi-scheduler";
+import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump, type TimecodeTail } from "@/song/performance/midi-scheduler";
 import { orderForPedal } from "@/song/performance/midi-pedal-order";
 import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
 import {
@@ -315,6 +315,8 @@ export class PerformanceSession {
   private planSent = false;
   /** The next playlist song, once it has been started on this song's clock */
   private chained: HandedOverSong | null = null;
+  /** The outgoing song's quarter frames up to its join, for the next scheduler this session starts. Consumed once. */
+  private incomingTail: TimecodeTail | null = null;
   private handoverTimer: ReturnType<typeof setTimeout> | null = null;
   /** Whether the playing song has been counted as played. Counted once per song, at its halfway point. */
   private playedRecorded = false;
@@ -608,6 +610,13 @@ export class PerformanceSession {
     this.startPlay = this.triggerBytes("play");
     this.countInMs = chained.countInMs;
     this.joining = true;
+    this.incomingTail = chained.timecodeTail ? { ...chained.timecodeTail, end: chained.join } : null;
+  }
+
+  /** The outgoing scheduler's quarter-frame stream, which runs to the join. Null when the outgoing song sends no timecode. */
+  private outgoingTimecode(join: number): TimecodeTail | null {
+    const stream = this.scheduler?.timecodeStream();
+    return stream ? { ...stream, end: join } : null;
   }
 
   /** Starts the effects. Safe to call again after `dispose()`. */
@@ -1105,12 +1114,13 @@ export class PerformanceSession {
       return;
     }
     const countInMs = bpm > 0 ? (countInBeatsNow * beatSeconds(bpm) * 1000) / incoming.playbackRate : 0;
-    this.chained = { id: next.id, player: incoming, countInMs, unwire };
+    const join = this.clockOf(plan.startAt);
+    this.chained = { id: next.id, player: incoming, countInMs, unwire, join };
     // The library holds the chained song, so a queue edit that changes the next song undoes this chain first.
     useSongLibrary.getState().holdChain({ id: next.id, release: () => this.dropChained() });
     // The outgoing song's quarter frames end where the next song joins, and its full frame starts there. The chain is decided several
     // seconds ahead, so no quarter frame past the join is queued yet. Dropping the chain restores them.
-    this.scheduler?.endTimecode(this.clockOf(plan.startAt));
+    this.scheduler?.endTimecode(join);
     this.clearHandoverTimer();
     this.handoverTimer = setTimeout(this.handOver, Math.max(0, (plan.startAt - HANDOVER_LEAD_S - player.audioNow) * 1000));
   }
@@ -1139,7 +1149,9 @@ export class PerformanceSession {
       this.sendTriggers("end");
       this.sendTriggers("stop");
     });
-    library.setHandover(chained);
+    // The outgoing scheduler is torn down with this view, so its quarter frames are carried to the join by the incoming scheduler.
+    library.setHandover({ ...chained, timecodeTail: this.outgoingTimecode(chained.join) });
+
     library.advanceToPrepared(chained.id);
   };
 
@@ -1963,6 +1975,8 @@ export class PerformanceSession {
       this.startPlay = null;
       // Timecode replaces app clock: a receiver gets one source of time. The offset is checked here as well as at Play.
       const offset = timecodeOffsetFrames(s.timecode);
+      const timecodeTail = this.incomingTail;
+      this.incomingTail = null;
       const handle = startMidiScheduler(
         {
           cues: s.cues,
@@ -1976,6 +1990,7 @@ export class PerformanceSession {
           rate,
           clock: s.clock && offset === null,
           timecode: offset === null ? undefined : { fps: s.timecode.fps, offset },
+          timecodeTail: timecodeTail ?? undefined,
           tempo: this.startTempo,
           playTriggers,
           lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,

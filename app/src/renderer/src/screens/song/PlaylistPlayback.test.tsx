@@ -410,7 +410,7 @@ it("does not pause a held hand-over when the panel is torn down on the same scre
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
   const dispose = vi.fn(async () => {});
   const unwire = vi.fn();
-  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, unwire });
+  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, join: 0, unwire });
   // Still on Performance: a remount is not leaving, so the held song is not stopped and the set is not paused.
   view.unmount();
   await act(() => new Promise((r) => setTimeout(r, 20)));
@@ -447,7 +447,7 @@ it("stops a handed-over song that nothing took up, and pauses the set, when Perf
   await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
   const dispose = vi.fn(async () => {});
   const unwire = vi.fn();
-  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, unwire });
+  useSongLibrary.getState().setHandover({ id: second.id, player: { dispose } as never, countInMs: 0, join: 0, unwire });
   useNav.getState().go("rig");
   view.unmount();
   await waitFor(() => expect(dispose).toHaveBeenCalledTimes(1));

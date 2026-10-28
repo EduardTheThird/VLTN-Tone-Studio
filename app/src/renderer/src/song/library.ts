@@ -17,6 +17,7 @@ import {
   type SongMetaPatch,
 } from "@shared/song-library";
 import { songsFromHistory } from "@shared/library-history";
+import type { TimecodeTail } from "./performance/midi-scheduler";
 import { playNext, addToQueue as queueAdd, removeFromQueue as queueRemove, moveInQueue as queueMove, setEntryOverride as queueOverride, type QueueEdit } from "./queue";
 import { overridesFor, type EntryOverride } from "@shared/entry-overrides";
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
@@ -69,6 +70,10 @@ export interface HandedOverSong {
   player: StemPlayer;
   /** The count-in before the song's audio, in ms */
   countInMs: number;
+  /** Clock time of the join, where this song starts on the outgoing song's clock */
+  join: number;
+  /** The outgoing song's quarter frames up to the join, set at the hand-over. Null when the outgoing song sent no timecode. */
+  timecodeTail?: TimecodeTail | null;
   unwire: () => void;
 }
 

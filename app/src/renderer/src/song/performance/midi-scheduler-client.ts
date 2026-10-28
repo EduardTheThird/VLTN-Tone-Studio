@@ -1,4 +1,4 @@
-import { lateAction, STALE_MS, type ScheduledMessage, type SchedulerConfig, type SchedulerJump, type SchedulerReply } from "./midi-scheduler";
+import { lateAction, STALE_MS, type ScheduledMessage, type SchedulerConfig, type SchedulerJump, type SchedulerReply, type TimecodeStream } from "./midi-scheduler";
 const failedWorkers = new WeakMap<Worker, Error>();
 /** The session keeps running through late messages; this reports them so the UI can show a non-blocking notice. */
 export interface SchedulerDegraded {
@@ -72,6 +72,8 @@ export function startMidiScheduler(
     started = false,
     lastResponse = requestedAt;
   let watchdog: ReturnType<typeof setInterval> | undefined;
+  // The quarter-frame stream as the worker last reported it, so a hand-over can carry it on after this schedule stops.
+  let latestTimecode: TimecodeStream | null = null;
   const stop = () => {
     active = false;
     clearInterval(watchdog);
@@ -102,6 +104,7 @@ export function startMidiScheduler(
       return;
     }
     if (reply.type !== "batch") return;
+    if (reply.timecode !== undefined) latestTimecode = reply.timecode;
     // The bridge can delay a batch. Judge each message on its own: a late one is dropped (note-offs are still sent), the rest go out.
     const dropped = [...(reply.dropped ?? [])];
     try {
@@ -148,6 +151,10 @@ export function startMidiScheduler(
         } catch (error) {
           fault(String(error));
         }
+    },
+    /** The quarter-frame stream last reported by the worker, or null when it sends no timecode. Still readable after `stop()`. */
+    timecodeStream(): TimecodeStream | null {
+      return latestTimecode;
     },
     /** Stops timecode at clock time `at` (the clock `midiNow` reads), or lifts the stop with null. Used by a hand-over. */
     endTimecode(at: number | null) {

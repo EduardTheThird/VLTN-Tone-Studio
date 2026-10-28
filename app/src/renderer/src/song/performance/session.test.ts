@@ -237,6 +237,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
           sync: (position: number) => schedule.sync(position, midiNow(), midiNow()),
           plan: (cap: number | null, jump: unknown) => schedule.plan(cap, jump as never, midiNow()),
           endTimecode: (at: number | null) => schedule.endTimecode(at),
+          timecodeStream: () => schedule.timecodeStream(),
         };
       }
       return {
@@ -244,6 +245,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
         sync: vi.fn(),
         plan: (cap: number | null, jump: { at: number; position: number } | null) => mocks.plans.push({ cap, jump }),
         endTimecode: vi.fn(),
+        timecodeStream: vi.fn(() => null),
       };
     },
   };
