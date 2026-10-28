@@ -64,7 +64,7 @@ An unknown or bad option is ignored, and the file still imports with its default
 
 **Track settings.** Each track in the mixer has gain, pan, solo, mute, a bus, **Follows pitch** and mute groups 1–6. Unmuting or soloing a track in a group mutes the other tracks in that group. A track whose name contains *click*, *metronome* or *guide* starts on the **Click** bus and does not follow pitch. At a speed other than 100%, a click track is still stretched, and a notice says so.
 
-**Loudness.** **Normalise song volume to −14 LUFS** measures the song once, in the background, then applies one gain to every track. The gain is limited to +6 dB, and so that the song's peak stays at or below −1 dBFS. Load the song before you turn it on.
+**Loudness.** **Normalise song volume to −14 LUFS** measures the song once, in the background, then applies one gain to every track. The gain is at most +6 dB, and never so much that the song's peak goes above −1 dBFS. Load the song before you turn it on.
 
 **Similar songs.** **Apply track settings to similar songs** copies this song's track settings to saved songs whose imported tracks have exactly the same names, in the same order. No audio is copied.
 
