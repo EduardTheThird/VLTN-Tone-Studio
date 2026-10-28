@@ -332,6 +332,58 @@ describe("Band panel", () => {
     expect(screen.getByText(/Parts out of date/)).toBeTruthy();
   });
 
+  it("with no song loaded, disables every action and says to open a song", () => {
+    useSong.setState({ source: null });
+    stored({ beatGrid: grid, band: { parts: { drums: true, bass: true } } });
+    renderPanel();
+    expect(screen.getByText("Open a song to generate parts.")).toBeTruthy();
+    for (const name of [
+      "Find the beat",
+      "Use fixed BPM",
+      "Half tempo",
+      "Double tempo",
+      "Downbeat ←",
+      "Downbeat →",
+      "Nudge −10 ms",
+      "Nudge +10 ms",
+      "Set metronome to this tempo",
+      "Generate",
+      "Try another",
+      "Preview 4 bars",
+    ]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled, name).toBe(true);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Find the beat" }));
+    expect(mocks.startBeatGrid).not.toHaveBeenCalled();
+    expect(useBandPanel.getState().open).toBe(true);
+  });
+
+  it("keeps the panel open and shows as a notice when the beat tracker cannot start", async () => {
+    mocks.startBeatGrid.mockImplementation(() => {
+      throw new Error("The beat tracker could not start.");
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Find the beat" }));
+    expect(await screen.findByText("The beat tracker could not start.")).toBeTruthy();
+    expect(screen.queryByText("Finding the beat…")).toBeNull();
+    expect(useBandPanel.getState().open).toBe(true);
+    expect((screen.getByRole("button", { name: "Find the beat" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the panel open and shows as a notice when a generation cannot start", async () => {
+    mocks.startChordDetection.mockReturnValue({ done: Promise.resolve([]), cancel: vi.fn() });
+    mocks.startBandRender.mockImplementation(() => {
+      throw new Error("The samples could not load.");
+    });
+    stored({ beatGrid: grid });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("The samples could not load.")).toBeTruthy();
+    expect(screen.queryByText("Writing the notes…")).toBeNull();
+    expect(useBandPanel.getState().open).toBe(true);
+    expect((screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("says why nothing is generated when there is no grid, and when no part is on", () => {
     renderPanel();
     expect((screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(true);

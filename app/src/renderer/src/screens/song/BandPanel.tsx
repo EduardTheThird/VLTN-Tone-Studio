@@ -54,6 +54,7 @@ export interface BandPanelProps {
 
 const PREVIEW_BARS = 4;
 const PLAYING_TEXT = "Stop playback to generate parts.";
+const NO_SONG_TEXT = "Open a song to generate parts.";
 
 /** Plays a mixed buffer once through a short-lived AudioContext. Returns a function that stops it early. */
 function playOnce(audio: PcmAudio, onDone: () => void): () => void {
@@ -143,7 +144,8 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   const plans = useMemo(() => planSections(sections, songEnd, settings), [sections, songEnd, settings]);
   const harmony = useMemo<ChordAtBeat[]>(() => (grid ? harmonyForSong(grid, cues, chords, songEnd) : []), [grid, cues, chords, songEnd]);
   const busy = work !== null;
-  const blocked = busy || playing;
+  // With no song there is nothing to find a beat in or to render, so every action waits for one.
+  const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
   const style = findStyle(settings.style) ?? STYLES.rock;
 
@@ -176,6 +178,22 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     writeStoredBand(songKey, { beatGrid: next, bandOutOfDate: true });
   };
 
+  /**
+   * Runs one action that can fail or be cancelled. An error or a cancel becomes a notice in the panel, and the job and the busy line are
+   * cleared, so an action cannot leave the panel busy, and nothing it does closes the dialog.
+   */
+  const attempt = async (cancelled: string, action: () => Promise<void>) => {
+    try {
+      await action();
+    } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
+      setNotices([aborted ? cancelled : error instanceof Error ? error.message : String(error)]);
+    } finally {
+      job.current = null;
+      setWork(null);
+    }
+  };
+
   const rows: BandSectionRow[] = plans.map((plan) => ({
     plan,
     name: plan.sectionId === null ? "Whole song" : (sections.find((section) => section.id === plan.sectionId)?.name ?? "Section"),
@@ -187,24 +205,18 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     if (!current) return setNotices(["Load a song before finding the beat."]);
     setNotices([]);
     setWork("Finding the beat…");
-    const found: BeatGridJob = startBeatGrid({
-      sources: beatSources(useSong.getState().stems, current.audio),
-      sampleRate: current.audio.sampleRate,
-      beatsPerBar: beats,
-      chordChanges: chartChordTimes(cues),
-    });
-    job.current = found;
-    try {
+    await attempt("Finding the beat was cancelled.", async () => {
+      const found: BeatGridJob = startBeatGrid({
+        sources: beatSources(useSong.getState().stems, current.audio),
+        sampleRate: current.audio.sampleRate,
+        beatsPerBar: beats,
+        chordChanges: chartChordTimes(cues),
+      });
+      job.current = found;
       const next = await found.done;
       if (next.beats.length === 0) setNotices(["No beat was found in this song. Use fixed BPM, or set the tempo by hand."]);
       else applyGrid(next);
-    } catch (error) {
-      if (!(error instanceof Error && error.name === "AbortError")) setNotices([error instanceof Error ? error.message : String(error)]);
-      else setNotices(["Finding the beat was cancelled."]);
-    } finally {
-      job.current = null;
-      setWork(null);
-    }
+    });
   };
 
   /**
@@ -230,41 +242,38 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     if (!current) return setNotices(["Load a song before generating parts."]);
     if (!grid) return setNotices(["Find the beat first, so the parts have a grid to follow."]);
     if (!using.parts.drums && !using.parts.bass) return setNotices(["Turn on drums or bass first."]);
-    const input = {
-      grid,
-      cues,
-      chords,
-      sections,
-      settings: using,
-      songEnd,
-      lengthFrames: current.audio.channels[0].length,
-      sampleUrls: bandSampleUrls(),
-    };
-    let request = bandRequest(input);
-    const notes: string[] = [];
-    if (using.parts.bass && !request.harmony.some((entry) => entry.chord)) {
-      // Neither the chart nor the screen's analysis has chords, so the bass would rest all song. Detect them from the audio first.
-      let found: Chord[] | null = [];
-      try {
-        found = await detectChords(current.audio);
-      } catch (error) {
-        notes.push(error instanceof Error ? error.message : String(error));
+    await attempt("Generating the parts was cancelled. The tracks were not changed.", async () => {
+      const input = {
+        grid,
+        cues,
+        chords,
+        sections,
+        settings: using,
+        songEnd,
+        lengthFrames: current.audio.channels[0].length,
+        sampleUrls: bandSampleUrls(),
+      };
+      let request = bandRequest(input);
+      const notes: string[] = [];
+      if (using.parts.bass && !request.harmony.some((entry) => entry.chord)) {
+        // Neither the chart nor the screen's analysis has chords, so the bass would rest all song. Detect them from the audio first.
+        let found: Chord[] | null = [];
+        try {
+          found = await detectChords(current.audio);
+        } catch (error) {
+          notes.push(error instanceof Error ? error.message : String(error));
+        }
+        if (found === null) return setNotices(["Generating the parts was cancelled. The tracks were not changed."]);
+        if (found.length) request = bandRequest({ ...input, chords: found });
+        if (!request.harmony.some((entry) => entry.chord)) {
+          notes.push("No chords were found in the chart or the audio, so the bass will rest. Add chords to the chart, then generate again.");
+        }
       }
-      if (found === null) {
-        setWork(null);
-        return setNotices(["Generating the parts was cancelled. The tracks were not changed."]);
-      }
-      if (found.length) request = bandRequest({ ...input, chords: found });
-      if (!request.harmony.some((entry) => entry.chord)) {
-        notes.push("No chords were found in the chart or the audio, so the bass will rest. Add chords to the chart, then generate again.");
-      }
-    }
-    setNotices(notes);
-    setWork(stageText("loading"));
-    const rendering: BandJob = startBandRender(request);
-    job.current = rendering;
-    rendering.onProgress((stage) => setWork(stageText(stage)));
-    try {
+      setNotices(notes);
+      setWork(stageText("loading"));
+      const rendering: BandJob = startBandRender(request);
+      job.current = rendering;
+      rendering.onProgress((stage) => setWork(stageText(stage)));
       const result = await rendering.done;
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
@@ -274,13 +283,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         setOutOfDate(false);
         writeStoredBand(songKey, { bandOutOfDate: false });
       }
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") setNotices(["Generating the parts was cancelled. The tracks were not changed."]);
-      else setNotices([error instanceof Error ? error.message : String(error)]);
-    } finally {
-      job.current = null;
-      setWork(null);
-    }
+    });
   };
 
   const tryAnother = () => {
@@ -295,21 +298,21 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     if (!grid) return setNotices(["Find the beat first, so the preview has a grid to follow."]);
     if (!settings.parts.drums && !settings.parts.bass) return setNotices(["Turn on drums or bass to preview them."]);
     const from = selected !== null ? rows[selected].plan.start : getPosition();
-    const request = bandRequest({
-      grid,
-      cues,
-      chords,
-      sections,
-      settings,
-      songEnd,
-      lengthFrames: current.audio.channels[0].length,
-      sampleUrls: bandSampleUrls(),
-    });
     setNotices([]);
     setWork("Rendering the preview…");
-    const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
-    job.current = rendering;
-    try {
+    await attempt("Rendering the preview was cancelled.", async () => {
+      const request = bandRequest({
+        grid,
+        cues,
+        chords,
+        sections,
+        settings,
+        songEnd,
+        lengthFrames: current.audio.channels[0].length,
+        sampleUrls: bandSampleUrls(),
+      });
+      const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
+      job.current = rendering;
       const result = await rendering.done;
       const mixed = previewMix(current.audio, from, result);
       setWork(null);
@@ -318,18 +321,16 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         setPreviewing(false);
       });
       setPreviewing(true);
-    } catch (error) {
-      if (!(error instanceof Error && error.name === "AbortError")) setNotices([error instanceof Error ? error.message : String(error)]);
-      setWork(null);
-    } finally {
-      job.current = null;
-    }
+    });
   };
 
   const removeParts = () => {
     setConfirmRemove(false);
-    const notices = useSong.getState().removeGeneratedParts({ playing: playingNow.current });
-    setNotices(notices);
+    try {
+      setNotices(useSong.getState().removeGeneratedParts({ playing: playingNow.current }));
+    } catch (error) {
+      setNotices([error instanceof Error ? error.message : String(error)]);
+    }
   };
 
   const usesFixed = () => {
@@ -379,6 +380,11 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       </section>
 
       <section aria-label="Band actions" className="flex flex-col gap-2">
+        {source === null && (
+          <p role="note" className="text-led-warn">
+            {NO_SONG_TEXT}
+          </p>
+        )}
         {playing && (
           <p role="note" className="text-led-warn">
             {PLAYING_TEXT}
