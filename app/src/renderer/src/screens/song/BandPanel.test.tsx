@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PcmAudio } from "@/song/types";
 import type { BeatGrid } from "@/song/band/beat-grid";
 import { fixedBeatGrid } from "@/song/band/beat-grid";
+import { parseSmf } from "@/song/performance/smf";
 import type { Section } from "@/song/performance/sections";
 import { useBandPanel } from "./band-panel-state";
 
@@ -11,8 +12,11 @@ const mocks = vi.hoisted(() => ({
   startBandRender: vi.fn(),
   renderPreview: vi.fn(),
   startChordDetection: vi.fn(),
+  saveFiles: vi.fn(async (_files: unknown, _title: string) => null as string | null),
   store: null as unknown as { getState(): unknown; setState(patch: unknown): void },
 }));
+
+vi.mock("@/host", () => ({ host: { song: { saveFiles: mocks.saveFiles } } }));
 
 vi.mock("@/song/store", async () => {
   const { create } = await import("zustand");
@@ -108,6 +112,7 @@ beforeEach(() => {
     removeGeneratedParts: vi.fn(() => []),
   });
   mocks.startBeatGrid.mockReset();
+  mocks.saveFiles.mockClear();
   mocks.startBandRender.mockReset();
   mocks.renderPreview.mockReset();
   // By default the detector finds nothing, so the bass rests unless a test gives it chords.
@@ -120,6 +125,35 @@ afterEach(() => {
 });
 
 describe("Band panel", () => {
+  it("exports the last Generate's notes as a MIDI file named after the song, and only after Generate", async () => {
+    stored({ beatGrid: grid, bandOutOfDate: true });
+    const silent = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    const kick = { time: 0.5, pitch: 36, velocity: 100, duration: 0.1 };
+    const bassNote = { time: 1, pitch: 40, velocity: 90, duration: 0.5 };
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums: silent, bass: silent, notes: { drums: [kick], bass: [bassNote] } }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    const exporting = screen.getByRole("button", { name: "Export MIDI…" }) as HTMLButtonElement;
+    expect(exporting.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(exporting.disabled).toBe(false));
+    fireEvent.click(exporting);
+    await waitFor(() => expect(mocks.saveFiles).toHaveBeenCalledTimes(1));
+    const [files, title] = mocks.saveFiles.mock.calls[0] as unknown as [{ name: string; bytes: Uint8Array }[], string];
+    expect(files.map((file) => file.name)).toEqual(["Song - band.mid"]);
+    expect(title).toBe("Export band MIDI");
+    const messages = parseSmf(files[0].bytes).filter((message) => message.bytes.length === 3);
+    expect(messages.map((message) => message.bytes)).toEqual([
+      [0x99, 36, 100],
+      [0x89, 36, 0],
+      [0x90, 40, 90],
+      [0x80, 40, 0],
+    ]);
+  });
+
   it("renders with the defaults, and checks for missing parts when it opens", () => {
     renderPanel();
     expect(useSong.getState().checkMissingParts).toHaveBeenCalled();

@@ -11,8 +11,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { host } from "@/host";
 import { useSong } from "@/song/store";
 import { planSections, WHOLE_SONG_ID, type BandSettings, type FollowSource, type SectionPlan } from "@/song/band/arrangement";
+import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
+import type { NoteEvent } from "@/song/band/note";
+import { encodeSmf } from "@/song/performance/smf";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
@@ -123,6 +127,8 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   const [selected, setSelected] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // The notes of the last Generate, kept so they can be exported as a MIDI file.
+  const [lastNotes, setLastNotes] = useState<{ drums: NoteEvent[]; bass: NoteEvent[] } | null>(null);
   const job = useRef<{ cancel(): void } | null>(null);
   const stopPreview = useRef<(() => void) | null>(null);
   const playingNow = useRef(playing);
@@ -280,6 +286,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       job.current = rendering;
       rendering.onProgress((stage) => setWork(stageText(stage)));
       const result = await rendering.done;
+      setLastNotes(result.notes);
       if (result.follow) notes.push(followStatus(result.follow));
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
@@ -330,6 +337,27 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       });
       setPreviewing(true);
     });
+  };
+
+  /**
+   * Saves the last Generate's notes as a standard MIDI file named after the song. Drums are on channel 10 and bass on channel 1, the
+   * channels a sequencer or a drum machine expects.
+   */
+  const exportMidi = async () => {
+    if (!lastNotes || !grid) return;
+    const title = (source?.name ?? "").replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|]/g, "-") || "Song";
+    const bytes = encodeSmf(
+      [
+        { name: GENERATED_PART_NAMES.drums, channel: 9, notes: lastNotes.drums },
+        { name: GENERATED_PART_NAMES.bass, channel: 0, notes: lastNotes.bass },
+      ],
+      grid,
+    );
+    try {
+      await host.song.saveFiles([{ name: `${title} - band.mid`, bytes }], "Export band MIDI");
+    } catch (error) {
+      setNotices([error instanceof Error ? error.message : String(error)]);
+    }
   };
 
   const removeParts = () => {
@@ -410,6 +438,9 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
           </Button>
           <Button variant="outline" disabled={blocked || !grid} onClick={() => (previewing ? stopPreview.current?.() : void preview())}>
             {previewing ? "Stop preview" : `Preview ${PREVIEW_BARS} bars`}
+          </Button>
+          <Button variant="outline" disabled={playing || lastNotes === null} onClick={() => void exportMidi()}>
+            Export MIDI…
           </Button>
         </div>
         {notices.length > 0 && (
