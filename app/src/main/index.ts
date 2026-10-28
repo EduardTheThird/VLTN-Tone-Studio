@@ -21,6 +21,12 @@ import { installBluetoothChooser } from './bluetooth';
 import { isAudienceContents, registerDisplayIpc } from "./ipc/display";
 import { registerBandSyncIpc } from "./ipc/band-sync";
 import { APP_SCHEME_PRIVILEGES } from "./app-scheme";
+import { devUserDataPath } from "./user-data";
+
+// Development runs keep their own library and settings, so testing never touches the installed app's songs.
+// Before the single-instance lock, which is per data folder.
+const devData = devUserDataPath(app.getPath("userData"), app.isPackaged, app.commandLine.hasSwitch("user-data-dir"));
+if (devData) app.setPath("userData", devData);
 
 // One app instance = one MIDI session (the pedal's port is exclusive on Windows).
 if (!app.requestSingleInstanceLock()) app.quit();
