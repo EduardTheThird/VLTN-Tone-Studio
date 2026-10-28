@@ -499,6 +499,22 @@ describe("the queue, play recording and organisation", () => {
     await useSongLibrary.getState().skipPlaylist(1);
     expect(useSongLibrary.getState()).toMatchObject({ position: 1, playlistPlaying: false, playingSet: "set-1" });
   });
+
+  it("keeps the playing set when Previous song is pressed while the set is paused", async () => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+    reset({ index: { ...emptyLibrary(), songs: [saved] }, queue: [saved.id, saved.id], position: 1, playlistPlaying: false, playingSet: "set-1", busy: false });
+    await useSongLibrary.getState().skipPlaylist(-1);
+    expect(useSongLibrary.getState()).toMatchObject({ position: 0, playlistPlaying: false, playingSet: "set-1" });
+  });
+
+  it("forgets the playing set when a hand load picks another entry of the same playlist", async () => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+    reset({ index: { ...emptyLibrary(), songs: [saved] }, playingSet: null });
+    await useSongLibrary.getState().playPlaylist([saved.id, saved.id], 0, "set-1");
+    expect(useSongLibrary.getState().playingSet).toBe("set-1");
+    await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
+    expect(useSongLibrary.getState()).toMatchObject({ error: "", position: 1, playlistPlaying: false, playingSet: null });
+  });
 });
 
 it("removing a song that is only queued drops it from the queue and leaves the playing set alone", async () => {

@@ -368,7 +368,19 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     prefetchNext();
     return null;
   };
-  const load = async (id: string, queue: string[], position: number, playlist: boolean, overrides?: (EntryOverride | null)[]) => {
+  /**
+   * `keepSet` is true only when the load continues the set that is playing (Next, Previous, a skip or the advance to the next song).
+   * Any other load takes `setId` as its set, or none.
+   */
+  const load = async (
+    id: string,
+    queue: string[],
+    position: number,
+    playlist: boolean,
+    overrides: (EntryOverride | null)[] | undefined,
+    keepSet: boolean,
+    setId: string | null = null,
+  ) => {
     // Loading a song replaces the set, so a song held for the next one of the old set is released.
     get().releaseHandover();
     const generation = ++loadGeneration;
@@ -391,8 +403,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       queueOverrides: overridesFor(queue.length, overrides),
       position,
       playlistPlaying: playlist,
-      // Walking a set by hand (Next or Previous while paused) keeps its id; a single song loaded by hand has none.
-      playingSet: playlist || queue.length > 1 ? get().playingSet : null,
+      // Walking a set by hand (Next or Previous while paused) keeps its id; any other load takes the set it was given.
+      playingSet: keepSet ? get().playingSet : setId,
       notice: readyNotice(song.title, next.skipped),
     });
     useSong.setState({
@@ -614,8 +626,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     playPlaylist: (queue, position = 0, setId, overrides) =>
       run(async () => {
         if (!queue.length || !queue[position]) throw new Error("This playlist is empty.");
-        set({ playlistPlaying: true, midiSession: null, playingSet: setId ?? null });
-        await load(queue[position], queue, position, true, overrides);
+        set({ playlistPlaying: true, midiSession: null });
+        await load(queue[position], queue, position, true, overrides, false, setId ?? null);
       }),
     advancePlaylist: () =>
       run(async () => {
@@ -628,7 +640,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const nextId = queue[position + 1];
         if (get().advanceToPrepared(nextId)) return;
         const loading = prefetching === nextId;
-        await load(nextId, queue, position + 1, true, get().queueOverrides);
+        await load(nextId, queue, position + 1, true, get().queueOverrides, true);
         if (loading) set({ notice: "The next song was still loading, so it started after a gap." });
       }),
     skipPlaylist: (offset) =>
@@ -636,7 +648,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const { queue, position, playlistPlaying } = get(),
           next = position + offset;
         if (next < 0 || next >= queue.length) return;
-        await load(queue[next], queue, next, playlistPlaying, get().queueOverrides);
+        await load(queue[next], queue, next, playlistPlaying, get().queueOverrides, true);
       }),
     refresh: () =>
       run(async () => {
@@ -697,7 +709,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         }
         set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
       }),
-    load: (id, queue = [id], position = 0, overrides) => run(() => load(id, queue, position, false, overrides)),
+    load: (id, queue = [id], position = 0, overrides) => run(() => load(id, queue, position, false, overrides, false)),
     playlists: (playlists) =>
       run(async () => {
         await api().playlists(playlists);
