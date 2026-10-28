@@ -605,6 +605,35 @@ it("chains the next playlist song near the end, takes it over at its join, and d
   vi.useRealTimers();
 });
 
+it("pauses on one press after a join, when the view is re-created on the hand-over", async () => {
+  vi.useFakeTimers();
+  // The chained song is already playing on the clock when it is handed over, as the real player launches it.
+  const incoming = new StemPlayer({} as Stems);
+  (incoming as unknown as { isPlaying: boolean }).isPlaying = true;
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings: {}, player: incoming };
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => next as never;
+  mocks.library.advanceToPrepared = vi.fn(() => true);
+  const { session, out, access, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(3750);
+  expect(mocks.library.advanceToPrepared).toHaveBeenCalledWith("b");
+  unload();
+  session.dispose();
+  const joined = joinedSession(out, access);
+  expect(joined.session.state.playing).toBe(true);
+  // One press pauses the song that joined.
+  joined.session.pause();
+  expect(joined.session.state.playing).toBe(false);
+  expect(incoming.isPlaying).toBe(false);
+  joined.unload();
+  joined.session.dispose();
+  vi.useRealTimers();
+});
+
 it("does not chain a song that is set to stop the playlist", async () => {
   vi.useFakeTimers();
   const next = {

@@ -749,6 +749,42 @@ it("keeps stage mode active when a new playlist song replaces the source", () =>
   expect((screen.getByLabelText("Expanded song position") as HTMLInputElement).disabled).toBe(true);
 });
 
+it("one Pause after a join pauses the song that joined, once the view is re-created on the hand-over", async () => {
+  vi.useFakeTimers();
+  localStorage.clear();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  playlist.active = true;
+  playlist.queue = ["a", "b"];
+  playlist.position = 0;
+  playlist.playlistPlaying = true;
+  playlist.pausePlaylist.mockImplementation(() => {
+    playlist.playlistPlaying = false;
+  });
+  mocks.source = { ...mocks.source, libraryId: "a" };
+  let view: ReturnType<typeof render>;
+  await act(async () => {
+    view = render(<PerformancePanel />);
+  });
+  // The queued song starts itself while the set plays.
+  expect(screen.getByText("Pause")).toBeTruthy();
+  // Song B was launched on the clock before the join, and the outgoing view hands it over to the view that replaces it.
+  const { StemPlayer } = await import("@/song/stems/player");
+  const incoming = new StemPlayer({} as never) as unknown as { isPlaying: boolean; start: number };
+  incoming.isPlaying = true;
+  incoming.start = 0;
+  playlist.claimHandover = ((id: string) => (id === "b" ? { id: "b", player: incoming, countInMs: 0, unwire: () => {} } : null)) as never;
+  playlist.position = 1;
+  mocks.source = { ...mocks.source, libraryId: "b" };
+  await act(async () => {
+    view.rerender(<PerformancePanel />);
+  });
+  expect(screen.getByText("Pause")).toBeTruthy();
+  // One press pauses song B.
+  fireEvent.click(screen.getByText("Pause"));
+  expect(screen.queryByText("Pause")).toBeNull();
+  expect(incoming.isPlaying).toBe(false);
+});
+
 it("saves the first downbeat per song and locks alignment during playback", async () => {
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   const view = render(<PerformancePanel />);
