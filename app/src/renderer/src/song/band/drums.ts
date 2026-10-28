@@ -10,7 +10,8 @@ import type { BeatGrid } from "./beat-grid";
 import { CRASH, DRUM_DURATION, KICK, type NoteEvent } from "./note";
 import { createRandom } from "./random";
 import { findStyle } from "./styles";
-import type { DrumHit, Style } from "./styles/types";
+import type { DrumHit } from "./styles/types";
+import { barBeats, barStarts, clampVelocity, planIndexAt, stepAt } from "./timing";
 
 /** The kick and crash that end the song. */
 const ENDING_VELOCITY = 110;
@@ -29,11 +30,6 @@ interface Segment {
   barsLeft: number;
 }
 
-/** Index of the plan covering `time`, or -1 when no plan does. Plans are in time order and do not overlap. */
-export function planIndexAt(plans: readonly SectionPlan[], time: number): number {
-  return plans.findIndex((plan) => time >= plan.start && time < plan.end);
-}
-
 /** A "lean" hit plays from this complexity up. */
 export const LEAN_FROM = 1 / 3;
 /** A "busy" hit plays from this complexity up. */
@@ -46,38 +42,6 @@ export function playsAt(hit: DrumHit, complexity: number): boolean {
   return true;
 }
 
-/** Time of a point `fraction` of the way through beat `beat`. The last beat has no following beat, so it uses the interval before it. */
-function timeIn(beats: readonly number[], beat: number, fraction: number): number {
-  let length = 0.5;
-  if (beat + 1 < beats.length) length = beats[beat + 1] - beats[beat];
-  else if (beat > 0) length = beats[beat] - beats[beat - 1];
-  return beats[beat] + fraction * length;
-}
-
-/**
- * How late an off-beat step plays, in beats. The off-beat is the odd step of a sixteenth or eighth grid. At full swing (1) it would
- * sit two thirds of the way through the pair, so swing × half a step is close to a triplet feel at the top of the range. Triplet
- * grids take no swing here: their pattern already places the swing.
- */
-function swingDelay(style: Style, fraction: number, swing: number): number {
-  const perBeat = style.meter.stepsPerBeat;
-  if (swing <= 0 || perBeat === 3) return 0;
-  if (Math.round(fraction * perBeat) % 2 === 0) return 0;
-  return (swing * 0.5) / perBeat;
-}
-
-function clampVelocity(value: number): number {
-  return Math.min(127, Math.max(1, Math.round(value)));
-}
-
-/** Start beat of every bar in the grid, from the downbeat on. A beat before the downbeat is a pickup and gets no bar. */
-function barStarts(grid: BeatGrid): number[] {
-  const perBar = Math.max(1, Math.round(grid.beatsPerBar));
-  const starts: number[] = [];
-  for (let beat = Math.max(0, Math.round(grid.downbeat)); beat < grid.beats.length; beat += perBar) starts.push(beat);
-  return starts;
-}
-
 /**
  * Drum notes for the whole song, sorted by time. A bar belongs to the plan covering its first beat. Bars of a plan with drums off, and
  * the pickup, are silent. The last bar of the song ends on a crash and a kick on its downbeat, and nothing follows.
@@ -88,7 +52,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
   if (beats.length === 0 || plans.length === 0) return notes;
 
   const random = createRandom(seed);
-  const perBar = Math.max(1, Math.round(grid.beatsPerBar));
+  const perBar = barBeats(grid);
   const starts = barStarts(grid);
   const planOf = starts.map((beat) => planIndexAt(plans, beats[beat]));
   const emit = (time: number, pitch: number, velocity: number) => notes.push({ time, pitch, velocity: clampVelocity(velocity), duration: DRUM_DURATION });
@@ -149,12 +113,9 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       if (hit.ghost && !settings.ghostNotes) continue;
       if (!playsAt(hit, settings.complexity)) continue;
 
-      const scaled = hit.step * perBar;
-      const beatOffset = Math.floor(scaled / groove.steps);
-      const beat = start + beatOffset;
-      if (beat >= beats.length) continue;
-      const fraction = (scaled - beatOffset * groove.steps) / groove.steps;
-      emit(timeIn(beats, beat, fraction + swingDelay(style, fraction, settings.swing)), hit.pitch, hit.velocity);
+      const at = stepAt(beats, style, start, hit.step, groove.steps, perBar, settings.swing);
+      if (at.beat >= beats.length) continue;
+      emit(at.time, hit.pitch, hit.velocity);
     }
   }
 

@@ -1,0 +1,236 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_BAND_SETTINGS, type BandSettings, type BassMode, type BassRange, type SectionPlan } from "./arrangement";
+import { generateBass } from "./bass";
+import type { BeatGrid } from "./beat-grid";
+import { parseChordName, type ChordAtBeat } from "./harmony";
+import type { NoteEvent } from "./note";
+
+/** A grid of `count` beats at 120 BPM (a beat every 0.5 s), in 4/4. Beats before `downbeat` are a pickup. */
+function gridOf(count: number, downbeat = 0): BeatGrid {
+  return { beatsPerBar: 4, beats: Array.from({ length: count }, (_, i) => i * 0.5), downbeat, bpm: 120, steady: null };
+}
+
+/** One entry per beat, with the chord named in `names` (null for a rest). */
+function harmonyFor(names: readonly (string | null)[]): ChordAtBeat[] {
+  return names.map((name, beat) => ({ beat, time: beat * 0.5, chord: name === null ? null : parseChordName(name) }));
+}
+
+/** Four beats of each chord, one chord per bar. */
+function barsOf(...chords: (string | null)[]): (string | null)[] {
+  return chords.flatMap((chord) => [chord, chord, chord, chord]);
+}
+
+/** A plan from `endBeat` to the end of the song, starting at zero. Beat n is at n / 2 seconds. */
+function planFor(endBeat: number, overrides: Partial<SectionPlan> = {}): SectionPlan {
+  return { sectionId: null, start: 0, end: endBeat * 0.5, style: "rock", energy: 3, fill: false, play: { drums: true, bass: true }, ...overrides };
+}
+
+/** Settings with every choice fixed: roots, normal range, no kick lock, full complexity, no swing. */
+function settingsFor(overrides: Partial<BandSettings> = {}): BandSettings {
+  return { ...DEFAULT_BAND_SETTINGS, complexity: 1, swing: 0, lockToKick: false, bassMode: "roots", bassRange: "normal", ...overrides };
+}
+
+/** The pitch class of a MIDI note. */
+const pc = (pitch: number): number => ((pitch % 12) + 12) % 12;
+
+/** The notes that start in the bar at `bar` (a bar is two seconds in 4/4 at 120 BPM). */
+const inBar = (notes: readonly NoteEvent[], bar: number): NoteEvent[] => notes.filter((note) => Math.floor(note.time / 2 + 1e-9) === bar);
+
+describe("generateBass", () => {
+  const chords = barsOf("C", "Am", "F", "G", "C", "Am", "F", "G");
+  const harmony = harmonyFor(chords);
+
+  it("gives the same notes for the same seed, and a new seed gives different notes", () => {
+    const grid = gridOf(chords.length);
+    const plans = [planFor(chords.length)];
+    const settings = settingsFor({ bassMode: "melodic" });
+    expect(generateBass(grid, harmony, plans, settings, [], 5)).toEqual(generateBass(grid, harmony, plans, settings, [], 5));
+
+    // Two variations to choose from, so one pair of seeds can agree by chance. Across eight seeds the output must not all agree.
+    const outputs = Array.from({ length: 8 }, (_, seed) => JSON.stringify(generateBass(grid, harmony, plans, settings, [], seed + 1)));
+    expect(new Set(outputs).size).toBeGreaterThan(1);
+  });
+
+  it("keeps every note inside the range, for each range and mode", () => {
+    const ranges: Record<BassRange, [number, number]> = { low: [28, 40], normal: [28, 55], high: [33, 60] };
+    const progression = harmonyFor(barsOf("C", "Am", "F", "G/B", "Dm7", "Bdim", "E7", "Aaug"));
+    const grid = gridOf(progression.length);
+    const modes: [BassMode, string][] = [
+      ["roots", "rock"],
+      ["fifths", "rock"],
+      ["octaves", "rock"],
+      ["melodic", "rock"],
+      ["walking", "shuffle"],
+    ];
+    for (const range of Object.keys(ranges) as BassRange[]) {
+      const [low, high] = ranges[range];
+      for (const [mode, style] of modes) {
+        for (const energy of [1, 3, 5] as const) {
+          const notes = generateBass(
+            grid,
+            progression,
+            [planFor(progression.length, { style: style as SectionPlan["style"], energy })],
+            settingsFor({ bassMode: mode, bassRange: range, complexity: 0.5 }),
+            [],
+            9,
+          );
+          expect(notes.length).toBeGreaterThan(0);
+          for (const note of notes) {
+            expect(note.pitch).toBeGreaterThanOrEqual(low);
+            expect(note.pitch).toBeLessThanOrEqual(high);
+          }
+        }
+      }
+    }
+  });
+
+  it("plays only the bass pitch class in roots mode, and a slash chord plays its slash note", () => {
+    const names = barsOf("D/F#", "C", "G");
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 3);
+    const bar0 = inBar(notes, 0);
+    const bar1 = inBar(notes, 1);
+    expect(bar0.length).toBeGreaterThan(0);
+    expect(bar0.every((note) => pc(note.pitch) === 6)).toBe(true);
+    expect(bar1.length).toBeGreaterThan(0);
+    expect(bar1.every((note) => pc(note.pitch) === 0)).toBe(true);
+  });
+
+  it("gives the fifth for major, minor, diminished and augmented chords in roots-fifths", () => {
+    const cases: [string, number[]][] = [
+      ["C", [0, 7]],
+      ["Am", [9, 4]],
+      ["Bdim", [11, 5]],
+      ["Caug", [0, 8]],
+    ];
+    for (const [name, allowed] of cases) {
+      const names = barsOf(name, name, name, name);
+      const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor({ bassMode: "fifths" }), [], 4);
+      const seen = new Set(notes.map((note) => pc(note.pitch)));
+      expect(
+        [...seen].every((value) => allowed.includes(value)),
+        name,
+      ).toBe(true);
+      expect(seen.has(allowed[1]), `${name} fifth`).toBe(true);
+    }
+  });
+
+  it("puts an approach note a semitone from the next bass note, on the last step before a chord change", () => {
+    // C for two beats, then G from beat 2 (one second in). The step before the change must lead into the G.
+    const names = [...barsOf("C").slice(0, 2), ...barsOf("G", "G")];
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor({ bassMode: "melodic" }), [], 6);
+    const before = notes.filter((note) => note.time < 1).at(-1);
+    const after = notes.find((note) => note.time >= 1);
+    expect(before).toBeDefined();
+    expect(after).toBeDefined();
+    expect(pc(after!.pitch)).toBe(7);
+    expect(Math.abs(before!.pitch - after!.pitch)).toBe(1);
+    expect(before!.velocity).toBeGreaterThanOrEqual(71);
+    expect(before!.velocity).toBeLessThanOrEqual(79);
+  });
+
+  it("uses a whole tone for the approach when complexity is below two thirds", () => {
+    const names = [...barsOf("C").slice(0, 2), ...barsOf("G", "G")];
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor({ bassMode: "melodic", complexity: 0.5 }), [], 6);
+    const before = notes.filter((note) => note.time < 1).at(-1);
+    const after = notes.find((note) => note.time >= 1);
+    expect(Math.abs(before!.pitch - after!.pitch)).toBe(2);
+  });
+
+  it("walks quarter notes on shuffle, with the last one a semitone from the next bar's bass", () => {
+    const names = barsOf("C", "F", "G", "C");
+    const notes = generateBass(
+      gridOf(names.length),
+      harmonyFor(names),
+      [planFor(names.length, { style: "shuffle" })],
+      settingsFor({ bassMode: "walking" }),
+      [],
+      2,
+    );
+    for (const bar of [0, 1, 2]) {
+      const inThisBar = inBar(notes, bar);
+      expect(inThisBar.map((note) => note.time)).toEqual([0, 0.5, 1, 1.5].map((offset) => bar * 2 + offset));
+      const next = inBar(notes, bar + 1)[0];
+      expect(Math.abs(inThisBar.at(-1)!.pitch - next.pitch)).toBe(1);
+    }
+  });
+
+  it("locks the onsets to the kick, and keeps the first step of each bar", () => {
+    const count = 16;
+    const grid = gridOf(count);
+    // A kick on every odd beat, 0.5 s, 1.5 s and so on.
+    const kick: NoteEvent[] = Array.from({ length: count }, (_, i) => i)
+      .filter((i) => i % 2 === 1)
+      .map((i) => ({ time: i * 0.5, pitch: 36, velocity: 100, duration: 0.1 }));
+    const notes = generateBass(grid, harmonyFor(barsOf("C", "Am", "F", "G")), [planFor(count)], settingsFor({ lockToKick: true }), kick, 8);
+    for (const note of notes) {
+      const onKick = kick.some((hit) => Math.abs(hit.time - note.time) <= 0.001);
+      const onBarStart = Math.abs(note.time / 2 - Math.round(note.time / 2)) < 1e-9;
+      expect(onKick || onBarStart, `note at ${note.time}`).toBe(true);
+    }
+    // The first bar with a kick keeps its first step (the downbeat), even though the kick sits on beat 2.
+    for (const bar of [0, 1, 2]) expect(notes.some((note) => Math.abs(note.time - bar * 2) < 1e-9)).toBe(true);
+  });
+
+  it("rests on a null chord", () => {
+    const names = [...barsOf("C").slice(0, 1), null, "C", "C", ...barsOf("G", "G")];
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 7);
+    expect(notes.some((note) => note.time >= 0.5 && note.time < 1)).toBe(false);
+    expect(notes.some((note) => note.time >= 1.5)).toBe(true);
+  });
+
+  it("switches to the new bass note at a chord change in the middle of a bar", () => {
+    // C for beats 0 and 1, then G for beats 2 and 3, in one bar. Every note from the change on must be G.
+    const names = [...barsOf("C").slice(0, 2), "G", "G", ...barsOf("G", "G")];
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 11);
+    const afterChange = notes.filter((note) => note.time >= 1 && note.time < 2);
+    expect(afterChange.length).toBeGreaterThan(0);
+    expect(afterChange.every((note) => pc(note.pitch) === 7)).toBe(true);
+    expect(notes.find((note) => note.time >= 1)!.pitch % 12).toBe(7);
+  });
+
+  it("keeps every note inside its bar, with a positive duration", () => {
+    const names = barsOf("C", "Am", "F", "G", "C");
+    for (const energy of [1, 2, 3, 4, 5] as const) {
+      const notes = generateBass(
+        gridOf(names.length),
+        harmonyFor(names),
+        [planFor(names.length, { energy })],
+        settingsFor({ bassMode: "melodic" }),
+        [],
+        13 + energy,
+      );
+      for (const note of notes) {
+        const barEnd = (Math.floor(note.time / 2 + 1e-9) + 1) * 2;
+        expect(note.duration).toBeGreaterThan(0);
+        expect(note.time + note.duration).toBeLessThanOrEqual(barEnd + 1e-9);
+      }
+    }
+  });
+
+  it("is silent when bass is off, and in the pickup before the downbeat", () => {
+    const names = barsOf("C", "F", "G");
+    const off = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length, { play: { drums: true, bass: false } })], settingsFor(), [], 1);
+    expect(off).toEqual([]);
+
+    const pickup = generateBass(gridOf(names.length, 1), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 1);
+    expect(pickup.length).toBeGreaterThan(0);
+    expect(pickup.every((note) => note.time >= 0.5)).toBe(true);
+  });
+
+  it("holds one bass note for the last bar", () => {
+    const names = barsOf("C", "F", "G");
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 1);
+    const last = notes.filter((note) => note.time >= 4);
+    expect(last).toHaveLength(1);
+    expect(last[0].time).toBe(4);
+    expect(pc(last[0].pitch)).toBe(7);
+    expect(last[0].duration).toBeCloseTo(2, 9);
+  });
+
+  it("moves at most seven semitones between notes in roots mode on C F G C", () => {
+    const names = barsOf("C", "F", "G", "C");
+    const notes = generateBass(gridOf(names.length), harmonyFor(names), [planFor(names.length)], settingsFor(), [], 21);
+    expect(notes.length).toBeGreaterThan(3);
+    for (let i = 1; i < notes.length; i++) expect(Math.abs(notes[i].pitch - notes[i - 1].pitch)).toBeLessThanOrEqual(7);
+  });
+});
