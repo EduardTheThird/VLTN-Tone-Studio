@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, type BandSettings, type SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
-import { CRASH, DRUM_DURATION, KICK, SNARE, type NoteEvent } from "./note";
-import { generateDrums } from "./drums";
-import { findStyle } from "./styles";
-import { STYLE_IDS } from "./styles/types";
+import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
+import { generateDrums, playsAt } from "./drums";
+import { findStyle, STYLES } from "./styles";
+import { STYLE_IDS, type DrumGroove, type DrumHit } from "./styles/types";
 
 /** A grid of `count` beats, `interval` seconds apart. Intervals of 0.5 keep every step time exact in binary. */
 function steady(count: number, downbeat = 0, beatsPerBar = 4): BeatGrid {
@@ -34,6 +34,23 @@ function plan(startBeat: number, endBeat: number, overrides: Partial<SectionPlan
 /** Settings that keep every hit: full complexity, no swing, ghosts on, no section crashes unless a test asks for them. */
 function settingsFor(overrides: Partial<BandSettings> = {}): BandSettings {
   return { ...DEFAULT_BAND_SETTINGS, complexity: 1, swing: 0, ghostNotes: true, crashOnSections: false, ...overrides };
+}
+
+/** Hat, ride and cross-stick: the voices that keep time. */
+const TIME_KEEPING = [CLOSED_HAT, OPEN_HAT, RIDE, SIDE_STICK];
+
+/** The time-keeping pitch with the most core (untagged) hits in a groove. Ties go to the lower pitch. */
+function timeKeepingPitch(groove: DrumGroove): number {
+  const counts = new Map<number, number>();
+  for (const hit of groove.hits) {
+    if (hit.tier === undefined && TIME_KEEPING.includes(hit.pitch)) counts.set(hit.pitch, (counts.get(hit.pitch) ?? 0) + 1);
+  }
+  let best = -1;
+  for (const [pitch, count] of counts) {
+    const bestCount = counts.get(best) ?? -1;
+    if (count > bestCount || (count === bestCount && pitch < best)) best = pitch;
+  }
+  return best;
 }
 
 /** The beat a time falls in, and how far through it (0 to 1). */
@@ -185,6 +202,27 @@ describe("generateDrums", () => {
       }
       expect(shapes.size, `complexity ${complexity}`).toBeLessThanOrEqual(2);
       expect(shapes.size, `complexity ${complexity}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the time-keeping lane whole at complexity 0, for every style and energy from 2 to 5", () => {
+    // The time-keeping lane is the hat, ride or cross-stick with the most core hits in the groove. At complexity 0 it must play
+    // every step it plays at complexity 1, except the busy extras, which are added subdivisions. So no lean hit may sit on that lane.
+    for (const id of STYLE_IDS) {
+      for (const energy of [2, 3, 4, 5] as const) {
+        for (const groove of STYLES[id].grooves[energy]) {
+          const pitch = timeKeepingPitch(groove);
+          const lane = (complexity: number, keep: (hit: DrumHit) => boolean) =>
+            groove.hits
+              .filter((hit) => hit.pitch === pitch && keep(hit) && playsAt(hit, complexity))
+              .map((hit) => hit.step)
+              .sort((a, b) => a - b);
+          const atZero = lane(0, () => true);
+          const atOneWithoutBusy = lane(1, (hit) => hit.tier !== "busy");
+          expect(atZero, `${id} energy ${energy} "${groove.name}" time-keeping lane ${pitch}`).toEqual(atOneWithoutBusy);
+          expect(atZero.length, `${id} energy ${energy} "${groove.name}" has a time-keeping lane`).toBeGreaterThan(0);
+        }
+      }
     }
   });
 

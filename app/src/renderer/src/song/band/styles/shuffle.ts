@@ -33,8 +33,8 @@ export const SHUFFLE: Style = {
         12,
         lane(KICK, VEL.normal, [0, 6]),
         lane(SNARE, VEL.normal, [3, 9]),
-        lane(RIDE, VEL.hat, [2, 3, 5, 8, 9, 11]),
-        lane(RIDE, VEL.accent, [0, 6], { tier: "lean" }),
+        lane(RIDE, VEL.hat, SWUNG),
+        lane(KICK, VEL.normal, [11], { tier: "lean" }),
         lane(SNARE, VEL.ghost, [8], { ghost: true, tier: "busy" }),
       ),
     ],
@@ -60,13 +60,12 @@ export const SHUFFLE: Style = {
     ],
     4: [
       groove(
-        "Ride accents",
+        "Ride pulse",
         12,
         lane(KICK, VEL.normal, [0, 6]),
         lane(KICK, VEL.normal, [8], { tier: "lean" }),
         lane(SNARE, VEL.normal, [3, 9]),
-        lane(RIDE, VEL.hat, [2, 3, 5, 8, 9, 11]),
-        lane(RIDE, VEL.accent, [0, 6], { tier: "lean" }),
+        lane(RIDE, VEL.hat, SWUNG),
         lane(SNARE, VEL.ghost, [5, 11], { ghost: true, tier: "busy" }),
       ),
       groove(

@@ -64,8 +64,7 @@ export const SIX_EIGHT: Style = {
         lane(KICK, VEL.normal, [0, 3]),
         lane(KICK, VEL.normal, [2, 5], { tier: "lean" }),
         lane(SNARE, VEL.normal, [3]),
-        lane(CLOSED_HAT, VEL.hat, [0, 1, 2, 3, 4]),
-        lane(OPEN_HAT, VEL.hat, [5], { tier: "lean" }),
+        lane(CLOSED_HAT, VEL.hat, ALL),
         lane(SNARE, VEL.ghost, [1], { ghost: true, tier: "busy" }),
       ),
       groove(

@@ -33,7 +33,7 @@ export const REGGAE: Style = {
         lane(KICK, VEL.normal, [8]),
         lane(SNARE, VEL.normal, [8]),
         lane(CLOSED_HAT, VEL.hat, QUARTERS),
-        lane(CLOSED_HAT, VEL.hat, SKANK, { tier: "lean" }),
+        lane(SIDE_STICK, VEL.normal, [6, 10], { tier: "lean" }),
         lane(SNARE, VEL.ghost, [14], { ghost: true, tier: "busy" }),
       ),
     ],

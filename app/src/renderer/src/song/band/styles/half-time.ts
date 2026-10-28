@@ -1,6 +1,6 @@
 // Half-time: the backbeat sits on beat 3 only, so the groove feels half as fast as the tempo. Kicks move around the bar as energy rises.
 
-import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE } from "../note";
+import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, RIDE, SIDE_STICK, SNARE } from "../note";
 import { VEL, bar, groove, lane, EIGHTHS, ODD_SIXTEENTHS, QUARTERS } from "./notation";
 import type { Style } from "./types";
 
@@ -81,8 +81,7 @@ export const HALF_TIME: Style = {
         lane(KICK, VEL.normal, [0]),
         lane(KICK, VEL.normal, [6, 8, 10, 14], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(CLOSED_HAT, VEL.hat, [0, 2, 4, 6, 8, 10, 12]),
-        lane(OPEN_HAT, VEL.hat, [14], { tier: "lean" }),
+        lane(CLOSED_HAT, VEL.hat, EIGHTHS),
         lane(CLOSED_HAT, VEL.hat, ODD_SIXTEENTHS, { tier: "busy" }),
       ),
       groove(
