@@ -116,7 +116,8 @@ export const MIDI_SETUP_PRESETS = [
     clock: false,
     tempo: true,
     description:
-      "Connect Bluetooth MIDI manually. GP-150 / GP-180: MIDI In Mixed/BT, clock Internal, TRS clock output On. Sends song BPM once to GP-150 / GP-180; the pedal clocks downstream pedals.",
+      "Connect Bluetooth MIDI manually. GP-150 / GP-180: MIDI In Mixed/BT, clock Internal, TRS clock output On. " +
+      "Sends song BPM once to GP-150 / GP-180; the pedal clocks downstream pedals.",
   },
   {
     id: "gp180-usb",
@@ -125,7 +126,8 @@ export const MIDI_SETUP_PRESETS = [
     clock: false,
     tempo: true,
     description:
-      "Enable USB MIDI and select your GP-150 or GP-180. GP-150 / GP-180: MIDI In Mixed/USB, clock Internal, TRS clock output On. Sends song BPM once; continuous app clock stays off.",
+      "Enable USB MIDI and select your GP-150 or GP-180. GP-150 / GP-180: MIDI In Mixed/USB, clock Internal, TRS clock output On. " +
+      "Sends song BPM once; continuous app clock stays off.",
   },
   {
     id: "cues",

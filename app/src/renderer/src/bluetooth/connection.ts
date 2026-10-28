@@ -103,7 +103,10 @@ export class BleMidiConnection {
     this.published = this.diagnostics;
     useBluetooth.setState({ diagnostics: this.diagnostics });
   }
-  private record(counts: Partial<Pick<BluetoothDiagnostics, "writes" | "notifications" | "messages" | "dropped" | "clockTiming" | "performanceTiming">>, immediately = false) {
+  private record(
+    counts: Partial<Pick<BluetoothDiagnostics, "writes" | "notifications" | "messages" | "dropped" | "clockTiming" | "performanceTiming">>,
+    immediately = false,
+  ) {
     this.diagnostics = { ...this.diagnostics, ...counts };
     if (immediately) return this.publish();
     // One flush records several counters back to back; publish them together so subscribers render once.
@@ -455,7 +458,8 @@ export async function connectBluetooth(): Promise<BleMidiConnection> {
   } catch (e) {
     const detail =
       e instanceof Error && e.name === "NotFoundError"
-        ? "No Bluetooth MIDI device was selected or found before the scan ended. Enable Bluetooth MIDI on the pedal, disconnect its phone app, keep it nearby, and try again."
+        ? "No Bluetooth MIDI device was selected or found before the scan ended. " +
+          "Enable Bluetooth MIDI on the pedal, disconnect its phone app, keep it nearby, and try again."
         : e instanceof Error
           ? e.message
           : String(e);

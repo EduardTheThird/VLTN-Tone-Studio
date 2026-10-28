@@ -45,7 +45,8 @@ export function installBluetoothChooser(window: BrowserWindow): void {
           title: "Connect Bluetooth MIDI",
           message: "Choose your Bluetooth MIDI device",
           detail:
-            "Choose a MIDI device or your GP-150 / GP-180. The app checks for the standard Bluetooth MIDI service before sending anything. Valeton’s app connection may use a separate service. Cancel and retry after enabling Bluetooth and closing other MIDI apps.",
+            "Choose a MIDI device or your GP-150 / GP-180. The app checks for the standard Bluetooth MIDI service before sending anything. " +
+            "Valeton’s app connection may use a separate service. Cancel and retry after enabling Bluetooth and closing other MIDI apps.",
           buttons: ["Cancel", ...choices.map(([id, name]) => `${name} (${id})`)],
           defaultId: 0,
           cancelId: 0,

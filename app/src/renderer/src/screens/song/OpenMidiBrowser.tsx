@@ -79,7 +79,8 @@ export function OpenMidiBrowser({ onImport }: { onImport: (profile: PedalProfile
                   {(() => {
                     try {
                       const result = convertOpenMidi(selected);
-                      return `${result.profile.actions.length} CC actions ready; ${result.skipped} unsupported entries skipped. Community/default CC mappings must match the pedal’s settings. Full setup notes are retained in the imported profile.`;
+                      return `${result.profile.actions.length} CC actions ready; ${result.skipped} unsupported entries skipped. ` +
+                        "Community/default CC mappings must match the pedal’s settings. Full setup notes are retained in the imported profile.";
                     } catch (e) {
                       return String(e);
                     }

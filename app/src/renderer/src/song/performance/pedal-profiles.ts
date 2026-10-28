@@ -43,7 +43,9 @@ function assigned(id: string, label: string, setting: string, switchControl = fa
     label,
     assignment: setting,
     ...(switchControl ? { momentary: true } : {}),
-    description: `On the pedal, assign ${setting} to the same CC number selected here. This is a configurable control, not a fixed CC mapping.${switchControl ? " Press and release values are sent in order; test the configured switch behaviour on your pedal." : ""}`,
+    description: `On the pedal, assign ${setting} to the same CC number selected here. This is a configurable control, not a fixed CC mapping.${
+      switchControl ? " Press and release values are sent in order; test the configured switch behaviour on your pedal." : ""
+    }`,
     commands: switchControl ? ["cc $channel $cc 127", "cc $channel $cc 0"] : ["cc $channel $cc $value"],
     ...(!switchControl ? { value: { label: "MIDI value", min: 0, max: 127, default: 64 } } : {}),
   };
@@ -56,7 +58,8 @@ export const PEDAL_PROFILES: PedalProfile[] = [
     name: "Strymon TimeLine",
     source: "TimeLine User Manual Rev H, pp. 21, 25–26",
     notes:
-      "Set MIDI CH to the selected channel and enable MIDI CC / MIDI Patch Change. MIDI bank selection is included with every memory recall. Memory labels are bank A/B; saved sound names are not read from the pedal.",
+      "Set MIDI CH to the selected channel and enable MIDI CC / MIDI Patch Change. " +
+      "MIDI bank selection is included with every memory recall. Memory labels are bank A/B; saved sound names are not read from the pedal.",
     actions: [
       ...memories(200, true, (n) => `${String(Math.floor(n / 2)).padStart(2, "0")}${n % 2 ? "B" : "A"}`),
       cc("engage", "Engage delay", 102, 127),
@@ -134,7 +137,8 @@ export const PEDAL_PROFILES: PedalProfile[] = [
     name: "BOSS RC-10R",
     source: "RC-10R MIDI Implementation v1.00, pp. 2–3; BOSS RC-10R Parameter Guide, pp. 9–11",
     notes:
-      "Use RX CONTROL CH for memories and assigned controls. Memory numbers 1–99 correspond to wire PC 0–98; bank select is ignored. Set each chosen CC assignment on the pedal. RX NOTE CH is a separate channel for rhythm notes/kit changes, not this control profile.",
+      "Use RX CONTROL CH for memories and assigned controls. Memory numbers 1–99 correspond to wire PC 0–98; bank select is ignored. " +
+      "Set each chosen CC assignment on the pedal. RX NOTE CH is a separate channel for rhythm notes/kit changes, not this control profile.",
     actions: [
       ...memories(99, false),
       ...[
@@ -167,7 +171,8 @@ export const PEDAL_PROFILES: PedalProfile[] = [
     name: "BOSS IR-200",
     source: "IR-200 Owner’s Manual eng02, pp. 20–21",
     notes:
-      "Set Rx CH and enable PC IN / CC IN. Memory recalls assume an identity MIDI PC MAP: PC#1 → memory 1. A customised PC map can recall a different memory. CC numbers must match the pedal’s MIDI settings.",
+      "Set Rx CH and enable PC IN / CC IN. Memory recalls assume an identity MIDI PC MAP: PC#1 → memory 1. " +
+      "A customised PC map can recall a different memory. CC numbers must match the pedal’s MIDI settings.",
     actions: [
       ...memories(128, false),
       ...[
@@ -190,7 +195,8 @@ export const PEDAL_PROFILES: PedalProfile[] = [
     name: "BOSS SY-200",
     source: "SY-200 Owner’s Manual eng03, pp. 13–14",
     notes:
-      "Set RX CH and enable PC IN / CC IN. Memory recalls assume an identity MIDI PC MAP; a custom map changes the recalled memory (or switches the effect off). Assign the CC number on the pedal before using a named control. Use SYNC AUTO for incoming MIDI clock.",
+      "Set RX CH and enable PC IN / CC IN. Memory recalls assume an identity MIDI PC MAP; a custom map changes the recalled memory (or switches the effect off). " +
+      "Assign the CC number on the pedal before using a named control. Use SYNC AUTO for incoming MIDI clock.",
     actions: [
       ...memories(128, false),
       ...[
@@ -214,7 +220,8 @@ export const PEDAL_PROFILES: PedalProfile[] = [
     name: "Valeton GP-180",
     source: "GP-180 User Manual firmware v1.0.0, printed pp. 75–77 (PDF pp. 78–80)",
     notes:
-      "Configure Bluetooth MIDI input and its receive channel on the GP-180. These are standard performance MIDI commands, independent of the USB editor write lock. Forwarding to other pedals still depends on the hardware’s routing. Commands without documented on/off semantics are labelled as control values.",
+      "Configure Bluetooth MIDI input and its receive channel on the GP-180. These are standard performance MIDI commands, independent of the USB editor write lock. " +
+      "Forwarding to other pedals still depends on the hardware’s routing. Commands without documented on/off semantics are labelled as control values.",
     actions: [
       ...memories(200, true),
       ...["NR", "PRE", "WAH", "DST", "N→S", "AMP", "CAB", "EQ", "MOD", "DLY", "RVB", "VOL"].flatMap((name, i) =>

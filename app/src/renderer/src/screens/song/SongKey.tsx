@@ -115,7 +115,9 @@ export function SongKey({
         {busy
           ? `Analysing ${analysisSource}…`
           : estimate
-            ? `Estimated ${estimate.name} from ${analysisSource} · ${estimate.confidence === "strong" ? "clearer match" : "tentative match"} · alternatives: ${estimate.alternatives.join(", ")}`
+            ? `Estimated ${estimate.name} from ${analysisSource} · ${
+                estimate.confidence === "strong" ? "clearer match" : "tentative match"
+              } · alternatives: ${estimate.alternatives.join(", ")}`
             : input
               ? `No reliable major/minor key found in ${analysisSource}.`
               : "Open audio or split the song to analyse its key."}

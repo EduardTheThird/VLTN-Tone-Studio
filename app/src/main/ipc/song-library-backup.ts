@@ -247,7 +247,12 @@ export async function readBackup(file: string, stage: string, progress: Progress
               const required = audioFiles(index);
               if (required.size + 1 !== manifest!.files.length) throw invalid();
               const hashes = audioHashes(index);
-              for (const f of manifest!.files) if (f.path !== INDEX && (required.get(f.path) !== f.bytes || (hashes.has(f.path) && hashes.get(f.path) !== f.sha256))) throw invalid();
+              for (const f of manifest!.files)
+                if (
+                  f.path !== INDEX &&
+                  (required.get(f.path) !== f.bytes || (hashes.has(f.path) && hashes.get(f.path) !== f.sha256))
+                )
+                  throw invalid();
             } catch (e) {
               fail(e);
             }

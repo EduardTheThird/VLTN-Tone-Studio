@@ -33,7 +33,10 @@ const RENDERER_DIR = resolve(import.meta.dirname, "../renderer");
 const RENDERER_URL = "app://bundle/index.html";
 // CSP: tone service, pinned OpenMIDI data and Hugging Face model downloads; transcription audio stays local.
 const CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://*.tone3000.com https://tone3000.com; connect-src 'self' app://library ws://localhost:* https://*.tone3000.com https://tone3000.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; " +
+  "img-src 'self' data: blob: https://*.tone3000.com https://tone3000.com; " +
+  "connect-src 'self' app://library ws://localhost:* https://*.tone3000.com https://tone3000.com " +
+  "https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com";
 // Dev server only: @vitejs/plugin-react injects an inline React Refresh preamble into index.html.
 const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'");
 // Cross-origin isolation: the stem splitter's CPU path (onnxruntime-web wasm, song/stems/worker.ts) only gets threads

@@ -104,7 +104,14 @@ export function PerformanceEditor({
           onClick={() =>
             setRows((current) => [
               ...current,
-              { id: Math.max(-1, ...current.map((r) => r.id)) + 1, seconds: String(Math.round(clockPosition() * 100) / 100), lyrics: "", chords: "", midi: "", label: "" },
+              {
+                id: Math.max(-1, ...current.map((r) => r.id)) + 1,
+                seconds: String(Math.round(clockPosition() * 100) / 100),
+                lyrics: "",
+                chords: "",
+                midi: "",
+                label: "",
+              },
             ])
           }
         >

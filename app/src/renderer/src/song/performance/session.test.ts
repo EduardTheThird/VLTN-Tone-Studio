@@ -698,7 +698,11 @@ it("carries the access, output and input into a song loaded by hand, but not the
   unload();
   session.dispose();
   expect(mocks.library.midiSession).toMatchObject({ portId: "usb", inputId: "in", armed: false, output: out });
-  const next = new PerformanceSession({ initial: inputs(), carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }), initialClock: false });
+  const next = new PerformanceSession({
+    initial: inputs(),
+    carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }),
+    initialClock: false,
+  });
   const unloadNext = next.loadSong(source, null);
   next.bind();
   expect(next.state.access).toBe(access);
@@ -1434,7 +1438,11 @@ describe("song triggers", () => {
     expect(mocks.library.load).toHaveBeenCalledWith("b");
     first.session.dispose();
     // The view is re-created for the song that loaded: it takes the input the one before had selected.
-    const next = new PerformanceSession({ initial: inputs(), carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }), initialClock: false });
+    const next = new PerformanceSession({
+      initial: inputs(),
+      carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }),
+      initialClock: false,
+    });
     next.loadSong(source, null);
     next.bind();
     expect(next.state.inputId).toBe("in");

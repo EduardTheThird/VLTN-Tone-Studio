@@ -5,7 +5,8 @@ import type { MidiMacro } from "./midi-macros";
 
 it("preserves banks, labels, note-offs, SysEx and independent times when editing lyrics", () => {
   const original =
-    "[00:01] [Am]Words\n[00:02] {label:Pedal memory} {midi:cc 3 0 1} {midi:pc 3 7}\n[00:03] {midi:note 2 60 100}\n[00:04] {midi:off 2 60 0}\n[00:05] {midi:sysex F0 7D 01 F7}";
+    "[00:01] [Am]Words\n[00:02] {label:Pedal memory} {midi:cc 3 0 1} {midi:pc 3 7}\n" +
+    "[00:03] {midi:note 2 60 100}\n[00:04] {midi:off 2 60 0}\n[00:05] {midi:sysex F0 7D 01 F7}";
   const rows = editableEvents(original, "", []);
   rows[0].lyrics = "Corrected words";
   rows[0].chords = "Dm A7";

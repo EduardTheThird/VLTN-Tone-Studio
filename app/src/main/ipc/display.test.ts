@@ -16,7 +16,16 @@ vi.mock("electron", () => ({
   screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({}), on: () => {}, removeListener: () => {} },
 }));
 
-import { AudienceController, isAudienceContents, parseDisplayId, readDisplayId, registerDisplayIpc, sendAudienceStatus, writeDisplayId, type AudienceWindowHooks } from "./display";
+import {
+  AudienceController,
+  isAudienceContents,
+  parseDisplayId,
+  readDisplayId,
+  registerDisplayIpc,
+  sendAudienceStatus,
+  writeDisplayId,
+  type AudienceWindowHooks,
+} from "./display";
 
 const main = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, workArea: { x: 0, y: 25, width: 1440, height: 875 } };
 const projector = { id: 7, bounds: { x: 1440, y: 0, width: 1920, height: 1080 }, workArea: { x: 1440, y: 0, width: 1920, height: 1080 } };

@@ -69,7 +69,8 @@ export function convertOpenMidi(device: OpenMidiDevice): { profile: PedalProfile
     name: `OpenMIDI · ${device.name}`.slice(0, 100),
     source: `Morningstar Engineering / OpenMIDI (Apache-2.0), revision ${OPENMIDI_REVISION}: https://github.com/Morningstar-Engineering/openmidi`,
     notes: [
-      "Community CC definitions. Verify command numbers, assignments and firmware against your pedal. Suggested/default mappings may need configuration on the physical device. Only explicit CC ranges are imported; PC/bank sequences are not inferred.",
+      "Community CC definitions. Verify command numbers, assignments and firmware against your pedal. " +
+        "Suggested/default mappings may need configuration on the physical device. Only explicit CC ranges are imported; PC/bank sequences are not inferred.",
       instructions,
       mapping,
       pc ? `Program change reference (not imported as actions): ${pc}` : "",
