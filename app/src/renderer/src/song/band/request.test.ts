@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import type { Cue } from "../performance/chart";
+import type { Section } from "../performance/sections";
+import type { PcmAudio } from "../types";
+import { DEFAULT_BAND_SETTINGS } from "./arrangement";
+import type { BandResult } from "./band-job";
+import { fixedBeatGrid } from "./beat-grid";
+import { bandRequest, beatSources, chordSource, previewMix, sumAudio } from "./request";
+
+const audio = (values: number[], rate = 44100): PcmAudio => ({ sampleRate: rate, channels: [Float32Array.from(values)] });
+
+describe("beatSources", () => {
+  const mix = audio([0.5]);
+  it("reads the drums stem when there is one", () => {
+    const drums = audio([0.1]);
+    expect(beatSources({ drums, other: audio([0.2]) }, mix)).toEqual([drums]);
+  });
+  it("otherwise reads the pitched stems, leaving out voices", () => {
+    const other = audio([0.2]),
+      bass = audio([0.3]);
+    expect(beatSources({ vocals: audio([0.4]), other, bass }, mix)).toEqual([other, bass]);
+  });
+  it("otherwise reads the song's mix", () => {
+    expect(beatSources(null, mix)).toEqual([mix]);
+    expect(beatSources({ vocals: audio([0.4]) }, mix)).toEqual([mix]);
+  });
+});
+
+describe("bandRequest", () => {
+  it("takes the harmony from the chart's chords and the plans from the sections", () => {
+    const grid = fixedBeatGrid(120, 0, 4, 8);
+    const cues: Cue[] = [{ time: 0, text: "[Am] [G]", messages: [] }];
+    const sections: Section[] = [{ id: "v", name: "Verse", start: 0, end: 4, mode: "continue" }];
+    const request = bandRequest({ grid, cues, chords: [], sections, settings: DEFAULT_BAND_SETTINGS, songEnd: 8, lengthFrames: 8 * 44100, sampleUrls: {} });
+    expect(request.harmony).toHaveLength(grid.beats.length);
+    expect(request.harmony[0].chord?.name).toBe("Am");
+    expect(request.plans.map((plan) => plan.sectionId)).toEqual(["v"]);
+    expect(request.seed).toBe(DEFAULT_BAND_SETTINGS.seed);
+    expect(request.parts).toEqual({ drums: true, bass: true });
+  });
+});
+
+describe("previewMix", () => {
+  it("adds the parts to the song from the start time, and holds the sum to the range", () => {
+    const song = audio([0.1, 0.2, 0.3, 0.4]);
+    const result: BandResult = {
+      drums: { sampleRate: 44100, channels: [Float32Array.from([0.5, 0.5])] },
+      notes: { drums: [], bass: [] },
+    };
+    const mixed = previewMix(song, 2 / 44100, result);
+    expect(mixed.channels[0].length).toBe(2);
+    expect(Array.from(mixed.channels[0]).map((v) => Math.round(v * 1000) / 1000)).toEqual([0.8, 0.9]);
+  });
+
+  it("is silent past the end of the song, and keeps the song's rate", () => {
+    const song = audio([0.25], 22050);
+    const result: BandResult = { bass: { sampleRate: 22050, channels: [Float32Array.from([0, 0, 0])] }, notes: { drums: [], bass: [] } };
+    const mixed = previewMix(song, 0, result);
+    expect(mixed.sampleRate).toBe(22050);
+    expect(Array.from(mixed.channels[0])).toEqual([0.25, 0, 0]);
+  });
+});
+
+describe("chordSource", () => {
+  const mix = audio([0.5, 0.5]);
+  it("sums the other, guitar and piano stems when the song is split and has any of them", () => {
+    const other = audio([0.1, 0.1]),
+      piano = audio([0.2]);
+    expect(chordSource({ other, piano, bass: audio([0.9, 0.9]), drums: audio([0.9, 0.9]) }, mix).channels[0].slice(0, 2)).toEqual(
+      Float32Array.from([0.3, 0.1]),
+    );
+  });
+  it("otherwise reads the song's mix", () => {
+    expect(chordSource(null, mix)).toBe(mix);
+    expect(chordSource({ bass: audio([0.9]) }, mix)).toBe(mix);
+  });
+});
+
+describe("sumAudio", () => {
+  it("adds the sources and pads the shorter ones with silence", () => {
+    const sum = sumAudio([audio([0.5, 0.5, 0.5]), audio([0.25])]);
+    expect(Array.from(sum.channels[0])).toEqual([0.75, 0.5, 0.5]);
+  });
+});

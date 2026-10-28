@@ -91,7 +91,9 @@ export class Gp150Driver implements DeviceDriver {
       onMessage: callback => { unsubscribe(); unsubscribe = connection.subscribe(callback); },
       close: () => { unsubscribe(); offDisconnect(); connection.close(); },
     };
-    return new Gp150Driver(transport, transport.name, { ...opts, timing: { frameGapMs: 15, helloTimeoutMs: 5000, ackTimeoutMs: 8000, replyTimeoutMs: 12000, uploadTimeoutMs: 30000, resends: 1 } }, null, /GP-?150(?!\d)/i.test(connection.name) ? 'gp150' : 'gp180');
+    const timing = { frameGapMs: 15, helloTimeoutMs: 5000, ackTimeoutMs: 8000, replyTimeoutMs: 12000, uploadTimeoutMs: 30000, resends: 1 };
+    const model = /GP-?150(?!\d)/i.test(connection.name) ? 'gp150' : 'gp180';
+    return new Gp150Driver(transport, transport.name, { ...opts, timing }, null, model);
   }
 
   /** Connect a simulated GP-150 or GP-180, paced like FAST_SIMULATOR unless `timing` / `mock` say otherwise. */

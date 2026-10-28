@@ -7,17 +7,24 @@ export const songApi: SongHostApi = {
   library: {
     preflight: ids => invoke('song:library:preflight', ids),
     exportBackup: () => invoke('song:library:exportBackup'),
-    restoreBackup: () => invoke('song:library:restoreBackup'),
+    inspectBackup: () => invoke('song:library:inspectBackup'),
+    restoreBackup: mode => invoke('song:library:restoreBackup', mode),
     onTransferProgress(callback) {
       const listener=(_event:IpcRendererEvent,progress:import('@shared/song-library').LibraryTransferProgress)=>callback(progress);
       ipcRenderer.on('song:library:progress',listener);
       return ()=>{ipcRenderer.removeListener('song:library:progress',listener);};
     },
     index: () => invoke('song:library:index'),
-    audio: (id, name) => invoke('song:library:audio', id, name),
+    audioUrls: id => invoke('song:library:audioUrls', id),
     playlists: playlists => invoke('song:library:playlists', playlists),
-    settings: (id, values) => invoke('song:library:settings', id, values),
+    organise: change => invoke('song:library:organise', change),
+    updateSettings: (id, patch) => invoke('song:library:updateSettings', id, patch),
+    applyTrackSettings: id => invoke('song:library:applyTrackSettings', id),
     remove: id => invoke('song:library:remove', id),
+    attachChart: (id, bytes) => invoke('song:library:attachChart', id, bytes),
+    removeChart: id => invoke('song:library:removeChart', id),
+    saveAnnotations: (id, json) => invoke('song:library:saveAnnotations', id, json),
+    chartUrls: id => invoke('song:library:chartUrls', id),
     async save(song, assets) {
       const token = await invoke<string>('song:library:begin', song);
       try {
@@ -30,6 +37,11 @@ export const songApi: SongHostApi = {
   downloadModel: (id) => invoke("song:downloadModel", id),
   modelFile: (file) => invoke("song:modelFile", file),
   deleteModel: (id) => invoke("song:deleteModel", id),
+  onSystemResume(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("song:systemResume", listener);
+    return () => ipcRenderer.removeListener("song:systemResume", listener);
+  },
   onModelProgress: (cb) => {
     const handler = (_e: IpcRendererEvent, p: ModelProgress) => cb(p);
     ipcRenderer.on("song:modelProgress", handler);

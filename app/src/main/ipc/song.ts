@@ -1,4 +1,4 @@
-import { app, net, powerSaveBlocker, type BrowserWindow } from "electron";
+import { app, net, powerMonitor, powerSaveBlocker, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -21,7 +21,7 @@ import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { songSaveFilters } from './song-save-options';
 import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
-import type { LibrarySong, Playlist } from '@shared/song-library';
+import type { LibraryChange, LibrarySong, LibraryTransferProgress, Playlist, RestoreMode } from '@shared/song-library';
 
 // The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
 // userData/models, resumed from a `.part` file after an interrupted download, checked against its pinned SHA-256
@@ -103,45 +103,98 @@ async function ensureFile(f: ModelFile, onBytes: (received: number) => void): Pr
   await rename(partPath(f), filePath(f));
 }
 
+/** Where saved songs live. `main/index.ts` serves files below it through the `app://library` protocol. */
+export const libraryRoot = () => join(app.getPath('userData'), 'song-library');
+
 export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
-  const stagePower=new StagePower(powerSaveBlocker), watched=new Set<number>();
-  handle('song:stagePower',(event,token:string,enabled:boolean)=>{
-    const owner=event.sender.id;
-    if(!watched.has(owner)){
+  const stagePower = new StagePower(powerSaveBlocker);
+  const watched = new Set<number>();
+  handle('song:stagePower', (event, token: string, enabled: boolean) => {
+    const owner = event.sender.id;
+    if (!watched.has(owner)) {
       watched.add(owner);
-      event.sender.once('destroyed',()=>{stagePower.release(owner);watched.delete(owner);});
-      event.sender.on('render-process-gone',()=>stagePower.release(owner));
+      event.sender.once('destroyed', () => {
+        stagePower.release(owner);
+        watched.delete(owner);
+      });
+      event.sender.on('render-process-gone', () => stagePower.release(owner));
     }
-    stagePower.update(owner,token,enabled);
+    stagePower.update(owner, token, enabled);
   });
-  app.once('will-quit',()=>stagePower.close());
-  const library = new SongLibraryStore(join(app.getPath('userData'), 'song-library'));
+  app.once('will-quit', () => stagePower.close());
+  // After sleep the USB MIDI ports are re-enumerated. The renderer asks the browser for them again rather than trusting the old ones.
+  powerMonitor.on('resume', () => {
+    const win = getWindow();
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send('song:systemResume');
+  });
+  const library = new SongLibraryStore(libraryRoot());
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());
   handle('song:library:begin', (_e, song: LibrarySong) => library.begin(song));
   handle('song:library:write', (_e, token: string, name: string, bytes: Uint8Array) => library.write(token, name, bytes));
   handle('song:library:commit', (_e, token: string) => library.commit(token));
   handle('song:library:abort', (_e, token: string) => library.abort(token));
-  handle('song:library:audio', (_e, id: string, name: string) => library.audio(id, name));
+  handle('song:library:audioUrls', (_e, id: string) => library.audioUrls(id));
   handle('song:library:playlists', (_e, playlists: Playlist[]) => library.playlists(playlists));
-  handle('song:library:settings', (_e, id: string, values: Record<string, string>) => library.settings(id, values));
+  handle('song:library:organise', (_e, change: LibraryChange) => library.organise(change));
+  handle('song:library:updateSettings', (_e, id: string, patch: Record<string, string>) => library.updateSettings(id, patch));
+  handle('song:library:applyTrackSettings', (_e, id: string) => library.applyTrackSettings(id));
   handle('song:library:remove', (_e, id: string) => library.remove(id));
-  const transferProgress=(value: import('../../shared/song-library').LibraryTransferProgress)=>getWindow()?.webContents.send('song:library:progress',value);
-  handle('song:library:exportBackup', async()=>{
-    const selection=await showSaveDialog(getWindow(),{title:'Export portable song library',defaultPath:join(app.getPath('documents'),'Tone-Studio-library-'+new Date().toISOString().slice(0,10)+'.tar.gz'),filters:[{name:'Portable song library',extensions:['tar.gz']}]});
-    if(selection.canceled || !selection.filePath)return null;
-    const result=await library.exportBackup(selection.filePath,transferProgress);
-    return {...result,fileName:basename(selection.filePath)};
+  handle('song:library:attachChart', (_e, id: string, bytes: Uint8Array) => library.attachChart(id, bytes));
+  handle('song:library:removeChart', (_e, id: string) => library.removeChart(id));
+  handle('song:library:saveAnnotations', (_e, id: string, json: string) => library.saveAnnotations(id, json));
+  handle('song:library:chartUrls', (_e, id: string) => library.chartUrls(id));
+  const transferProgress = (value: LibraryTransferProgress) => {
+    const win = getWindow();
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send('song:library:progress', value);
+  };
+  handle('song:library:exportBackup', async () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const selection = await showSaveDialog(getWindow(), {
+      title: 'Export portable song library',
+      defaultPath: join(app.getPath('documents'), 'Tone-Studio-library-' + stamp + '.tar.gz'),
+      filters: [{ name: 'Portable song library', extensions: ['tar.gz'] }],
+    });
+    if (selection.canceled || !selection.filePath) return null;
+    const result = await library.exportBackup(selection.filePath, transferProgress);
+    return { ...result, fileName: basename(selection.filePath) };
   });
-  handle('song:library:restoreBackup', async()=>{
-    const selection=await showOpenDialog(getWindow(),{title:'Restore song library as new copies',properties:['openFile'],filters:[{name:'Portable song library',extensions:['gz','tgz']}]});
-    if(selection.canceled || !selection.filePaths[0])return null;
-    const path=selection.filePaths[0],result=await library.restoreBackup(path,transferProgress);
-    return {...result,fileName:basename(path)};
+  // The renderer never names a path: the backup it inspected is the one it restores.
+  let chosenBackup: string | null = null;
+  handle('song:library:inspectBackup', async () => {
+    const selection = await showOpenDialog(getWindow(), {
+      title: 'Restore song library',
+      properties: ['openFile'],
+      filters: [{ name: 'Portable song library', extensions: ['gz', 'tgz'] }],
+    });
+    chosenBackup = null;
+    if (selection.canceled || !selection.filePaths[0]) return null;
+    const path = selection.filePaths[0];
+    const preview = await library.inspectBackup(path);
+    chosenBackup = path;
+    return { ...preview, fileName: basename(path) };
   });
+  handle('song:library:restoreBackup', async (_e, mode: RestoreMode) => {
+    if (!chosenBackup) throw new HostError('invalid', 'Choose a backup to restore first.');
+    if (mode !== 'skip' && mode !== 'copy') throw new HostError('invalid', 'Unknown restore mode.');
+    const path = chosenBackup;
+    chosenBackup = null;
+    const result = await library.restoreBackup(path, transferProgress, mode);
+    return { ...result, fileName: basename(path) };
+  });
+  library.startSweeping();
+  app.once('will-quit', () => library.stopSweeping());
+  // Songs saved by an earlier version are converted to FLAC in the background; the song list shows them as soon as they have finished.
+  void library.migrate(transferProgress).catch((e) => console.error('Song library conversion failed', e));
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.
   const pending = new Map<string, Promise<void>>();
-  const progress = (p: ModelProgress) => getWindow()?.webContents.send("song:modelProgress", p);
+  const progress = (p: ModelProgress) => {
+    const win = getWindow();
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send("song:modelProgress", p);
+  };
 
   function fileOnce(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
     let job = pending.get(f.file);

@@ -214,7 +214,9 @@ async function image(url: string): Promise<string | null> {
 }
 
 function emit(getWindow: () => BrowserWindow | null, event: TonesEvent): void {
-  getWindow()?.webContents.send("tones:event", event);
+  const win = getWindow();
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  win.webContents.send("tones:event", event);
 }
 
 interface DownloadedModel {

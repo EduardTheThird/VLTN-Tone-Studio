@@ -17,7 +17,7 @@ import { StemPlayer } from "@/song/stems/player";
 import { encodeWav } from "@/song/wav";
 import { STEM_NAMES, type StemName, type Stems, type SplitInfo } from "@/song/types";
 import { findModel } from "@shared/host/song";
-import { performanceKey, readOptions } from "@/song/performance/settings";
+import { performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { SplitOptions } from "./SplitOptions";
 
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
@@ -89,7 +89,7 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
 
   useEffect(() => player?.setMix(mix), [player, mix]);
   useEffect(() => {
-    try { localStorage.setItem(settingsKey + ':options', JSON.stringify({ ...readOptions(settingsKey, {}), mix })); }
+    try { setSetting(settingsKey, ':options', JSON.stringify({ ...readOptions(settingsKey, {}), mix })); }
     catch (e) { notifyError('Could not save mixer settings', e); }
   }, [settingsKey, mix]);
 

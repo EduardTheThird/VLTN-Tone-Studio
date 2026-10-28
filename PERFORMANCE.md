@@ -1,140 +1,455 @@
-# Performance and GP-150 / GP-180 support
+# Performance
 
-## GP-150 and GP-180 support
+Play a song or a whole set from one screen: stems, a metronome, lyrics and chords, and timed MIDI commands for your GP-150 or GP-180 and the pedals behind it.
 
-GP-150 and GP-180 share the editor protocol, preset format and performance MIDI command set. GP-150 has two footswitches and a built-in expression pedal; GP-180 has three footswitches. Both are supported over USB and for Bluetooth performance MIDI. Separate model identities and footswitch layouts are preserved. The command builder offers both models, and setup presets cover both. Existing GP-180 saved settings and cues remain compatible. Physical validation in this project used GP-180; GP-150 has not been hardware-tested in this session.
+- [Prepare a song](#prepare-a-song)
+- [Multitrack import](#multitrack-import)
+- [Audio outputs](#audio-outputs)
+- [Speed and pitch](#speed-and-pitch)
+- [Lyrics and chords](#lyrics-and-chords)
+- [MIDI cues](#midi-cues)
+- [Pedal commands](#pedal-commands)
+- [Bluetooth](#bluetooth)
+- [Sections](#sections)
+- [Playlists](#playlists)
+- [Gapless and crossfade](#gapless-and-crossfade)
+- [Generated drums and bass](#generated-drums-and-bass)
+- [Stage mode](#stage-mode)
+- [Troubleshooting](#troubleshooting)
+- [Limits](#limits)
 
-## Use
+## Overview
 
-Saved songs and ordered playlists are available in the desktop app under **Song → Songs & playlists**. Choose **Play playlist** for automatic playback of the whole set, or **Play from here** on a playlist entry. Performance shows set progress, next song and skip/stop controls. See [the song library guide](SONG-LIBRARY.md) for offline storage and live set controls.
+Open **Song → Performance**. It needs audio loaded in **Stems**; splitting into stems is optional. After a split, Performance plays the stems together with a mute switch and volume slider for each one.
 
-Open **Song → Performance**. Load audio through Stems first; splitting is optional for playback. After a split, Performance plays the stems together and offers individual mute switches and volume sliders. The unsplit song has its own volume slider too. The existing Stems mixer retains its level, solo and WAV-export controls.
+Everything here works in the desktop app. The browser build can play a song and send USB MIDI, but has no song library and no sleep prevention. Saved songs, backups and playlists are covered in the [song library guide](SONG-LIBRARY.md).
 
-**Lyrics & chords · Perform** combines the lyric track and chord changes in one reading view. Playback highlights the current line and chord and scrolls within the reader, including after seeking backward. Chart lyrics and chords take priority over automatic drafts; chord-only charts can accompany the separate transcribed lyrics. Chords appear above the lyric interval containing their timestamp, rather than claiming exact word alignment. Untimed text supports manual reading. Toggle **Follow playback** to scroll freely, use **A− / A+** for text size, or **Expand performance view** for a larger view with transport controls (Escape closes it). The original tracks, chart editor, and chord-source controls remain under **Separate lyrics and chart editors**.
+## Prepare a song
 
-Click a chord in the reader, chart preview, or stem estimates to open its guitar tabs. Standard tuning is assumed, with high e at the top and low E at the bottom; `x` means muted and `0` means open. Several positions are offered with barre shapes first, preferring closed shapes over open-string shapes. Tabs follow the displayed transposition. Common major, minor, seventh, suspended, diminished, augmented, power and slash chords are supported; unsupported spellings show an explicit message. Shapes are checked against the chord tones and requested bass. Escape closes the overlay without closing the expanded reader or stopping playback.
+1. Load the audio in **Stems** and split it if you want the stems.
+2. Set **Song BPM** to the recording's tempo while stopped. The metronome, count-in and tempo commands start from it, and [speed](#speed-and-pitch) scales that tempo during playback. The app does not detect it for you.
+3. Add lyrics, chords and MIDI cues (below).
+4. Enter a title and artist and choose **Save song to library**. Use **Save song changes** after later edits.
 
-## Pedal command library
+**Key.** Performance estimates the song's major or minor key in the background, from the guitar stem first and the original mix as a last resort. It shows **Unknown** rather than guess. Use **Key override** to save a correction. The key only changes how chords are displayed, never the audio or any MIDI.
 
-**Song MIDI cues** now offers named presets for TimeLine, RC-10R, IR-200, SY-200, GP-150 and GP-180. Choose the pedal and its receive channel, then select a memory or function. Bank-select sequences are generated where needed. BOSS assignable controls require the matching CC setting from the pedal. Cues retain readable labels in the chart and scheduled-cue list. **Raw MIDI command** remains available. See [pedal profiles and custom JSON import/export](MIDI-PEDALS.md).
+**Metronome.** Choose **Off**, **While stopped** (a rehearsal click on the grid), **While playing** or **Both** from the **Metronome** menu. The choice is saved for each song and starts from the last one used. To line it up with a recording that has an intro, pause on the first downbeat and choose **Metronome settings → Set first beat here**. Fine-tune with **First beat (seconds)**, or **Reset first beat**. The grid is fixed, so it cannot follow a recording that speeds up or slows down. It does not move lyrics or MIDI cues.
 
-## Recognition implementation and limits
+**Count-in, pre-roll and start delay.** In **Metronome settings**, a count-in of one or two bars clicks before the audio starts, and a pre-roll starts the audio a few beats before the current position so you can re-enter a passage. A start delay of up to 10 seconds comes before both; press Play again while it waits to cancel. The count-in, pre-roll and start delay are saved for each song. A song without its own value uses the global default, set under **Defaults for songs without their own** in **Metronome settings**. The count-in shows as a countdown on the beat light, and the stage view can flash its edge on each beat.
 
-The existing AI pipeline separates stems with Demucs and transcribes the vocals with local quantized Whisper base through Transformers.js. Choose **Lyrics language** before regenerating to supply a known language instead of relying on automatic detection. Language hints are supported by the [Transformers.js speech recognition pipeline](https://huggingface.co/docs/transformers.js/v3.0.0/en/api/pipelines). The setting travels with the saved song options. Near-identical transcript chunks less than half a second apart are deduplicated; later repeated verses are retained.
+**Tap tempo.** Press **Tap tempo** or the **T** key to set the Song BPM by tapping. It averages the last four taps, and a pause of two seconds starts again. Taps set the BPM only while stopped. The beat light next to the transport shows song beats, not count-in beats.
 
-Chord recognition is FFT/chroma matching, not a learned chord model, and still estimates major/minor triads only. It now analyses the louder stereo channel to avoid opposite-phase cancellation and removes isolated non-silent label changes between matching neighbours. Silence and sustained changes remain. These behaviours have synthetic regression tests; no real-song accuracy gain has been measured. Existing separation quality/source controls can help provide cleaner inputs, but the Whisper speech model cannot replace a chord recognizer. Extended-chord recognition and a larger lyrics model need a separate implementation and evaluation on labelled recordings; the tab vocabulary does not expand the recognizer's vocabulary.
+## Multitrack import
 
-Paste or import TXT, LRC or bracket-chord text. For unsaved audio, charts, lyrics and BPM are stored locally under the filename, sample rate and frame count; identical keys share these settings. Saving to the song library assigns a unique ID and copies audio, stems and performance settings. Export charts separately or back up the complete song library to keep another copy. Transposition affects chord symbols, including slash bass notes, without pitch-shifting audio. Bold (`**text**`) and italic (`*text*`) formatting are supported; full ChordPro directives are not.
+Add tracks beyond the split stems. **Add tracks…** picks audio files, **Add folder…** takes the audio files in a folder, and dropping audio files onto the panel works too. A song can hold up to 32 imported tracks, each with its own row in the mixer. They are saved with the song, so choose **Save song changes** after adding them.
 
-Use timestamps on every displayed line for playback-following lyrics:
+Name a file to set its options before it imports. Options go in brackets or parentheses, and a leading track number is dropped:
+
+```text
+01 Keys L [bus=Aux1] (color=blue) (group=1,2).wav
+```
+
+- `bus=` is `Main`, `Click`, `Aux1` or `Aux2`.
+- `gain=` is 0 to 2, and `pan=` is −1 to 1.
+- `pitch=yes` or `pitch=no` sets whether the track follows pitch.
+- `group=` lists mute groups 1–6, separated by commas.
+- `color=` is a colour name or a `#rrggbb` value.
+
+An unknown or bad option is ignored, and the file still imports with its defaults.
+
+**Lengths.** Each track is compared with the median length of the set:
+
+- within 0.5 s, it is padded with silence and nothing is shown;
+- from 0.5 s to 5 s, it is padded or cut, and the app tells you;
+- more than 5 s out, it is refused.
+
+**Track settings.** Each track in the mixer has gain, pan, solo, mute, a bus, **Follows pitch** and mute groups 1–6. Unmuting or soloing a track in a group mutes the other tracks in that group. A track whose name contains *click*, *metronome* or *guide* starts on the **Click** bus and does not follow pitch. At a speed other than 100%, a click track is still stretched, and a notice says so.
+
+**Loudness.** **Normalise song volume to −14 LUFS** measures the song once, in the background, then applies one gain to every track. The gain is at most +6 dB, and never so much that the song's peak goes above −1 dBFS. Load the song before you turn it on.
+
+**Similar songs.** **Apply track settings to similar songs** copies this song's track settings to saved songs whose imported tracks have exactly the same names, in the same order. No audio is copied.
+
+**Limits.** Adding tracks is disabled while a song or playlist plays, and the panel says "Stop playback to add tracks." If a track's file cannot be read when the song loads, that track is skipped with a notice, and the song plays on without it. Files over 300 MB, tracks longer than 15 minutes, and imports that would pass 1 GiB of decoded audio are refused. Folders go through **Add folder…**; dropping a folder onto the panel is not supported.
+
+## Audio outputs
+
+Open **Audio outputs** in Performance to choose where each bus goes. There are four buses: **Main**, **Click**, **Aux 1** and **Aux 2**. Each has an output pair, a gain and a **Test** button that plays a short tone on that bus alone.
+
+- **Main device** carries the main mix. The pairs offered come from its channel count, such as 1–2 or 3–4.
+- **Click device** is **Same as main** by default. Pick another device to send the **Click** bus to outputs 1–2 of that device. Only one separate click device is supported.
+- Each track's **Bus** choice in the mixer decides which bus it plays through.
+
+Devices and layouts are remembered on this computer. A change re-routes the playing song without stopping it. If a saved device is missing or no longer has the channels, that output falls back to **System default** and a warning stays on screen. A device change that leaves the chosen device and layout as they were does not re-route anything.
+
+## Speed and pitch
+
+Use **Speed & pitch** in Performance.
+
+- **Speed** runs from 50% to 150%. It applies when you release the slider, and resetting returns it to 100%.
+- **Pitch** shifts by up to ±6 semitones, with a fine tune of ±50 cents.
+- **Follows pitch** is set per track in the mixer. A track with it off gets the speed change only, so it keeps its pitch. Drums start off.
+- **Apply pitch to chords** transposes the chord names in the reader by the pitch.
+- **Capo** sets the fret. The reader shows the chord names and shapes as played with a capo. It changes the chords shown, not the audio.
+- **Plays at N BPM** shows the effective tempo. The metronome, count-in and tempo commands use it. **Song BPM** stays the recording's tempo.
+
+**Changes while playing.** Speed and pitch are rendered in the background, and **Rendering…** shows how many tracks are done. The current audio keeps playing. The new version starts on the next beat, at the same point in the song. A change made during a render replaces it. While stopped, changes apply at once. MIDI cues keep their song time, and MIDI clock follows the new tempo.
+
+**Limits.** The stretch uses SoundTouch, an open-source library under LGPL-2.1, and is not yet tested on hardware. In a test on click trains, the median error was 1 to 4 ms and the worst was about 8 ms, so not every click lands within 5 ms. A transient can be dropped at extreme settings; in the test this happened at 125%, 150% and −3 semitones. The shorter analysis windows used for alignment can sound rougher on low notes than the defaults. The built-in metronome is not stretched: it runs on the effective tempo. A render briefly holds a second copy of a long song in memory, and changes swap only at beats, not bars.
+
+## Lyrics and chords
+
+The reader shows the lyrics with the chords above them and follows playback. Turn **Follow playback** off to scroll freely, use **A− / A+** for text size, or **Expand performance view** for a larger reader with transport buttons. Click any chord for guitar tabs in standard tuning (`x` is muted, `0` is open); they follow the displayed transposition.
+
+To edit, choose **Edit chords, lyrics & MIDI**. Each row has a time, chords, lyrics, MIDI commands and an optional label. Playback pauses while you edit, and invalid MIDI is rejected when you save. You can also paste or import TXT, LRC or bracket-chord text under **Separate lyrics and chart editors**, and export the chart.
+
+The chart text box under **Separate lyrics and chart editors** has search and undo. Cmd+F (Ctrl+F on Windows and Linux) opens search, and Cmd+H (Ctrl+H) opens the same panel with its replace field. F3 or Cmd+G finds the next match, Shift+F3 or Shift+Cmd+G the previous, and Escape closes the panel. Cmd+Z undoes; Cmd+Shift+Z redoes on a Mac, and Ctrl+Y on Windows (Ctrl+Shift+Z on Linux). Timestamps, chords, headings, `//` comments, colour tags, MIDI commands, `$CODE` macros and `{chase}`, `{nochase}` and `{label:…}` each have their own colour. The editor loads when you first open it. While the text box has focus, remote keys do not run, so typing a letter never triggers a remote action.
+
+Give every line a timestamp so it follows playback:
 
 ```text
 [00:00.00] [C]**Verse**
 [00:12.50] [Am]Words here {midi:pc 1 0}
 [00:24.00] [F]Chorus {midi:cc 1 64 127}
-[00:25.00] {midi:note 1 60 100}
-[00:26.00] {midi:off 1 60 0}
-[00:27.00] {midi:sysex F0 7D 01 F7}
 ```
 
-This is Tone Studio syntax. MIDI channels are 1–16, PC/CC/note data are 0–127. Note events need explicit note-off events. Select an output, then enable **Send cues**. MIDI messages are scheduled with Web MIDI timestamps and 50 ms lookahead; this is not a hard realtime guarantee. Pause, seek, leaving the tab and panic clear queued messages and release note channels used by this session. Sustain-off/all-notes-off are sent only to channels where the app queued note messages: sending CC64 indiscriminately would trigger the GP-180 looper Stop control. Seeking pauses audio and skips earlier cues; pressing Play starts cues at the selected position. Editing a chart pauses playback. Port removal disarms output.
+Untimed lines stay visible for manual reading. `**bold**` and `*italic*` work. A line that starts with `# ` is a heading, such as `# Chorus`, and shows as a label. A `// …` comment is for the editor and is not shown on stage. `{color:red}…{/color}` colours a span: red, amber, green, blue or violet. Transposing changes chord symbols (slash basses included) but not the audio. Chords are spelled with flats or sharps by the song's key, so a song in Bb shows Bb and not A#. Set the key under the song's details in the library.
 
-**Performance MIDI controller** uses Bluetooth independently of USB. Connect the GP-150 or GP-180 here to select its Bluetooth output, enable **Send cues**, and use **Song MIDI cues** to add PC/CC commands per time and downstream pedal channel. **Send MIDI now** sends the displayed command immediately while output is enabled. The scheduler worker supplies cue timestamps; Bluetooth delivery uses renderer timers and serialized GATT writes. The same lookahead is used, but delivery is best effort. To control pedals attached to the GP-180's physical MIDI OUT, verify Bluetooth-to-TRS forwarding on the pedal using [the wireless setup guide](BLUETOOTH.md#wireless-song-cues-through-the-gp-180). No USB editor connection is needed. **Enable USB / system MIDI** only enables additional system MIDI ports.
+**Autoscroll.** With **Follow playback** on, choose how the lyrics move:
 
-MIDI Clock emits 24 pulses per beat at the chosen BPM with transport messages. The top-right **Send MIDI Clock** setting is remembered per song and is disabled while automatic one-time GP-180 tempo is enabled. Clock only runs during song playback with MIDI output armed. Disabling clock sends Stop and cancels pending clock messages without stopping the audio. Set the recording BPM while stopped; the BPM field is locked during playback. External transport input accepts Start/Continue/Stop or CC 80 with value 64–127 (any channel). Configure a GP-180 MIDI-command footswitch to send CC 80 to use it as play/pause. USB ports use Web MIDI; **Connect Bluetooth MIDI** provides standard BLE-MIDI input/output. See [Bluetooth and hardware evidence](BLUETOOTH.md). RTP-MIDI is not implemented. Do not loop output back to input.
+- **Line by line** keeps the last timed line that has started at the reading position.
+- **Between timed lines** moves smoothly from one timed line to the next, for a chart where only some lines have timestamps.
+- **Constant speed** moves at **Lines per minute**, so untimed lyrics can scroll too. **Fit to song length** sets the speed so the last line lands at the end of the song.
 
-The top-right **Metronome** switch is remembered globally. The metronome starts and stops with song playback and shares the stems' AudioContext and time origin. Pause, rewind and seek preserve the beat grid relative to the recording. There is no separate rhythm transport. **Metronome settings** contains first-beat alignment, beats per bar and click volume; stem volume controls sit above the reader. Metronome and MIDI Clock are independent switches.
+The lyrics follow the song's position, so a speed change, a section jump or a loop is followed. Scrolling by hand, with the wheel, the touch pad or the page keys, or a remote scroll, pauses autoscroll for six seconds, then the lyrics return to the song position. The style and speed are kept on this computer.
 
-To align a recording with an intro, pause playback, seek to its first downbeat, then choose **Metronome settings → Set first beat here**. Fine-tune **First beat (seconds)** if needed; **Reset first beat** restores zero. The first click is accented and no clicks play before it. Subsequent accents follow beats per bar, including after pause or seek. Alignment is saved per song in performance options and included in library saves/backups. It changes only click timing, not audio speed, lyrics, MIDI cues or MIDI Clock. The recording still needs the correct BPM; a fixed grid cannot follow a recording with changing tempo.
+**Importing ChordPro or chords above lyrics.** Under **Edit chords, lyrics & MIDI**, the import panel reads pasted text or a `.cho`, `.chordpro`, `.pro`, `.crd` or `.txt` file. ChordPro directives become the song's title, artist, key, tempo, capo, duration and year, and sections become headings. Chords above lyrics are merged into the lyric line below, at the column where they were typed. The summary lists the format, the song details it found, and each line it did not take as written, with its line number. Directives the app does not support are kept as `//` comments, so nothing is lost silently. Only the first song in a file is imported. **Replace chart with this import** writes the chart and applies the key and year to the song and the tempo and capo to the performance. The title and artist are shown but not changed.
 
-### MIDI reliability during a set
+An import replaces the chart, so it is refused during playback, and when the chart has MIDI commands or triggers. Remove those in the editor first, so they are not dropped without you seeing it. Imported text has no timestamps, so it is read as untimed text: it has no MIDI cues and no timed lines until you add timestamps in the editor.
 
-Arming is bound to the exact selected connection. A disconnected or replacement output does not inherit permission to send, even if it has the same port ID. Pending commands are cleared on pause/disarm, and repeated stop cleanup preserves the note-release messages queued by the first cleanup. An echoed Stop while already stopped does not generate another Stop.
+**Automatic drafts.** After a split, Performance estimates chords from the guitar stem and, when the song has none, transcribes lyrics from the vocals with a local Whisper model. Choose **Lyrics language** first if you know it. The first run downloads the model; nothing is uploaded. Chord estimates cover major and minor triads only. Treat both as drafts and check them before you play, because dense mixes and backing vocals cause mistakes. Anything in your own chart takes priority over a draft.
 
-If a scheduling poll is delayed by more than 250 ms, audio time falls more than 250 ms behind the mapped clock, or an unsent cue is more than 250 ms overdue, the app clears pending commands and disarms MIDI instead of replaying a missed burst. Audio continues. Pause, check the physical pedal state, then explicitly rearm and choose where to resume; missed commands are not automatically reconstructed. Commands beyond the audio duration are not scheduled.
+## MIDI cues
 
-Bluetooth commands waiting more than 250 ms past their requested send time close the connection instead of being sent late. Each GATT packet write has a one-second timeout. A timeout means delivery is unknown: the app closes the connection and does not retry commands that may already have reached a pedal. These limits detect gross interruptions; they are not a promise of sub-250-ms timing accuracy. Data already transmitted cannot be recalled, and an unplugged pedal cannot receive note releases.
+A cue is a MIDI message sent at a time in the song. Write them in the chart as `{midi:…}` tokens, or build them with **Song MIDI cues**.
 
-For the tested GP-180 rig, keep continuous app clock off and let the pedal generate clock from a one-time song BPM command. Use distinct receive channels: TimeLine 1, RC-10R 2, IR-200 3 and SY-200 4. Consider assigning GP-180 receive and its command-builder/tempo channel to 16 instead of OMNI, so downstream program changes do not also recall GP-180 patches. Match all existing chart commands to the physical settings; this channel-isolation setup still needs hardware confirmation. Channel 16 tempo with GP-180 receiving OMNI is the previously tested setup.
+| Token | Message | Notes |
+| --- | --- | --- |
+| `{midi:pc ch n}` | Program change | Channel 1–16, program 0–127. |
+| `{midi:cc ch n v}` | Control change | Controller and value 0–127. |
+| `{midi:note ch n v}` | Note on | Needs a matching `off` later. |
+| `{midi:off ch n 0}` | Note off | |
+| `{midi:sysex F0 … F7}` | System exclusive | Hex bytes. |
 
-Prepare stems, transcription and backups before the set; avoid starting heavy analysis or library transfers during playback. Keep Bluetooth nearby and its phone app disconnected, or rehearse the USB command route. Do not route outgoing transport back to the selected remote input. The worker scheduler, renderer output bridge and wireless/OS drivers are not a hard real-time system, and a queued command is not an acknowledgement from a pedal. See [the MIDI reliability review](docs/MIDI-RELIABILITY-REVIEW.md) for remaining work and hardware checks.
+Empty or incomplete tokens are rejected instead of being dropped silently.
 
-**Song BPM** is the saved recording tempo, not a playback-speed control. Correct it while stopped to match the audio; the current pipeline does not detect BPM automatically. Audio is never stretched and lyric/MIDI timestamps stay in seconds. Beat one is at audio time zero. A fixed BPM cannot follow recordings with tempo drift or changes automatically.
+To send cues, pick an output, then switch on **Send cues**. This is called arming, and it is never saved with a song. Reopening a song starts disarmed.
 
-For the GP-180 over Bluetooth or USB, use **Valeton GP-180 → Set tempo (BPM)** as a time-zero song cue and leave **Send MIDI Clock** off. Set GP-180 clock source to Internal and TRS clock output On so the pedal generates the downstream clock. Real hardware held 120 and 141 BPM with this method; continuous Bluetooth clock produced large tempo jumps and USB clock fluctuated 119–122 BPM at 120 BPM and 89–92 BPM at 90 BPM, causing audible delay changes. Neither continuous route passed the real-pedal performance test. This sets tempo without locking audio beat phase. See [the tested setup and limitations](BLUETOOTH.md#bluetooth-clock-test--22-october-2026). Update a manually saved cue value if you change Song BPM. Alternatively, apply the GP-180 setup preset below to use the current Song BPM automatically on each playback start/resume. Automatic tempo is sent after patch recalls at that start position; later patch recalls may need their own tempo cues.
+- Pause, seek, leaving the Song screen or changing the output clears anything queued. Switching to another Song tab does not.
+- Seeking pauses; pressing Play starts cues from the new position. Earlier cues are not played as cues, but the pedals are brought to the state they would be in: just before the song starts, the app sends the latest bank select and program change for each channel, then the latest value of each controller. It does the same if a stall drops a patch or controller change.
+- Looper, tap tempo, footswitch and similar trigger controllers are never replayed this way. The app skips the fixed trigger numbers, and any controller that a pedal's trigger commands use on its channel once the CC is assigned in the pedal picker (see [MIDI pedal command presets](MIDI-PEDALS.md)). Notes and clock are not replayed either, and SysEx is replayed only when the cue has `{chase}`.
+- Add `{chase}` to a cue to always replay its commands, or `{nochase}` to never replay them. Cues built from a pedal's trigger commands get `{nochase}` automatically. Preflight warns about a controller that is pressed and released within half a second without `{nochase}`. It also warns about a raw controller that would be replayed on a pedal channel whose trigger CCs are not assigned yet, because the app cannot tell it from a trigger: assign the CCs, or add `{nochase}`.
+- The state is sent 100 ms before the audio position it belongs to when playback is scheduled ahead, such as a planned jump. A start from a position sends the state as soon as the schedule begins, so it does not yet lead the audio by 100 ms.
+- Removing the port disarms.
+- Cues past the end of the audio are not scheduled.
+- Messages due together in a cue go to the other pedals first, because the GP-150 / GP-180 pauses briefly while it changes patch and would hold them.
 
-Use **Edit chords, lyrics & MIDI** in the combined reader to edit on the page. Opening it pauses playback. Each row has a timestamp, chord names, lyrics, MIDI commands and an optional command label. Add or delete rows, then save or cancel. Invalid MIDI is rejected before saving. Saving promotes displayed automatic lyrics/chord estimates to a manual chart, preserving separate MIDI cue times, bank sequences, labels, note-offs and SysEx. Chords are edited before display transposition. The raw text editor and import/export remain available below.
+**MIDI preflight & timing** (collapsible) lists cues beyond the audio, conflicting or dense commands, missing note-offs and channel clashes. Warnings are advice; they never change or disable a cue. The app cannot read a pedal's receive channel, so check those yourself.
 
-After splitting, opening Performance automatically estimates major/minor chords from guitar. Missing or near-silent guitar falls back to piano, then other, bass, vocals or drums. The **Chord source** selector allows an explicit override: sound in a separated guitar output does not prove a guitar is present. A worker performs windowed FFT/chroma-template matching. Results can be exported or appended to the editable chart. `N` means silence/uncertainty. Dense mixes, inversions and extended chords can be misidentified. This does not detect tempo.
+### Tempo and clock
 
-**Lyrics text track** starts transcription automatically when Performance opens with a usable vocals stem and no saved lyrics. **Generate/Regenerate lyrics from vocals** retries or replaces the draft. It transcribes the isolated vocals locally with multilingual Whisper base through Transformers.js. First use downloads and caches quantized model files from Hugging Face. Audio is not uploaded. A bundled WebAssembly runtime runs in a cancellable worker; transcription continues when switching tabs or songs. Cancel explicitly to stop it. Completed lyrics are stored locally and also written back to an existing saved song. The separate editable LRC text track follows song playback, persists locally, and can be exported. It does not replace existing chords or MIDI cues. Regenerate replaces the text track only after a successful result; cancellation or failure preserves prior text. Singing and instrumental leakage can produce incorrect words and timing: review the draft. No transcription is started without a usable vocals stem.
+For the GP-180, send the tempo once and let the pedal generate the clock. Apply the **GP-150 / GP-180 + pedals** setup preset (below), or add **Valeton GP-180 → Set tempo (BPM)** at time zero. On the pedal, set Clock Source to Internal and TRS clock output to On. Update a saved tempo cue by hand if you change the Song BPM. The preset uses the current BPM (40–300) automatically.
 
-## MIDI setup presets and remembered settings
+**Send MIDI Clock** (24 pulses per beat, with Start and Stop) is available for receivers that handle it, is remembered per song, and is switched off while automatic tempo is on. It was not stable on the tested rig, see [Hardware results](#hardware-results). Do not route output back into an input.
 
-In Performance, choose a MIDI setup preset and apply it:
+External **Start/Continue/Stop**, or CC 80 with a value of 64–127 on any channel, plays and pauses the song. These are default bindings, so you can change them under [Remote control](#remote-control). A GP-180 MIDI footswitch can send CC 80.
 
-- **GP-150 / GP-180 + pedals · Bluetooth / USB** sends the song BPM once on playback start. Set the GP-180 clock source to Internal and TRS clock output to On. Channel 16 is the default tempo channel; match the GP-180 receive channel (or OMNI). Continuous app clock stays off. The GP-180 supplies clock to downstream pedals.
-- **MIDI commands only** plays saved cues without automatic tempo or clock.
-- **Continuous clock · compatible receiver** enables song MIDI clock for receivers that support it reliably. The GP-180/TimeLine hardware tests did not produce a stable continuous app clock.
+### Setup presets
 
-Port preferences, setup choices, automatic tempo/channel, selected pedal and command/value, pedal channels and assigned CCs are remembered on this computer. System ports restore after enabling MIDI access, using their ID or an unambiguous matching name. Bluetooth requires a manual connection; sending must still be armed each session. Automatic GP-180 tempo uses the current song BPM rounded to an integer, within 40–300 BPM. Remove conflicting tempo cues from the chart when using it.
+Choose one under Performance and apply it:
 
-**Show MIDI commands** in the performance reader remembers whether MIDI cue markers and the command builder are visible. Hiding them does not pause playback, disarm MIDI or change cue execution. Saved MIDI cues continue to trigger at their timestamps.
+- **GP-150 / GP-180 + pedals** (Bluetooth or USB): sends the song BPM once on playback start, with the clock left off. The tempo goes on channel 16 by default; match the pedal's receive channel, or OMNI.
+- **MIDI commands only**: plays saved cues with no automatic tempo or clock.
+- **Continuous clock**: turns on song MIDI clock.
 
-## Song key
+The app remembers port choices, the preset, the selected pedal and command, pedal channels and assigned CCs on this computer. Bluetooth always needs a manual connection. **Show MIDI commands** hides or shows cue markers and the builder without affecting playback.
 
-Performance automatically estimates the recording’s overall major/minor key using a background worker. It uses a usable guitar stem first, then piano, other, bass or vocals, finally the original mix if no suitable stem is present. Silent stems are skipped. The selected source, a tentative/clearer match indicator and alternative keys are shown. Silence or insufficient tonal evidence produces **Unknown** instead of a forced answer.
+## Pedal commands
 
-The detector aggregates spectral pitch-class information across up to 600 windows distributed over the recording and correlates it with major/minor tonal profiles ([method reference](https://music21.org/music21docs/moduleReference/moduleAnalysisDiscrete.html)). It does not use the first chord as the song key. No model download, network request or MIDI command is involved. Relative major/minor keys, modal music, detuning, sparse riffs, separation artifacts and changing keys can be ambiguous. Synthetic progression tests do not establish real-song accuracy.
+**Song MIDI cues** has named commands for the Strymon TimeLine, BOSS RC-10R, IR-200 and SY-200, and the GP-150 and GP-180. Choose the pedal, its receive channel and a memory or function, then **Add pedal command** to save it in the chart or **Send pedal command now** to test it. Search by memory number or function. Bank select is added where a pedal needs it, and **Raw MIDI command** is always available.
 
-**Key override** saves a manual correction, independently of automatic analysis. The recording key and transposed chord-display key are shown separately; neither shifts audio pitch nor changes MIDI. Key metadata is stored with the existing song options: save song changes before quitting to retain it in the desktop library, as with other performance edits.
+The channel you pick addresses the pedal; it does not change the pedal's own setting. Starting channels are TimeLine 1, RC-10R 2, IR-200 3 and SY-200 4, and your saved choices take precedence. BOSS assignable controls need the matching **Assigned CC** from the pedal. For the full list of profiles, community pedals and custom JSON, see [MIDI pedal command presets](MIDI-PEDALS.md).
 
-## Preview screens
+Exported charts carry readable labels and the MIDI messages, so another computer can play the chart without your pedal profiles.
 
-These screenshots use the real interface components with fictional song text and synthetic audio. The playlist is paused and MIDI is disarmed. They illustrate the workflow, not a connected-hardware test.
+## Bluetooth
 
-![Performance reader, playlist transport and song key](docs/screenshots/performance-demo.jpg)
+Bluetooth MIDI carries performance cues, transport input and clock. If the link drops, the app shows "Reconnecting… (attempt n)" and retries by itself (after 0.5, 1, 2, 4 s and so on, up to 30 s between attempts) without asking you to pick the device again. Choose **Stop reconnecting** to give up. After it reconnects the song stays disarmed: check the pedal, rearm and choose where to resume. Bluetooth editor management is off, so use USB to read or write presets and settings. Bluetooth audio and Bluetooth MIDI are separate services.
 
-![Named pedal commands and scheduled MIDI cues](docs/screenshots/midi-commands-demo.jpg)
+To send cues from Performance to a GP-180 and on to pedals on its MIDI OUT:
 
-![Guitar chord positions in tablature](docs/screenshots/chord-voicings-demo.jpg)
+1. Open **Performance MIDI controller**, choose **Connect Bluetooth MIDI** and pick the pedal's MIDI service. This also selects it as the output.
+2. On the pedal, set **MIDI IN Source** to **BT Only** or **Mixed**, and set **EXP/FS jack 2** to MIDI OUT. Set each downstream pedal's channel and check the GP-180's channel filtering.
+3. In **Song MIDI cues**, add a command with its time, channel and PC or CC.
+4. Switch on **Send cues** and use **Send MIDI now** to check the pedal responds. A finished write does not prove the message came out of the MIDI OUT.
+5. Play the song.
 
-Untimed bracket chords remain visible and clickable in the combined reader. They are for manual reading; add timestamps to make lyrics follow playback. Empty or incomplete `{midi:...}` tokens are rejected rather than silently omitted. A previously saved key estimate is retained while its audio source is reanalysed; a fresh successful result replaces it.
+Valeton's documents do not clearly describe Bluetooth-to-TRS forwarding, so test your own rig. A pedal's Bluetooth service must be a standard BLE-MIDI service. Keep the pedal's phone app disconnected and the pedal nearby.
 
-## MIDI preflight and timing diagnostics
+### Hardware results
 
-The collapsible **MIDI preflight & timing** panel reports cue timestamps beyond the audio, conflicting or dense commands, missing note-offs and configured channel conflicts. Warnings are advisory and do not rewrite or disable intentional cues. Match physical receive channels and assignable CC settings yourself; the app cannot read those settings from ordinary performance MIDI.
+All results are from a GP-180 (firmware 1.1.1) with a Strymon TimeLine on its MIDI OUT. GP-150 has not been tested on hardware.
 
-Cue scheduling runs in a dedicated worker, prepared before armed playback starts, with 20 ms ticks and 50 ms lookahead. Audio-position checkpoints keep it aligned to playback. The renderer still bridges output to Web MIDI or Bluetooth; this is timing isolation, not hard real-time delivery. Pause, seek, output replacement and song changes cancel the old scheduler. A scheduling interruption over 250 ms clears queued output and disarms the session instead of replaying a burst.
+| Date | Test | Result |
+| --- | --- | --- |
+| 21 Oct 2026 | USB read-only inspection and full 200-preset backup | Passed. No writes were tested. |
+| 21 Oct 2026 | Bluetooth editor handshake | Connected but no replies, so editor use over Bluetooth is disabled. |
+| 22 Oct 2026 | Timed patch changes over Bluetooth, 15 → 16 → 13 | Passed. The TimeLine followed, and a seek did not replay cues. |
+| 22 Oct 2026 | One-time tempo command (120 and 141 BPM) over Bluetooth | Held steady on both pedals. |
+| 22 Oct 2026 | One-time tempo command (90 and 120 BPM) over USB | Held steady on both pedals. |
+| 22 Oct 2026 | Continuous clock over Bluetooth | Failed: large tempo jumps. |
+| 22 Oct 2026 | Continuous clock over USB | Failed: drift of about 3 BPM (119–122 at 120). |
 
-Timing counters record queue lateness and failures, with a bounded history of recent non-clock messages. Bluetooth diagnostics also measure serialized write time. These are app-side observations, not receiver timestamps or proof of delivery. Keep continuous app clock off for the tested GP-180 rig and use one-time song tempo with hardware-generated downstream clock.
+The rig had the GP-180 receiving OMNI and the TimeLine on channel 1, so tempo on channel 16 reached only the GP-180. To keep downstream program changes from recalling GP-180 patches, consider setting the GP-180 to receive on 16 as well; that has not been confirmed on hardware.
 
-The scheduler checks prepared-worker health again at playback start and requires a start acknowledgement and ongoing worker responses. Missing responses for more than 250 ms disarm MIDI through the normal fault cleanup. **Reset timing counters** clears both app dispatch and Bluetooth performance/clock timing, including the retained disconnected-session timing. It preserves connection traffic totals and queued commands.
+## Sections
 
-## Prepare a live set
+Name the parts of a song on the waveform in the section editor: start and end times snap to the beat when a tempo is set, and each section has a mode for its end:
 
-1. Save the songs, audio/stems, charts and recording BPM before performing. Review recognition drafts and manual key corrections.
-2. Choose **Load set paused** in Songs & playlists. Connect the intended output, apply the MIDI setup, and check the physical receive channels and routing.
-3. Review **MIDI preflight & timing** for each song. The Performance panel checks the loaded song. Use **Check playlist** in Songs & playlists to review all saved entries; neither check reads back physical pedal settings.
-4. Enable **Send cues** in Performance, then use its **Play playlist** button. Starting again from the library's **Play playlist** starts a new, disarmed MIDI session.
-5. After a disconnect or timing fault, pause and check the pedals' actual state. Reconnect/select the output and explicitly rearm before resuming. The app does not replay missed commands or reconstruct all prior pedal settings after a seek.
+- **Continue:** play on. **Repeat once:** play the section twice. **Loop until released:** repeat until you release it. **Skip:** jump over it. **Pause at end:** stop there.
 
-The metronome on/off preference is global; song BPM, first-beat position, beats and metronome volume are stored with the song. A solo selected in Stems also affects the shared mix; clear it in Stems when preparing the full backing track. Playlist transitions load sequentially and are not gapless. Complete analysis and backups before starting the set.
+While playing:
 
-## Whole-playlist preflight
+- **Tap a section** to arm a jump to it. The strip shows when it will land, and **Cancel jump** stops it before then.
+- **Double-tap a section** to jump now. The jump lands after the MIDI lookahead (about 120 ms over Bluetooth, 0.2 s over USB), so cues already queued still belong to the passage being left.
+- **Loop** repeats the current section until you tap **Exit loop**. The current pass finishes, then the song moves on. A release within the last 150 ms before the end of a pass takes effect after that pass.
+- **Save as default** writes live loops and releases into the sections' stored modes. Other live changes are not saved.
 
-Select a playlist under **Song → Songs & playlists**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
+Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; cues in a skipped section are not sent. In Stage the sections replace the seek bar, and seeking stays locked. A section that does not start or end on a bar line is flagged in preflight, because a loop there lands off the beat.
 
-The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect PCM file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
+## Playlists
 
-Errors and warnings are advisory and do not block intentional playback. The report uses current saved MIDI preferences and configured pedal channels; it cannot confirm a connected output, physical receive channels or pedal response. Playlist/library or MIDI preference changes clear the report. Recheck after external file changes. Preflight is unavailable while a library operation or playlist playback is active.
+Under **Song → Songs & playlists**, make a playlist from saved songs. Entries can repeat, and edits save at once. Choose **Check playlist** to review every entry before the set (it reads saved songs, so save first), **Load set paused** to prepare, or **Play playlist** / **Play from here** to go.
+
+A playlist can be split into headed sets, and a smart playlist picks its songs by rules; **Play set** plays one set and stops at its end. The queue shows and edits what plays next without changing the song that is playing. See [Song library](SONG-LIBRARY.md#playlist-sets-and-smart-playlists) and [Queue](SONG-LIBRARY.md#queue).
+
+The set loads and starts each next song, then stops after the last one. Performance shows the position, the next title, **Previous song / Next song** and **Stop playlist**. Each next song loads in the background while the current one plays, so most joins are gapless. See [Gapless and crossfade](#gapless-and-crossfade).
+
+Switching to another Song tab keeps the set playing and its queue editable. While Performance is hidden, only transport and song keys work; other keys, such as Page Down and the arrows, are left to the page. Leaving the Song screen pauses the set.
+
+An armed MIDI output stays armed across songs while the same device stays connected. For cues from the first second, choose **Load set paused**, connect and switch on **Send cues**, then press **Play playlist** in Performance. Starting a playlist again from the library starts a new disarmed session.
+
+Before a set:
+
+1. Save each song with its audio, chart and BPM, and check any draft lyrics and chords.
+2. **Load set paused**, connect the output, apply the setup preset and check each pedal's receive channel.
+3. Read **MIDI preflight & timing** per song and **Check playlist** for the set.
+4. Arm with **Send cues**, then play.
+5. After a disconnect or timing fault, pause, check what the pedals are actually set to, reconnect, rearm and choose where to resume.
+
+Finish analysis and backups before you start. Heavy work during playback can hurt timing.
+
+## Gapless and crossfade
+
+While a song plays, the next one in the playlist loads in the background. If it is ready in time, the join is gapless: the next song starts on the same clock, with no silence. If it is not ready, the set plays a short gap and shows a notice.
+
+- **Crossfade (s)** in the playlist controls sets how long the outgoing song fades out while the next fades in. It runs from 0 to 10 seconds, and 0 gives a gapless join with no overlap. The setting is kept on this computer.
+- **Crossfade to next** starts the next song now and fades this one out over the crossfade length. It needs the next song to be loaded.
+- A count-in on the next song turns the crossfade off. Its clicks start when the outgoing song ends, and the audio follows.
+- The next song starts at its trimmed start. Pre-roll does nothing across a join.
+
+For each song, the **Song shape** controls in the Performance setup set how it starts and ends:
+
+- **Trim start (s)** and **Trim end (s)** cut the ends of the song. **Auto** trims to the audible part above −60 dBFS, and **Clear trim** removes both values.
+- **Fade in (s)** and **Fade out (s)** run from 0 to 10 seconds. A change applies from the song's next start, not mid-play.
+- **At the end** chooses what follows: **Play the next song**, **Stop the playlist**, which pauses the set at that song's end, or **Loop the song**, which repeats it without moving on.
+
+Trim changes while a song plays move its stop at once. Looping jumps back to the trimmed start a second before the end, so the loop has no gap. Sections are cut to the trimmed range, and preflight warns about cues or sections outside it, which will not play.
+
+## PDF charts
+
+A saved song can show a PDF (a lead sheet, chord chart or score) instead of its text chart. Choose **Attach PDF chart** in the reader, or **Replace** or **Remove** to change it. **Show PDF chart** and **Show text chart** switch between the two for that song. The PDF is stored in the song's library entry and goes into backups. The app never changes the PDF itself. A PDF over 50 MB is refused with a notice.
+
+- **Scroll** shows the pages one under another at the width of the reader. **Page** shows one page at a time, or two side by side on a wide screen. **Previous** and **Next** turn pages.
+- **Annotations** are a pen, a highlighter and text notes, in four colours. **Undo mark** removes the last mark on the page, and **Clear page marks** removes them all. They are saved with the song, and they survive a restart and a backup. Marks are kept as positions on the page, so they fit any zoom.
+- **Page turns**: while the song plays, a page turn at a song time moves the PDF to the next page. Press **Turn page at this time** at each turn while you rehearse, and **Clear page turns** to start again. Follow playback switches this on and off.
+- A PDF that cannot be read shows an error with a **Show text chart** button. The lyrics view stays available.
+- A remote page action turns the PDF page when a PDF is on screen, and scrolls the lyrics otherwise. In stage mode a page action turns half a page in a scrolling PDF.
+
+## Remote control
+
+Every live action can run from a MIDI message on the selected input, from a key, or from a Bluetooth page-turner, which sends keys. Choose **Edit remote control** in Performance to see each action with its bindings.
+
+The defaults:
+
+- **Start** and **Continue** play, and **Stop** pauses. **CC 80** with a value of 64–127 on any channel plays or pauses. A footswitch that sends 127 on each press works, and repeats within 150 ms count as one press.
+- **Page Down** and the right arrow go to the next section; **Page Up** and the left arrow go to the previous one. While a [PDF chart](#pdf-charts) is on screen, those same keys turn its pages instead. **T** taps the tempo.
+- A key you learn to an action is never changed by this. Learn a key to **Next page** or **Previous page** to turn pages with a page-turner while the lyrics are on screen too.
+- **Page up**, **Page down**, **Previous page** and **Next page** scroll the lyrics, or turn the page of a [PDF chart](#pdf-charts) when one is on screen. They work in stage mode too, so a page-turner can turn the chart.
+
+**Learn MIDI** or **Learn key** on an action, then press the pedal, controller or key. The next message is bound. Learn shows the channel and the message it heard, such as "Ch 3 · CC 80 = 127". A message that already runs another action is not bound: Learn names that action, and you remove it first. A program change learned after a bank select (CC 0 and CC 32) is bound to that bank only.
+
+A controller binding has three modes:
+
+- **Momentary** fires on every message in its range.
+- **Threshold** fires once, when the value rises into the range.
+- **Toggle** fires on each switch, up or down.
+
+Tick **Double press** on a binding that must not run by accident, such as Stop or Panic. The first press shows a hint, and the action runs when the second press comes within 0.6 s.
+
+The actions cover transport (play, play or pause, stop, play from start, panic), songs (next, previous, select by number, crossfade), sections (next, previous, arm, jump now, loop, exit loop, cancel jump), lyrics (scroll and page), text size, stage mode, mute groups 1–6, click, tap tempo, speed up, down and reset, and arm or disarm MIDI cues. Lyrics pages scroll the reader by a screenful, because the app has no PDF view.
+
+Things to know:
+
+- Keys do nothing while you type in a field or a dialog, and a key that is held does not repeat its action. Keys with Ctrl, Alt or Cmd are not bindings.
+- Our own MIDI output is ignored when it comes back in through a THRU or loop-back input for a moment, so a Stop is not taken as a second Stop.
+- An action that does not apply now (a section jump in a song without sections, or next song outside a playlist) changes nothing and shows a short hint.
+- In stage mode every action still runs. The stage lock refuses seeking only, so **Play from start** is refused there.
+- Speed keys move the rate in 5% steps.
+- Bindings are saved with the MIDI setup on this computer. **Reset to defaults** restores the list above.
+- Only notes, controllers, program changes, Start, Continue and Stop can be learned. Clock, pitch bend and aftertouch cannot.
+
+## Load songs from MIDI
+
+A program change or Song Select on the selected MIDI input can load a saved song, for example a GP-180 patch change that also selects the backing track. Turn it on under **Load songs from MIDI** in the MIDI setup. Each song's trigger is set in its **Song trigger** panel: choose **Learn trigger** and then press the program change (after its bank select, if the pedal sends one) or the Song Select message. You can also type the channel, the program or number, and an optional bank.
+
+- **Songs that can load** is the whole library, or only the current playlist.
+- **While a song plays** is what a trigger does during a song. **Ignore** is the default, so nothing stops. **Arm as next** plays the triggered song after the current one, in a playlist. **Stop and load now** stops the song and loads the triggered one; use it only when the set should jump.
+- **Start a song as soon as a trigger loads it** is off by default, so a loaded song waits for Play.
+
+Things to know:
+
+- A message that a remote action already claims runs that action and does not load a song. Learn names the action, and the song panel and preflight show the clash.
+- If two songs have the same trigger, the first song in the library loads for that message, every time. The list under the options and the playlist preflight name the others.
+- Our own program changes and Song Select, such as cues in a chart and the chase at a start, are ignored when they come back through a THRU input.
+- A message for the song that is already loaded does nothing. A pedal that sends the same message twice loads the song once.
+- In a playlist, a trigger for a song in the set moves the set to that song. A song outside the set loads on its own and pauses the set, with a notice.
+- A song needs to be saved in the library before it can have a trigger. Anything that is not a program change or Song Select does nothing.
+
+## MIDI timecode
+
+The app can send MIDI Time Code (quarter frames and full frames) so that a DAW, a lighting desk or a timecode-aware device can follow the song.
+
+- **Turn it on** in the MIDI setup with **Send MIDI timecode**, and choose the frame rate: 24, 25 or 30 fps (non-drop). 29.97 drop-frame is not offered.
+- **Each song has its own offset**, `HH:MM:SS:FF`, in its MIDI setup. It is the timecode at song position zero. Frames must be below the rate: at 25 fps, `00:00:00:24` is valid and `00:00:00:25` is not. An invalid offset stops Play and is named in the preflight.
+- **What is sent.** A full frame at the start, seek, jump, loop wrap and speed change, followed by quarter frames that follow song time. A speed of 50–150% stretches or shrinks the quarter-frame spacing, so the timecode stays with the audio. Nothing is sent during the count-in.
+- **Gapless and crossfade.** The next song's timecode starts from its own offset with a full frame at its start. The outgoing song's quarter frames stop where the next song joins.
+- **Timecode replaces app MIDI clock.** Turning timecode on turns the clock off, and the clock box is disabled while timecode is on. A receiver gets one source of time.
+- **Bluetooth is not recommended.** Quarter frames come every few milliseconds, and Bluetooth cannot keep them steady. Preflight warns when timecode is on with a Bluetooth output. Use USB.
+- Late quarter frames are dropped rather than sent in a burst. A late full frame is still sent, because it sets the position.
+
+Check the receiving device on the rig before relying on it, and see the timecode rows in the hardware test plan.
+
+## Generated drums and bass
+
+For a song with no drums or no bass, the Band panel can generate them to play along. The split notice names the part that is missing. Press **Band** on the Performance screen to open the panel and make it.
+
+**Find the beat.** Press **Find the beat** first. It listens to the drums stem if there is one, then the pitched stems, then the whole mix. The panel shows what it found, for example "120.0 BPM, steady, 16 beats, 4 per bar". The parts follow this beat grid, so check it before you generate.
+
+If the grid is wrong, correct it:
+
+- **Half tempo** and **Double tempo** halve or double the beats, for a song the tracker heard at the wrong speed.
+- **Downbeat ←** and **Downbeat →** move the bar line by one beat.
+- **Nudge −10 ms** and **Nudge +10 ms** shift the whole grid a little.
+- **Use fixed BPM** builds a grid from the Song BPM and first beat, for a song with no click that the tracker cannot find. Set those first (see [Prepare a song](#prepare-a-song)).
+- **Set metronome to this tempo** copies a steady grid's tempo and first beat to the metronome.
+
+**Styles and settings.** Choose a style: Rock, Pop, Ballad, Country, Funk, Half-time, Reggae, Shuffle, Metal or 6/8. Then tune it:
+
+- **Complexity** sets how busy the patterns are.
+- **Swing** pushes the off-beats. Each style has its own default, which you can change.
+- **Ghost notes** adds soft snare hits between the backbeats. **Crash on section starts** puts a crash at the start of each section.
+- **Bass range** is low, normal or high.
+- **Bass mode** is roots, roots and fifths, octaves, melodic (approach notes) or walking. Walking appears only for a style that walks.
+- **Lock bass to kick** makes the bass land on the kick.
+- **Humanise** adds small timing and velocity variation. **Feel** is the style default, Tight, Natural, Laid back or Pushed.
+- **Follow my playing** takes the parts' accents from your playing. **Follow source** picks the stem to listen to: Auto, or a stem that the split made. In Auto, a song whose sections show no clear accents is not followed. When a part cannot follow, the panel says why after Generate, and the part keeps its normal feel.
+
+**Sections.** The table has one row per section, or one row for a song without sections. Each row sets the section's style, **Energy** (1 to 5), whether it has a **Fill** at its end, and whether drums and bass play in it. Energy starts from the section's name: choruses and solos are higher, intros, verses and outros lower. Click a row to select it. Preview then starts from that section.
+
+**Generate, Try another, Remove, Preview and Export MIDI.**
+
+- **Generate** writes the parts into the song as two tracks, **Drums (generated)** and **Bass (generated)**. Changing a setting does not regenerate anything. The panel says "Parts out of date" until you press Generate again.
+- **Try another** keeps your settings and makes a different take.
+- **Remove generated parts** takes both generated tracks out of the song. Your own tracks stay.
+- **Preview 4 bars** plays four bars of the parts over the song, from the selected section or from the playhead. **Stop preview** ends it early.
+- **Export MIDI…** saves the notes of the last Generate as `<song title> - band.mid`. Drums go on channel 10 and bass on channel 1, with the song's tempo. It is available after Generate until you close the panel. Open the file in a sequencer or a notation app to use the parts elsewhere.
+
+Everything here works offline, and the samples ship with the app. Generating, removing, previewing and exporting are all off during playback, so press Stop first.
+
+The parts are normal tracks in the mixer, so you can mute, solo or set their volume. The bass follows the song's pitch shift, as set by **Follows pitch** on its track. The drums do not, since a drum hit has no pitch to shift.
+
+**Limits.**
+
+- The chords come from the chart, or from chord detection when the chart has none. Detection knows only major and minor chords. If neither gives chords, the bass rests, and the panel says so.
+- A song with no click may need beat corrections before its parts line up. Check the first and last bars of each section.
+- Listen before a show. Preview a few sections, then check the whole song.
+
+The drum and bass samples are CC0, so they need no attribution. The [sample notice](app/src/renderer/src/song/band/NOTICE.md) lists the libraries and the files used.
 
 ## Stage mode
 
-Prepare the song or playlist, check the output and arm MIDI as needed, then choose **Enter stage mode** in Performance. Stage mode fills the window with larger lyrics and transport buttons. It keeps MIDI status and faults visible, hides setup/mixer/editor controls, and disables seeking, rewind and chord popups. It does not arm MIDI or change the song BPM. The stage view stays active across automatic playlist transitions.
+Choose **Enter stage mode** in Performance. The window fills with large lyrics and transport buttons, and MIDI status and faults stay visible. Setup, the mixer, editors, seeking, rewind and chord popups are locked, and Escape or clicking outside does not exit.
 
-**Play/Pause**, **Stop playback** and **Panic / stop MIDI** remain accessible. Panic pauses playback/the set, clears queued MIDI and disarms cues using the existing cleanup rules. It cannot reverse commands already received by a pedal. Use **Exit stage mode** to seek, edit, change the mix or reconnect/rearm; Escape and outside clicks do not accidentally unlock the stage view. Leaving the Performance screen resets stage mode.
+- **Play/Pause** and **Stop playback** stay available.
+- **Panic / stop MIDI** pauses playback, clears queued MIDI and disarms. It cannot undo commands a pedal already received.
+- **Exit stage mode** unlocks everything. Leaving the Performance screen also exits.
+- Stage mode does not arm MIDI or change the BPM, and it stays on across playlist songs.
 
-In the desktop app, active stage playback requests system/display sleep prevention. Pausing, finishing the set, exiting stage mode or leaving Performance releases it. Requests renew during playback and expire after 15 seconds without renewal; closing the window or a renderer crash also clears them. The browser build reports that sleep prevention is unavailable. This does not override deliberate sleep, lid-close behavior or system power policy.
+On the desktop, playback in stage mode keeps the computer and display awake. It lets go on pause, at the end of the set, on exit or if the app closes. It does not override a closed lid or a deliberate sleep.
 
-Desktop power integration uses Electron’s [powerSaveBlocker](https://www.electronjs.org/docs/latest/api/power-save-blocker) with `prevent-display-sleep`; the lease tests use a mocked OS API, not a physical sleep/wake test.
+## Audience display
+
+The audience display is a second window for the lyrics, chords or PDF page, on a projector or a second screen. The performer keeps the controls on the main screen. Find **Audience display** under the performance controls.
+
+- **Open audience display** opens the window. Choose **Show on** first: the window fills that display with no title bar, and the app remembers the choice. If the display is not connected, the window opens on the main screen instead, and it moves to the display when the display is plugged back in. Unplugging the display mid-show moves the window to the main screen and does not stop playback.
+- **Close audience display** closes it. Closing the audience window, or the performance window, never stops or changes playback.
+- It shows the line on screen in large text, with its chords above and the next line below. It also shows the song title and **Next:** the next song of the playlist. A PDF chart on screen shows the same page. Lyrics follow playback with their own clock, so they stay in step after a seek, a loop, a speed change or a gapless join, without the performer's screen sending updates every frame.
+- **Show chords** hides or shows the chord row. **Text size** and **Rotation** (0, 90, 180 or 270 degrees, for a screen mounted sideways) are kept on this computer. **Black between songs** blanks the screen while the song is stopped at its start, which covers the time between songs of a set and before a song is played. **Blackout** hides everything. Blackout is not kept after a restart; the other choices are.
+- With no song on screen the window shows the app's name. Until the performance screen has sent it anything, and while blackout is on, the window is black.
+- An untimed chart (a plain text or a ChordPro song with no timestamps) is shown as its text from the top and does not follow the song. PDF annotations (pen, highlighter and text) stay on the performer's screen.
+
+In the browser build there is no second window or display list. **Open audience display** opens a pop-up with the same view. The browser cannot place a pop-up on a chosen display, so move the pop-up to the audience screen and press F11 to fill it. Allow pop-ups for the site. PDF charts need the desktop app.
+
+## Band sync
+
+Band sync lets bandmates follow the song on their own phones or tablets over the same Wi-Fi or Ethernet network. It is off until you start it.
+
+- **Start:** in Song → Performance, open **Band sync on this network**. Choose the network address and a port (8787 by default), then **Start band sync**. Only private network addresses are listed.
+- **Join:** the panel shows the address (for example `http://192.168.1.20:8787/`), a QR code and a six-digit PIN. A bandmate opens the address or scans the code, types the PIN, and sees the song, lyrics and chords following your playback. Each bandmate can change the text size and transpose on their own device; that changes nothing for anyone else.
+- **New PIN** disconnects every bandmate and asks for the PIN again. **Stop band sync** disconnects everyone. The sync is off the next time the app opens.
+- **Allow followers to play, pause and stop** is off by default. When it is on, a bandmate's play or pause runs as if you pressed the same action on a pedal. A stop needs a second press within 0.6 s, as a double-press binding does, so a stray tap cannot end a song.
+- Bandmates never load songs, read your library or touch files, and they hear no audio. The sync sends the song's text and the playback clock only.
+- A phone that drops off the network (a locked screen, a Wi-Fi gap) reconnects by itself, without the PIN, while the sync is still on.
+
+### Security
+
+- The sync listens on the one address you choose, and only private network addresses are offered. It is never open on the internet, and it is not a relay.
+- The traffic is **not encrypted**. The six-digit PIN is the only protection. Use band sync on a network you trust, not a shared café, hotel or venue network, and stop it when the set is over.
+- Five wrong PINs from one device lock that device out for a minute. Each later lock-out is longer, up to 15 minutes. A bandmate's session lasts 12 hours and ends when the PIN changes or the sync stops.
+- The app refuses any frame over a few kilobytes, anything it does not expect, and any action other than play, play or pause, and stop.
+- Your firewall may ask whether to let the app accept incoming connections. Allow it only on a private network.
+
+## Troubleshooting
+
+- **Nothing reaches the pedal.** Check that **Send cues** is on, the right output is selected and the channel matches the pedal. Use **Send MIDI now** to test one command.
+- **"N late MIDI commands dropped" notice.** A stall (a busy window, a slow driver) never disarms the song. A program change, controller or SysEx more than 250 ms late is dropped instead of played out of place, late clock pulses are skipped, and the schedule re-syncs to the audio. Note-offs are always sent. The notice shows where it happened, and the dropped commands are counted in Diagnostics. Check the pedal if a patch looks wrong.
+- **Bluetooth: "late messages dropped".** A Bluetooth command that is more than 250 ms late when it reaches the radio is dropped, counted under the Bluetooth status and never closes the link. The link closes only on a write error, a write timeout or a Bluetooth disconnect, and it then reconnects automatically.
+- **Cues stopped and the output disarmed.** This now only happens when timing cannot recover: the scheduler worker failed, the audio clock stopped advancing, three re-syncs happened within five seconds, or the output disconnected. Queued commands are cleared and audio keeps playing. Check the pedal, rearm and choose where to resume.
+- **Bluetooth closed by itself.** A write that waits more than 250 ms, or takes more than a second, closes the connection and is not retried, because the pedal may already have got it.
+- **Tempo jumps.** Turn **Send MIDI Clock** off and use the one-time tempo command.
+- **A pedal answers the wrong command.** Two pedals share a channel, or the pedal is on OMNI. Give each its own channel.
+- **A looper stops by itself.** Pause and panic only release channels that sent notes, because blanket CC 64 is the GP-180 looper Stop.
+- **USB output silent after the Mac sleeps.** The app requests the system's MIDI ports again on wake, and if the pedal came back as a new device the cues stay disarmed until you arm them again.
+- **USB editor does not connect.** Connect the powered pedal by USB and use **Look for the pedal**. Make sure its MIDI input allows USB and close other MIDI apps.
+- **Bug reports.** **Copy diagnostic report** and **Save log** in Diagnostics include Bluetooth state, write and notification counts and MIDI traffic. The **Bluetooth clock timing** and **Reset timing counters** controls show queue lateness.
+
+## Limits
+
+- Timing is best effort. The cue scheduler runs in its own worker. USB and system MIDI cues are handed to Web MIDI up to a second ahead with exact timestamps, so a busy window cannot delay them; Bluetooth cues are held about 120 ms ahead because Bluetooth cannot timestamp on the receiving side. Delivery still goes through Web MIDI or Bluetooth and the operating system. A queued command is not an acknowledgement from the pedal.
+- The app cannot read a pedal's channel, routing or state. Missed commands are never reconstructed.
+- Playlist joins are gapless only when the next song is ready in time. Otherwise there is a short gap, and a notice says so.
+- Audio is stretched or pitch-shifted only by [speed and pitch](#speed-and-pitch). The metronome is never stretched.
+- Audio outputs, speed and pitch, gapless joins and multitrack import are not yet tested on hardware.
+- Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.
+- Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
+- Bluetooth editor management and RTP-MIDI are not supported.

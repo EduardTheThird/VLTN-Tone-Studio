@@ -83,8 +83,9 @@ export function SongScreen() {
         <TabsContent value="tone" className="flex min-h-0 flex-col">
           <ToneMatchPanel />
         </TabsContent>
-        <TabsContent value="performance" className="flex min-h-0 flex-col">
-          <PerformancePanel />
+        {/* Kept mounted on the other tabs: a set or song playing on Performance keeps playing (and can be edited) while hidden. */}
+        <TabsContent value="performance" forceMount hidden={tab !== "performance"} className="flex min-h-0 flex-col">
+          <PerformancePanel shown={tab === "performance"} />
         </TabsContent>
       </Tabs>
     </div>

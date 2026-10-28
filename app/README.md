@@ -36,7 +36,7 @@ Electron is pinned to 43.x because Chromium 152 (Electron 44) breaks WebMIDI Sys
 
 Bluetooth MIDI is available for Performance cues, MIDI clock and transport input. Bluetooth editor management is disabled: `useDevice.connect('bluetooth')` rejects before changing the active editor connection. Use USB to inspect or manage the pedal. GP-150 and GP-180 USB editor writes are enabled normally; this does not imply physical write validation.
 
-The Bluetooth store retains completed-write, notification and decoded-message counts for the last session after cleanup. Diagnostics includes these counts in copied and saved reports. See [Bluetooth support and hardware results](../BLUETOOTH.md), [Performance](../PERFORMANCE.md) and [saved songs](../SONG-LIBRARY.md).
+The Bluetooth store retains completed-write, notification and decoded-message counts for the last session after cleanup. Diagnostics includes these counts in copied and saved reports. See [Bluetooth and hardware results](../PERFORMANCE.md#bluetooth), [Performance](../PERFORMANCE.md) and [saved songs](../SONG-LIBRARY.md).
 
 ## Song performance
 
@@ -44,7 +44,7 @@ Performance combines synchronized stem playback, a song-following metronome, a l
 
 The desktop library copies source/stem PCM and stores charts, lyrics and options under unique song IDs. Portable `.tar.gz` backups stream through the main process with a versioned SHA-256 manifest; restore validates the archive and atomically adds new copies with remapped song/playlist IDs. Playlists advance sequentially; loads between songs are not gapless. MIDI port/configuration preferences are global, while cue arming stays session-only. Note-release resets are restricted to channels where this session sent note messages, since CC64 is a GP-180 looper command.
 
-See [the Performance guide and generic screenshots](../PERFORMANCE.md), [storage and playlist behaviour](../SONG-LIBRARY.md) and [review/follow-up notes](../docs/PR-REVIEW.md).
+See [the Performance guide](../PERFORMANCE.md) and [storage and playlist behaviour](../SONG-LIBRARY.md).
 
 ## Commands
 | Command | What it does |

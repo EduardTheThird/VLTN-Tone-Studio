@@ -16,6 +16,11 @@ files:
   - out/**/*
   - package.json
   - "!**/*.map"
+  # Lyrics transcription runs in the renderer, which Vite bundles into out/. transformers also lists the Node-only sharp and
+  # onnxruntime-node (hundreds of MB of native binaries) as dependencies; nothing ever loads them, so keep them out of the package.
+  - "!node_modules/sharp/**"
+  - "!node_modules/@img/**"
+  - "!node_modules/onnxruntime-node/**"
 asarUnpack: []
 # Valeton's SnapTone test signal, only when it is in the git-ignored fixtures folder: local `npm run dist`
 # builds carry it, CI releases don't (the file isn't ours to publish).

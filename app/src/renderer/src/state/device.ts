@@ -464,7 +464,11 @@ export const useDevice = create<DeviceState>((set, get) => {
     },
 
     async connect(mode = get().mode, opts) {
-      if (mode === "bluetooth") throw new Error("Bluetooth editor management is disabled. Connect by USB to manage the pedal. Bluetooth MIDI remains available for performance controls.");
+      if (mode === "bluetooth")
+        throw new Error(
+          "Bluetooth editor management is disabled. Connect by USB to manage the pedal. " +
+          "Bluetooth MIDI remains available for performance controls.",
+        );
       if (get().status === "connecting") return;
       stopWatch();
       userDisconnected = false;
