@@ -63,12 +63,30 @@ describe("parseChordName", () => {
     expect(parseChordName("Bm7b5")).toMatchObject({ root: 11, quality: "dim", seventh: "half-dim" });
   });
 
-  it("returns null for a rest and for anything it cannot read", () => {
+  it.each([
+    { name: "C6", root: 0, quality: "major", seventh: "none" },
+    { name: "Cadd9", root: 0, quality: "major", seventh: "none" },
+    { name: "C9", root: 0, quality: "major", seventh: "dom7" },
+    { name: "Am9", root: 9, quality: "minor", seventh: "min7" },
+    { name: "Cmaj9", root: 0, quality: "major", seventh: "maj7" },
+    { name: "G7sus4", root: 7, quality: "sus4", seventh: "dom7" },
+    { name: "Em11", root: 4, quality: "minor", seventh: "min7" },
+    { name: "C7#9", root: 0, quality: "major", seventh: "dom7" },
+    { name: "Bbm6", root: 10, quality: "minor", seventh: "none" },
+    { name: "Dm(maj7)", root: 2, quality: "minor", seventh: "maj7" },
+    { name: "A13", root: 9, quality: "major", seventh: "dom7" },
+    { name: "F#ø", root: 6, quality: "dim", seventh: "half-dim" },
+  ])("derives $name from its suffix", ({ name, ...expected }) => {
+    expect(parseChordName(name)).toMatchObject(expected);
+  });
+
+  it("returns null for a rest, an unparseable root, or an unparseable slash bass", () => {
     expect(parseChordName("N")).toBeNull();
     expect(parseChordName("")).toBeNull();
     expect(parseChordName("Hello")).toBeNull();
-    expect(parseChordName("Cxyz")).toBeNull();
+    expect(parseChordName("H7")).toBeNull();
     expect(parseChordName("Am/")).toBeNull();
+    expect(parseChordName("C/H")).toBeNull();
   });
 });
 

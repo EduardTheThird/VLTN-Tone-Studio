@@ -40,7 +40,7 @@ export interface ChordAtBeat {
 
 const NATURAL_PITCH: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
-/** The suffix after the root, as the chart and the chord detector write it. Anything else is not parsed. */
+/** The common suffixes, as the chart and the chord detector write them. Other suffixes are derived by `deriveQuality` and `deriveSeventh`. */
 const SUFFIXES = new Map<string, { quality: ChordQuality; seventh: ChordSeventh }>([
   ["", { quality: "major", seventh: "none" }],
   ["maj", { quality: "major", seventh: "none" }],
@@ -71,17 +71,47 @@ function pitchClass(letter: string, accidental: string | undefined): number {
   return ((((NATURAL_PITCH[letter] ?? 0) + (accidental === "#" ? 1 : accidental === "b" ? -1 : 0)) % 12) + 12) % 12;
 }
 
-/** Parses a chord name such as `Am7`, `F#m`, `Bb7`, `D/F#` or `E5`. Returns null for `N`, an unknown suffix, or anything else. */
+/**
+ * The quality of a suffix that is not in the table. Alterations such as `#9` or `b13` do not change it. A sus anywhere wins, then
+ * diminished and augmented, then minor, and anything else is major.
+ */
+function deriveQuality(suffix: string): ChordQuality {
+  if (suffix.includes("sus2")) return "sus2";
+  if (suffix.includes("sus")) return "sus4";
+  if (/^(dim|°|ø)/.test(suffix)) return "dim";
+  if (/^(aug|\+)/.test(suffix)) return "aug";
+  if (/^(m|-)/.test(suffix) && !suffix.startsWith("maj")) return "minor";
+  if (suffix === "5") return "power";
+  return "major";
+}
+
+/**
+ * The seventh of a suffix that is not in the table. Half-diminished and diminished sevenths come first, then a major seventh (`maj7`,
+ * `M9`, `(maj7)`). Any other 7, 9, 11 or 13 is a dominant seventh, or a minor seventh on a minor chord. `add` tones and a bare 6 have none.
+ */
+function deriveSeventh(suffix: string, quality: ChordQuality): ChordSeventh {
+  if (/m7b5|ø/.test(suffix)) return "half-dim";
+  if (/dim7|°7/.test(suffix)) return "dim7";
+  if (/(maj|M)(7|9|11|13)/.test(suffix)) return "maj7";
+  if (/7|9|11|13/.test(suffix.replace(/add\d+/g, ""))) return quality === "minor" ? "min7" : "dom7";
+  return "none";
+}
+
+/**
+ * Parses a chord name such as `Am7`, `F#m`, `Bb7`, `D/F#`, `E5`, `C9` or `Dm(maj7)`. A suffix that is not in the table is derived from its
+ * text. Returns null for `N`, for a name whose root (or slash bass) does not parse, and for anything else that is not a chord name.
+ */
 export function parseChordName(name: string): ParsedChord | null {
   const text = name.trim();
   if (text === "N") return null;
   const match = CHORD_NAME.exec(text);
   if (!match) return null;
-  const suffix = SUFFIXES.get(match[3]);
-  if (!suffix) return null;
+  const known = SUFFIXES.get(match[3]);
+  const quality = known?.quality ?? deriveQuality(match[3]);
+  const seventh = known?.seventh ?? deriveSeventh(match[3], quality);
   const root = pitchClass(match[1], match[2]);
   const bass = match[4] ? pitchClass(match[4], match[5]) : root;
-  return { root, quality: suffix.quality, seventh: suffix.seventh, bass, name: text };
+  return { root, quality, seventh, bass, name: text };
 }
 
 /**
