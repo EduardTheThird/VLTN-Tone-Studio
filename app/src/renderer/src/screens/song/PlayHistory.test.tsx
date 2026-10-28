@@ -37,6 +37,27 @@ it("lists the latest plays, newest first, with the song titles", () => {
   expect(items[1]).toContain("Alpha");
 });
 
+it("names the playlist and set of a play made in a set, and shows nothing for an unknown set or no set", () => {
+  const playlists = [{ id: "p", name: "Gig", songs: ["a", "b"], sets: [{ id: "s1", name: "Set 1", start: 0 }] }];
+  useSongLibrary.setState({
+    index: {
+      ...emptyLibrary(),
+      songs,
+      playlists,
+      history: [
+        { songId: "a", at: "2026-06-01T20:00:00.000Z" },
+        { songId: "a", at: "2026-06-01T21:00:00.000Z", setId: "gone" },
+        { songId: "b", at: "2026-06-02T20:00:00.000Z", setId: "s1" },
+      ],
+    },
+  });
+  render(<PlayHistory />);
+  const [known, unknown, none] = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+  expect(known).toContain("Gig › Set 1 · ");
+  expect(unknown.split("·")).toHaveLength(2);
+  expect(none.split("·")).toHaveLength(2);
+});
+
 it("needs a name before a playlist can be made from the history", async () => {
   render(<PlayHistory />);
   const make = screen.getByText("Create playlist from history") as HTMLButtonElement;

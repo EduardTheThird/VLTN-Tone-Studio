@@ -12,6 +12,7 @@ export function PlayHistory() {
   const [name, setName] = useState("");
   const [confirm, setConfirm] = useState(false);
   const titles = new Map(library.index.songs.map((song) => [song.id, song.title]));
+  const setNames = new Map(library.index.playlists.flatMap((playlist) => (playlist.sets ?? []).map((set) => [set.id, `${playlist.name} › ${set.name}`])));
   const plays = library.index.history;
   const recent = plays.slice(-RECENT).reverse();
   return (
@@ -22,11 +23,18 @@ export function PlayHistory() {
       </div>
       {!recent.length && <p className="text-sm">Songs are added here once they have played to their halfway point.</p>}
       <ol className="space-y-1 text-sm">
-        {recent.map((entry, i) => (
-          <li key={`${entry.at}-${i}`}>
-            {titles.get(entry.songId) ?? "Removed song"} <span className="text-silkscreen-3">· {new Date(entry.at).toLocaleString()}</span>
-          </li>
-        ))}
+        {recent.map((entry, i) => {
+          const setName = entry.setId ? setNames.get(entry.setId) : undefined;
+          return (
+            <li key={`${entry.at}-${i}`}>
+              {titles.get(entry.songId) ?? "Removed song"}{" "}
+              <span className="text-silkscreen-3">
+                · {setName && `${setName} · `}
+                {new Date(entry.at).toLocaleString()}
+              </span>
+            </li>
+          );
+        })}
       </ol>
       <div className="flex flex-wrap items-center gap-2">
         <input type="date" aria-label="History since" className={field} value={since} onChange={(e) => setSince(e.target.value)} />
