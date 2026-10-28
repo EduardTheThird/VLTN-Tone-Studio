@@ -24,6 +24,8 @@ import { SongKey } from "./SongKey";
 import { ChordVoicings } from "./ChordVoicings";
 import { PerformanceTransport } from "./PerformanceTransport";
 import { PerformanceMix } from "./PerformanceMix";
+import { BandPanel, BandPanelButton } from "./BandPanel";
+import { MissingPartsNotice } from "./MissingPartsNotice";
 import { TrackImport } from "./TrackImport";
 import { SongLoudnessControl } from "./SongLoudnessControl";
 import { loudnessFromOptions, normalisingGain, type SongLoudness } from "@/song/audio/loudness";
@@ -435,6 +437,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         <Button variant="outline" onClick={() => setStage(true)}>
           Enter stage mode
         </Button>
+        <MissingPartsNotice songKey={key} sections={sectionList} playing={playing || library.playlistPlaying} />
         <PerformanceTransport
           session={session}
           stage={stage}
@@ -470,6 +473,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         />
         <TrackImport playing={playing || library.playlistPlaying} />
         <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
+        <BandPanelButton />
         <PerformanceMix
           session={session}
           stems={stems}
@@ -481,6 +485,21 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           onTrackInfo={setTrackInfo}
         />
         <PerformanceOutputs player={player} />
+        <BandPanel
+          songKey={key}
+          playing={playing || library.playlistPlaying}
+          chart={chart}
+          chords={chords}
+          sections={sectionList}
+          beats={beats}
+          bpm={bpm}
+          firstBeat={firstBeat}
+          onMetronome={(tempo, first) => {
+            setBpm(tempo);
+            setFirstBeat(first);
+          }}
+          getPosition={() => session.position}
+        />
         <SectionEditor
           sections={sectionList}
           onSections={setSectionList}
