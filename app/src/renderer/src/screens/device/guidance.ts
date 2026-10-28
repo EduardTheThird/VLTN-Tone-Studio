@@ -105,7 +105,8 @@ const AUDIO_GROUP_STEPS = (h: DeviceHostStatus | null) => {
 };
 const win11Steps = (pedal: string, app: string) => [
   `Plug the ${pedal} in, switch it on and close ${app}.`,
-  `When the pedal is idle, open Device Manager and find ${pedal} MIDI. Leave its Audio and USB Composite Device entries alone.${pedal === 'GP-180' ? ' Confirm hardware ID VID_84EF&PID_0188&MI_03.' : ''}`,
+  `When the pedal is idle, open Device Manager and find ${pedal} MIDI. Leave its Audio and USB Composite Device entries alone.` +
+  `${pedal === 'GP-180' ? ' Confirm hardware ID VID_84EF&PID_0188&MI_03.' : ''}`,
   "Right-click it, choose Update driver, then Browse my computer, then Let me pick from a list.",
   "Untick Show compatible hardware, pick USB Audio Device and finish.",
   "Unplug the pedal, plug it back in, then press Check again.",
@@ -131,10 +132,12 @@ function base(kind: ViewKind, led: Led, chip: string, state: string, detail: str
 
 /** Windows has the pedal on USB but a driver the app can't talk through (or none): the Windows 11 driver guide. */
 function driverView(h: DeviceHostStatus | null, pedal: string, attached: DeviceKey | null, silent = false): ConnectionView {
-  return base("driver", "fault", "Check driver", "Possible driver problem", silent ? "Its MIDI port opened, but the pedal did not answer" : "Found on USB, but Windows shows no MIDI port for it", {
+  return base("driver", "fault", "Check driver", "Possible driver problem",
+    silent ? "Its MIDI port opened, but the pedal did not answer" : "Found on USB, but Windows shows no MIDI port for it", {
     note:
       h?.driver && MIDI2_DRIVER_RE.test(h.driver)
-        ? `Windows attached its USB MIDI 2.0 driver. This may explain the failed connection, but does not establish the cause. Diagnostics describes the legacy driver workaround. Change only the MIDI interface when the pedal is not in use; leave its audio interface alone.`
+        ? `Windows attached its USB MIDI 2.0 driver. This may explain the failed connection, but does not establish the cause. ` +
+          `Diagnostics describes the legacy driver workaround. Change only the MIDI interface when the pedal is not in use; leave its audio interface alone.`
         : 'Windows has no working MIDI driver on the pedal. Giving it the "USB Audio Device" driver fixes it. Follow the steps under Diagnostics.',
     steps: win11Steps(pedal, vendorApps(attached).editor),
     action: "show-fix",
@@ -153,7 +156,8 @@ export function connectionView(input: GuidanceInput): ConnectionView {
   const lastSeen = input.lastConnectedAt ? `Last connected ${formatWhen(input.lastConnectedAt, input.now)}` : "Not connected yet";
 
   if (status === "connected")
-    return base("connected", "on", mode === "mock" ? "Simulated" : mode === "bluetooth" ? "Bluetooth" : "USB", mode === "mock" ? "Simulated pedal" : mode === "bluetooth" ? "Connected over Bluetooth" : "Connected over USB", "since", {
+    return base("connected", "on", mode === "mock" ? "Simulated" : mode === "bluetooth" ? "Bluetooth" : "USB",
+      mode === "mock" ? "Simulated pedal" : mode === "bluetooth" ? "Connected over Bluetooth" : "Connected over USB", "since", {
       action: "none",
       actionLabel: null,
       statusText: `Pedal settings apply on the ${pedal} as you change them`,
@@ -170,7 +174,9 @@ export function connectionView(input: GuidanceInput): ConnectionView {
   if (status !== "error" || !error) {
     const lost = input.disconnectReason === "lost";
     return base("disconnected", "off", "Not connected", "Not connected", lost ? "The pedal went away (unplugged or switched off)" : lastSeen, {
-      note: mode === "bluetooth" ? "Bluetooth editor management is disabled. Connect by USB to manage the pedal. Bluetooth MIDI remains available for performance controls." : `${plugIn(pedal)} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
+      note: mode === "bluetooth"
+        ? "Bluetooth editor management is disabled. Connect by USB to manage the pedal. Bluetooth MIDI remains available for performance controls."
+        : `${plugIn(pedal)} ${desktop ? "The app connects by itself. " : ""}Values below are from the last connection and can't be changed until then.`,
       statusText: `${pedal} not connected`,
     });
   }
@@ -270,8 +276,16 @@ export function connectionView(input: GuidanceInput): ConnectionView {
       }
       const webOnWindows = platform === "web" && /Windows/i.test(h?.os ?? "");
       const legacyDriver = !!h?.driver && GENERIC_DRIVER_RE.test(h.driver);
-      const gp180BtHint = attached === "gp180" ? " If Bluetooth is connected, check the pedal's Global Settings > MIDI Settings > MIDI In Source: set it to 'Mixed' or 'USB Only' (if set to 'BT Only', the pedal ignores USB MIDI). Also disconnect Bluetooth Audio or close Valeton Suite on mobile if active." : "";
-      const windowsNote = `The MIDI port opened but the handshake received no reply. Another app may hold the port: close ${vendorApps(attached).editor}, any DAW, and other MIDI browser pages. ${legacyDriver ? 'The legacy USB audio driver is already installed. After a driver change, reconnect USB and restart Tone Studio. If it stays silent, check whether the official editor detects the pedal, then close it before retrying here.' + gp180BtHint : 'Then reconnect USB. If it still fails, review the Windows 11 driver steps under Diagnostics.' + gp180BtHint}`;
+      const gp180BtHint = attached === "gp180"
+        ? " If Bluetooth is connected, check the pedal's Global Settings > MIDI Settings > MIDI In Source:" +
+          " set it to 'Mixed' or 'USB Only' (if set to 'BT Only', the pedal ignores USB MIDI)." +
+          " Also disconnect Bluetooth Audio or close Valeton Suite on mobile if active."
+        : "";
+      const windowsNote = `The MIDI port opened but the handshake received no reply. Another app may hold the port: close ${vendorApps(attached).editor}, any DAW, ` +
+        `and other MIDI browser pages. ${legacyDriver
+          ? 'The legacy USB audio driver is already installed. After a driver change, reconnect USB and restart Tone Studio. ' +
+            'If it stays silent, check whether the official editor detects the pedal, then close it before retrying here.' + gp180BtHint
+          : 'Then reconnect USB. If it still fails, review the Windows 11 driver steps under Diagnostics.' + gp180BtHint}`;
       return base("silent", "warn", "No answer", "The pedal doesn't answer", "Its MIDI port opened, but nothing came back", {
         note:
           platform === "win32"

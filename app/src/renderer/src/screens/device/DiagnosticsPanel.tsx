@@ -226,14 +226,17 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
         </CollapsibleTrigger>
         <CollapsibleContent className="pr-3 pb-3 pl-[38px] text-sm text-silkscreen-2">
           <p className="mb-2 text-pretty">
-            A missing port or unanswered handshake can be caused by the Windows MIDI driver. When the pedal is idle, try the legacy "USB Audio Device" driver on its MIDI interface only. This changes Windows, not pedal presets or firmware; it may interrupt the connection.
+            A missing port or unanswered handshake can be caused by the Windows MIDI driver.
+            When the pedal is idle, try the legacy "USB Audio Device" driver on its MIDI interface only.
+            This changes Windows, not pedal presets or firmware; it may interrupt the connection.
           </p>
           <ol className="mb-2.5 flex list-decimal flex-col gap-1 pl-[18px] marker:font-semibold marker:text-silkscreen-3">
             <li>
               Plug the {pedal} in, switch it on and close {apps.editor} and any browser with a MIDI page open.
             </li>
             <li>
-              Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find {pedal} MIDI, not its Audio or USB Composite Device entry. For GP-180, confirm Details → Hardware Ids contains VID_84EF, PID_0188 and MI_03.
+              Right-click Start and open <b className="font-semibold text-silkscreen">Device Manager</b>. Find {pedal} MIDI, not its Audio or USB Composite Device entry.
+              For GP-180, confirm Details → Hardware Ids contains VID_84EF, PID_0188 and MI_03.
             </li>
             <li>
               Right-click it, choose <b className="font-semibold text-silkscreen">Update driver</b>, then <b className="font-semibold text-silkscreen">Browse my computer</b>, then{" "}
@@ -258,7 +261,10 @@ export function DiagnosticsPanel({ guideOpen, onGuideOpenChange, guideRef }: Pro
               Community driver tool on GitHub
             </Button>
           </div>
-          <p className="mt-2 text-xs text-silkscreen-3">Review the community script before running it: its fix mode also changes device-install policies and tries generic USB class IDs. Those operations are broader than selecting this pedal’s MIDI interface.</p>
+          <p className="mt-2 text-xs text-silkscreen-3">
+            Review the community script before running it: its fix mode also changes device-install policies and tries generic USB class IDs.
+            Those operations are broader than selecting this pedal’s MIDI interface.
+          </p>
         </CollapsibleContent>
       </Collapsible>
 

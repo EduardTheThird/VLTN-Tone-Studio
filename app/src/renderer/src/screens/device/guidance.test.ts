@@ -83,7 +83,11 @@ describe("connectionView", () => {
   });
 
   it('distinguishes an open but silent MIDI 2.0 port from a missing port', () => {
-    const v = err('busy', { platform: 'win32', portName: 'GP-180 MIDI', hostStatus: host({ usb: [{ vendorId: 0x84ef, productId: 0x0188, product: 'GP-180' }], driver: 'USBMidi2' }) });
+    const v = err('busy', {
+      platform: 'win32',
+      portName: 'GP-180 MIDI',
+      hostStatus: host({ usb: [{ vendorId: 0x84ef, productId: 0x0188, product: 'GP-180' }], driver: 'USBMidi2' }),
+    });
     expect(v.detail).toContain('port opened');
     expect(v.note).toContain('does not establish the cause');
     expect(v.statusText).toContain('GP-180');
