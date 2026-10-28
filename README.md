@@ -13,7 +13,7 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 
 <a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/latest"><img src="https://img.shields.io/github/v/release/EduardTheThird/VLTN-Tone-Studio?style=flat-square&label=release&color=4c8eda" alt="Latest release"></a>
 <a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases"><img src="https://img.shields.io/github/downloads/EduardTheThird/VLTN-Tone-Studio/total?style=flat-square&label=downloads&color=2ea043" alt="Total downloads"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/EduardTheThird/VLTN-Tone-Studio/release.yml?style=flat-square&label=build" alt="Release build status"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/actions/workflows/fork-release.yml"><img src="https://img.shields.io/github/actions/workflow/status/EduardTheThird/VLTN-Tone-Studio/fork-release.yml?style=flat-square&label=build" alt="Release build status"></a>
 <a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/commits"><img src="https://img.shields.io/github/last-commit/EduardTheThird/VLTN-Tone-Studio?style=flat-square&label=updated" alt="Last commit"></a>
 <img src="https://img.shields.io/badge/NAM-TONE3000-8a2be2?style=flat-square" alt="NAM captures from TONE3000">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License: GPL-3.0"></a>
