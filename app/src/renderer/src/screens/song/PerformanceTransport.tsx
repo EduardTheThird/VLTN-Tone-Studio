@@ -107,6 +107,8 @@ export function PerformanceTransport({
   const clock = useSession(session, (s) => s.clock);
   const duration = player?.duration ?? 0;
   const { firstBeat, onFirstBeat } = metronome;
+  // The set is playing, but this song's entry asks to wait for Play, so nothing has started it yet.
+  const waitingForPlay = library.playlistPlaying && !playing && library.queueOverrides[library.position]?.autoplay === false;
   return (
     <>
       {queued && (
@@ -155,7 +157,14 @@ export function PerformanceTransport({
             Stop playlist
           </Button>
           <span>
-            {library.busy ? "Loading next song..." : library.playlistPlaying ? "Playlist playing" : "Playlist paused"} · Next:{" "}
+            {library.busy
+              ? "Loading next song..."
+              : !library.playlistPlaying
+                ? "Playlist paused"
+                : waitingForPlay
+                  ? "Playlist waiting for Play"
+                  : "Playlist playing"}{" "}
+            · Next:{" "}
             {library.index.songs.find((s) => s.id === library.queue[library.position + 1])?.title ?? "End of set"}
           </span>
           <p className="w-full text-sm text-silkscreen-3">
@@ -174,7 +183,7 @@ export function PerformanceTransport({
           disabled={!player || !!parseError || library.busy}
           onClick={() => (playing ? session.pause() : starting ? session.cancelStart() : session.startPlayback())}
         >
-          {playing ? "Pause" : starting ? "Cancel start" : queued && library.queue.length > 1 ? "Play playlist" : "Play song"}
+          {playing ? "Pause" : starting ? "Cancel start" : queued && (library.queue.length > 1 || !!library.playingSet) ? "Play playlist" : "Play song"}
         </Button>
         <Button variant="outline" disabled={!player || stage} onClick={() => void session.seek(0)}>
           Rewind

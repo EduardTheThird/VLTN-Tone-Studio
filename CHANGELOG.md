@@ -43,6 +43,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- Pausing a set and pressing Play resumes the set. A set of one song showed "Play song" and resumed as a single song, so the play was recorded without its set. The button reads "Play playlist" while a set is loaded and paused, and Pause, a seek, Next and Previous keep the set, so a play counted afterwards records it.
+- The Performance status reads "Playlist waiting for Play" when the next song's entry asks to wait for Play, instead of "Playlist playing", until Play starts it.
 - Autoscroll follows playback once the text chart replaces a PDF chart. The lyrics stayed at the top until the text size changed, because the row positions were measured while the PDF was shown. They are now measured again when the text chart appears and when the lyrics change size, such as after a font loads or the window resizes.
 - Bluetooth MIDI keeps messages sent with the same timestamp in order. A message sent a moment after an earlier one, with a timestamp the earlier one was still waiting for, could be written first. Messages now wait in timestamp order, so a pedal's program-change pair arrives in the order the song sent it.
 - MIDI timecode now runs to a playlist join. The outgoing song sent its quarter frames only until the hand-over, about half a second early, so a receiver freewheeled across the join. Its quarter frames now run to the join, and the next song's full frame follows them. A pause, stop or seek straight after the join stops them.

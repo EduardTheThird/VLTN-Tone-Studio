@@ -70,7 +70,7 @@ Each upcoming queue entry has the same two settings, which apply to that queue o
 
 ## History
 
-A song is counted as played once it reaches its halfway point. Each play records the time and, when it was part of a set, the set. The count and the last-played time follow. The history keeps the most recent 500 plays. You can clear it, or make a playlist from the plays since a date. Removing a song removes its plays from the history.
+A song is counted as played once it reaches its halfway point. Each play records the time and, when it was part of a set, the set. History shows the playlist and set next to a play made in a set, for example "Gig › Set 1". The count and the last-played time follow. The history keeps the most recent 500 plays. You can clear it, or make a playlist from the plays since a date. Removing a song removes its plays from the history.
 
 ## Format versions
 

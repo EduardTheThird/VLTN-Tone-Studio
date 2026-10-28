@@ -324,6 +324,43 @@ it("resumes a set loaded paused when Play is pressed in Performance, and the set
   expect(mock.send.mock.calls.some((c) => c[0][0] === 252)).toBe(false);
 });
 
+it("resumes a one-song set as the set after Pause and a seek, so a play counted afterwards records the set", async () => {
+  const recordPlayBefore = useSongLibrary.getState().recordPlay;
+  const recordPlay = vi.fn();
+  useSongLibrary.setState({ recordPlay });
+  try {
+    await useSongLibrary.getState().playPlaylist([first.id], 0, "set-1");
+    render(<PerformancePanel />);
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    fireEvent.click(screen.getByText("Pause"));
+    expect(screen.getByText("Play playlist")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByText("Rewind"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Play playlist"));
+    });
+    await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+    expect(useSongLibrary.getState().playlistPlaying).toBe(true);
+    mock.players.at(-1)!.position = 6;
+    await waitFor(() => expect(recordPlay).toHaveBeenCalledWith(first.id, "set-1"), { timeout: 3000 });
+  } finally {
+    useSongLibrary.setState({ recordPlay: recordPlayBefore });
+  }
+});
+
+it("says the set is waiting for Play when an entry asks to wait, and plays once Play starts it", async () => {
+  await useSongLibrary.getState().playPlaylist([first.id, second.id], 0, undefined, [{ autoplay: false }, null]);
+  render(<PerformancePanel />);
+  await waitFor(() => expect(screen.getByText(/Playlist waiting for Play/)).toBeTruthy());
+  expect(mock.players.at(-1)?.isPlaying).toBe(false);
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play playlist"));
+  });
+  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  expect(screen.getByText(/Playlist playing/)).toBeTruthy();
+});
+
 it("keeps a USB output armed and selected across an unprepared join, with clock on and no MIDI Stop", async () => {
   mock.fetch.mockImplementationOnce(async () => file());
   mock.fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));

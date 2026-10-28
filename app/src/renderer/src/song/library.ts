@@ -391,7 +391,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       queueOverrides: overridesFor(queue.length, overrides),
       position,
       playlistPlaying: playlist,
-      playingSet: playlist ? get().playingSet : null,
+      // Walking a set by hand (Next or Previous while paused) keeps its id; a single song loaded by hand has none.
+      playingSet: playlist || queue.length > 1 ? get().playingSet : null,
       notice: readyNotice(song.title, next.skipped),
     });
     useSong.setState({

@@ -492,6 +492,13 @@ describe("the queue, play recording and organisation", () => {
     expect(useSongLibrary.getState().error).toBe("");
     expect(useSongLibrary.getState().playingSet).toBeNull();
   });
+
+  it("keeps the playing set when Next song is pressed while the set is paused", async () => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved] });
+    reset({ index: { ...emptyLibrary(), songs: [saved] }, queue: [saved.id, saved.id], playlistPlaying: false, playingSet: "set-1", busy: false });
+    await useSongLibrary.getState().skipPlaylist(1);
+    expect(useSongLibrary.getState()).toMatchObject({ position: 1, playlistPlaying: false, playingSet: "set-1" });
+  });
 });
 
 it("removing a song that is only queued drops it from the queue and leaves the playing set alone", async () => {

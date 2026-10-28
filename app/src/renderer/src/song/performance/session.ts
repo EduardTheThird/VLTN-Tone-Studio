@@ -993,9 +993,10 @@ export class PerformanceSession {
   startPlayback = () => {
     const library = useSongLibrary.getState();
     const { player, queued } = this.state;
-    if (queued && library.queue.length > 1) {
+    // A set of one song is still a set: it resumes as the set, so a play counted afterwards records it.
+    if (queued && (library.queue.length > 1 || !!library.playingSet)) {
       if (player && player.position >= player.duration) {
-        if (library.position === library.queue.length - 1) void library.playPlaylist(library.queue);
+        if (library.position === library.queue.length - 1) void library.playPlaylist(library.queue, 0, library.playingSet ?? undefined);
         else {
           library.resumePlaylist();
           void library.advancePlaylist();
