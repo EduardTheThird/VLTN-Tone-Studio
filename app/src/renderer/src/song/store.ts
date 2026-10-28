@@ -4,8 +4,9 @@ import { decodeSong } from "./decode";
 import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
 import { detectMissingParts, type MissingParts } from "./band/detect";
 import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
-import { importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
+import { freeTrackKeys, importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
 import { mergeTrackDefaults, type TrackInfo } from "./tracks";
+import { USER_TRACKS_MAX } from "@shared/song-library";
 import { getSetting, performanceKey, setSetting } from "./performance/settings";
 import type { PcmAudio, SongState, SplitInfo, Stems } from "./types";
 
@@ -32,10 +33,74 @@ export interface SongStore extends SongState {
    * happens while a set is walked; the Band panel calls it when it opens, while stopped.
    */
   checkMissingParts(): void;
+  /**
+   * Adds the rendered drum and bass parts as user tracks, replacing the earlier generated part of the same kind. Returns the notices
+   * for what was refused; an empty list means the parts were added. Refused while playing, like addTracks.
+   */
+  applyGeneratedParts(parts: GeneratedAudio, options?: { playing?: boolean }): string[];
+  /** Removes the generated drum and bass tracks and nothing else. Returns notices, as applyGeneratedParts does. */
+  removeGeneratedParts(options?: { playing?: boolean }): string[];
+}
+
+/** The rendered parts, at the song's length and rate. Each one is optional, so a part can be replaced without the other. */
+export interface GeneratedAudio {
+  drums?: PcmAudio;
+  bass?: PcmAudio;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const PLAYING_NOTICE = "Stop playback to add tracks. Adding tracks rebuilds the song's audio, which would stop the music.";
+export const GENERATED_PLAYING_NOTICE = "Stop playback to change the generated parts. Changing them rebuilds the song's audio, which would stop the music.";
+const BUSY_NOTICE = "Wait for the song to finish loading or splitting before generating parts.";
+
+/** The kinds of generated part, and what each one is called in the mixer. Bass follows the song's pitch shift; drums do not. */
+const PART_KINDS = ["drums", "bass"] as const;
+type PartKind = (typeof PART_KINDS)[number];
+const PART_TRACK: Record<PartKind, { name: string; transpose: boolean }> = {
+  drums: { name: "Drums (generated)", transpose: false },
+  bass: { name: "Bass (generated)", transpose: true },
+};
+
+/**
+ * The track key of each generated part. A user track's key must be `track<n>` to be saved in the library, so the key cannot say
+ * which part a track is. The song's options keep that record instead (`generatedParts`).
+ */
+type GeneratedKeys = Partial<Record<PartKind, string>>;
+
+function optionsOf(key: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(getSetting(key, ":options") || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // A damaged options entry is treated as empty; the next save writes a clean one.
+  }
+  return {};
+}
+
+function generatedKeysOf(options: Record<string, unknown>): GeneratedKeys {
+  const saved = options.generatedParts;
+  if (!saved || typeof saved !== "object") return {};
+  const keys: GeneratedKeys = {};
+  for (const kind of PART_KINDS) {
+    const value = (saved as Record<string, unknown>)[kind];
+    if (typeof value === "string") keys[kind] = value;
+  }
+  return keys;
+}
+
+/**
+ * Writes the generated keys and the pitch choices of the song's tracks into its options. A removed track loses its pitch choice, so a
+ * track that takes its key later starts from the default for its part.
+ */
+function saveGeneratedKeys(key: string, removed: readonly string[], tracks: Record<string, TrackInfo>, generated: GeneratedKeys): void {
+  const options = optionsOf(key);
+  const follows: Record<string, unknown> = options.followsPitch && typeof options.followsPitch === "object" ? { ...options.followsPitch } : {};
+  for (const track of removed) delete follows[track];
+  const next: Record<string, unknown> = { ...options, followsPitch: follows };
+  if (Object.keys(generated).length) next.generatedParts = generated;
+  else delete next.generatedParts;
+  setSetting(key, ":options", mergeTrackDefaults(JSON.stringify(next), tracks));
+}
 /** The imported tracks of a song's stems, with their info, so a split can keep them. */
 const userTracksOf = (stems: Stems | null, tracks: Record<string, TrackInfo>): [string, PcmAudio][] =>
   Object.entries(stems ?? {}).filter((entry): entry is [string, PcmAudio] => entry[1] !== undefined && tracks[entry[0]]?.kind === "user");
@@ -88,7 +153,12 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       });
       const onProgress = (p: SeparationProgress) => {
         if (ctrl.signal.aborted) return;
-        set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction, bytes: p.bytes } : { kind: "splitting", fraction: p.fraction, backend: p.backend, pass: p.pass, passes: p.passes } });
+        set({
+          status:
+            p.stage === "model"
+              ? { kind: "model", fraction: p.fraction, bytes: p.bytes }
+              : { kind: "splitting", fraction: p.fraction, backend: p.backend, pass: p.pass, passes: p.passes },
+        });
       };
       try {
         const res = await deps.separate(source.audio, { model, quality }, onProgress, ctrl.signal);
@@ -124,7 +194,8 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         reference: source ? source.audio.channels[0].length : null,
       });
       // The song may have changed while the files were read. Then the tracks belong to nothing, so they are not added.
-      if (get().source !== source || get().stems !== stems) return [...outcome.notices, "The song changed while the tracks were imported, so they were not added."];
+      if (get().source !== source || get().stems !== stems)
+        return [...outcome.notices, "The song changed while the tracks were imported, so they were not added."];
       if (!outcome.tracks.length) return outcome.notices;
       // A song saved without a split plays its source as one track. Once tracks are imported it must stay one, or the player would play
       // only the imported tracks and the mixer would lose the song.
@@ -160,6 +231,80 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       const { source, stems, missingParts } = get();
       if (!source || !stems || missingParts || !(stems.drums || stems.bass)) return;
       set({ missingParts: detectMissingParts(source.audio, stems) });
+    },
+
+    applyGeneratedParts(parts, options) {
+      // Refused, not queued, as addTracks is: the caller shows the notice, and the music keeps playing.
+      if (options?.playing) return [GENERATED_PLAYING_NOTICE];
+      const { source, stems, tracks, status } = get();
+      const pending: { kind: PartKind; part: PcmAudio }[] = [];
+      for (const kind of PART_KINDS) {
+        const part = parts[kind];
+        if (part) pending.push({ kind, part });
+      }
+      if (!pending.length) return [];
+      if (["decoding", "model", "splitting"].includes(status.kind)) return [BUSY_NOTICE];
+      if (!source) return ["Load a song before generating parts."];
+      // The parts play beside the song, so they must line up with it sample for sample.
+      const frames = source.audio.channels[0].length;
+      for (const { kind, part } of pending) {
+        if (part.sampleRate !== source.audio.sampleRate || part.channels.some((channel) => channel.length !== frames)) {
+          return [`The generated ${kind} part does not match the song's length, so it was not added.`];
+        }
+      }
+
+      const key = performanceKey(source);
+      const previous = generatedKeysOf(optionsOf(key));
+      // A song without a split keeps its source as one track, as addTracks does. Otherwise the player would lose the song.
+      const sourceTrack = Object.keys(stems ?? {}).length ? null : source.audio;
+      const nextStems: Stems = sourceTrack ? { source: sourceTrack } : { ...stems };
+      const nextTracks: Record<string, TrackInfo> = sourceTrack ? { source: { kind: "source", name: "Song" } } : { ...tracks };
+      // Only the kinds being applied are replaced. A part that is not in this call keeps its generated track.
+      const removed: string[] = [];
+      for (const { kind } of pending) {
+        const old = previous[kind];
+        if (old) {
+          delete nextStems[old];
+          delete nextTracks[old];
+          removed.push(old);
+        }
+      }
+      const keys = freeTrackKeys(Object.keys(nextStems), pending.length);
+      if (keys.length < pending.length) return [`A song can hold up to ${USER_TRACKS_MAX} imported tracks, so the generated parts were not added.`];
+
+      const generated: GeneratedKeys = { ...previous };
+      pending.forEach(({ kind, part }, index) => {
+        const trackKey = keys[index];
+        nextStems[trackKey] = part;
+        nextTracks[trackKey] = { kind: "user", name: PART_TRACK[kind].name, bus: "main", transpose: PART_TRACK[kind].transpose };
+        generated[kind] = trackKey;
+      });
+      saveGeneratedKeys(key, removed, nextTracks, generated);
+      set({ stems: nextStems, tracks: nextTracks });
+      return [];
+    },
+
+    removeGeneratedParts(options) {
+      if (options?.playing) return [GENERATED_PLAYING_NOTICE];
+      const { source, stems, tracks, status } = get();
+      if (!source || !stems) return [];
+      if (["decoding", "model", "splitting"].includes(status.kind)) return [BUSY_NOTICE];
+      const key = performanceKey(source);
+      const previous = generatedKeysOf(optionsOf(key));
+      const generated = Object.values(previous).filter((value): value is string => Boolean(value));
+      if (!generated.length) return [];
+      const nextStems: Stems = { ...stems };
+      const nextTracks: Record<string, TrackInfo> = { ...tracks };
+      for (const track of generated) {
+        delete nextStems[track];
+        delete nextTracks[track];
+      }
+      saveGeneratedKeys(key, generated, nextTracks, {});
+      // A song whose only track left is its source goes back to the unsplit state it had before the parts were added.
+      const remaining = Object.keys(nextStems);
+      if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === "source")) set({ stems: null, tracks: {} });
+      else set({ stems: nextStems, tracks: nextTracks });
+      return [];
     },
 
     setTrackInfo(key, patch) {

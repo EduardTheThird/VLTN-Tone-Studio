@@ -1,0 +1,121 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_BAND_SETTINGS, planSections } from "./arrangement";
+import type { BeatGrid } from "./beat-grid";
+import { DRUM_PITCHES } from "./note";
+import { parseChordName, type ChordAtBeat } from "./harmony";
+import { previewWindow, runBandJob, runBandPreview, transferables, type BandRequest } from "./band-job";
+import type { BassSample, DrumLayer, SampleSet } from "./samples";
+import type { PcmAudio } from "../types";
+
+const RATE = 44100;
+const SONG_SECONDS = 16;
+
+const constant = (value: number, length: number): PcmAudio => ({
+  sampleRate: RATE,
+  channels: [new Float32Array(length).fill(value), new Float32Array(length).fill(value)],
+});
+
+/** Stub samples for every drum piece the styles use, and three bass roots. The audio is constant, so the tests look at timing and level. */
+function stubSamples(): SampleSet {
+  const drums = new Map<number, DrumLayer[]>();
+  for (const pitch of DRUM_PITCHES) drums.set(pitch, [{ velocity: [1, 127], nominal: 100, transpose: 0, audio: constant(0.1, RATE / 4) }]);
+  const bass: BassSample[] = [36, 48, 60].map((root) => ({ root, layer: "p", velocity: [1, 127], audio: constant(0.1, RATE) }));
+  return { drums, bass };
+}
+
+/** A steady grid: 120 BPM, one beat every half second, a downbeat on the first beat. */
+function steadyGrid(seconds = SONG_SECONDS): BeatGrid {
+  const beats: number[] = [];
+  for (let time = 0; time < seconds; time += 0.5) beats.push(time);
+  return { beatsPerBar: 4, beats, downbeat: 0, bpm: 120, steady: { bpm: 120, firstBeat: 0 } };
+}
+
+function request(overrides: Partial<BandRequest> = {}): BandRequest {
+  const grid = steadyGrid();
+  const chord = parseChordName("C");
+  const harmony: ChordAtBeat[] = grid.beats.map((time, beat) => ({ beat, time, chord }));
+  return {
+    grid,
+    harmony,
+    plans: planSections([], SONG_SECONDS, DEFAULT_BAND_SETTINGS),
+    settings: DEFAULT_BAND_SETTINGS,
+    seed: 7,
+    lengthFrames: SONG_SECONDS * RATE,
+    parts: { drums: true, bass: true },
+    sampleUrls: {},
+    ...overrides,
+  };
+}
+
+describe("runBandJob", () => {
+  it("renders both parts at the song's length and returns their notes", () => {
+    const result = runBandJob(request(), stubSamples());
+    expect(result.drums?.channels[0]).toHaveLength(SONG_SECONDS * RATE);
+    expect(result.bass?.channels[1]).toHaveLength(SONG_SECONDS * RATE);
+    expect(result.notes.drums.length).toBeGreaterThan(0);
+    expect(result.notes.bass.length).toBeGreaterThan(0);
+  });
+
+  it("renders only the parts the request asks for", () => {
+    const result = runBandJob(request({ parts: { drums: false, bass: true } }), stubSamples());
+    expect(result.drums).toBeUndefined();
+    expect(result.notes.drums).toEqual([]);
+    expect(result.bass).toBeDefined();
+  });
+
+  it("gives the same audio for the same seed, and different notes for another seed", () => {
+    const first = runBandJob(request(), stubSamples());
+    const again = runBandJob(request(), stubSamples());
+    expect(again.drums?.channels[0]).toEqual(first.drums?.channels[0]);
+    expect(again.bass?.channels[0]).toEqual(first.bass?.channels[0]);
+    const other = runBandJob(request({ seed: 8 }), stubSamples());
+    expect(JSON.stringify(other.notes)).not.toEqual(JSON.stringify(first.notes));
+  });
+
+  it("reports the stages in order", () => {
+    const stages: string[] = [];
+    runBandJob(request(), stubSamples(), (stage) => stages.push(stage));
+    expect(stages).toEqual(["generating", "rendering"]);
+  });
+});
+
+describe("previewWindow", () => {
+  it("covers the bars from a downbeat exactly", () => {
+    // 4 bars of 4 beats at 0.5 s is 8 s.
+    expect(previewWindow(steadyGrid(), 4, 4)).toEqual({ start: 4, end: 12 });
+  });
+
+  it("starts at the time asked for, and ends on the grid's beats", () => {
+    expect(previewWindow(steadyGrid(), 1.2, 1)).toEqual({ start: 1.2, end: 3.5 });
+  });
+
+  it("extends the grid past its last beat", () => {
+    // Beats run to 15.5 s. Four beats past 15.0 land at 17.0 s.
+    expect(previewWindow(steadyGrid(), 15, 1)).toEqual({ start: 15, end: 17 });
+  });
+});
+
+describe("runBandPreview", () => {
+  it("renders the bars from a time, moved to start at 0, and nothing outside them", () => {
+    const result = runBandPreview(request(), stubSamples(), 4, 4);
+    expect(result.drums?.channels[0]).toHaveLength(8 * RATE);
+    for (const note of [...result.notes.drums, ...result.notes.bass]) {
+      expect(note.time).toBeGreaterThanOrEqual(0);
+      expect(note.time).toBeLessThan(8);
+    }
+  });
+});
+
+describe("transferables", () => {
+  it("lists each rendered channel's buffer once", () => {
+    const result = runBandJob(request(), stubSamples());
+    const buffers = transferables(result);
+    expect(buffers).toHaveLength(4);
+    expect(buffers).toContain(result.drums?.channels[0].buffer);
+    expect(buffers).toContain(result.bass?.channels[1].buffer);
+  });
+
+  it("lists nothing for a result without audio", () => {
+    expect(transferables({ notes: { drums: [], bass: [] } })).toEqual([]);
+  });
+});

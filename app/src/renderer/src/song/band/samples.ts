@@ -158,7 +158,12 @@ export function sampleFileUrls(): Map<string, string> {
 /** Decodes the files a few at a time, so the codec does not start every worker at once. */
 const DECODE_BATCH = 8;
 
-async function decodeAll(files: string[], urls: Map<string, string>): Promise<Map<string, PcmAudio>> {
+/** Every sample file the map names, once each. */
+function sampleFiles(): string[] {
+  return [...new Set([...Object.values(SAMPLE_MAP.drums).flatMap((e) => e.layers.map((l) => l.file)), ...SAMPLE_MAP.bass.map((s) => s.file)])];
+}
+
+async function decodeAll(files: string[], urls: ReadonlyMap<string, string>, decode: (file: ArrayBuffer) => Promise<PcmAudio>): Promise<Map<string, PcmAudio>> {
   const decoded = new Map<string, PcmAudio>();
   for (let i = 0; i < files.length; i += DECODE_BATCH) {
     const batch = files.slice(i, i + DECODE_BATCH);
@@ -168,7 +173,7 @@ async function decodeAll(files: string[], urls: Map<string, string>): Promise<Ma
         if (!url) throw new Error(`Sample ${file} is missing from the app.`);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Could not load sample ${file}.`);
-        return decodeTrack(await response.arrayBuffer());
+        return decode(await response.arrayBuffer());
       }),
     );
     batch.forEach((file, index) => decoded.set(file, audio[index]));
@@ -176,19 +181,24 @@ async function decodeAll(files: string[], urls: Map<string, string>): Promise<Ma
   return decoded;
 }
 
+/**
+ * Fetches and decodes every sample from `urls`, without caching. `decode` is the codec: the renderer passes `decodeTrack`, which runs a
+ * worker, and the band worker passes `decodeFlac`, which it can call directly. Either way the caller decides what to keep.
+ */
+export async function loadSampleSetWith(urls: ReadonlyMap<string, string>, decode: (file: ArrayBuffer) => Promise<PcmAudio>): Promise<SampleSet> {
+  const decoded = await decodeAll(sampleFiles(), urls, decode);
+  return sampleSetFrom(SAMPLE_MAP, (file) => {
+    const audio = decoded.get(file);
+    if (!audio) throw new Error(`Sample ${file} was not decoded.`);
+    return audio;
+  });
+}
+
 let loaded: Promise<SampleSet> | undefined;
 
 /** Loads and decodes every sample once, then returns the same set on every call. A failed load is retried on the next call. */
 export function loadSampleSet(): Promise<SampleSet> {
-  loaded ??= (async () => {
-    const files = [...new Set([...Object.values(SAMPLE_MAP.drums).flatMap((e) => e.layers.map((l) => l.file)), ...SAMPLE_MAP.bass.map((s) => s.file)])];
-    const decoded = await decodeAll(files, sampleFileUrls());
-    return sampleSetFrom(SAMPLE_MAP, (file) => {
-      const audio = decoded.get(file);
-      if (!audio) throw new Error(`Sample ${file} was not decoded.`);
-      return audio;
-    });
-  })().catch((error: unknown) => {
+  loaded ??= loadSampleSetWith(sampleFileUrls(), decodeTrack).catch((error: unknown) => {
     loaded = undefined;
     throw error;
   });

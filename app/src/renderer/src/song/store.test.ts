@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { STEM_NAMES } from "@shared/host/song";
+import { USER_TRACKS_MAX } from "@shared/song-library";
 import type { Separation, SeparationProgress } from "./stems/engine";
 import type { SplitChoice } from "./stems/options";
-import type { PcmAudio } from "./types";
+import type { PcmAudio, Stems } from "./types";
 // vi.mock is hoisted above this import: the real engine needs a worker and the model; the store gets fakes.
-import { createSongStore, PLAYING_NOTICE, type SongDeps } from "./store";
+import { createSongStore, GENERATED_PLAYING_NOTICE, PLAYING_NOTICE, type SongDeps } from "./store";
+import { getSetting, performanceKey } from "./performance/settings";
 
 vi.mock("./stems/engine", () => ({ separateStems: vi.fn() }));
 
@@ -296,5 +298,127 @@ describe("imported tracks in the song store", () => {
     useSong.getState().setTrackInfo("track0", { muteGroups: [2] });
     expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Click.wav", muteGroups: [2] });
     expect(useSong.getState().stems?.track0).toBe(pcm);
+  });
+});
+
+describe("generated parts in the song store", () => {
+  beforeEach(() => localStorage.clear());
+
+  const importFake: SongDeps["importTracks"] = async (files, options) => ({
+    tracks: files.map((f, i) => ({
+      key: `track${options.taken.length + i}`,
+      file: `track${options.taken.length + i}.flac`,
+      kind: "user",
+      name: f.name,
+      bus: "main",
+      pcm: audio(),
+    })),
+    source: options.reference === null ? audio() : null,
+    notices: [],
+  });
+
+  const options = (source: { name: string; audio: PcmAudio } | null) => JSON.parse(getSetting(performanceKey(source), ":options") || "{}");
+
+  it("adds the drums and bass as user tracks, and only the bass follows the pitch shift", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    const source = useSong.getState().source;
+    expect(useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() })).toEqual([]);
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["source", "track0", "track1"]);
+    expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Drums (generated)", bus: "main", transpose: false });
+    expect(useSong.getState().tracks.track1).toMatchObject({ kind: "user", name: "Bass (generated)", bus: "main", transpose: true });
+    expect(options(source).followsPitch).toEqual({ track0: false, track1: true });
+    expect(options(source).generatedParts).toEqual({ drums: "track0", bass: "track1" });
+  });
+
+  it("applying twice replaces the generated tracks instead of adding more", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["source", "track0", "track1"]);
+    expect(Object.keys(useSong.getState().tracks)).toEqual(["source", "track0", "track1"]);
+  });
+
+  it("applying one part leaves the other part's generated track alone", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    const bass = audio();
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass });
+    useSong.getState().applyGeneratedParts({ drums: audio() });
+    expect(useSong.getState().tracks.track1).toMatchObject({ name: "Bass (generated)" });
+    expect(useSong.getState().stems?.track1).toBe(bass);
+  });
+
+  it("keeps a split song's stems and imported tracks, and removes only the generated tracks", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("song.mp3"));
+    await useSong.getState().split();
+    await useSong.getState().addTracks([file("Keys.wav")]);
+    // Track numbers are given out lowest first, so the generated parts take track0 and track1, and the imported track stays track6.
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    expect(useSong.getState().tracks.track0).toMatchObject({ name: "Drums (generated)" });
+    expect(useSong.getState().removeGeneratedParts()).toEqual([]);
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(expect.arrayContaining(["drums", "vocals", "track6"]));
+    expect(Object.keys(useSong.getState().stems ?? {})).not.toContain("track0");
+    expect(Object.keys(useSong.getState().stems ?? {})).not.toContain("track1");
+    expect(Object.keys(useSong.getState().tracks)).not.toContain("track0");
+    expect(useSong.getState().tracks.track6).toMatchObject({ name: "Keys.wav" });
+  });
+
+  it("an unsplit song goes back to its source alone when its generated parts are removed", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("song.mp3"));
+    useSong.getState().applyGeneratedParts({ drums: audio() });
+    useSong.getState().removeGeneratedParts();
+    expect(useSong.getState().stems).toBeNull();
+    expect(useSong.getState().tracks).toEqual({});
+    expect(options(useSong.getState().source).generatedParts).toBeUndefined();
+  });
+
+  it("removing keeps an imported track beside the source", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("song.mp3"));
+    await useSong.getState().addTracks([file("Keys.wav")]);
+    useSong.getState().applyGeneratedParts({ drums: audio() });
+    useSong.getState().removeGeneratedParts();
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["source", "track0"]);
+    expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Keys.wav" });
+  });
+
+  it("refuses to add or remove parts while playing, and leaves the song as it was", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    expect(useSong.getState().applyGeneratedParts({ drums: audio() }, { playing: true })).toEqual([GENERATED_PLAYING_NOTICE]);
+    expect(useSong.getState().stems).toBeNull();
+    useSong.getState().applyGeneratedParts({ drums: audio() });
+    const before = useSong.getState().stems;
+    expect(useSong.getState().removeGeneratedParts({ playing: true })).toEqual([GENERATED_PLAYING_NOTICE]);
+    expect(useSong.getState().stems).toBe(before);
+  });
+
+  it("refuses a part whose length or sample rate is not the song's", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    const longer = useSong.getState().applyGeneratedParts({ drums: audio(5) });
+    expect(longer).toEqual([expect.stringContaining("does not match the song's length")]);
+    const otherRate = useSong.getState().applyGeneratedParts({ bass: { ...audio(), sampleRate: 48000 } });
+    expect(otherRate).toEqual([expect.stringContaining("does not match the song's length")]);
+    expect(useSong.getState().stems).toBeNull();
+  });
+
+  it("needs a loaded song before it adds parts", () => {
+    const useSong = store();
+    expect(useSong.getState().applyGeneratedParts({ drums: audio() })).toEqual(["Load a song before generating parts."]);
+  });
+
+  it("refuses when the song already has the most imported tracks", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    const full: Stems = { source: audio() };
+    for (let i = 0; i < USER_TRACKS_MAX; i++) full[`track${i}`] = audio();
+    useSong.setState({ stems: full });
+    expect(useSong.getState().applyGeneratedParts({ drums: audio() })).toEqual([expect.stringContaining("can hold up to 32")]);
+    expect(useSong.getState().stems).toBe(full);
   });
 });
