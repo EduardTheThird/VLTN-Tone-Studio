@@ -36,6 +36,20 @@ describe("style data", () => {
     expect(style.fills.bar.length).toBeGreaterThanOrEqual(2);
   });
 
+  it.each(styles.map((style) => [style.id, style] as const))("%s has lean and busy hits at every energy from 2 to 5", (_id, style) => {
+    for (const energy of ENERGIES.filter((level) => level >= 2)) {
+      const hits = style.grooves[energy].flatMap((groove) => groove.hits);
+      expect(
+        hits.some((hit) => hit.tier === "lean"),
+        `energy ${energy} lean`,
+      ).toBe(true);
+      expect(
+        hits.some((hit) => hit.tier === "busy"),
+        `energy ${energy} busy`,
+      ).toBe(true);
+    }
+  });
+
   it.each(styles.map((style) => [style.id, style] as const))("%s keeps half fills in their second half", (_id, style) => {
     const middle = (style.meter.beatsPerBar * style.meter.stepsPerBeat) / 2;
     for (const [i, fill] of style.fills.half.entries()) {

@@ -1,7 +1,7 @@
 // Helpers that write the style data compactly. A pattern is one bar, given lane by lane: each lane is a drum voice, the steps it
 // plays and a velocity. Nothing here runs during playback; it only builds the data once, when the module loads.
 
-import type { DrumGroove, DrumHit, DrumPattern } from "./types";
+import type { DrumGroove, DrumHit, DrumPattern, Tier } from "./types";
 
 /** Velocities used across the styles. Accents 100 to 115, normal 85 to 95, ghosts 30 to 45 (checked in styles.test.ts). */
 export const VEL = {
@@ -19,8 +19,8 @@ export const ODD_SIXTEENTHS = [1, 3, 5, 7, 9, 11, 13, 15];
 export const SIXTEENTHS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 export interface HitFlags {
-  /** Dropped at low complexity. */
-  optional?: boolean;
+  /** Plays from a complexity level: "lean" from 1/3, "busy" from 2/3. Untagged hits always play. */
+  tier?: Tier;
   /** Dropped when ghost notes are off. */
   ghost?: boolean;
 }

@@ -1,9 +1,9 @@
 // Drum generation: turns the beat grid, the section plans and the style's grooves into timed drum notes. Pure: no audio and no store.
 // Every bar is placed on the real beats, so a part follows tempo drift. Humanising is not done here; that is a later layer.
 //
-// Random draws are kept independent of the musical choices where it matters. A fill is always drawn, whether it is on or not, and
-// the optional-note drops of each bar use their own generator. So turning one fill on changes only that bar, and the rest of the
-// song keeps its notes.
+// Random draws are kept independent of the musical choices where it matters. A fill is always drawn, whether it is on or not, so
+// turning one fill on changes only that bar and the rest of the song keeps its notes. Complexity does not draw at all: a hit's tier
+// decides whether it plays, so every bar of a groove is the same at a fixed complexity.
 
 import type { BandSettings, SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
@@ -34,9 +34,16 @@ export function planIndexAt(plans: readonly SectionPlan[], time: number): number
   return plans.findIndex((plan) => time >= plan.start && time < plan.end);
 }
 
-/** A seed for one bar's own generator, mixed from the song seed and the bar's index. */
-function barSeed(seed: number, bar: number): number {
-  return (Math.imul(seed, 0x9e3779b1) ^ Math.imul(bar + 1, 0x85ebca6b)) >>> 0;
+/** A "lean" hit plays from this complexity up. */
+export const LEAN_FROM = 1 / 3;
+/** A "busy" hit plays from this complexity up. */
+export const BUSY_FROM = 2 / 3;
+
+/** Whether a hit plays at this complexity. Untagged hits are the core of the groove and always play. */
+export function playsAt(hit: DrumHit, complexity: number): boolean {
+  if (hit.tier === "busy") return complexity >= BUSY_FROM;
+  if (hit.tier === "lean") return complexity >= LEAN_FROM;
+  return true;
 }
 
 /** Time of a point `fraction` of the way through beat `beat`. The last beat has no following beat, so it uses the interval before it. */
@@ -138,10 +145,9 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     }
     afterFill = filled;
 
-    const hitRandom = createRandom(barSeed(seed, k));
     for (const hit of hits) {
       if (hit.ghost && !settings.ghostNotes) continue;
-      if (hit.optional && settings.complexity < 0.5 && hitRandom.next() >= settings.complexity * 2) continue;
+      if (!playsAt(hit, settings.complexity)) continue;
 
       const scaled = hit.step * perBar;
       const beatOffset = Math.floor(scaled / groove.steps);

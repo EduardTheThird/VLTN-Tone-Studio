@@ -1,7 +1,7 @@
 // Shuffle: a triplet grid of three steps to a beat. The swing is in the pattern itself, so the first and third triplet steps carry
 // the ride and the middle one is left out. Walking bass fits this style.
 
-import { CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE, CLOSED_HAT } from "../note";
+import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE } from "../note";
 import { VEL, bar, groove, lane } from "./notation";
 import type { Style } from "./types";
 
@@ -19,8 +19,24 @@ export const SHUFFLE: Style = {
       groove("Sparse shuffle", 12, lane(KICK, VEL.normal, [0, 6]), lane(SIDE_STICK, VEL.normal, [3, 9]), lane(CLOSED_HAT, VEL.hat, [0, 6])),
     ],
     2: [
-      groove("Hat quarters", 12, lane(KICK, VEL.normal, [0, 6]), lane(SNARE, VEL.normal, [3, 9]), lane(CLOSED_HAT, VEL.hat, [0, 3, 6, 9])),
-      groove("Swung ride", 12, lane(KICK, VEL.normal, [0, 6]), lane(SNARE, VEL.normal, [3, 9]), lane(RIDE, VEL.hat, SWUNG)),
+      groove(
+        "Hat quarters",
+        12,
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [8], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [3, 9]),
+        lane(CLOSED_HAT, VEL.hat, [0, 3, 6, 9]),
+        lane(SNARE, VEL.ghost, [2], { ghost: true, tier: "busy" }),
+      ),
+      groove(
+        "Swung ride",
+        12,
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(SNARE, VEL.normal, [3, 9]),
+        lane(RIDE, VEL.hat, [2, 3, 5, 8, 9, 11]),
+        lane(RIDE, VEL.accent, [0, 6], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [8], { ghost: true, tier: "busy" }),
+      ),
     ],
     3: [
       groove(
@@ -28,46 +44,64 @@ export const SHUFFLE: Style = {
         12,
         lane(KICK, VEL.normal, [0, 6]),
         lane(SNARE, VEL.normal, [3, 9]),
-        lane(SNARE, VEL.ghost, [8, 11], { ghost: true }),
         lane(RIDE, VEL.hat, SWUNG),
+        lane(KICK, VEL.normal, [8], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [11], { ghost: true, tier: "busy" }),
       ),
-      groove("Kick on the and of three", 12, lane(KICK, VEL.normal, [0, 6, 9]), lane(SNARE, VEL.normal, [3, 9]), lane(RIDE, VEL.hat, SWUNG)),
+      groove(
+        "Kick on the and of three",
+        12,
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(SNARE, VEL.normal, [3, 9]),
+        lane(RIDE, VEL.hat, SWUNG),
+        lane(KICK, VEL.normal, [9], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [5], { ghost: true, tier: "busy" }),
+      ),
     ],
     4: [
       groove(
         "Ride accents",
         12,
-        lane(KICK, VEL.normal, [0, 6, 8]),
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [8], { tier: "lean" }),
         lane(SNARE, VEL.normal, [3, 9]),
-        lane(RIDE, VEL.accent, [0, 6]),
-        lane(RIDE, VEL.normal, [2, 3, 5, 8, 9, 11]),
+        lane(RIDE, VEL.hat, [2, 3, 5, 8, 9, 11]),
+        lane(RIDE, VEL.accent, [0, 6], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [5, 11], { ghost: true, tier: "busy" }),
       ),
       groove(
         "Open hat on the end",
         12,
-        lane(KICK, VEL.normal, [0, 6, 9]),
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [9], { tier: "lean" }),
         lane(SNARE, VEL.normal, [3, 9]),
         lane(RIDE, VEL.hat, SWUNG),
-        lane(OPEN_HAT, VEL.hat, [11]),
+        lane(OPEN_HAT, VEL.hat, [11], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [2, 8], { ghost: true, tier: "busy" }),
       ),
     ],
     5: [
       groove(
         "Busy shuffle",
         12,
-        lane(KICK, VEL.normal, [0, 2, 6, 8]),
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [2, 8], { tier: "lean" }),
         lane(SNARE, VEL.normal, [3, 9]),
         lane(RIDE, VEL.hat, SWUNG),
-        lane(OPEN_HAT, VEL.hat, [11]),
+        lane(OPEN_HAT, VEL.hat, [11], { tier: "lean" }),
+        lane(SNARE, VEL.ghost, [5], { ghost: true, tier: "busy" }),
+        lane(HIGH_TOM, VEL.normal, [7], { tier: "busy" }),
       ),
       groove(
         "Ghosts and crash",
         12,
-        lane(CRASH, VEL.crash, [0]),
-        lane(KICK, VEL.normal, [0, 6, 8, 11]),
+        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [8], { tier: "lean" }),
+        lane(KICK, VEL.normal, [11], { tier: "busy" }),
         lane(SNARE, VEL.normal, [3, 9]),
-        lane(SNARE, VEL.ghost, [5, 11], { ghost: true }),
+        lane(SNARE, VEL.ghost, [5, 11], { ghost: true, tier: "busy" }),
         lane(RIDE, VEL.hat, SWUNG),
+        lane(CRASH, VEL.crash, [0], { tier: "busy" }),
       ),
     ],
   },

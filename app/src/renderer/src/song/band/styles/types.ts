@@ -16,6 +16,9 @@ export interface Meter {
   stepsPerBeat: 4 | 3 | 2;
 }
 
+/** How much a hit adds: "lean" embellishments and "busy" extra notes. */
+export type Tier = "lean" | "busy";
+
 /** One drum hit inside a bar. `step` counts from 0 at the bar's downbeat. */
 export interface DrumHit {
   step: number;
@@ -23,8 +26,11 @@ export interface DrumHit {
   pitch: number;
   /** 1 to 127. */
   velocity: number;
-  /** Dropped at low complexity. */
-  optional?: boolean;
+  /**
+   * Which complexity level plays it. Untagged hits are the core of the groove and always play. A "lean" hit plays from complexity
+   * 1/3 up, and a "busy" hit from 2/3 up. See playsAt in ../drums.ts.
+   */
+  tier?: Tier;
   /** A ghost note: dropped when ghost notes are off. */
   ghost?: boolean;
 }

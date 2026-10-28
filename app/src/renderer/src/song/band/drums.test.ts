@@ -161,11 +161,47 @@ describe("generateDrums", () => {
     expect(count(5)).toBeGreaterThan(count(1) * 1.5);
   });
 
-  it("drops optional hits at low complexity", () => {
+  it("adds notes as complexity rises, for the same seed and energy", () => {
     const grid = steady(64);
-    const busy = generateDrums(grid, [plan(0, 64, { style: "funk", energy: 5, fill: false })], settingsFor({ complexity: 1 }), 14);
-    const sparse = generateDrums(grid, [plan(0, 64, { style: "funk", energy: 5, fill: false })], settingsFor({ complexity: 0 }), 14);
-    expect(sparse.length).toBeLessThan(busy.length);
+    for (const energy of [3, 4, 5] as const) {
+      const count = (complexity: number) => generateDrums(grid, [plan(0, 64, { style: "funk", energy, fill: false })], settingsFor({ complexity }), 14).length;
+      expect(count(0), `energy ${energy} at 0`).toBeLessThan(count(0.5));
+      expect(count(0.5), `energy ${energy} at 0.5`).toBeLessThan(count(1));
+    }
+  });
+
+  it("gives every bar of one groove variation the same notes at a fixed complexity", () => {
+    // Rock at energy 5 has two grooves. Each bar must match one of them, so at most two distinct bar shapes, and the last bar (the
+    // ending) is left out. Crash on section starts is off so the first bar has no extra crash.
+    const grid = steady(64);
+    for (const complexity of [0, 0.5, 1]) {
+      const notes = generateDrums(grid, [plan(0, 64, { style: "rock", energy: 5, fill: false })], settingsFor({ complexity }), 31);
+      const shapes = new Set<string>();
+      for (let start = 0; start < 60; start += 4) {
+        const bar = notes
+          .filter((note) => note.time >= grid.beats[start] - 1e-9 && note.time < grid.beats[start + 4] - 1e-9)
+          .map((note) => `${Math.round((note.time - grid.beats[start]) * 1000)}:${note.pitch}:${note.velocity}`);
+        shapes.add(bar.join(","));
+      }
+      expect(shapes.size, `complexity ${complexity}`).toBeLessThanOrEqual(2);
+      expect(shapes.size, `complexity ${complexity}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the backbeat at complexity 0", () => {
+    // Rock at energy 2: the snare sits on beats 2 and 4 of every bar, whatever the complexity.
+    const grid = steady(64);
+    const notes = generateDrums(grid, [plan(0, 64, { style: "rock", energy: 2, fill: false })], settingsFor({ complexity: 0 }), 33);
+    for (let start = 0; start < 60; start += 4) {
+      expect(
+        notes.some((note) => note.pitch === SNARE && note.time === grid.beats[start + 1]),
+        `bar ${start} beat 2`,
+      ).toBe(true);
+      expect(
+        notes.some((note) => note.pitch === SNARE && note.time === grid.beats[start + 3]),
+        `bar ${start} beat 4`,
+      ).toBe(true);
+    }
   });
 
   it("is silent in the pickup before the downbeat", () => {

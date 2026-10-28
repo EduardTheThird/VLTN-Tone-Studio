@@ -1,7 +1,7 @@
 // Ballad: slow and soft. Sidestick or light snare on 3, a ride on the beat, and kicks that move only with more energy.
 
 import { CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE } from "../note";
-import { EIGHTHS, QUARTERS, VEL, bar, groove, lane } from "./notation";
+import { VEL, bar, groove, lane, EIGHTHS, QUARTERS } from "./notation";
 import type { Style } from "./types";
 
 export const BALLAD: Style = {
@@ -15,41 +15,85 @@ export const BALLAD: Style = {
       groove("Sparse ride", 16, lane(KICK, VEL.normal, [0]), lane(SIDE_STICK, VEL.normal, [8]), lane(RIDE, VEL.hat, [0, 8])),
     ],
     2: [
-      groove("Soft backbeat", 16, lane(KICK, VEL.normal, [0, 10]), lane(SNARE, VEL.normal, [8]), lane(RIDE, VEL.hat, QUARTERS)),
-      groove("Kick on the and of two", 16, lane(KICK, VEL.normal, [0]), lane(SNARE, VEL.normal, [8]), lane(RIDE, VEL.hat, [0, 8])),
+      groove(
+        "Soft backbeat",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(RIDE, VEL.hat, QUARTERS),
+        lane(RIDE, VEL.hat, [2, 6, 10, 14], { tier: "busy" }),
+      ),
+      groove(
+        "Kick on the and of two",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(RIDE, VEL.hat, [0, 8]),
+        lane(SNARE, VEL.ghost, [7], { ghost: true, tier: "busy" }),
+      ),
     ],
     3: [
-      groove("Ride quarters", 16, lane(KICK, VEL.normal, [0, 10]), lane(SNARE, VEL.normal, [8]), lane(RIDE, VEL.hat, QUARTERS)),
+      groove(
+        "Ride quarters",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(RIDE, VEL.hat, QUARTERS),
+        lane(RIDE, VEL.hat, [2, 6, 10, 14], { tier: "busy" }),
+      ),
       groove(
         "Ghost on the end",
         16,
-        lane(KICK, VEL.normal, [0, 6]),
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(SNARE, VEL.ghost, [15], { ghost: true }),
+        lane(SNARE, VEL.ghost, [15], { ghost: true, tier: "busy" }),
         lane(RIDE, VEL.hat, QUARTERS),
       ),
     ],
     4: [
-      groove("Ride eighths", 16, lane(KICK, VEL.normal, [0, 7]), lane(SNARE, VEL.normal, [8]), lane(RIDE, VEL.hat, EIGHTHS)),
+      groove(
+        "Ride eighths",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [7], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(RIDE, VEL.hat, EIGHTHS),
+        lane(KICK, VEL.normal, [15], { tier: "busy" }),
+      ),
       groove(
         "Kick on three",
         16,
-        lane(KICK, VEL.normal, [0, 4, 8]),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [4], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(SNARE, VEL.ghost, [14], { ghost: true }),
         lane(RIDE, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [14], { ghost: true, tier: "busy" }),
       ),
     ],
     5: [
-      groove("Driving ballad", 16, lane(KICK, VEL.normal, [0, 6, 8, 14]), lane(SNARE, VEL.normal, [8, 12]), lane(RIDE, VEL.hat, EIGHTHS)),
+      groove(
+        "Driving ballad",
+        16,
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [6, 14], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8, 12]),
+        lane(RIDE, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [7, 15], { ghost: true, tier: "busy" }),
+      ),
       groove(
         "Open hat ballad",
         16,
-        lane(KICK, VEL.normal, [0, 8, 10]),
-        lane(SNARE, VEL.normal, [4, 8, 12]),
-        lane(OPEN_HAT, VEL.hat, [6, 14]),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8, 12]),
+        lane(SNARE, VEL.normal, [4], { tier: "lean" }),
         lane(RIDE, VEL.hat, QUARTERS),
-        lane(CRASH, VEL.crash, [0]),
+        lane(OPEN_HAT, VEL.hat, [6, 14], { tier: "lean" }),
+        lane(CRASH, VEL.crash, [0], { tier: "busy" }),
       ),
     ],
   },

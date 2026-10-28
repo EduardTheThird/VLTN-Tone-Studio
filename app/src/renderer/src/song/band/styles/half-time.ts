@@ -1,7 +1,7 @@
 // Half-time: the backbeat sits on beat 3 only, so the groove feels half as fast as the tempo. Kicks move around the bar as energy rises.
 
 import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE } from "../note";
-import { EIGHTHS, QUARTERS, SIXTEENTHS, VEL, bar, groove, lane } from "./notation";
+import { VEL, bar, groove, lane, EIGHTHS, ODD_SIXTEENTHS, QUARTERS } from "./notation";
 import type { Style } from "./types";
 
 export const HALF_TIME: Style = {
@@ -15,28 +15,62 @@ export const HALF_TIME: Style = {
       groove("Sparse half-time", 16, lane(KICK, VEL.normal, [0]), lane(SIDE_STICK, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, [0, 8])),
     ],
     2: [
-      groove("Half-time eighths", 16, lane(KICK, VEL.normal, [0, 10]), lane(SNARE, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, EIGHTHS)),
-      groove("Half-time quarters", 16, lane(KICK, VEL.normal, [0, 6]), lane(SNARE, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),
+      groove(
+        "Half-time eighths",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(CLOSED_HAT, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [7], { ghost: true, tier: "busy" }),
+      ),
+      groove(
+        "Half-time quarters",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(CLOSED_HAT, VEL.hat, QUARTERS),
+        lane(CLOSED_HAT, VEL.hat, [7, 15], { tier: "busy" }),
+      ),
     ],
     3: [
-      groove("Half-time pulse", 16, lane(KICK, VEL.normal, [0, 6, 10]), lane(SNARE, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, EIGHTHS)),
+      groove(
+        "Half-time pulse",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6, 10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(CLOSED_HAT, VEL.hat, EIGHTHS),
+        lane(KICK, VEL.normal, [14], { tier: "busy" }),
+      ),
       groove(
         "Ghost before the end",
         16,
-        lane(KICK, VEL.normal, [0, 7]),
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [7], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(SNARE, VEL.ghost, [14], { ghost: true }),
         lane(CLOSED_HAT, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [14], { ghost: true, tier: "busy" }),
       ),
     ],
     4: [
-      groove("Half-time ride", 16, lane(KICK, VEL.normal, [0, 6, 10]), lane(SNARE, VEL.normal, [8]), lane(RIDE, VEL.hat, EIGHTHS)),
+      groove(
+        "Half-time ride",
+        16,
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6, 10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [8]),
+        lane(RIDE, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [15], { ghost: true, tier: "busy" }),
+      ),
       groove(
         "Ghost and ride",
         16,
-        lane(KICK, VEL.normal, [0, 3, 10]),
+        lane(KICK, VEL.normal, [0, 10]),
+        lane(KICK, VEL.normal, [3], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(SNARE, VEL.ghost, [12], { ghost: true }),
+        lane(SNARE, VEL.ghost, [12], { ghost: true, tier: "busy" }),
         lane(RIDE, VEL.hat, EIGHTHS),
       ),
     ],
@@ -44,19 +78,22 @@ export const HALF_TIME: Style = {
       groove(
         "Busy half-time",
         16,
-        lane(KICK, VEL.normal, [0, 6, 8, 10, 14]),
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [6, 8, 10, 14], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(OPEN_HAT, VEL.hat, [14]),
-        lane(CLOSED_HAT, VEL.hat, SIXTEENTHS, { optional: true }),
+        lane(CLOSED_HAT, VEL.hat, [0, 2, 4, 6, 8, 10, 12]),
+        lane(OPEN_HAT, VEL.hat, [14], { tier: "lean" }),
+        lane(CLOSED_HAT, VEL.hat, ODD_SIXTEENTHS, { tier: "busy" }),
       ),
       groove(
         "Crash and ride",
         16,
-        lane(CRASH, VEL.crash, [0]),
-        lane(KICK, VEL.normal, [0, 3, 6, 10, 14]),
+        lane(CRASH, VEL.crash, [0], { tier: "busy" }),
+        lane(KICK, VEL.normal, [0]),
+        lane(KICK, VEL.normal, [3, 6, 10, 14], { tier: "lean" }),
         lane(SNARE, VEL.normal, [8]),
-        lane(SNARE, VEL.ghost, [15], { ghost: true }),
         lane(RIDE, VEL.hat, EIGHTHS),
+        lane(SNARE, VEL.ghost, [15], { ghost: true, tier: "busy" }),
       ),
     ],
   },

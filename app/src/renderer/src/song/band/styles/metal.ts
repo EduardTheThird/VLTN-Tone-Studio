@@ -1,7 +1,7 @@
 // Metal: double kick. Pairs of kicks on the eighths and sixteenths, a snare on 2 and 4 and tom fills that use the whole kit.
 
 import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, RIDE, SIDE_STICK, SNARE } from "../note";
-import { EIGHTHS, ODD_SIXTEENTHS, QUARTERS, SIXTEENTHS, VEL, bar, groove, lane } from "./notation";
+import { VEL, bar, groove, lane, EIGHTHS, ODD_SIXTEENTHS, QUARTERS, SIXTEENTHS } from "./notation";
 import type { Style } from "./types";
 
 export const METAL: Style = {
@@ -15,50 +15,84 @@ export const METAL: Style = {
       groove("Sparse double kick", 16, lane(KICK, VEL.normal, [0, 8]), lane(SNARE, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, [0, 8])),
     ],
     2: [
-      groove("Kick pairs", 16, lane(KICK, VEL.normal, [0, 2, 8, 10]), lane(SNARE, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, EIGHTHS)),
+      groove(
+        "Kick pairs",
+        16,
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 10], { tier: "lean" }),
+        lane(SNARE, VEL.normal, [4, 12]),
+        lane(CLOSED_HAT, VEL.hat, EIGHTHS),
+        lane(KICK, VEL.normal, [6, 14], { tier: "busy" }),
+      ),
       groove(
         "Kick pairs with more pairs",
         16,
-        lane(KICK, VEL.normal, [0, 2, 4, 8, 10, 12]),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 4, 10, 12], { tier: "lean" }),
         lane(SNARE, VEL.normal, [4, 12]),
         lane(CLOSED_HAT, VEL.hat, EIGHTHS),
+        lane(KICK, VEL.normal, [6, 14], { tier: "busy" }),
       ),
     ],
     3: [
-      groove("Eighth double kick", 16, lane(KICK, VEL.normal, [...EIGHTHS]), lane(SNARE, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),
+      groove(
+        "Eighth double kick",
+        16,
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 4, 6, 10, 12, 14], { tier: "lean" }),
+        lane(KICK, VEL.normal, [7, 15], { tier: "busy" }),
+        lane(SNARE, VEL.normal, [4, 12]),
+        lane(CLOSED_HAT, VEL.hat, QUARTERS),
+      ),
       groove(
         "Eighth kick with a hit on the and",
         16,
-        lane(KICK, VEL.normal, [0, 2, 3, 4, 6, 8, 10, 11, 12, 14]),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 6, 10, 14], { tier: "lean" }),
+        lane(KICK, VEL.normal, [3, 11], { tier: "busy" }),
         lane(SNARE, VEL.normal, [4, 12]),
         lane(CLOSED_HAT, VEL.hat, QUARTERS),
       ),
     ],
     4: [
-      groove("Sixteenth double kick", 16, lane(KICK, VEL.normal, [0, 1, 4, 5, 8, 9, 12, 13]), lane(SNARE, VEL.normal, [4, 12]), lane(RIDE, VEL.hat, EIGHTHS)),
+      groove(
+        "Sixteenth double kick",
+        16,
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [4, 12], { tier: "lean" }),
+        lane(KICK, VEL.normal, [1, 5, 9, 13], { tier: "busy" }),
+        lane(SNARE, VEL.normal, [4, 12]),
+        lane(RIDE, VEL.hat, EIGHTHS),
+      ),
       groove(
         "Eighth kick and open hat",
         16,
-        lane(KICK, VEL.normal, [...EIGHTHS]),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 4, 6, 10, 12, 14], { tier: "lean" }),
+        lane(KICK, VEL.normal, [7, 15], { tier: "busy" }),
         lane(SNARE, VEL.normal, [4, 12]),
         lane(RIDE, VEL.hat, QUARTERS),
-        lane(OPEN_HAT, VEL.hat, [14]),
+        lane(OPEN_HAT, VEL.hat, [14], { tier: "lean" }),
       ),
     ],
     5: [
       groove(
         "Full double kick",
         16,
-        lane(KICK, VEL.normal, [...EIGHTHS]),
-        lane(KICK, VEL.normal, ODD_SIXTEENTHS, { optional: true }),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 4, 6, 10, 12, 14], { tier: "lean" }),
+        lane(KICK, VEL.normal, ODD_SIXTEENTHS, { tier: "busy" }),
         lane(SNARE, VEL.normal, [4, 12]),
-        lane(OPEN_HAT, VEL.hat, [6, 14]),
+        lane(CLOSED_HAT, VEL.hat, QUARTERS),
+        lane(OPEN_HAT, VEL.hat, [6, 14], { tier: "lean" }),
       ),
       groove(
         "Crash and busy double kick",
         16,
-        lane(CRASH, VEL.crash, [0]),
-        lane(KICK, VEL.normal, [0, 2, 3, 4, 6, 8, 10, 11, 12, 14]),
+        lane(CRASH, VEL.crash, [0], { tier: "busy" }),
+        lane(KICK, VEL.normal, [0, 8]),
+        lane(KICK, VEL.normal, [2, 4, 6, 10, 12, 14], { tier: "lean" }),
+        lane(KICK, VEL.normal, [3, 11], { tier: "busy" }),
         lane(SNARE, VEL.normal, [4, 12]),
         lane(RIDE, VEL.hat, EIGHTHS),
       ),
