@@ -76,7 +76,9 @@ export class BleMidiConnection {
   private chain: Promise<void> = Promise.resolve();
   private listeners = new Set<Listener>();
   private disconnectListeners = new Set<() => void>();
-  private timers = new Set<ReturnType<typeof setTimeout>>();
+  /** Messages waiting for their timestamp, in timestamp order (equal timestamps in send order). One timer serves the head. */
+  private timed: Outgoing[] = [];
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private pending: Outgoing[] = [];
   private pendingBytes = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -206,22 +208,38 @@ export class BleMidiConnection {
    */
   send(bytes: readonly number[] | Uint8Array, timestamp = performance.now(), editor = false) {
     if (this.state !== "connected") throw new Error("Bluetooth MIDI is disconnected.");
-    if (this.pending.length + this.timers.size >= MAX_PENDING) {
+    if (this.pending.length + this.timed.length >= MAX_PENDING) {
       const error = "Bluetooth MIDI cannot keep up. Connection closed; reduce MIDI traffic.";
       if (useBluetooth.getState().connection === this) useBluetooth.setState({ error });
       this.close();
       throw new Error(error);
     }
     const outgoing: Outgoing = { bytes: checkMidiMessage(bytes), timestamp, editor, generation: this.generation };
-    const delay = timestamp - performance.now();
-    if (delay <= 1) this.enqueue(outgoing);
-    else {
-      const timer = setTimeout(() => {
-        this.timers.delete(timer);
-        if (!this.closed && outgoing.generation === this.generation) this.enqueue(outgoing);
-      }, delay);
-      this.timers.add(timer);
+    // A message is held, not sent at once, while an earlier-timed one is still waiting: sending it first would reorder the pair.
+    if (timestamp - performance.now() <= 1 && (editor || !this.timed.length)) this.enqueue(outgoing);
+    else this.hold(outgoing);
+  }
+  /** Insert after every held message due at or before this one, then re-arm the timer for the head. */
+  private hold(outgoing: Outgoing) {
+    let index = this.timed.length;
+    while (index > 0 && this.timed[index - 1].timestamp > outgoing.timestamp) index--;
+    this.timed.splice(index, 0, outgoing);
+    if (index === 0) this.arm();
+  }
+  private arm() {
+    if (this.timer) clearTimeout(this.timer);
+    const head = this.timed[0];
+    this.timer = head ? setTimeout(() => this.release(), Math.max(0, head.timestamp - performance.now())) : null;
+  }
+  /** Move every held message that is due, in order, to the write queue. Timer callbacks can fire out of order, so this is the only release. */
+  private release() {
+    this.timer = null;
+    const now = performance.now();
+    while (this.timed.length && this.timed[0].timestamp - now <= 1) {
+      const next = this.timed.shift()!;
+      if (!this.closed && next.generation === this.generation) this.enqueue(next);
     }
+    this.arm();
   }
   private enqueue(outgoing: Outgoing) {
     this.pending.push(outgoing);
@@ -353,8 +371,9 @@ export class BleMidiConnection {
   clear() {
     this.lastClockWrite = null;
     this.generation++;
-    for (const timer of this.timers) clearTimeout(timer);
-    this.timers.clear();
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.timed = [];
     this.pending = this.pending.filter((e) => e.editor);
     this.pendingBytes = this.pending.reduce((sum, e) => sum + e.bytes.length + 1, 0);
   }

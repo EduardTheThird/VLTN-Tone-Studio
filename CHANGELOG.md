@@ -43,6 +43,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- Bluetooth MIDI keeps messages sent with the same timestamp in order. A message sent a moment after an earlier one, with a timestamp the earlier one was still waiting for, could be written first. Messages now wait in timestamp order, so a pedal's program-change pair arrives in the order the song sent it.
 - MIDI timecode now runs to a playlist join. The outgoing song sent its quarter frames only until the hand-over, about half a second early, so a receiver freewheeled across the join. Its quarter frames now run to the join, and the next song's full frame follows them. A pause, stop or seek straight after the join stops them.
 - **PDF page turns move in scroll layout.** A remote or key page turn (Page Down, a learned pedal, Next page) now scrolls a PDF in scroll layout at once, in stage mode and outside it, with no animation to stall in a window that is not painting. Half a page in stage, nine tenths of a page otherwise.
 - Soloing a muted track in a mute group now plays it alone. The solo also unmutes that track and mutes the rest of its group, the same as an unmute does. Before, the track's solo was set but it stayed silent, because the mute won.

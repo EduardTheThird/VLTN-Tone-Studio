@@ -444,3 +444,50 @@ it("does not restore old timing when a pending write completes after reset", asy
   expect(useBluetooth.getState().diagnostics?.performanceTiming).toBeUndefined();
   expect(useBluetooth.getState().diagnostics?.clockTiming).toBeUndefined();
 });
+
+describe("same-timestamp ordering", () => {
+  it("keeps a pair in order in one packet when the second is sent just after the first is timed", async () => {
+    const f = fixture(),
+      connection = await BleMidiConnection.open(f.device);
+    useBluetooth.setState({ connection });
+    const due = performance.now() + 1.2;
+    connection.send([0xc0, 0], due);
+    await vi.advanceTimersByTimeAsync(0.5);
+    connection.send([0xcf, 68], due);
+    await flush();
+    expect(decodeWrites(f.characteristic.writeValueWithoutResponse)).toEqual([
+      [0xc0, 0],
+      [0xcf, 68],
+    ]);
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+  });
+  it("sends a pair with the same timestamp in one packet, in send order", async () => {
+    const f = fixture(),
+      connection = await BleMidiConnection.open(f.device);
+    useBluetooth.setState({ connection });
+    const due = performance.now() + 60;
+    connection.send([0xc0, 0], due);
+    connection.send([0xcf, 68], due);
+    await flush(80);
+    expect(decodeWrites(f.characteristic.writeValueWithoutResponse)).toEqual([
+      [0xc0, 0],
+      [0xcf, 68],
+    ]);
+    expect(f.characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+  });
+  it("sends a message timed earlier before a held pair, and keeps the pair's order", async () => {
+    const f = fixture(),
+      connection = await BleMidiConnection.open(f.device);
+    useBluetooth.setState({ connection });
+    const now = performance.now();
+    connection.send([0xc0, 0], now + 50);
+    connection.send([0xcf, 68], now + 50);
+    connection.send([0x90, 60, 100], now + 10);
+    await flush(80);
+    expect(decodeWrites(f.characteristic.writeValueWithoutResponse)).toEqual([
+      [0x90, 60, 100],
+      [0xc0, 0],
+      [0xcf, 68],
+    ]);
+  });
+});
