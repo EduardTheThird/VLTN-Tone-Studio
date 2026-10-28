@@ -122,6 +122,7 @@ export function PerformanceReader({
   const autoscrollMode = useAutoscroll((s) => s.mode),
     linesPerMinute = useAutoscroll((s) => s.linesPerMinute);
   const viewport = useRef<HTMLDivElement>(null),
+    lyricsBody = useRef<HTMLDivElement>(null),
     rowRefs = useRef<(HTMLDivElement | null)[]>([]),
     expandButton = useRef<HTMLButtonElement>(null);
   const chordButton = useRef<HTMLButtonElement | null>(null);
@@ -134,13 +135,21 @@ export function PerformanceReader({
     linesPerMinute: LINES_PER_MINUTE.initial,
     rows: [],
   });
+  // The rows are measured again when they are shown (the PDF replaces them), and when their box changes size (a font load, a window resize).
   useLayoutEffect(() => {
-    scrollModel.current = {
-      mode: autoscrollMode,
-      linesPerMinute,
-      rows: lines.map((line, index) => ({ time: line.time, top: rowRefs.current[index]?.offsetTop ?? 0 })),
+    const measure = () => {
+      scrollModel.current = {
+        mode: autoscrollMode,
+        linesPerMinute,
+        rows: lines.map((line, index) => ({ time: line.time, top: rowRefs.current[index]?.offsetTop ?? 0 })),
+      };
     };
-  }, [lines, size, expanded, stage, editing, autoscrollMode, linesPerMinute]);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    for (const element of [viewport.current, lyricsBody.current]) if (element) observer.observe(element);
+    return () => observer.disconnect();
+  }, [lines, size, expanded, stage, editing, pdfShown, autoscrollMode, linesPerMinute]);
   // Autoscroll follows the song position from the playback clock. The clock's listener moves the scroll box directly, so a frame of
   // playback does not re-render the reader. A manual or remote scroll holds it off for a while, and it then returns to the position.
   useEffect(() => {
@@ -314,7 +323,7 @@ export function PerformanceReader({
           style={{ fontSize: stage ? Math.max(36, size) : size, lineHeight: 1.6 }}
         >
           {lines.length ? (
-            <div className="mx-auto max-w-4xl pb-48">
+            <div ref={lyricsBody} className="mx-auto max-w-4xl pb-48">
               {lines.map((line, index) => {
                 const shown = stageText(line.text);
                 const label = headingLabel(shown);
