@@ -58,3 +58,30 @@ export function resolveLeadIn(own: LeadInOwn, defaults: LeadIn): LeadIn {
     startDelay: own.startDelay === "" ? defaults.startDelay : own.startDelay,
   };
 }
+
+/** The tempo and count-in a song plays with, as its own settings set them. */
+export interface SongCountIn {
+  bpm: number;
+  countInBars: number;
+  beatsPerBar: number;
+}
+
+/**
+ * The tempo and count-in a song plays with, read from its saved settings the way the performance panel reads them: its own BPM and
+ * beats, and its own count-in where it has one, the global default otherwise. A playlist join uses these for the incoming song.
+ */
+export function songCountIn(settings: Record<string, string>, defaults: LeadIn = readLeadInDefaults()): SongCountIn {
+  const bpm = Number(settings[":bpm"] || NaN);
+  let options: Partial<Record<"beats" | "countInBars", unknown>> = {};
+  try {
+    options = JSON.parse(settings[":options"] || "{}") ?? {};
+  } catch {
+    options = {};
+  }
+  const own = ownLeadIn("countInBars", options.countInBars);
+  return {
+    bpm: Number.isFinite(bpm) && bpm >= 30 && bpm <= 300 ? bpm : 120,
+    countInBars: own === "" ? defaults.countInBars : own,
+    beatsPerBar: typeof options.beats === "number" && Number.isFinite(options.beats) && options.beats > 0 ? options.beats : 4,
+  };
+}

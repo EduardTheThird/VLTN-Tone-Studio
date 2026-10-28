@@ -605,6 +605,41 @@ it("chains the next playlist song near the end, takes it over at its join, and d
   vi.useRealTimers();
 });
 
+/** Plays a queued song near its end with `settings` on the prepared next song, and returns the lead it is chained with. */
+async function chainLeadFor(settings: Record<string, string>, outgoingCountIn = 0) {
+  vi.useFakeTimers();
+  const incoming = new StemPlayer({} as Stems);
+  const next = { id: "b", title: "B", source: { name: "b.wav", libraryId: "b", audio: source.audio }, stems: {}, settings, player: incoming };
+  mocks.library.playlistPlaying = true;
+  mocks.library.queue = ["a", "b"];
+  mocks.library.preparedNext = () => next as never;
+  mocks.library.advanceToPrepared = vi.fn(() => true);
+  const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true });
+  await vi.advanceTimersByTimeAsync(10);
+  session.update({ timing: { countInBars: outgoingCountIn, beatsPerBar: 4, preRollBeats: 0, startDelay: 0 } });
+  const outgoing = session.state.player!;
+  const chain = vi.spyOn(outgoing, "chainNext");
+  mocks.position = 56;
+  mocks.audioNow = 16;
+  vi.advanceTimersByTime(250);
+  expect(chain).toHaveBeenCalledTimes(1);
+  const [, join] = chain.mock.calls[0] as unknown as [unknown, { lead: unknown }];
+  unload();
+  session.dispose();
+  vi.useRealTimers();
+  return join.lead;
+}
+
+it("joins a playlist song whose own count-in is one bar with a count-in at its own BPM, when the outgoing song has none", async () => {
+  const lead = await chainLeadFor({ ":bpm": "90", ":options": JSON.stringify({ countInBars: 1 }) });
+  expect(lead).toEqual({ bpm: 90, countInBeats: 4, preRollBeats: 0 });
+});
+
+it("joins a playlist song with no count-in gaplessly, even when the outgoing song has one", async () => {
+  const lead = await chainLeadFor({ ":bpm": "90" }, 1);
+  expect(lead).toEqual({ bpm: 90, countInBeats: 0, preRollBeats: 0 });
+});
+
 it("pauses on one press after a join, when the view is re-created on the hand-over", async () => {
   vi.useFakeTimers();
   // The chained song is already playing on the clock when it is handed over, as the real player launches it.

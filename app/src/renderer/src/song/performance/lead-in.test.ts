@@ -1,5 +1,5 @@
 import { beforeEach, expect, it } from "vitest";
-import { clampLeadIn, ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults } from "./lead-in";
+import { clampLeadIn, ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, songCountIn } from "./lead-in";
 
 beforeEach(() => localStorage.clear());
 
@@ -25,4 +25,20 @@ it("saves the global defaults and reads them back, ignoring corrupt or out-of-ra
   expect(readLeadInDefaults()).toEqual({ countInBars: 2, preRollBeats: 0, startDelay: 0 });
   localStorage.setItem("vltn.performance.leadin.v1:options", "{not json");
   expect(readLeadInDefaults()).toEqual({ countInBars: 0, preRollBeats: 0, startDelay: 0 });
+});
+
+it("reads a playlist song's own tempo, beats and count-in, and falls back to the defaults it lacks", () => {
+  const defaults = { countInBars: 2, preRollBeats: 0, startDelay: 0 };
+  const own = { ":bpm": "96", ":options": JSON.stringify({ beats: 3, countInBars: 1 }) };
+  expect(songCountIn(own, defaults)).toEqual({ bpm: 96, countInBars: 1, beatsPerBar: 3 });
+  expect(songCountIn({ ":bpm": "96", ":options": JSON.stringify({ countInBars: "" }) }, defaults)).toEqual({ bpm: 96, countInBars: 2, beatsPerBar: 4 });
+  expect(songCountIn({}, defaults)).toEqual({ bpm: 120, countInBars: 2, beatsPerBar: 4 });
+});
+
+it("ignores a song's BPM outside 30–300 and options that are not valid JSON", () => {
+  const defaults = { countInBars: 0, preRollBeats: 0, startDelay: 0 };
+  expect(songCountIn({ ":bpm": "400" }, defaults).bpm).toBe(120);
+  expect(songCountIn({ ":bpm": "0" }, defaults).bpm).toBe(120);
+  expect(songCountIn({ ":bpm": "abc", ":options": "{not json" }, defaults)).toEqual({ bpm: 120, countInBars: 0, beatsPerBar: 4 });
+  expect(songCountIn({ ":options": "null" }, defaults)).toEqual({ bpm: 120, countInBars: 0, beatsPerBar: 4 });
 });

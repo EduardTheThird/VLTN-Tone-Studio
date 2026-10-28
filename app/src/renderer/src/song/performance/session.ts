@@ -16,6 +16,7 @@ import { setClockPosition, startPlaybackClock } from "@/song/performance/playbac
 import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
 import { readCrossfade } from "@/song/performance/crossfade";
+import { songCountIn, type SongCountIn } from "@/song/performance/lead-in";
 import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions, type EndBehaviour } from "@/song/performance/song-shape";
 import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegraded } from "@/song/performance/midi-scheduler-client";
@@ -1055,7 +1056,9 @@ export class PerformanceSession {
     const { player, queued, playlistPlaying } = this.state;
     const next = useSongLibrary.getState().preparedNext();
     if (!player?.isPlaying || this.chained || !queued || !playlistPlaying || !next) return false;
-    const countIn = countInBeats(this.state.timing.countInBars, this.state.timing.beatsPerBar);
+    // The count-in is the incoming song's: its clicks start at the outgoing song's end.
+    const timing = songCountIn(next.settings);
+    const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
     const plan = planTransition({
       now: player.audioNow,
       songEnd: player.audioTimeOf(player.duration),
@@ -1065,7 +1068,7 @@ export class PerformanceSession {
       manual: true,
     });
     if (plan.kind === "gap") return false;
-    this.startChain(next, plan, countIn);
+    this.startChain(next, plan, timing);
     return true;
   };
 
@@ -1080,7 +1083,8 @@ export class PerformanceSession {
     const next = library.preparedNext();
     if (!next) return;
     const now = player.audioNow;
-    const countIn = countInBeats(this.state.timing.countInBars, this.state.timing.beatsPerBar);
+    const timing = songCountIn(next.settings);
+    const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
     const plan = planTransition({
       now,
       songEnd: player.audioTimeOf(player.duration),
@@ -1089,7 +1093,7 @@ export class PerformanceSession {
       countIn: countIn > 0,
     });
     if (plan.kind === "gap" || plan.startAt - now > CHAIN_AHEAD_S) return;
-    this.startChain(next, plan, countIn);
+    this.startChain(next, plan, timing);
   }
 
   /**
@@ -1114,20 +1118,20 @@ export class PerformanceSession {
     return library.queueOverrides[library.position]?.endBehaviour ?? player.behaviour;
   }
 
-  /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. */
-  private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, countIn: number): void {
-    const { player, bpm } = this.state;
+  /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. `timing` is the next song's. */
+  private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, timing: SongCountIn): void {
+    const { player } = this.state;
     if (!player) return;
     // The next song's buffers were built when it was prepared, so the join only starts them.
     const incoming = next.player;
     const unwire = this.wirePlayer(incoming, next.source);
-    const countInBeatsNow = plan.kind === "countIn" ? countIn : 0;
-    const lead: Lead = { bpm, countInBeats: countInBeatsNow, preRollBeats: 0 };
+    const countInBeatsNow = plan.kind === "countIn" ? countInBeats(timing.countInBars, timing.beatsPerBar) : 0;
+    const lead: Lead = { bpm: timing.bpm, countInBeats: countInBeatsNow, preRollBeats: 0 };
     if (!player.chainNext(incoming, { startAt: plan.startAt, fadeLength: plan.fadeLength, stopAt: plan.stopAt, lead })) {
       unwire();
       return;
     }
-    const countInMs = bpm > 0 ? (countInBeatsNow * beatSeconds(bpm) * 1000) / incoming.playbackRate : 0;
+    const countInMs = timing.bpm > 0 ? (countInBeatsNow * beatSeconds(timing.bpm) * 1000) / incoming.playbackRate : 0;
     const join = this.clockOf(plan.startAt);
     this.chained = { id: next.id, player: incoming, countInMs, unwire, join };
     // The library holds the chained song, so a queue edit that changes the next song undoes this chain first.
