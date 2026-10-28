@@ -7,7 +7,8 @@ export interface ReaderLine {
   text: string;
   chords: { time: number; name: string }[];
 }
-const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
+/** A chord token in a chart line, such as `[Am7]` or `[N]`. The first group is the chord name. */
+export const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
 /**
  * The untimed text of a chart: its lines with directives, timestamps and MIDI removed. Comments and headings are kept, since the reader and
  * the editor decide how to show them.
