@@ -1,10 +1,10 @@
 import { detectBeatGrid } from "./beat-grid";
-import type { BeatGridRequest } from "./beat-grid-client";
+import type { BeatGridMessage } from "./beat-grid-client";
 
-self.onmessage = (event: MessageEvent<BeatGridRequest>) => {
-  const { sources, sampleRate, beatsPerBar, chordChanges } = event.data;
+self.onmessage = (event: MessageEvent<BeatGridMessage>) => {
+  const { mono, sampleRate, beatsPerBar, chordChanges } = event.data;
   try {
-    self.postMessage({ grid: detectBeatGrid(sources, sampleRate, beatsPerBar, chordChanges) });
+    self.postMessage({ grid: detectBeatGrid([{ sampleRate, channels: [mono] }], sampleRate, beatsPerBar, chordChanges) });
   } catch (error) {
     self.postMessage({ error: String(error) });
   }

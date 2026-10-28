@@ -28,6 +28,16 @@ export const TEMPO_PRIOR_BPM = 110;
 /** Width of the tempo prior, in octaves (its standard deviation on a log2 scale). */
 export const TEMPO_PRIOR_OCTAVES = 0.8;
 /**
+ * Gaussian smoothing of the onset curve before the autocorrelation, in frames. A sharp onset is only correlated at whole-frame lags, so
+ * a beat period that falls between frames (150 BPM is 34.45 frames) scored far below its double. Smoothing makes the score almost
+ * independent of the fraction.
+ */
+export const TEMPO_SMOOTH_FRAMES = 1.5;
+/** A best tempo below this is checked for its double, because a fast band can show its half as the strongest pulse. */
+export const TEMPO_FAST_BPM = 100;
+/** The double is taken when its autocorrelation is at least this share of the best one's. */
+export const TEMPO_FAST_RATIO = 0.8;
+/**
  * Beat tracker penalty for an interval that differs from the period, on a log scale: a 10% stretch costs about 1 unit, roughly the size
  * of one beat's onset peak once the onset is scaled to unit RMS. Tracks drift of a few percent without losing beats.
  */
@@ -77,10 +87,13 @@ interface MelBand {
   weights: number[];
 }
 
-/** Sums the sources to one mono track, scaled so its peak is 1. Sources of different lengths are padded with silence. */
-function monoSum(sources: readonly PcmAudio[]): Float64Array {
+/**
+ * Sums the sources to one mono track, scaled so its peak is 1. Sources of different lengths are padded with silence. Float32 halves the
+ * memory of a long song, and the tracker does not need more precision.
+ */
+export function monoSum(sources: readonly PcmAudio[]): Float32Array {
   const length = sources.reduce((max, source) => Math.max(max, source.channels[0]?.length ?? 0), 0);
-  const mono = new Float64Array(length);
+  const mono = new Float32Array(length);
   for (const source of sources) {
     const channels = source.channels;
     for (const channel of channels) {
@@ -203,11 +216,12 @@ export function estimateTempo(onset: ArrayLike<number>, frameRate: number): Temp
   const minLag = Math.max(1, Math.floor((60 * frameRate) / TEMPO_MAX_BPM)),
     maxLag = Math.ceil((60 * frameRate) / TEMPO_MIN_BPM);
   if (n <= maxLag + 1) return { bpm: 0, candidates: [] };
+  const smooth = smoothCurve(onset, TEMPO_SMOOTH_FRAMES);
   let mean = 0;
-  for (let t = 0; t < n; t++) mean += onset[t];
+  for (let t = 0; t < n; t++) mean += smooth[t];
   mean /= n;
   const x = new Float64Array(n);
-  for (let t = 0; t < n; t++) x[t] = onset[t] - mean;
+  for (let t = 0; t < n; t++) x[t] = smooth[t] - mean;
   // Autocorrelation at each lag, normalised by the energy at lag 0 and by the number of pairs.
   const acf = new Float64Array(maxLag + 2);
   let energy = 0;
@@ -230,13 +244,43 @@ export function estimateTempo(onset: ArrayLike<number>, frameRate: number): Temp
     }
   }
   if (!(acf[best] > 0)) return { bpm: 0, candidates: [] };
-  const a = acf[best - 1],
-    b = acf[best],
-    c = acf[best + 1];
-  const denominator = a - 2 * b + c;
-  const offset = denominator < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denominator)) : 0;
-  const bpm = (60 * frameRate) / (best + offset);
+  // The prior alone favours a slow tempo: at 170 BPM the 85 BPM lag scores higher. If the best is below TEMPO_FAST_BPM and its faster
+  // double is in range with nearly the same autocorrelation, the faster tempo is the pulse the band plays.
+  const slowLag = peakLag(acf, best);
+  const fasterLag = Math.round(slowLag / 2);
+  if ((60 * frameRate) / slowLag < TEMPO_FAST_BPM && fasterLag >= minLag && acf[fasterLag] >= TEMPO_FAST_RATIO * acf[best]) best = fasterLag;
+  const bpm = (60 * frameRate) / peakLag(acf, best);
   return { bpm, candidates: [bpm, bpm / 2, bpm * 2] };
+}
+
+/** The autocorrelation peak at `lag`, refined by a parabola through its neighbours, in frames. Needs `acf` to cover lag + 1. */
+function peakLag(acf: Float64Array, lag: number): number {
+  const a = acf[lag - 1],
+    b = acf[lag],
+    c = acf[lag + 1];
+  const denominator = a - 2 * b + c;
+  return denominator < 0 ? lag + Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denominator)) : lag;
+}
+
+/** Gaussian smoothing over `sigma` frames. Near the ends it averages over the samples that exist. */
+function smoothCurve(curve: ArrayLike<number>, sigma: number): Float64Array {
+  const radius = Math.ceil(3 * sigma);
+  const kernel = Array.from({ length: 2 * radius + 1 }, (_, i) => Math.exp(-((i - radius) ** 2) / (2 * sigma * sigma)));
+  const n = curve.length,
+    out = new Float64Array(n);
+  for (let t = 0; t < n; t++) {
+    let sum = 0,
+      weight = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const u = t + k;
+      if (u >= 0 && u < n) {
+        sum += curve[u] * kernel[k + radius];
+        weight += kernel[k + radius];
+      }
+    }
+    out[t] = sum / weight;
+  }
+  return out;
 }
 
 /**
@@ -408,14 +452,13 @@ export function shiftDownbeat(grid: BeatGrid, step: number): BeatGrid {
 }
 
 /**
- * Moves every beat by the same amount, at most NUDGE_MAX_SECONDS per call. A beat that would fall before the start is held at zero,
- * so the beats keep their order and their count.
+ * Moves every beat by the same amount, at most NUDGE_MAX_SECONDS per call. A beat that would fall before the start is dropped, and the
+ * downbeat moves back by the number dropped, so it stays on the same beat in time.
  */
 export function nudgeGrid(grid: BeatGrid, seconds: number): BeatGrid {
   const shift = Math.max(-NUDGE_MAX_SECONDS, Math.min(NUDGE_MAX_SECONDS, Number.isFinite(seconds) ? seconds : 0));
-  return makeGrid(
-    grid.beatsPerBar,
-    grid.beats.map((beat) => Math.max(0, beat + shift)),
-    grid.downbeat,
-  );
+  const bar = Math.max(1, Math.floor(grid.beatsPerBar));
+  const kept = grid.beats.map((beat) => beat + shift).filter((beat) => beat >= 0);
+  const dropped = grid.beats.length - kept.length;
+  return makeGrid(grid.beatsPerBar, kept, (((grid.downbeat - dropped) % bar) + bar) % bar);
 }

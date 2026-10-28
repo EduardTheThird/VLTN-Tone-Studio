@@ -131,6 +131,17 @@ describe("drift from 116 to 124 BPM", () => {
   });
 });
 
+describe("tempo of a click track", () => {
+  // Accented click tracks, as a band plays them. Slow, mid and fast tempi, with the fast end (150, 170) the case that used to halve.
+  it.each([75, 90, 120, 150, 170])("tracks %i BPM as the tempo, not only as a candidate", (bpm) => {
+    const grid = detectBeatGrid([clickAudio(steadyBeats(bpm), 4)], RATE, 4);
+    const { onset, frameRate } = onsetStrength([clickAudio(steadyBeats(bpm), 4)], RATE);
+    expect(Math.abs(estimateTempo(onset, frameRate).bpm - bpm)).toBeLessThanOrEqual(1);
+    expect(Math.abs(grid.bpm - bpm)).toBeLessThanOrEqual(1);
+    expect(hitRate(grid.beats, steadyBeats(bpm))).toBeGreaterThanOrEqual(0.95);
+  });
+});
+
 describe("tempo candidates", () => {
   it("includes 150 BPM when the track is at 75 BPM", () => {
     const { onset, frameRate } = onsetStrength([clickAudio(steadyBeats(75), 4)], RATE);
@@ -219,11 +230,51 @@ describe("corrections", () => {
     expect(shiftDownbeat({ ...grid, downbeat: 0 }, -1).downbeat).toBe(3);
   });
 
-  it("nudges by at most 0.1 s per call and never below zero", () => {
-    const shifted = nudgeGrid({ ...grid, beats: [0.05, 0.55, 1.05] }, -5);
-    expect(shifted.beats[0]).toBe(0);
-    expect(shifted.beats[1]).toBeCloseTo(0.45, 9);
-    expect(shifted.beats[2]).toBeCloseTo(0.95, 9);
+  it("nudges by at most 0.1 s per call", () => {
+    const shifted = nudgeGrid({ ...grid, beats: [0.5, 1.05, 1.55] }, -5);
+    expect(shifted.beats[0]).toBeCloseTo(0.4, 9);
+    expect(shifted.beats[1]).toBeCloseTo(0.95, 9);
     expect(nudgeGrid(grid, 0.5).beats[0]).toBeCloseTo(0.1, 9);
+  });
+
+  it("drops beats that would fall before the start and keeps the downbeat on its beat in time", () => {
+    const early: BeatGrid = { ...grid, beats: [0.05, 0.55, 1.05, 1.55, 2.05, 2.55, 3.05, 3.55], downbeat: 2 };
+    const nudged = nudgeGrid(early, -0.1);
+    expect(nudged.beats).toHaveLength(7);
+    expect(nudged.beats[0]).toBeCloseTo(0.45, 9);
+    // The downbeat was the beat at 1.05; it is now at 0.95, and its index drops by the one beat removed.
+    expect(nudged.downbeat).toBe(1);
+    expect(nudged.beats[nudged.downbeat]).toBeCloseTo(0.95, 9);
+  });
+
+  it("wraps the downbeat when its own beat is dropped, onto the next beat of the same phase", () => {
+    const early: BeatGrid = { ...grid, beats: [0.05, 0.55, 1.05, 1.55, 2.05, 2.55, 3.05, 3.55], downbeat: 0 };
+    const nudged = nudgeGrid(early, -0.1);
+    expect(nudged.beats).toHaveLength(7);
+    expect(nudged.downbeat).toBe(3);
+    // The downbeat at 0.05 is gone; the next beat of the same bar phase is the one at 2.05.
+    expect(nudged.beats[nudged.downbeat]).toBeCloseTo(1.95, 9);
+  });
+});
+
+describe("tempo corrections with a downbeat that is not the first beat", () => {
+  const grid: BeatGrid = {
+    beatsPerBar: 4,
+    beats: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+    downbeat: 3,
+    bpm: 120,
+    steady: { bpm: 120, firstBeat: 0 },
+  };
+
+  it("halving keeps the downbeat on the same beat in time", () => {
+    const halved = halveTempo(grid);
+    expect(halved.beats[halved.downbeat]).toBe(1.5);
+  });
+
+  it("doubling keeps the old downbeat as one of the downbeats, at the same bar phase", () => {
+    const doubled = doubleTempo(grid);
+    const oldDownbeat = doubled.beats.indexOf(1.5);
+    expect(oldDownbeat).toBeGreaterThanOrEqual(0);
+    expect((((oldDownbeat - doubled.downbeat) % 4) + 4) % 4).toBe(0);
   });
 });

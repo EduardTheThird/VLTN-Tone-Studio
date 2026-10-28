@@ -8,12 +8,14 @@ class FakeWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   posted: unknown = null;
+  transfer: unknown[] | undefined = undefined;
   terminated = false;
   constructor() {
     FakeWorker.last = this;
   }
-  postMessage(message: unknown) {
+  postMessage(message: unknown, transfer?: unknown[]) {
     this.posted = message;
+    this.transfer = transfer;
   }
   terminate() {
     this.terminated = true;
@@ -22,6 +24,7 @@ class FakeWorker {
 
 const grid: BeatGrid = { beatsPerBar: 4, beats: [0.5, 1], downbeat: 0, bpm: 120, steady: null };
 const request = { sources: [], sampleRate: 44100, beatsPerBar: 4 };
+const stem = { sampleRate: 44100, channels: [Float32Array.from([0.5, -1, 0.25]), Float32Array.from([0.5, -1, 0.25])] };
 
 describe("startBeatGrid", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -30,10 +33,21 @@ describe("startBeatGrid", () => {
     vi.stubGlobal("Worker", FakeWorker);
     const job = startBeatGrid(request);
     const worker = FakeWorker.last!;
-    expect(worker.posted).toBe(request);
     worker.onmessage!({ data: { grid } } as MessageEvent);
     await expect(job.done).resolves.toEqual(grid);
     expect(worker.terminated).toBe(true);
+  });
+
+  it("posts one mono buffer, transferred rather than copied", () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    startBeatGrid({ ...request, sources: [stem, stem] });
+    const worker = FakeWorker.last!;
+    const posted = worker.posted as { mono: Float32Array; sampleRate: number; beatsPerBar: number };
+    expect(posted.mono).toBeInstanceOf(Float32Array);
+    expect(Array.from(posted.mono)).toEqual([0.5, -1, 0.25]);
+    expect(posted.sampleRate).toBe(44100);
+    expect(posted.beatsPerBar).toBe(4);
+    expect(worker.transfer).toEqual([posted.mono.buffer]);
   });
 
   it("rejects with the worker's error", async () => {
