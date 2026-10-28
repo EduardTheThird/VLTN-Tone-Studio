@@ -8,6 +8,7 @@ import {
   RemoteRouter,
   defaultBindings,
   describeBinding,
+  dialogOpen,
   findConflict,
   isTypingTarget,
   learnStep,
@@ -237,6 +238,39 @@ describe("keys", () => {
     expect(isTypingTarget(button)).toBe(false);
     expect(isTypingTarget(window)).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it("is not a text field for an input that takes a click, but is one for a range", () => {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    const range = document.createElement("input");
+    range.type = "range";
+    const submit = document.createElement("input");
+    submit.type = "submit";
+    expect(isTypingTarget(checkbox)).toBe(false);
+    expect(isTypingTarget(radio)).toBe(false);
+    expect(isTypingTarget(submit)).toBe(false);
+    expect(isTypingTarget(range)).toBe(true);
+  });
+
+  it("treats the stage-mode dialog as open for keys only when another dialog is not on top of it", () => {
+    const dialog = (attributes: Record<string, string> = {}) => {
+      const element = document.createElement("div");
+      element.setAttribute("role", "dialog");
+      element.setAttribute("data-state", "open");
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      document.body.appendChild(element);
+      return element;
+    };
+    expect(dialogOpen()).toBe(false);
+    const stage = dialog({ "data-stage-mode": "" });
+    expect(dialogOpen()).toBe(false);
+    const other = dialog();
+    expect(dialogOpen()).toBe(true);
+    other.remove();
+    stage.remove();
   });
 });
 

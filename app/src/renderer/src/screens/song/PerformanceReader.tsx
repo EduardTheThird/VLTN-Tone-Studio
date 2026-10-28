@@ -402,6 +402,7 @@ export function PerformanceReader({
     <StageDialog.Root open>
       <StageDialog.Portal>
         <StageDialog.Content
+          data-stage-mode=""
           aria-describedby={undefined}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}

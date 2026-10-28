@@ -1207,6 +1207,45 @@ describe("remote actions", () => {
     session.dispose();
   });
 
+  it("runs the bindings in stage mode, but not under another dialog", () => {
+    const { session, view } = remoteSession();
+    const dialog = (attributes: Record<string, string>) => {
+      const element = document.createElement("div");
+      element.setAttribute("role", "dialog");
+      element.setAttribute("data-state", "open");
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      document.body.appendChild(element);
+      return element;
+    };
+    const stage = dialog({ "data-stage-mode": "" });
+    session.keyDown(press("t"));
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    session.keyDown(press("PageDown"));
+    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "This song has no sections." });
+    const other = dialog({});
+    expect(session.keyDown(press("t"))).toBe(false);
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    other.remove();
+    stage.remove();
+    session.dispose();
+  });
+
+  it("a focused checkbox does not block a binding, but a focused slider does", () => {
+    const { session, view } = remoteSession();
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    const range = document.createElement("input");
+    range.type = "range";
+    document.body.append(checkbox, range);
+    session.keyDown(press("t", checkbox));
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    expect(session.keyDown(press("t", range))).toBe(false);
+    expect(view.tap).toHaveBeenCalledTimes(1);
+    checkbox.remove();
+    range.remove();
+    session.dispose();
+  });
+
   it("a binding that does not apply says why, and changes nothing", () => {
     const { session } = remoteSession();
     const before = session.state.sectionLive;

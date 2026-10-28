@@ -404,18 +404,23 @@ export function describeBinding(binding: Binding): string {
 
 /** Whether a focused element takes typing or arrow keys of its own, so no binding may fire from it. */
 const TYPING_ROLES = ["textbox", "combobox", "slider", "spinbutton", "listbox"];
+/** Input types that take a click or a space, not text, so a focused one does not hold the keyboard. */
+const NON_TEXT_INPUT_TYPES = ["checkbox", "radio", "button", "submit", "reset", "file", "color"];
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   // jsdom has no isContentEditable, so the attribute is read as well.
   const editable = target.getAttribute("contenteditable");
-  if (target.isContentEditable || editable === "true" || editable === "" || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true;
+  if (target.isContentEditable || editable === "true" || editable === "" || ["TEXTAREA", "SELECT"].includes(target.tagName)) return true;
+  if (target instanceof HTMLInputElement && !NON_TEXT_INPUT_TYPES.includes(target.type)) return true;
   const role = target.getAttribute("role");
   return role !== null && TYPING_ROLES.includes(role);
 }
 
-/** Whether a dialog is open. Keys then belong to the dialog. */
+/** Whether a dialog is open. Keys then belong to the dialog. Stage mode is a full-screen dialog that keys must still reach. */
 export function dialogOpen(): boolean {
-  return !!document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
+  return !!document.querySelector(
+    '[role="dialog"][data-state="open"]:not([data-stage-mode]), [role="alertdialog"][data-state="open"]:not([data-stage-mode])',
+  );
 }
 
 export function isModifierKey(key: string): boolean {
