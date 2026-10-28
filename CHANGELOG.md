@@ -2,6 +2,10 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.0] - 2026-10-28
+
+The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the live-performance work to installed builds: the song library, playlists and backups; the stems player with a metronome; the lyrics and chords reader with stage mode; timed MIDI cues over USB or Bluetooth MIDI, with a pedal command library and preflight checks; key, chord and lyrics analysis; and generated drums and bass.
+
 ## Unreleased
 
 ### Added
@@ -243,6 +247,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - TONE3000 sign-in, tone lists and downloads.
 - Release builds for macOS (`.dmg`), Windows (NSIS) and Linux (AppImage, `.deb`).
 
+[0.9.0]: https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/tag/v0.9.0
 [0.8.1]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/grzmol/VLTN-Tone-Studio/compare/v0.7.1...v0.7.2
