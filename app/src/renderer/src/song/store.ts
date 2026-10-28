@@ -2,6 +2,7 @@ import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { findModel } from "@shared/host/song";
 import { decodeSong } from "./decode";
 import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
+import { detectMissingParts, type MissingParts } from "./band/detect";
 import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
 import { importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
 import { mergeTrackDefaults, type TrackInfo } from "./tracks";
@@ -24,6 +25,8 @@ export interface SongDeps {
 export interface SongStore extends SongState {
   /** How the current stems were made (shown under the player) */
   lastSplit: SplitInfo | null;
+  /** Whether the split has drums or bass, set when a split finishes. Null until then. */
+  missingParts: MissingParts | null;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -48,10 +51,11 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     status: { kind: "idle" },
     choice: deps.loadChoice(),
     lastSplit: null,
+    missingParts: null,
 
     async load(file) {
       const ctrl = begin();
-      set({ source: null, stems: null, tracks: {}, lastSplit: null, status: { kind: "decoding" } });
+      set({ source: null, stems: null, tracks: {}, lastSplit: null, missingParts: null, status: { kind: "decoding" } });
       try {
         const audio = await deps.decode(file);
         if (ctrl.signal.aborted) return;
@@ -71,7 +75,12 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       const ctrl = begin();
       // Imported tracks are not made by the split, so they stay with the song.
       const kept = userTracksOf(get().stems, get().tracks);
-      set({ stems: null, lastSplit: null, status: { kind: "splitting", fraction: 0, backend: null, pass: 1, passes: model.passes.length } });
+      set({
+        stems: null,
+        lastSplit: null,
+        missingParts: null,
+        status: { kind: "splitting", fraction: 0, backend: null, pass: 1, passes: model.passes.length },
+      });
       const onProgress = (p: SeparationProgress) => {
         if (ctrl.signal.aborted) return;
         set({ status: p.stage === "model" ? { kind: "model", fraction: p.fraction, bytes: p.bytes } : { kind: "splitting", fraction: p.fraction, backend: p.backend, pass: p.pass, passes: p.passes } });
@@ -86,7 +95,13 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
           stems[name] = { sampleRate: source.audio.sampleRate, channels };
         }
         for (const [key, pcm] of kept) stems[key] = pcm;
-        set({ stems, lastSplit: { model: model.id, quality: quality.id, backends: res.backends, seconds: res.seconds }, status: { kind: "done" } });
+        const missingParts = detectMissingParts(source.audio, stems);
+        set({
+          stems,
+          lastSplit: { model: model.id, quality: quality.id, backends: res.backends, seconds: res.seconds },
+          missingParts,
+          status: { kind: "done" },
+        });
       } catch (e) {
         if (!ctrl.signal.aborted && !isAbort(e)) set({ status: { kind: "error", message: message(e) } });
       } finally {
@@ -158,7 +173,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     reset() {
       job?.abort();
       job = null;
-      set({ source: null, stems: null, tracks: {}, lastSplit: null, status: { kind: "idle" } });
+      set({ source: null, stems: null, tracks: {}, lastSplit: null, missingParts: null, status: { kind: "idle" } });
     },
   }));
 }

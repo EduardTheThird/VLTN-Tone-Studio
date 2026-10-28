@@ -158,6 +158,25 @@ describe("song store", () => {
     expect(useSong.getState()).toMatchObject({ source: null, stems: null, status: { kind: "idle" } });
   });
 
+  it("finds a silent drums stem once a split finishes, and forgets it on reset", async () => {
+    const length = 88200;
+    const tone = () => new Float32Array(length).map((_, i) => 0.5 * Math.sin(i * 0.05));
+    const useSong = store({
+      decode: async () => ({ sampleRate: 44100, channels: [tone(), tone()] }),
+      separate: async () => ({
+        stems: Object.fromEntries(STEM_NAMES.map((name) => [name, name === "drums" ? [new Float32Array(length), new Float32Array(length)] : [tone(), tone()]])),
+        backends: ["webgpu"],
+        seconds: 1,
+      }),
+    });
+    await useSong.getState().load(file("a.wav"));
+    expect(useSong.getState().missingParts).toBeNull();
+    await useSong.getState().split();
+    expect(useSong.getState().missingParts).toMatchObject({ drums: "absent", bass: "present" });
+    useSong.getState().reset();
+    expect(useSong.getState().missingParts).toBeNull();
+  });
+
   it("split without a song does nothing", async () => {
     const separate = vi.fn();
     const useSong = store({ separate });
