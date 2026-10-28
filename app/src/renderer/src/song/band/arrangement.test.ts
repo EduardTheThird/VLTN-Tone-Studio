@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Section } from "../performance/sections";
-import { DEFAULT_BAND_SETTINGS, energyForName, isBandSettings, parseBandSettings, planSections, type BandSettings } from "./arrangement";
+import { DEFAULT_BAND_SETTINGS, energyForName, isBandSettings, parseBandSettings, planSections, WHOLE_SONG_ID, type BandSettings } from "./arrangement";
 
 function section(id: string, name: string, start: number, end: number): Section {
   return { id, name, start, end, mode: "continue" };
@@ -41,6 +41,22 @@ describe("planSections", () => {
     expect(plans[0].start).toBe(0);
     for (let i = 0; i < plans.length - 1; i++) expect(plans[i].end).toBe(plans[i + 1].start);
     expect(plans[plans.length - 1].end).toBe(80);
+  });
+
+  it("gives a song without sections one plan, with its default settings", () => {
+    const [plan] = planSections([], 80, settings({ style: "funk", parts: { drums: false, bass: true } }));
+    expect(plan).toMatchObject({ sectionId: null, start: 0, end: 80, style: "funk", energy: 3, fill: true, play: { drums: false, bass: true } });
+  });
+
+  it("applies the whole-song overrides to a song without sections", () => {
+    const override = settings({ sections: { [WHOLE_SONG_ID]: { style: "metal", energy: 5, fill: false, play: { drums: true, bass: false } } } });
+    const [plan] = planSections([], 80, override);
+    expect(plan).toMatchObject({ style: "metal", energy: 5, fill: false, play: { drums: true, bass: false } });
+  });
+
+  it("keeps the whole-song overrides in the saved settings", () => {
+    const saved = parseBandSettings({ sections: { [WHOLE_SONG_ID]: { energy: 1 } } });
+    expect(saved.sections[WHOLE_SONG_ID]).toEqual({ energy: 1 });
   });
 
   it("extends the previous section over a gap", () => {

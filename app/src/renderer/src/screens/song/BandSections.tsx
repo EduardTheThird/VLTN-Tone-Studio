@@ -9,8 +9,8 @@ export interface BandSectionRow {
 }
 
 /**
- * One row per section plan: name, style, energy, the fill at its end, and whether drums and bass play in it. The whole-song row (a song
- * with no sections) takes its style and parts from the settings above; energy and fill are fixed for it, so they are shown but not edited.
+ * One row per section plan: name, style, energy, the fill at its end, and whether drums and bass play in it. A song without sections has one
+ * row, and it is edited the same way.
  */
 export function BandSections({
   rows,
@@ -41,7 +41,6 @@ export function BandSections({
         </thead>
         <tbody>
           {rows.map(({ plan, name }, index) => {
-            const whole = plan.sectionId === null;
             return (
               <tr key={plan.sectionId ?? "whole"} className="border-t border-seam">
                 <td className="py-1.5 pr-2">
@@ -72,7 +71,7 @@ export function BandSections({
                 <td className="py-1.5 pr-2">
                   <Select
                     value={String(plan.energy)}
-                    disabled={disabled || whole}
+                    disabled={disabled}
                     onValueChange={(value) => onChange(plan.sectionId, { energy: Number(value) as SectionPlan["energy"] })}
                   >
                     <SelectTrigger size="sm" aria-label={`Energy of ${name}`}>
@@ -90,7 +89,7 @@ export function BandSections({
                 <td className="py-1.5 pr-2">
                   <Checkbox
                     aria-label={`Fill at the end of ${name}`}
-                    disabled={disabled || whole}
+                    disabled={disabled}
                     checked={plan.fill}
                     onCheckedChange={(checked) => onChange(plan.sectionId, { fill: checked === true })}
                   />

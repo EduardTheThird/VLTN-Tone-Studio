@@ -35,10 +35,11 @@ export interface SongStore extends SongState {
    */
   checkMissingParts(): void;
   /**
-   * Adds the rendered drum and bass parts as user tracks, replacing the earlier generated part of the same kind. Returns the notices
-   * for what was refused; an empty list means the parts were added. Refused while playing, like addTracks.
+   * Adds the rendered drum and bass parts as user tracks, replacing the earlier generated part of the same kind. `remove` names the parts
+   * turned off: their generated tracks go in the same update. Returns the notices for what was refused; an empty list means the parts were
+   * added. Refused while playing, like addTracks.
    */
-  applyGeneratedParts(parts: GeneratedAudio, options?: { playing?: boolean }): string[];
+  applyGeneratedParts(parts: GeneratedAudio, options?: { playing?: boolean; remove?: readonly PartKind[] }): string[];
   /** Removes the generated drum and bass tracks and nothing else. Returns notices, as applyGeneratedParts does. */
   removeGeneratedParts(options?: { playing?: boolean }): string[];
 }
@@ -250,7 +251,8 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         const part = parts[kind];
         if (part) pending.push({ kind, part });
       }
-      if (!pending.length) return [];
+      const turnedOff = options?.remove ?? [];
+      if (!pending.length && !turnedOff.length) return [];
       if (["decoding", "model", "splitting"].includes(status.kind)) return [BUSY_NOTICE];
       if (!source) return ["Load a song before generating parts."];
       // The parts play beside the song, so they must line up with it sample for sample.
@@ -267,9 +269,11 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       const sourceTrack = Object.keys(stems ?? {}).length ? null : source.audio;
       const nextStems: Stems = sourceTrack ? { source: sourceTrack } : { ...stems };
       const nextTracks: Record<string, TrackInfo> = sourceTrack ? { source: { kind: "source", name: "Song" } } : { ...tracks };
-      // Only the kinds being applied are replaced. A part that is not in this call keeps its generated track.
+      // A part being applied replaces its generated track, and a part that is turned off loses its track. Both happen in this one update,
+      // so the mixer never shows a part that the user has turned off.
+      const kinds = new Set<PartKind>([...pending.map(({ kind }) => kind), ...turnedOff]);
       const removed: string[] = [];
-      for (const { kind } of pending) {
+      for (const kind of kinds) {
         const old = previous[kind];
         if (old) {
           delete nextStems[old];
@@ -277,10 +281,13 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
           removed.push(old);
         }
       }
+      // Nothing to add and nothing to take away: the song stays as it is.
+      if (!pending.length && !removed.length) return [];
       const keys = freeTrackKeys(Object.keys(nextStems), pending.length);
       if (keys.length < pending.length) return [`A song can hold up to ${USER_TRACKS_MAX} imported tracks, so the generated parts were not added.`];
 
       const generated: GeneratedKeys = { ...previous };
+      for (const kind of kinds) delete generated[kind];
       pending.forEach(({ kind, part }, index) => {
         const trackKey = keys[index];
         nextStems[trackKey] = part;
@@ -288,7 +295,10 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         generated[kind] = trackKey;
       });
       saveGeneratedKeys(key, removed, nextTracks, generated);
-      set({ stems: nextStems, tracks: nextTracks });
+      // Taking away the last generated part of a song that was never split leaves it as it was before the parts were added, as removeGeneratedParts does.
+      const remaining = Object.keys(nextStems);
+      if (!pending.length && (remaining.length === 0 || (remaining.length === 1 && remaining[0] === "source"))) set({ stems: null, tracks: {} });
+      else set({ stems: nextStems, tracks: nextTracks });
       return [];
     },
 

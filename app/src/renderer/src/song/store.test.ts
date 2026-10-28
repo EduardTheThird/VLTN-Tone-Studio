@@ -350,6 +350,42 @@ describe("generated parts in the song store", () => {
     expect(useSong.getState().stems?.track1).toBe(bass);
   });
 
+  it("removes the generated track of a part that is turned off, in the same update as the parts that are on", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    let updates = 0;
+    const unsubscribe = useSong.subscribe(() => updates++);
+    // The drums are turned off and the bass is generated again: one store update, and the drums track goes with it.
+    expect(useSong.getState().applyGeneratedParts({ bass: audio() }, { remove: ["drums"] })).toEqual([]);
+    unsubscribe();
+    expect(updates).toBe(1);
+    // The new bass takes the lowest free key, which the drums and the old bass have just given up.
+    expect(Object.keys(useSong.getState().tracks)).toEqual(["source", "track0"]);
+    expect(useSong.getState().tracks.track0).toMatchObject({ name: "Bass (generated)" });
+    expect(options(useSong.getState().source).generatedParts).toEqual({ bass: "track0" });
+  });
+
+  it("removes a turned-off part's track even when no part is applied", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    expect(useSong.getState().applyGeneratedParts({}, { remove: ["bass"] })).toEqual([]);
+    expect(Object.keys(useSong.getState().tracks)).toEqual(["source", "track0"]);
+    expect(options(useSong.getState().source).generatedParts).toEqual({ drums: "track0" });
+  });
+
+  it("does nothing when a part is turned off that has no generated track", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    let updates = 0;
+    const unsubscribe = useSong.subscribe(() => updates++);
+    expect(useSong.getState().applyGeneratedParts({}, { remove: ["drums"] })).toEqual([]);
+    unsubscribe();
+    expect(updates).toBe(0);
+    expect(useSong.getState().stems).toBeNull();
+  });
+
   it("keeps a split song's stems and imported tracks, and removes only the generated tracks", async () => {
     const useSong = store({ importTracks: importFake });
     await useSong.getState().load(file("song.mp3"));

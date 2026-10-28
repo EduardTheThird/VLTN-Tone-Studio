@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
   startBandRender: vi.fn(),
   renderPreview: vi.fn(),
+  startChordDetection: vi.fn(),
   store: null as unknown as { getState(): unknown; setState(patch: unknown): void },
 }));
 
@@ -28,6 +29,7 @@ vi.mock("@/song/store", async () => {
   return { useSong };
 });
 vi.mock("@/song/band/beat-grid-client", () => ({ startBeatGrid: mocks.startBeatGrid }));
+vi.mock("@/song/band/chord-detect-client", () => ({ startChordDetection: mocks.startChordDetection }));
 vi.mock("@/song/band/band-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/song/band/band-client")>()),
   bandSampleUrls: () => ({}),
@@ -108,6 +110,9 @@ beforeEach(() => {
   mocks.startBeatGrid.mockReset();
   mocks.startBandRender.mockReset();
   mocks.renderPreview.mockReset();
+  // By default the detector finds nothing, so the bass rests unless a test gives it chords.
+  mocks.startChordDetection.mockReset();
+  mocks.startChordDetection.mockReturnValue({ done: Promise.resolve([]), cancel: vi.fn() });
 });
 afterEach(() => {
   cleanup();
@@ -210,7 +215,7 @@ describe("Band panel", () => {
     renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
     expect(screen.getByText(/Parts out of date/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
-    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums, bass }, { playing: false }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums, bass }, { playing: false, remove: [] }));
     const request = mocks.startBandRender.mock.calls[0][0];
     expect(request.grid.beats).toHaveLength(16);
     expect(request.harmony).toHaveLength(16);
@@ -242,10 +247,75 @@ describe("Band panel", () => {
     expect(savedOptions().band.sections.chorus.energy).toBe(5);
   });
 
-  it("shows one whole-song row when the song has no sections", () => {
+  it("edits the one row of a song without sections, and saves it under the whole-song key", () => {
     renderPanel();
     expect(screen.getByRole("button", { name: "Whole song" })).toBeTruthy();
-    expect((screen.getByRole("checkbox", { name: "Fill at the end of Whole song" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Fill at the end of Whole song" }));
+    expect(savedOptions().band.sections.song.fill).toBe(false);
+    pick(screen.getByRole("combobox", { name: "Energy of Whole song" }), "5");
+    expect(savedOptions().band.sections.song.energy).toBe(5);
+    pick(screen.getByRole("combobox", { name: "Style of Whole song" }), "Metal");
+    expect(savedOptions().band.sections.song.style).toBe("metal");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Bass in Whole song" }));
+    expect(savedOptions().band.sections.song.play).toEqual({ drums: true, bass: false });
+  });
+
+  it("detects chords from the audio when the chart and the analysis have none, and generates with them", async () => {
+    stored({ beatGrid: grid });
+    mocks.startChordDetection.mockReturnValue({ done: Promise.resolve([{ time: 0, name: "Am", confidence: 0.9 }]), cancel: vi.fn() });
+    const drums = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ drums, notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalled());
+    expect(mocks.startChordDetection).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100 }));
+    expect(mocks.startBandRender.mock.calls[0][0].harmony[0].chord?.name).toBe("Am");
+    expect(screen.queryByText(/No chords were found/)).toBeNull();
+  });
+
+  it("says the bass will rest when detection finds nothing either", async () => {
+    stored({ beatGrid: grid });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText(/No chords were found in the chart or the audio/)).toBeTruthy();
+    expect(mocks.startBandRender).toHaveBeenCalled();
+  });
+
+  it("does not detect chords when the bass is off", async () => {
+    stored({ beatGrid: grid, band: { parts: { drums: true, bass: false } } });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalled());
+    expect(mocks.startChordDetection).not.toHaveBeenCalled();
+  });
+
+  it("cancels chord detection with the Cancel button, and changes no track", async () => {
+    stored({ beatGrid: grid });
+    let fail: (error: Error) => void = () => {};
+    const cancel = vi.fn(() => {
+      const error = new Error("Chord detection was cancelled.");
+      error.name = "AbortError";
+      fail(error);
+    });
+    mocks.startChordDetection.mockReturnValue({ done: new Promise<never>((_, reject) => (fail = reject)), cancel });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(cancel).toHaveBeenCalled();
+    expect(await screen.findByText("Generating the parts was cancelled. The tracks were not changed.")).toBeTruthy();
+    expect(mocks.startBandRender).not.toHaveBeenCalled();
+    expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
+  });
+
+  it("passes a turned-off part to the store, so its generated track goes in the same update", async () => {
+    stored({ beatGrid: grid, band: { parts: { drums: false, bass: true } } });
+    const bass = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ bass, notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel({ chart: "[C]" });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums: undefined, bass }, { playing: false, remove: ["drums"] }));
   });
 
   it("shows the notice a generation returns, and keeps the flag when the parts were refused", async () => {

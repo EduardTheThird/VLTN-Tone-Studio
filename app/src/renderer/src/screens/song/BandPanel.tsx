@@ -12,12 +12,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useSong } from "@/song/store";
-import { planSections, type BandSettings, type SectionPlan } from "@/song/band/arrangement";
+import { planSections, WHOLE_SONG_ID, type BandSettings, type SectionPlan } from "@/song/band/arrangement";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
 import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
-import { bandRequest, beatSources, chartChordTimes, previewMix } from "@/song/band/request";
+import { bandRequest, beatSources, chartChordTimes, chordSource, previewMix } from "@/song/band/request";
+import { startChordDetection } from "@/song/band/chord-detect-client";
 import { findStyle, STYLES, type StyleId } from "@/song/band/styles";
 import type { BandStage } from "@/song/band/band-job";
 import type { PcmAudio } from "@/song/types";
@@ -162,14 +163,11 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       bassMode: settings.bassMode === "walking" && !next?.bass.walking ? "roots" : settings.bassMode,
     });
   };
+  /** Writes a row's override. A song without sections keeps its one row's overrides under WHOLE_SONG_ID. */
   const changeRow = (sectionId: string | null, patch: Partial<SectionPlan>) => {
-    if (sectionId === null) {
-      // A song without sections has one plan. Its style and parts are the song's own settings.
-      change({ ...(patch.style ? { style: patch.style } : {}), ...(patch.play ? { parts: { ...patch.play } } : {}) });
-      return;
-    }
-    const current = settings.sections[sectionId] ?? {};
-    save({ ...settings, sections: { ...settings.sections, [sectionId]: { ...current, ...patch } } });
+    const key = sectionId ?? WHOLE_SONG_ID;
+    const current = settings.sections[key] ?? {};
+    save({ ...settings, sections: { ...settings.sections, [key]: { ...current, ...patch } } });
   };
 
   const applyGrid = (next: BeatGrid | null) => {
@@ -209,12 +207,30 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     }
   };
 
+  /**
+   * Finds chords in the bass-free audio, when the chart and the chord analysis gave none. Null when the step was cancelled. The job is the
+   * panel's current job, so Cancel stops it the same way it stops the render.
+   */
+  const detectChords = async (audio: PcmAudio): Promise<Chord[] | null> => {
+    setWork("Detecting chords…");
+    const detecting = startChordDetection(chordSource(useSong.getState().stems, audio));
+    job.current = detecting;
+    try {
+      return await detecting.done;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return null;
+      throw error;
+    } finally {
+      job.current = null;
+    }
+  };
+
   const generate = async (using: BandSettings) => {
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before generating parts."]);
     if (!grid) return setNotices(["Find the beat first, so the parts have a grid to follow."]);
     if (!using.parts.drums && !using.parts.bass) return setNotices(["Turn on drums or bass first."]);
-    const request = bandRequest({
+    const input = {
       grid,
       cues,
       chords,
@@ -223,10 +239,25 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       songEnd,
       lengthFrames: current.audio.channels[0].length,
       sampleUrls: bandSampleUrls(),
-    });
+    };
+    let request = bandRequest(input);
     const notes: string[] = [];
     if (using.parts.bass && !request.harmony.some((entry) => entry.chord)) {
-      notes.push("No chords found, so the bass will rest. Add chords to the chart, or wait for the chord analysis, then generate again.");
+      // Neither the chart nor the screen's analysis has chords, so the bass would rest all song. Detect them from the audio first.
+      let found: Chord[] | null = [];
+      try {
+        found = await detectChords(current.audio);
+      } catch (error) {
+        notes.push(error instanceof Error ? error.message : String(error));
+      }
+      if (found === null) {
+        setWork(null);
+        return setNotices(["Generating the parts was cancelled. The tracks were not changed."]);
+      }
+      if (found.length) request = bandRequest({ ...input, chords: found });
+      if (!request.harmony.some((entry) => entry.chord)) {
+        notes.push("No chords were found in the chart or the audio, so the bass will rest. Add chords to the chart, then generate again.");
+      }
     }
     setNotices(notes);
     setWork(stageText("loading"));
@@ -235,7 +266,9 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
     rendering.onProgress((stage) => setWork(stageText(stage)));
     try {
       const result = await rendering.done;
-      const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass: result.bass }, { playing: playingNow.current });
+      // A part that is turned off loses its generated track in the same update as the parts that are applied.
+      const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
+      const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass: result.bass }, { playing: playingNow.current, remove: turnedOff });
       setNotices([...notes, ...applied]);
       if (applied.length === 0) {
         setOutOfDate(false);

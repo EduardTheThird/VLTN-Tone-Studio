@@ -15,6 +15,9 @@ export type BassSound = (typeof BASS_SOUNDS)[number];
 export type BassRange = (typeof BASS_RANGES)[number];
 export type BassMode = (typeof BASS_MODES)[number];
 
+/** The key the overrides of a song without sections are kept under. Section ids are UUIDs, so this cannot clash with one. */
+export const WHOLE_SONG_ID = "song";
+
 /** The top of the swing range. Full swing (1) would put the off-beat at the very end of its step. */
 export const SWING_MAX = 0.75;
 
@@ -99,7 +102,19 @@ export function isChorusName(name: string): boolean {
  */
 export function planSections(sections: readonly Section[], songEnd: number, settings: BandSettings): SectionPlan[] {
   if (sections.length === 0) {
-    return [{ sectionId: null, start: 0, end: songEnd, style: settings.style, energy: 3, fill: true, play: { ...settings.parts } }];
+    // A song without sections is one plan, and its overrides are kept under WHOLE_SONG_ID like a section's are under its id.
+    const override = settings.sections[WHOLE_SONG_ID] ?? {};
+    return [
+      {
+        sectionId: null,
+        start: 0,
+        end: songEnd,
+        style: override.style ?? settings.style,
+        energy: override.energy ?? 3,
+        fill: override.fill ?? true,
+        play: override.play ? { ...override.play } : { ...settings.parts },
+      },
+    ];
   }
 
   const ordered = sortedSections(sections);
