@@ -43,6 +43,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed
+- **Normalising keeps the song's peak below full scale.** A song measured at −19.8 LUFS with a −3 dBFS peak was raised by +5.8 dB and clipped at the device. The gain is now also limited so the song's peak stays at or below −1 dBFS, and the control says when the peak set it. Songs normalised by earlier versions are measured again the next time you turn normalising on.
 - **A playlist join uses the next song's count-in.** A song with a one-bar count-in after a song without one joined gaplessly, with no count-in. The count-in clicks now start at the outgoing song's end, at the next song's own tempo and count-in length.
 - **Imported tracks without a split no longer blank the Stems tab.** A library song with imported tracks but no split stems opened the Stems tab onto a blank window. The tab now shows the split prompt, so the song can be split.
 - **Scrolling over a knob scrolls the page.** A knob on the rig turned with the mouse wheel or trackpad wherever the pointer was, so scrolling the page could change a setting, such as a global like the Mic record level, and send it to the pedal. A knob now turns with the wheel only after you click or Tab to it. Dragging and keys work as before.

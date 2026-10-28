@@ -95,16 +95,53 @@ export function integratedLoudness(channels: Float32Array[], sampleRate: number)
   return loudnessOf(kept.reduce((total, power) => total + power, 0) / kept.length);
 }
 
-/** The gain that brings a song measured at `lufs` to `target`, kept within the normalisation limit. Silence is left alone (gain 1). */
-export function normalisingGain(lufs: number, target = TARGET_LUFS): number {
-  if (!Number.isFinite(lufs)) return 1;
-  return Math.min(NORMALISE_GAIN_MAX, 10 ** ((target - lufs) / 20));
+/** The sample peak of planar audio, in dBFS (-Infinity for silence). It is taken from the same samples the loudness is measured on. */
+export function samplePeakDb(channels: Float32Array[]): number {
+  let peak = 0;
+  for (const channel of channels) {
+    for (let i = 0; i < channel.length; i++) peak = Math.max(peak, Math.abs(channel[i]));
+  }
+  return 20 * Math.log10(peak);
 }
 
-/** A song's stored loudness: its measured level, once measured, and whether it is normalised. */
+/** A song's measured level: its integrated loudness and its sample peak, both from the same mix. */
+export interface SongMeasure {
+  lufs: number;
+  peakDb: number;
+}
+
+/** Measures a song's loudness and sample peak in one pass over its channels. */
+export function measureSong(channels: Float32Array[], sampleRate: number): SongMeasure {
+  return { lufs: integratedLoudness(channels, sampleRate), peakDb: samplePeakDb(channels) };
+}
+
+/** The highest level a normalised song may peak at, in dBFS. A little below full scale, so the output never clips. */
+export const PEAK_CEILING_DBFS = -1;
+const NORMALISE_GAIN_MAX_DB = 20 * Math.log10(NORMALISE_GAIN_MAX);
+
+/**
+ * The gain, in dB, that brings a song measured at `lufs` to `target`. It is the smallest of the distance to the target, the +6 dB limit
+ * and the headroom left below the peak ceiling. `limitedByPeak` says whether the peak set it. A song whose peak is not measured yet (null)
+ * is not limited by one. Silence is left alone (gain 0 dB).
+ */
+export function normalisingGainDb(lufs: number, peakDb: number | null, target = TARGET_LUFS): { gainDb: number; limitedByPeak: boolean } {
+  if (!Number.isFinite(lufs)) return { gainDb: 0, limitedByPeak: false };
+  const toTarget = Math.min(target - lufs, NORMALISE_GAIN_MAX_DB);
+  const toPeak = peakDb === null || !Number.isFinite(peakDb) ? Infinity : PEAK_CEILING_DBFS - peakDb;
+  return { gainDb: Math.min(toTarget, toPeak), limitedByPeak: toPeak < toTarget };
+}
+
+/** The linear gain that brings a song measured at `lufs` to `target`, kept within the normalisation limits (see normalisingGainDb). */
+export function normalisingGain(lufs: number, peakDb: number | null = null, target = TARGET_LUFS): number {
+  return 10 ** (normalisingGainDb(lufs, peakDb, target).gainDb / 20);
+}
+
+/** A song's stored loudness: its measured level and peak, once measured, and whether it is normalised. */
 export interface SongLoudness {
   /** The measured integrated loudness, or null before it has been measured */
   lufs: number | null;
+  /** The measured sample peak in dBFS, or null before it has been measured (songs measured by earlier versions have none) */
+  peakDb: number | null;
   normalise: boolean;
 }
 
@@ -115,11 +152,21 @@ export function loudnessFromOptions(json: string): SongLoudness {
     const options = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
     return {
       lufs: typeof options.songLufs === "number" && Number.isFinite(options.songLufs) ? options.songLufs : null,
+      peakDb: typeof options.songPeakDb === "number" && Number.isFinite(options.songPeakDb) ? options.songPeakDb : null,
       normalise: options.normaliseSong === true,
     };
   } catch {
-    return { lufs: null, normalise: false };
+    return { lufs: null, peakDb: null, normalise: false };
   }
+}
+
+/** The line under the loudness control: the measured level, the gain applied and whether the peak limited it. */
+export function loudnessStatus(loudness: SongLoudness): string {
+  if (loudness.lufs === null) return "Not measured yet";
+  const { gainDb, limitedByPeak } = normalisingGainDb(loudness.lufs, loudness.peakDb);
+  const measured = `Measured ${loudness.lufs.toFixed(1)} LUFS, gain ${gainDb >= 0 ? "+" : ""}${gainDb.toFixed(1)} dB`;
+  if (loudness.peakDb === null) return `${measured} (peak not measured: turn normalising off and on to measure it)`;
+  return limitedByPeak ? `${measured} (limited by the peak)` : measured;
 }
 
 /** The options JSON with a song's loudness written in. Everything else in the options is kept as it is. */
@@ -131,5 +178,10 @@ export function withLoudness(json: string, loudness: SongLoudness): string {
   } catch {
     // A damaged options entry is replaced by the loudness alone.
   }
-  return JSON.stringify({ ...options, songLufs: loudness.lufs ?? undefined, normaliseSong: loudness.normalise });
+  return JSON.stringify({
+    ...options,
+    songLufs: loudness.lufs ?? undefined,
+    songPeakDb: loudness.peakDb ?? undefined,
+    normaliseSong: loudness.normalise,
+  });
 }
