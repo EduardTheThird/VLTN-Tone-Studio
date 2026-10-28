@@ -203,6 +203,18 @@ describe("imported tracks in the song store", () => {
     expect(useSong.getState().tracks.drums).toBeUndefined();
   });
 
+  it("keeps a one-file song's own track when a folder of tracks is imported", async () => {
+    const useSong = store({ importTracks: importFake });
+    await useSong.getState().load(file("click-90-1min.wav"));
+    const source = useSong.getState().source;
+    await useSong.getState().addTracks([file("Keys.wav"), file("Bass.wav"), file("Click.wav")]);
+    expect(useSong.getState().source).toBe(source);
+    expect(Object.keys(useSong.getState().stems ?? {})).toEqual(["source", "track0", "track1", "track2"]);
+    expect(useSong.getState().stems?.source).toBe(source?.audio);
+    expect(useSong.getState().tracks.source).toMatchObject({ kind: "source", name: "Song" });
+    expect(useSong.getState().tracks.track2).toMatchObject({ kind: "user", name: "Click.wav" });
+  });
+
   it("keeps imported tracks when the song is split again", async () => {
     const useSong = store({ importTracks: importFake });
     await useSong.getState().load(file("song.mp3"));

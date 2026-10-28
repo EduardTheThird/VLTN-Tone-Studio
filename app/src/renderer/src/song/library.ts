@@ -223,6 +223,11 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
     stems[trackKey(track)] = pcm;
     tracks[trackKey(track)] = trackInfoOf(track);
   }
+  // A song with imported tracks and no split plays its source as a track too, as addTracks leaves it (see store.ts).
+  if (sourceEntry && playable.length && !playable.some(([track]) => trackKindOf(track) === "stem")) {
+    stems.source = sourceEntry[1];
+    tracks.source = { kind: "source", name: "Song" };
+  }
   // A track's saved pitch choice is a default: the song's own choice, if it has one, wins.
   const options = song.settings[":options"] ?? "";
   const merged = mergeTrackDefaults(options, tracks);
@@ -639,7 +644,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const id = source.libraryId ?? crypto.randomUUID();
         const tracks: [string, PcmAudio][] = [
           ["source", source.audio],
-          ...Object.entries(state.stems ?? {}).filter((entry): entry is [string, PcmAudio] => entry[1] !== undefined),
+          ...Object.entries(state.stems ?? {}).filter((entry): entry is [string, PcmAudio] => entry[1] !== undefined && entry[0] !== "source"),
         ];
         // One track at a time keeps the encoder's copy of the audio to a single track.
         const assets: { name: string; bytes: Uint8Array }[] = [],

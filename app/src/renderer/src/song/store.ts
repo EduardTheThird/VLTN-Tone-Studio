@@ -106,8 +106,11 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       // The song may have changed while the files were read. Then the tracks belong to nothing, so they are not added.
       if (get().source !== source || get().stems !== stems) return [...outcome.notices, "The song changed while the tracks were imported, so they were not added."];
       if (!outcome.tracks.length) return outcome.notices;
-      const nextStems: Stems = { ...stems };
-      const nextTracks: Record<string, TrackInfo> = { ...tracks };
+      // A song saved without a split plays its source as one track. Once tracks are imported it must stay one, or the player would play
+      // only the imported tracks and the mixer would lose the song.
+      const sourceTrack = source && !Object.keys(stems ?? {}).length ? source.audio : null;
+      const nextStems: Stems = sourceTrack ? { source: sourceTrack } : { ...stems };
+      const nextTracks: Record<string, TrackInfo> = sourceTrack ? { source: { kind: "source", name: "Song" } } : { ...tracks };
       for (const track of outcome.tracks) {
         nextStems[track.key] = track.pcm;
         nextTracks[track.key] = {

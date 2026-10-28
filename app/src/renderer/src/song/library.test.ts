@@ -68,6 +68,18 @@ it("loads saved source/stems and preserves queue positions for repeated entries"
   expect(useSongLibrary.getState().position).toBe(1);
   expect(useNav.getState().param).toBe("performance");
 });
+it("keeps a saved song's own track beside its imported tracks when it has no split", async () => {
+  const imported: LibrarySong = {
+    ...saved,
+    audio: [saved.audio[0], { ...saved.audio[1], name: "Keys", kind: "user", bus: "main" }],
+  };
+  api.index.mockResolvedValue({ ...emptyLibrary(), songs: [imported] });
+  await useSongLibrary.getState().load(imported.id, [imported.id], 0);
+  expect(Object.keys(useSong.getState().stems ?? {}).sort()).toEqual(["guitar", "source"]);
+  expect(useSong.getState().tracks.source).toMatchObject({ kind: "source", name: "Song" });
+  expect(useSong.getState().tracks.guitar).toMatchObject({ kind: "user", name: "Keys" });
+});
+
 it("keeps the MIDI remembered by the last song when a song is loaded by hand", async () => {
   const midi = { access: null, portId: "usb", inputId: "in", armed: false, output: undefined };
   useSongLibrary.getState().rememberMidi(midi);
