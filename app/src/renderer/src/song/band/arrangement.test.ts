@@ -1,0 +1,162 @@
+import { describe, expect, it } from "vitest";
+import type { Section } from "../performance/sections";
+import { DEFAULT_BAND_SETTINGS, energyForName, isBandSettings, parseBandSettings, planSections, type BandSettings } from "./arrangement";
+
+function section(id: string, name: string, start: number, end: number): Section {
+  return { id, name, start, end, mode: "continue" };
+}
+
+const settings = (overrides: Partial<BandSettings> = {}): BandSettings => ({ ...DEFAULT_BAND_SETTINGS, ...overrides });
+
+describe("energyForName", () => {
+  it("gives the default energy for each section name", () => {
+    expect(energyForName("Intro")).toBe(2);
+    expect(energyForName("Verse 1")).toBe(2);
+    expect(energyForName("Pre-Chorus")).toBe(3);
+    expect(energyForName("Chorus")).toBe(4);
+    expect(energyForName("Bridge")).toBe(3);
+    expect(energyForName("Guitar SOLO")).toBe(4);
+    expect(energyForName("Outro")).toBe(2);
+  });
+
+  it("gives 3 for a name it does not know", () => {
+    expect(energyForName("Breakdown")).toBe(3);
+  });
+
+  it("does not mistake a pre-chorus for a chorus", () => {
+    expect(energyForName("pre chorus")).toBe(3);
+  });
+});
+
+describe("planSections", () => {
+  const sections = [section("a", "Intro", 4, 20), section("b", "Verse", 20, 40), section("c", "Chorus", 40, 60), section("d", "Outro", 60, 70)];
+
+  it("makes one plan per section, in time order", () => {
+    const plans = planSections([sections[2], sections[0], sections[1], sections[3]], 80, settings());
+    expect(plans.map((plan) => plan.sectionId)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("covers the whole song with no gaps, and the last plan runs to the song end", () => {
+    const plans = planSections(sections, 80, settings());
+    expect(plans[0].start).toBe(0);
+    for (let i = 0; i < plans.length - 1; i++) expect(plans[i].end).toBe(plans[i + 1].start);
+    expect(plans[plans.length - 1].end).toBe(80);
+  });
+
+  it("extends the previous section over a gap", () => {
+    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Chorus", 15, 30)], 30, settings());
+    expect(plans[0].end).toBe(15);
+  });
+
+  it("takes default energy from the section name", () => {
+    const plans = planSections(sections, 80, settings());
+    expect(plans.map((plan) => plan.energy)).toEqual([2, 2, 4, 2]);
+  });
+
+  it("turns a fill on before a chorus and on the last section, and nowhere else", () => {
+    const plans = planSections(
+      [section("a", "Verse", 0, 10), section("b", "Chorus", 10, 20), section("c", "Bridge", 20, 30), section("d", "Outro", 30, 40)],
+      40,
+      settings(),
+    );
+    expect(plans.map((plan) => plan.fill)).toEqual([true, false, false, true]);
+  });
+
+  it("does not fill before a pre-chorus", () => {
+    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Pre-chorus", 10, 20), section("c", "Chorus", 20, 30)], 30, settings());
+    expect(plans.map((plan) => plan.fill)).toEqual([false, true, true]);
+  });
+
+  it("uses the song's style and parts unless a section overrides them", () => {
+    const plans = planSections(sections, 80, settings({ style: "funk", parts: { drums: true, bass: false } }));
+    expect(plans.every((plan) => plan.style === "funk")).toBe(true);
+    expect(plans.every((plan) => plan.play.bass === false && plan.play.drums === true)).toBe(true);
+  });
+
+  it("lets per-section overrides win over the defaults", () => {
+    const plans = planSections(
+      sections,
+      80,
+      settings({
+        sections: {
+          c: { style: "pop", energy: 1, fill: false, play: { drums: false, bass: true } },
+        },
+      }),
+    );
+    expect(plans[2]).toMatchObject({ style: "pop", energy: 1, fill: false, play: { drums: false, bass: true } });
+    expect(plans[1]).toMatchObject({ style: "rock", energy: 2 });
+  });
+
+  it("does not let an override move a section", () => {
+    const plans = planSections(sections, 80, settings({ sections: { a: { energy: 5 } } }));
+    expect(plans[0].start).toBe(0);
+    expect(plans[0].end).toBe(20);
+  });
+
+  it("gives one plan for the whole song when there are no sections", () => {
+    const plans = planSections([], 90, settings());
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ sectionId: null, start: 0, end: 90, fill: true, energy: 3 });
+  });
+});
+
+describe("isBandSettings and parseBandSettings", () => {
+  it("accepts the defaults", () => {
+    expect(isBandSettings(DEFAULT_BAND_SETTINGS)).toBe(true);
+    expect(parseBandSettings(DEFAULT_BAND_SETTINGS)).toEqual(DEFAULT_BAND_SETTINGS);
+  });
+
+  it("gives the defaults for garbage", () => {
+    for (const garbage of [null, undefined, 42, "drums", [], true]) {
+      expect(parseBandSettings(garbage)).toEqual(DEFAULT_BAND_SETTINGS);
+      expect(isBandSettings(garbage)).toBe(false);
+    }
+  });
+
+  it("keeps valid fields and falls back for invalid ones", () => {
+    const parsed = parseBandSettings({ style: "pop", complexity: 7, swing: -1, bassMode: "walking", seed: "x", ghostNotes: false });
+    expect(parsed).toMatchObject({
+      style: "pop",
+      complexity: DEFAULT_BAND_SETTINGS.complexity,
+      swing: DEFAULT_BAND_SETTINGS.swing,
+      bassMode: "walking",
+      seed: DEFAULT_BAND_SETTINGS.seed,
+      ghostNotes: false,
+    });
+  });
+
+  it("rejects an unknown style and an unknown bass mode", () => {
+    const parsed = parseBandSettings({ style: "polka", bassMode: "slap" });
+    expect(parsed.style).toBe(DEFAULT_BAND_SETTINGS.style);
+    expect(parsed.bassMode).toBe(DEFAULT_BAND_SETTINGS.bassMode);
+  });
+
+  it("keeps valid section overrides and drops invalid fields inside them", () => {
+    const parsed = parseBandSettings({
+      sections: {
+        a: { energy: 4, style: "funk", fill: "yes" },
+        b: { energy: 9 },
+        c: "nope",
+      },
+    });
+    expect(parsed.sections).toEqual({ a: { energy: 4, style: "funk" } });
+  });
+
+  it("does not let a saved key change the prototype", () => {
+    const parsed = parseBandSettings(JSON.parse('{"sections":{"__proto__":{"energy":1}}}'));
+    expect(Object.getPrototypeOf(parsed.sections)).toBe(Object.prototype);
+    expect(parsed.sections.__proto__).toBe(Object.prototype);
+  });
+
+  it("reads an old song with only some fields, keeping the rest at the defaults", () => {
+    const parsed = parseBandSettings({ parts: { drums: true, bass: false } });
+    expect(parsed.parts).toEqual({ drums: true, bass: false });
+    expect(parsed.complexity).toBe(DEFAULT_BAND_SETTINGS.complexity);
+  });
+
+  it("returns fresh objects, so changing a parsed result cannot change the defaults", () => {
+    const parsed = parseBandSettings(undefined);
+    parsed.parts.drums = false;
+    expect(DEFAULT_BAND_SETTINGS.parts.drums).toBe(true);
+  });
+});
