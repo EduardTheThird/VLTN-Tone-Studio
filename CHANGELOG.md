@@ -81,6 +81,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - A song loaded by hand, or by a program change or remote binding, keeps the USB or system MIDI access, output and input of the song before it. Song triggers and remote bindings keep working after a load. Cues start disarmed, as before, until you arm them.
 - Play no longer disarms the cues after the computer sleeps. The scheduler worker reads the same clock as the audio, and a worker from before the sleep is replaced on wake, so cues stay armed on the first Play after a long sleep.
 - Key bindings work in stage mode, and while a checkbox or button has focus. Page Down, the arrows, T and a learned key ran nothing in stage mode, and a focused checkbox or button after a click swallowed them. Stage mode no longer blocks them, and a text field, a slider or another open dialog still does.
+- **GP-150 / GP-180 record levels accept the pedal's −21 dB.** A GP-180 reported its Bluetooth and Mic record levels as −21 dB, which the app declared out of range, so the value was shown wrong and could not be set back. Their range is now −21…+20 dB.
 
 ## [0.8.1] - 2026-10-21
 
