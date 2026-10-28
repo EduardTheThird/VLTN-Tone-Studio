@@ -6,7 +6,7 @@ import type { SplitChoice } from "./stems/options";
 import type { PcmAudio, Stems } from "./types";
 // vi.mock is hoisted above this import: the real engine needs a worker and the model; the store gets fakes.
 import { createSongStore, GENERATED_PLAYING_NOTICE, PLAYING_NOTICE, type SongDeps } from "./store";
-import { getSetting, performanceKey } from "./performance/settings";
+import { getSetting, performanceKey, setSetting } from "./performance/settings";
 
 vi.mock("./stems/engine", () => ({ separateStems: vi.fn() }));
 
@@ -420,5 +420,37 @@ describe("generated parts in the song store", () => {
     useSong.setState({ stems: full });
     expect(useSong.getState().applyGeneratedParts({ drums: audio() })).toEqual([expect.stringContaining("can hold up to 32")]);
     expect(useSong.getState().stems).toBe(full);
+  });
+
+  /** A song whose options record a generated drum on track2, where the user now has a guide track of their own. */
+  async function staleRecord() {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    const source = useSong.getState().source;
+    const guide = audio();
+    useSong.setState({
+      stems: { source: audio(), track2: guide },
+      tracks: { source: { kind: "source", name: "Song" }, track2: { kind: "user", name: "Guide.wav" } },
+    });
+    setSetting(performanceKey(source), ":options", JSON.stringify({ generatedParts: { drums: "track2", bass: "track3" } }));
+    return { useSong, source, guide };
+  }
+
+  it("applying parts keeps a user track that a stale record points at, and cleans the record up", async () => {
+    const { useSong, source, guide } = await staleRecord();
+    expect(useSong.getState().applyGeneratedParts({ drums: audio() })).toEqual([]);
+    expect(useSong.getState().stems?.track2).toBe(guide);
+    expect(useSong.getState().tracks.track2).toMatchObject({ kind: "user", name: "Guide.wav" });
+    expect(useSong.getState().tracks.track0).toMatchObject({ name: "Drums (generated)" });
+    // Only the record that still matches is kept: the stale bass record is dropped.
+    expect(options(source).generatedParts).toEqual({ drums: "track0" });
+  });
+
+  it("removing with a stale record deletes nothing, and cleans the record up", async () => {
+    const { useSong, source, guide } = await staleRecord();
+    expect(useSong.getState().removeGeneratedParts()).toEqual([]);
+    expect(useSong.getState().stems?.track2).toBe(guide);
+    expect(useSong.getState().tracks.track2).toMatchObject({ kind: "user", name: "Guide.wav" });
+    expect(options(source).generatedParts).toBeUndefined();
   });
 });

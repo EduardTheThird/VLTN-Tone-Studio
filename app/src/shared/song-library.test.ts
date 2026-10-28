@@ -182,4 +182,16 @@ describe("applying track settings to similar songs", () => {
   it("copies nothing from a song with no imported tracks", () => {
     expect(copyTrackSettings(song([flacTrack("source")]), from)).toBeNull();
   });
+
+  it("never copies a song's options, so its generated part keys stay with that song", () => {
+    // A generated part's track key means something only in the song that made it, so the other song keeps its own options.
+    const withRecord = { ...from, settings: { ":options": JSON.stringify({ generatedParts: { drums: "track0" } }) } };
+    const to = {
+      ...song([flacTrack("source"), imported("Keys L", 0), imported("Click", 1)]),
+      id: "22222222-2222-3333-4444-555555555555",
+      settings: { ":bpm": "120" },
+    };
+    const copied = copyTrackSettings(withRecord, to)!;
+    expect(copied.settings).toEqual({ ":bpm": "120" });
+  });
 });

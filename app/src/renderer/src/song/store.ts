@@ -77,13 +77,20 @@ function optionsOf(key: string): Record<string, unknown> {
   return {};
 }
 
-function generatedKeysOf(options: Record<string, unknown>): GeneratedKeys {
+/**
+ * The generated keys the song's options record, kept only where the track still is that part: a user track with the part's name. A record
+ * that no longer matches is ignored, so the key is never deleted when it now belongs to the user's own track. The record is dropped the
+ * next time it is saved.
+ */
+function generatedKeysOf(options: Record<string, unknown>, tracks: Record<string, TrackInfo>): GeneratedKeys {
   const saved = options.generatedParts;
   if (!saved || typeof saved !== "object") return {};
   const keys: GeneratedKeys = {};
   for (const kind of PART_KINDS) {
     const value = (saved as Record<string, unknown>)[kind];
-    if (typeof value === "string") keys[kind] = value;
+    if (typeof value !== "string") continue;
+    const track = tracks[value];
+    if (track?.kind === "user" && track.name === PART_TRACK[kind].name) keys[kind] = value;
   }
   return keys;
 }
@@ -254,7 +261,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       }
 
       const key = performanceKey(source);
-      const previous = generatedKeysOf(optionsOf(key));
+      const previous = generatedKeysOf(optionsOf(key), tracks);
       // A song without a split keeps its source as one track, as addTracks does. Otherwise the player would lose the song.
       const sourceTrack = Object.keys(stems ?? {}).length ? null : source.audio;
       const nextStems: Stems = sourceTrack ? { source: sourceTrack } : { ...stems };
@@ -287,12 +294,17 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     removeGeneratedParts(options) {
       if (options?.playing) return [GENERATED_PLAYING_NOTICE];
       const { source, stems, tracks, status } = get();
-      if (!source || !stems) return [];
+      if (!source) return [];
       if (["decoding", "model", "splitting"].includes(status.kind)) return [BUSY_NOTICE];
       const key = performanceKey(source);
-      const previous = generatedKeysOf(optionsOf(key));
-      const generated = Object.values(previous).filter((value): value is string => Boolean(value));
-      if (!generated.length) return [];
+      const saved = optionsOf(key);
+      const generated = Object.values(generatedKeysOf(saved, tracks)).filter((value): value is string => Boolean(value));
+      if (!generated.length) {
+        // Nothing to remove, but a record that no longer matches a generated part is still dropped.
+        if (saved.generatedParts !== undefined) saveGeneratedKeys(key, [], tracks, {});
+        return [];
+      }
+      if (!stems) return [];
       const nextStems: Stems = { ...stems };
       const nextTracks: Record<string, TrackInfo> = { ...tracks };
       for (const track of generated) {
