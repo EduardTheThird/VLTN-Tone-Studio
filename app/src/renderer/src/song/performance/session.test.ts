@@ -1230,18 +1230,31 @@ describe("remote actions", () => {
     session.dispose();
   });
 
-  it("runs no view key while the screen is hidden by another Song tab, but still runs the section keys", () => {
+  it("runs only transport and song keys while the screen is hidden by another Song tab, and leaves other keys to the page", () => {
     const { session, view } = remoteSession();
+    const cancelable = (key: string) => {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true });
+      window.dispatchEvent(event);
+      return event;
+    };
     view.pdfOnScreen.mockReturnValue(true);
     session.shown = false;
-    session.keyDown(press("t"));
-    session.keyDown(press("PageDown"));
+    session.keyDown(cancelable("t"));
     expect(view.tap).not.toHaveBeenCalled();
+    for (const key of ["PageDown", "ArrowRight"]) {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true });
+      expect(session.keyDown(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    }
     expect(view.scrollLyrics).not.toHaveBeenCalled();
-    expect(mocks.toasts.at(-1)).toEqual({ tone: "info", title: "This song has no sections." });
+    withBindings(session, [{ action: "transport.playPause", source: "key", match: { key: " " } }]);
+    const space = new KeyboardEvent("keydown", { key: " ", cancelable: true });
+    expect(session.keyDown(space)).toBe(true);
+    expect(space.defaultPrevented).toBe(true);
     session.shown = true;
-    session.keyDown(press("t"));
-    expect(view.tap).toHaveBeenCalledTimes(1);
+    withBindings(session, defaultBindings());
+    expect(session.keyDown(new KeyboardEvent("keydown", { key: "PageDown" }))).toBe(true);
+    expect(view.scrollLyrics).toHaveBeenCalledTimes(1);
     session.dispose();
   });
 

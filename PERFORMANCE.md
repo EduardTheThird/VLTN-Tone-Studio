@@ -233,7 +233,7 @@ A playlist can be split into headed sets, and a smart playlist picks its songs b
 
 The set loads and starts each next song, then stops after the last one. Performance shows the position, the next title, **Previous song / Next song** and **Stop playlist**. Each next song loads in the background while the current one plays, so most joins are gapless. See [Gapless and crossfade](#gapless-and-crossfade).
 
-Switching to another Song tab keeps the set playing and its queue editable. While Performance is hidden, the keys for stage mode, tap tempo, click, mute groups and lyrics do nothing; transport and song keys still work. Leaving the Song screen pauses the set.
+Switching to another Song tab keeps the set playing and its queue editable. While Performance is hidden, only transport and song keys work; other keys, such as Page Down and the arrows, are left to the page. Leaving the Song screen pauses the set.
 
 An armed MIDI output stays armed across songs while the same device stays connected. For cues from the first second, choose **Load set paused**, connect and switch on **Send cues**, then press **Play playlist** in Performance. Starting a playlist again from the library starts a new disarmed session.
 

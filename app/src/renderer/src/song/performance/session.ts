@@ -44,7 +44,7 @@ import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { rememberedPort, useMidiConfiguration, type PortChoice } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
 import { countsAsPlayed } from "@shared/library-history";
-import { actionLabel, runAction, type ActionHost, type Hint, type ViewHost } from "./actions";
+import { ACTIONS, actionLabel, isActionId, runAction, type ActionHost, type Hint, type ViewHost } from "./actions";
 import { FollowerGate } from "./band-control";
 import { isFollowerAction, type FollowerAction } from "@shared/band-sync";
 import {
@@ -194,19 +194,10 @@ const NO_VIEW: ViewHost = {
   tap: NOT_ON_SCREEN,
 };
 
-/**
- * The view actions while the performance screen is hidden by another Song tab. A key does nothing to a view that is not on screen, and
- * a section key turns no PDF page (it moves the section, as it does with no PDF up).
- */
-const HIDDEN_VIEW: ViewHost = {
-  scrollLyrics: () => undefined,
-  pdfOnScreen: () => false,
-  fontSize: () => undefined,
-  toggleStage: () => undefined,
-  muteGroup: () => undefined,
-  toggleClick: () => undefined,
-  tap: () => undefined,
-};
+/** The action groups a key may run while the performance screen is hidden by another Song tab. */
+const HIDDEN_KEY_GROUPS = new Set<string>(["Transport", "Songs"]);
+/** Whether a binding's action is a transport or song action, which still runs while the screen is hidden. */
+const runsWhileHidden = (action: string): boolean => isActionId(action) && HIDDEN_KEY_GROUPS.has(ACTIONS[action].group);
 
 /** How far a speed key moves the rate: 5% */
 const SPEED_STEP = 0.05;
@@ -304,7 +295,7 @@ export class PerformanceSession {
   locked = false;
   /**
    * Whether the performance screen is on screen. Another Song tab hides it without stopping anything; while hidden, a key runs only the
-   * transport, song and section actions (see `HIDDEN_VIEW`). MIDI and Bluetooth messages are not changed by this.
+   * transport and song actions, and any other key is left to the visible tab. MIDI and Bluetooth messages are not changed by this.
    */
   shown = true;
   private bound = false;
@@ -1508,10 +1499,10 @@ export class PerformanceSession {
     if (learn) return false;
     // Key repeat and modified keys are not bindings: holding PageDown must not run the section jump again and again.
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return false;
-    const routes = this.remote.key(e.key, this.state.bindings);
+    const routes = this.remote.key(e.key, this.state.bindings).filter((route) => this.shown || runsWhileHidden(route.binding.action));
     if (!routes.length) return false;
     e.preventDefault();
-    this.runRoutes(routes, this.shown ? this.actionHost() : { ...this.sessionActions, ...HIDDEN_VIEW });
+    this.runRoutes(routes);
     return true;
   };
 
@@ -1629,14 +1620,14 @@ export class PerformanceSession {
   }
 
   /** Runs what the bindings matched. A first press of a double press says so, so the performer knows it is waiting for the second. */
-  private runRoutes(routes: Route[], host: ActionHost = this.actionHost()): void {
+  private runRoutes(routes: Route[]): void {
     for (const route of routes) {
       const label = actionLabel(route.binding.action, route.binding.index);
       if (route.kind === "armed") {
         showToast({ tone: "info", title: `Press again to ${label}`, body: "The second press must come within 0.6 s." });
         continue;
       }
-      const hint = runAction(route.binding, host);
+      const hint = runAction(route.binding, this.actionHost());
       if (hint) showToast({ tone: "info", title: hint });
     }
   }
