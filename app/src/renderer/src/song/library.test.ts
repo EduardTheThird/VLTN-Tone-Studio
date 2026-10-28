@@ -80,6 +80,53 @@ it("keeps a saved song's own track beside its imported tracks when it has no spl
   expect(useSong.getState().tracks.guitar).toMatchObject({ kind: "user", name: "Keys" });
 });
 
+describe("missing parts on load", () => {
+  // Two seconds of audio, long enough for the 400 ms windows the check reads. The byte count tells the decode mock which file it is.
+  const LENGTH = 88200;
+  const split: LibrarySong = {
+    ...saved,
+    id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+    title: "Split song",
+    duration: LENGTH / 44100,
+    audio: [
+      { name: "source", sampleRate: 44100, frames: LENGTH, channels: 1, file: "source.flac", codec: "flac", bytes: 8, sha256: "c".repeat(64) },
+      { name: "drums", sampleRate: 44100, frames: LENGTH, channels: 1, file: "drums.flac", codec: "flac", bytes: 9, sha256: "d".repeat(64) },
+      { name: "bass", sampleRate: 44100, frames: LENGTH, channels: 1, file: "bass.flac", codec: "flac", bytes: 10, sha256: "e".repeat(64) },
+    ],
+  };
+  // A song with the source alone: no stems, so nothing to check.
+  const plain: LibrarySong = { ...split, id: "dddddddd-dddd-dddd-dddd-dddddddddddd", title: "Plain song", audio: [split.audio[0]] };
+  const sizes: Record<string, number> = { "app://split/source.flac": 8, "app://split/drums.flac": 9, "app://split/bass.flac": 10 };
+  const tone = () => new Float32Array(LENGTH).map((_, i) => 0.5 * Math.sin(i * 0.05));
+
+  beforeEach(() => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [split, plain] });
+    api.audioUrls.mockImplementation(async (id: string) =>
+      id === split.id
+        ? { source: "app://split/source.flac", drums: "app://split/drums.flac", bass: "app://split/bass.flac" }
+        : { source: "app://split/source.flac" },
+    );
+    fetchFile.mockImplementation(async (url: string) => file(sizes[url]));
+    // The 9-byte file is the drums stem, and it is silent. Every other file is the tone.
+    codec.decodeTrack.mockImplementation(async (bytes: ArrayBuffer) => ({
+      sampleRate: 44100,
+      channels: [bytes.byteLength === 9 ? new Float32Array(LENGTH) : tone()],
+    }));
+  });
+
+  it("checks a loaded split for drums and bass", async () => {
+    await useSongLibrary.getState().load(split.id);
+    expect(useSong.getState().missingParts).toMatchObject({ drums: "absent", bass: "present" });
+  });
+
+  it("forgets the check when the next song has no drums or bass stem", async () => {
+    await useSongLibrary.getState().load(split.id);
+    expect(useSong.getState().missingParts).not.toBeNull();
+    await useSongLibrary.getState().load(plain.id);
+    expect(useSong.getState().missingParts).toBeNull();
+  });
+});
+
 it("keeps the MIDI remembered by the last song when a song is loaded by hand", async () => {
   const midi = { access: null, portId: "usb", inputId: "in", armed: false, output: undefined };
   useSongLibrary.getState().rememberMidi(midi);

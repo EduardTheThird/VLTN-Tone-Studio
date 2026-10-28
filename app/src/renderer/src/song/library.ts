@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { host } from "@/host";
 import { useSong } from "./store";
+import { detectMissingParts, type MissingParts } from "./band/detect";
 import { useNav } from "@/state/nav";
 import {
   emptyLibrary,
@@ -191,6 +192,15 @@ async function loadTrack(url: string, track: LibraryAudio): Promise<PcmAudio> {
     throw new Error(`Missing or damaged ${track.name} audio.`);
   return audio;
 }
+/**
+ * The missing-part check for a song loaded with its stems, as the store keeps it after a split. A song with neither a drums nor a bass
+ * stem (an import with no split, say) has nothing to check, so it gets null.
+ */
+function missingPartsOf(source: SongSource, stems: Stems): MissingParts | null {
+  if (!("drums" in stems) && !("bass" in stems)) return null;
+  return detectMissingParts(source.audio, stems);
+}
+
 /**
  * Loads a song's audio from the library, without changing anything in the app. A track that cannot be read is left out and named in
  * `skipped`, so the song still plays. When the source is the track that cannot be read, the source is rebuilt from the tracks that can.
@@ -429,6 +439,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       stems: Object.keys(next.stems).length ? next.stems : null,
       tracks: next.tracks,
       lastSplit: null,
+      missingParts: missingPartsOf(next.source, next.stems),
       status: { kind: "idle" },
     });
     useNav.getState().go("song", "performance");
@@ -518,6 +529,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         stems: Object.keys(prepared.stems).length ? prepared.stems : null,
         tracks: prepared.tracks,
         lastSplit: null,
+        missingParts: missingPartsOf(prepared.source, prepared.stems),
         status: { kind: "idle" },
       });
       prefetchNext();
