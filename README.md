@@ -11,12 +11,17 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 
 <br>
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/latest"><img src="https://img.shields.io/github/v/release/grzmol/VLTN-Tone-Studio?style=flat-square&label=release&color=4c8eda" alt="Latest release"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases"><img src="https://img.shields.io/github/downloads/grzmol/VLTN-Tone-Studio/total?style=flat-square&label=downloads&color=2ea043" alt="Total downloads"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/grzmol/VLTN-Tone-Studio/release.yml?style=flat-square&label=build" alt="Release build status"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/commits"><img src="https://img.shields.io/github/last-commit/grzmol/VLTN-Tone-Studio?style=flat-square&label=updated" alt="Last commit"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/latest"><img src="https://img.shields.io/github/v/release/EduardTheThird/VLTN-Tone-Studio?style=flat-square&label=release&color=4c8eda" alt="Latest release"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases"><img src="https://img.shields.io/github/downloads/EduardTheThird/VLTN-Tone-Studio/total?style=flat-square&label=downloads&color=2ea043" alt="Total downloads"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/EduardTheThird/VLTN-Tone-Studio/release.yml?style=flat-square&label=build" alt="Release build status"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/commits"><img src="https://img.shields.io/github/last-commit/EduardTheThird/VLTN-Tone-Studio?style=flat-square&label=updated" alt="Last commit"></a>
 <img src="https://img.shields.io/badge/NAM-TONE3000-8a2be2?style=flat-square" alt="NAM captures from TONE3000">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License: GPL-3.0"></a>
+
+<br>
+
+This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-Studio) by grzmol. Every editor and librarian feature of the original is still here, and the fork adds a live-performance layer: a saved song library with playlists and backups, a stems player with metronome, lyrics and chords with a stage mode, timed MIDI cues over USB or Bluetooth, key and chord analysis, and generated drums and bass.<br>
+**Releases come from this fork:** [download them here](https://github.com/EduardTheThird/VLTN-Tone-Studio/releases).
 
 <br>
 
@@ -25,28 +30,29 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 <br>
 <br>
 
-### Download v0.8.1
+### Download v0.9.0
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
-<br>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 
-<sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
+<sub>Linux users can <a href="#build-it-yourself">build it themselves</a>.</sub>
 
 <br>
 
-**Like it?** A ⭐ on [GitHub](https://github.com/grzmol/VLTN-Tone-Studio) helps other Valeton players find Tone Studio.<br>
-Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studio/issues). For a pedal problem, attach the session log (*Device › Diagnostics › Save log*).
+<sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/grzmol/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
+<br>
+
+**Like it?** A ⭐ on [GitHub](https://github.com/EduardTheThird/VLTN-Tone-Studio) helps other Valeton players find Tone Studio.<br>
+Bugs and ideas are welcome in [Issues](https://github.com/EduardTheThird/VLTN-Tone-Studio/issues). For a pedal problem, attach the session log (*Device › Diagnostics › Save log*).
+
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/stargazers"><img src="https://img.shields.io/github/stars/EduardTheThird/VLTN-Tone-Studio?style=for-the-badge&logo=github&label=Star&color=e3b341" alt="Star on GitHub"></a>
 
 <br>
 <br>
 
-[Download](#download-v081) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v090) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -386,10 +392,11 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 | | |
 |---|---|
-| **Windows** | Run `…-x64.exe`. SmartScreen warns about an unsigned app: choose *More info* → *Run anyway*. |
-| **macOS** | `…-arm64.dmg` for Apple silicon, `…-x64.dmg` for Intel. The app isn't signed yet. If macOS says it is damaged or can't be opened, run this once after copying it to Applications:<br>`xattr -dr com.apple.quarantine "/Applications/VLTN Tone Studio.app"` |
-| **Linux** | `sudo apt install ./vltn-tone-studio-…-amd64.deb`, or make the `.AppImage` executable and run it. MIDI needs access to `/dev/snd/seq` (the `audio` group on some distros); *Device › Diagnostics* shows what is missing. |
-| **Updates** | When a new version is out, the app asks at launch whether to install it. The Windows installer and the AppImage update in place; on macOS and with the `.deb`, the app opens the release page. |
+| **Windows** | Run `…-x64.exe`. The app isn't signed yet, so SmartScreen warns about it: choose *More info* → *Run anyway*. |
+| **macOS** | `…-arm64.dmg` for Apple silicon, `…-x64.dmg` for Intel. The app isn't signed yet, so the first time, right-click it in Applications and choose *Open*, or open it and then go to *System Settings* › *Privacy & Security* and click *Open Anyway*. If macOS says it is damaged or can't be opened, run this once after copying it to Applications:<br>`xattr -dr com.apple.quarantine "/Applications/VLTN Tone Studio.app"` |
+| **Updates** | When a new version is out, the app asks at launch whether to install it. The Windows installer updates in place; on macOS, the app opens the release page. |
+
+Your songs, playlists and settings live in the app's data folder: `~/Library/Application Support/VLTN Tone Studio` on macOS, `%APPDATA%\VLTN Tone Studio` on Windows. Installing a new version or reinstalling keeps them. Before you upgrade, use *Export library backup* in the song library panel to save a copy.
 
 <br>
 
@@ -414,7 +421,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 | **Linux permissions** | MIDI needs access to `/dev/snd/seq`. Join the group Diagnostics names (usually `audio`), then log in again. |
 | **Browser build** | Chrome or Edge on a desktop computer, from `https://` or `localhost`. Chromium 152 can't exchange SysEx with the pedal; use 153 or newer. |
 
-Still stuck? *Copy diagnostic report* gives a short summary without preset contents. *Save log* saves the session log: every connection step, error and MIDI message, with the bytes in hex, including the presets read from or written to the pedal. The desktop app keeps the newest 20 MB of it in the `logs` folder of its data folder (*Open folder*); the browser build keeps it while the tab is open. Attach both to an [issue](https://github.com/grzmol/VLTN-Tone-Studio/issues).
+Still stuck? *Copy diagnostic report* gives a short summary without preset contents. *Save log* saves the session log: every connection step, error and MIDI message, with the bytes in hex, including the presets read from or written to the pedal. The desktop app keeps the newest 20 MB of it in the `logs` folder of its data folder (*Open folder*); the browser build keeps it while the tab is open. Attach both to an [issue](https://github.com/EduardTheThird/VLTN-Tone-Studio/issues).
 
 <br>
 
@@ -441,7 +448,7 @@ Still stuck? *Copy diagnostic report* gives a short summary without preset conte
 | **Safety** | Backs up a slot automatically before it's overwritten |
 | **GP-200 effect list** | Generated from [GP200 Studio](https://github.com/kabir0st/gp200-studio)'s catalog at a pinned commit (`app/scripts/gp200-catalog-from-studio.mjs`); your own `algorithm.xml` replaces it |
 | **Diagnostics** | USB, driver and port checks per OS, and a rotating session log (4 MB files, newest 20 MB) in the app's data folder |
-| **Packages** | `.dmg`, NSIS installer, AppImage and `.deb` |
+| **Packages** | `.dmg` and NSIS installer |
 
 <br>
 
@@ -458,7 +465,8 @@ Still stuck? *Copy diagnostic report* gives a short summary without preset conte
 <br>
 
 ```bash
-cd app
+git clone https://github.com/EduardTheThird/VLTN-Tone-Studio.git
+cd VLTN-Tone-Studio/app
 npm install
 npm run dev        # desktop app
 npm run web        # in the browser at http://localhost:5790
@@ -486,7 +494,7 @@ The desktop app offers the same under *Device › Simulate*. All commands and th
 
 <br>
 
-VLTN Tone Studio is free software under the [GNU General Public License v3.0](LICENSE). You may use, study, change and share it; a version you distribute must stay under the same license, with its source. The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0), the GP-150 protocol and effect list from [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Other open-source work it builds on is credited in `app/src/renderer/src/gp5/NOTICE.md`, `app/src/renderer/src/gp200/NOTICE.md`, `app/src/renderer/src/gp150/NOTICE.md` and `app/src/renderer/src/song/audio/NOTICE.md` (which includes pdf.js, for PDF charts).
+VLTN Tone Studio is free software under the [GNU General Public License v3.0](LICENSE). The original project is by grzmol, and this fork is based on [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-Studio). You may use, study, change and share it; a version you distribute must stay under the same license, with its source. The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0), the GP-150 protocol and effect list from [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Other open-source work it builds on is credited in `app/src/renderer/src/gp5/NOTICE.md`, `app/src/renderer/src/gp200/NOTICE.md`, `app/src/renderer/src/gp150/NOTICE.md` and `app/src/renderer/src/song/audio/NOTICE.md` (which includes pdf.js, for PDF charts).
 
 <br>
 
