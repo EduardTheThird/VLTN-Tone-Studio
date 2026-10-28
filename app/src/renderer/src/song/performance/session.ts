@@ -1745,12 +1745,15 @@ export class PerformanceSession {
           }
         },
       },
-      // Carry the MIDI to the next song: arming to the next playlist song, and the access, output and input to any song loaded next.
+      // Carry the MIDI to the next song: the access, output and input to any song loaded next, and arming only while a playlist plays,
+      // so a stopped playlist cannot leave an armed flag that re-arms a later join.
       {
         deps: (s) => [s.queued, s.playlistPlaying, s.busy, s.access, s.portId, s.inputId, armedOf(s), selectOutput(s)],
         run: (s) => {
-          if (!s.busy && (!s.queued || s.playlistPlaying))
-            useSongLibrary.getState().rememberMidi({ access: s.access, portId: s.portId, inputId: s.inputId, armed: armedOf(s), output: selectOutput(s) });
+          if (s.busy) return;
+          useSongLibrary
+            .getState()
+            .rememberMidi({ access: s.access, portId: s.portId, inputId: s.inputId, armed: armedOf(s) && s.playlistPlaying, output: selectOutput(s) });
         },
       },
       // Transport lifecycle is separate from tempo-dependent scheduling.

@@ -695,8 +695,31 @@ it("carries the access, output and input into a song loaded by hand, but not the
   session.setInputId("in");
   unload();
   session.dispose();
-  expect(mocks.library.midiSession).toMatchObject({ portId: "usb", inputId: "in", armed: true, output: out });
+  expect(mocks.library.midiSession).toMatchObject({ portId: "usb", inputId: "in", armed: false, output: out });
   const next = new PerformanceSession({ initial: inputs(), carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }), initialClock: false });
+  const unloadNext = next.loadSong(source, null);
+  next.bind();
+  expect(next.state.access).toBe(access);
+  expect(next.state.portId).toBe("usb");
+  expect(next.state.inputId).toBe("in");
+  expect(next.armed).toBe(false);
+  unloadNext();
+  next.dispose();
+});
+
+it("remembers the access, output and input of a song loaded from the library, and the next hand-loaded song starts with them, disarmed", () => {
+  // A library load makes a queue of one: queued is true while no playlist plays.
+  mocks.library.midiSession = null;
+  const { session, out, access, unload } = armedSession(output(), { queued: true, playlistPlaying: false });
+  session.setInputId("in");
+  unload();
+  session.dispose();
+  expect(mocks.library.midiSession).toMatchObject({ portId: "usb", inputId: "in", armed: false, output: out, access });
+  const next = new PerformanceSession({
+    initial: inputs({ queued: false, playlistPlaying: false }),
+    carried: carriedInto(mocks.library.midiSession, { queued: false, playlistPlaying: false }),
+    initialClock: false,
+  });
   const unloadNext = next.loadSong(source, null);
   next.bind();
   expect(next.state.access).toBe(access);
