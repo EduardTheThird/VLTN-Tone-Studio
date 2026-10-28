@@ -13,6 +13,7 @@ Play a song or a whole set from one screen: stems, a metronome, lyrics and chord
 - [Sections](#sections)
 - [Playlists](#playlists)
 - [Gapless and crossfade](#gapless-and-crossfade)
+- [Generated drums and bass](#generated-drums-and-bass)
 - [Stage mode](#stage-mode)
 - [Troubleshooting](#troubleshooting)
 - [Limits](#limits)
@@ -337,6 +338,53 @@ The app can send MIDI Time Code (quarter frames and full frames) so that a DAW, 
 - Late quarter frames are dropped rather than sent in a burst. A late full frame is still sent, because it sets the position.
 
 Check the receiving device on the rig before relying on it, and see the timecode rows in the hardware test plan.
+
+## Generated drums and bass
+
+For a song with no drums or no bass, the Band panel can generate them to play along. The split notice names the part that is missing. Press **Band** on the Performance screen to open the panel and make it.
+
+**Find the beat.** Press **Find the beat** first. It listens to the drums stem if there is one, then the pitched stems, then the whole mix. The panel shows what it found, for example "120.0 BPM, steady, 16 beats, 4 per bar". The parts follow this beat grid, so check it before you generate.
+
+If the grid is wrong, correct it:
+
+- **Half tempo** and **Double tempo** halve or double the beats, for a song the tracker heard at the wrong speed.
+- **Downbeat ←** and **Downbeat →** move the bar line by one beat.
+- **Nudge −10 ms** and **Nudge +10 ms** shift the whole grid a little.
+- **Use fixed BPM** builds a grid from the Song BPM and first beat, for a song with no click that the tracker cannot find. Set those first (see [Prepare a song](#prepare-a-song)).
+- **Set metronome to this tempo** copies a steady grid's tempo and first beat to the metronome.
+
+**Styles and settings.** Choose a style: Rock, Pop, Ballad, Country, Funk, Half-time, Reggae, Shuffle, Metal or 6/8. Then tune it:
+
+- **Complexity** sets how busy the patterns are.
+- **Swing** pushes the off-beats. Each style has its own default, which you can change.
+- **Ghost notes** adds soft snare hits between the backbeats. **Crash on section starts** puts a crash at the start of each section.
+- **Bass sound** is finger or pick. **Bass range** is low, normal or high.
+- **Bass mode** is roots, roots and fifths, octaves, melodic (approach notes) or walking. Walking appears only for a style that walks.
+- **Lock bass to kick** makes the bass land on the kick.
+- **Humanise** adds small timing and velocity variation. **Feel** is the style default, Tight, Natural, Laid back or Pushed.
+- **Follow my playing** takes the parts' accents from your playing. **Follow source** picks the stem to listen to: Auto, or a stem that the split made. In Auto, a song whose sections show no clear accents is not followed. When a part cannot follow, the panel says why after Generate, and the part keeps its normal feel.
+
+**Sections.** The table has one row per section, or one row for a song without sections. Each row sets the section's style, **Energy** (1 to 5), whether it has a **Fill** at its end, and whether drums and bass play in it. Energy starts from the section's name: choruses and solos are higher, intros, verses and outros lower. Click a row to select it. Preview then starts from that section.
+
+**Generate, Try another, Remove, Preview and Export MIDI.**
+
+- **Generate** writes the parts into the song as two tracks, **Drums (generated)** and **Bass (generated)**. Changing a setting does not regenerate anything. The panel says "Parts out of date" until you press Generate again.
+- **Try another** keeps your settings and makes a different take.
+- **Remove generated parts** takes both generated tracks out of the song. Your own tracks stay.
+- **Preview 4 bars** plays four bars of the parts over the song, from the selected section or from the playhead. **Stop preview** ends it early.
+- **Export MIDI…** saves the notes of the last Generate as `<song title> - band.mid`. Drums go on channel 10 and bass on channel 1, with the song's tempo. It is available after Generate until you close the panel. Open the file in a sequencer or a notation app to use the parts elsewhere.
+
+Everything here works offline, and the samples ship with the app. Generating, removing, previewing and exporting are all off during playback, so press Stop first.
+
+The parts are normal tracks in the mixer, so you can mute, solo or set their volume. The bass follows the song's pitch shift, as set by **Follows pitch** on its track. The drums do not, since a drum hit has no pitch to shift.
+
+**Limits.**
+
+- The chords come from the chart, or from chord detection when the chart has none. Detection knows only major and minor chords. If neither gives chords, the bass rests, and the panel says so.
+- A song with no click may need beat corrections before its parts line up. Check the first and last bars of each section.
+- Listen before a show. Preview a few sections, then check the whole song.
+
+The drum and bass samples are CC0, so they need no attribution. The [sample notice](app/src/renderer/src/song/band/NOTICE.md) lists the libraries and the files used.
 
 ## Stage mode
 
