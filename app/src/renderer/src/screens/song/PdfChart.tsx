@@ -6,7 +6,7 @@ import { holdAutoscroll, isAutoscrollHeld, onAutoscrollResume } from "@/song/per
 import { addTurn, pageAtTime } from "@/song/performance/pdf/page-turns";
 import { openChart, type OpenChart } from "@/song/performance/pdf/document";
 import { ANNOTATION_COLOURS, addMark, clearPage, undoMark, type AnnotationTool } from "@/song/performance/pdf/annotations";
-import { showsSpread, turnedPage, turnStep, visiblePages, type ChartLayout } from "@/song/performance/pdf/layout";
+import { scrollPdfBy, showsSpread, turnedPage, turnStep, visiblePages, type ChartLayout } from "@/song/performance/pdf/layout";
 import { registerPdfTurner } from "@/song/performance/pdf/turner";
 import { usePlaybackClock } from "@/song/performance/playback-clock";
 import { clearChartPage, setChartPage } from "@/song/performance/pdf/current-page";
@@ -20,8 +20,6 @@ const LAYOUT_KEY = "vltn.performance.pdf.v1";
 const SAVE_DELAY_MS = 800;
 /** The gap between the two pages of a spread. */
 const SPREAD_GAP = 16;
-/** Scrolling by line (a remote line step) moves this many pixels. */
-const LINE_STEP_PX = 80;
 /** A page with no marks shares this empty list, so the page does not re-render when another page changes. */
 const noMarks: Mark[] = [];
 
@@ -200,8 +198,7 @@ export function PdfChart({ songId, follow, stage, className, onShowText }: PdfCh
       }
       const el = scroller.current;
       if (!el) return "The PDF is not on screen.";
-      const distance = byPage ? (half ? 0.5 : 0.9) * el.clientHeight : LINE_STEP_PX;
-      el.scrollBy({ top: direction * distance, behavior: "smooth" });
+      scrollPdfBy(el, direction, byPage, half);
     },
     [goTo],
   );

@@ -36,3 +36,21 @@ export function visiblePages(first: number, count: number, spread: boolean): num
 export function turnedPage(current: number, direction: -1 | 1, step: number, count: number): number {
   return Math.min(Math.max(1, count), Math.max(1, current + direction * step));
 }
+
+/** A line step in scroll layout moves the PDF this many pixels. */
+export const LINE_STEP_PX = 80;
+
+/**
+ * Scrolls a PDF laid out as a scroll by a remote or key turn: a page turn moves nine tenths of the box, a half-page turn (stage) moves
+ * half, and a line step moves `LINE_STEP_PX`. The scroll is instant, not smooth: a smooth scroll is animated frame by frame, and a window
+ * that is not painting (a hidden or unfocused Electron window) would hold it where it is until the window is shown again.
+ */
+export function scrollPdfBy(
+  el: { clientHeight: number; scrollBy(options: ScrollToOptions): void },
+  direction: -1 | 1,
+  byPage: boolean,
+  half: boolean,
+): void {
+  const distance = byPage ? (half ? 0.5 : 0.9) * el.clientHeight : LINE_STEP_PX;
+  el.scrollBy({ top: direction * distance, behavior: "instant" });
+}

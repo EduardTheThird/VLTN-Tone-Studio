@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { SPREAD_MIN_WIDTH, fitScale, showsSpread, turnStep, turnedPage, visiblePages } from "./layout";
+import { describe, expect, it, vi } from "vitest";
+import { LINE_STEP_PX, SPREAD_MIN_WIDTH, fitScale, scrollPdfBy, showsSpread, turnStep, turnedPage, visiblePages } from "./layout";
 
 describe("fitScale", () => {
   it("fits a page into the box by its tighter side", () => {
@@ -39,5 +39,36 @@ describe("spreads and page turns", () => {
     expect(turnedPage(1, -1, 1, 4)).toBe(1);
     expect(turnedPage(4, 1, 2, 4)).toBe(4);
     expect(turnedPage(3, 1, 2, 4)).toBe(4);
+  });
+});
+
+describe("scrollPdfBy", () => {
+  /** A scroller of the given box height that records its scrolls. */
+  function scroller(clientHeight: number) {
+    return { clientHeight, scrollBy: vi.fn() };
+  }
+
+  it("turns nine tenths of the box for a page turn outside stage mode", () => {
+    const el = scroller(600);
+    scrollPdfBy(el, 1, true, false);
+    expect(el.scrollBy).toHaveBeenCalledWith({ top: 540, behavior: "instant" });
+  });
+
+  it("turns half the box for a page turn in stage mode, backwards when the direction is -1", () => {
+    const el = scroller(600);
+    scrollPdfBy(el, -1, true, true);
+    expect(el.scrollBy).toHaveBeenCalledWith({ top: -300, behavior: "instant" });
+  });
+
+  it("scrolls a line step by a fixed distance", () => {
+    const el = scroller(600);
+    scrollPdfBy(el, 1, false, false);
+    expect(el.scrollBy).toHaveBeenCalledWith({ top: LINE_STEP_PX, behavior: "instant" });
+  });
+
+  it("always scrolls instantly, so a window that is not painting still moves", () => {
+    const el = scroller(600);
+    scrollPdfBy(el, 1, true, true);
+    expect(el.scrollBy.mock.calls[0][0]).toMatchObject({ behavior: "instant" });
   });
 });
