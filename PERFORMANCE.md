@@ -358,7 +358,7 @@ If the grid is wrong, correct it:
 - **Complexity** sets how busy the patterns are.
 - **Swing** pushes the off-beats. Each style has its own default, which you can change.
 - **Ghost notes** adds soft snare hits between the backbeats. **Crash on section starts** puts a crash at the start of each section.
-- **Bass sound** is finger or pick. **Bass range** is low, normal or high.
+- **Bass range** is low, normal or high.
 - **Bass mode** is roots, roots and fifths, octaves, melodic (approach notes) or walking. Walking appears only for a style that walks.
 - **Lock bass to kick** makes the bass land on the kick.
 - **Humanise** adds small timing and velocity variation. **Feel** is the style default, Tight, Natural, Laid back or Pushed.
