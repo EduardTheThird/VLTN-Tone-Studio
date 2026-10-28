@@ -593,3 +593,59 @@ describe("per-entry overrides in the playing queue", () => {
     expect(useSongLibrary.getState().queueOverrides).toEqual([null, loop]);
   });
 });
+
+describe("warning when the next song cannot be loaded in the background", () => {
+  const next: LibrarySong = { ...saved, id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", title: "Second song", settings: {} };
+  const missing = () => new Response(null, { status: 404 });
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+  beforeEach(() => {
+    api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved, next] });
+    api.audioUrls.mockImplementation(async (id: string) =>
+      id === next.id
+        ? { source: "app://damaged/source", guitar: "app://damaged/guitar" }
+        : { source: "app://library/rev/source.flac", guitar: "app://library/rev/guitar.flac" },
+    );
+    fetchFile.mockImplementation(async (url: string) => (url.startsWith("app://damaged") ? missing() : file()));
+  });
+
+  it("names the next song at once, while the current one keeps playing", async () => {
+    await useSongLibrary.getState().playPlaylist([saved.id, next.id]);
+    await vi.waitFor(() => expect(useSongLibrary.getState().error).not.toBe(""));
+    expect(useSongLibrary.getState().error).toBe(
+      `"Second song" cannot be loaded: Missing or damaged audio: none of this song's tracks can be read. The set will stop after this song.`,
+    );
+    expect(useSongLibrary.getState()).toMatchObject({ playlistPlaying: true, position: 0 });
+    expect(useSong.getState().source?.libraryId).toBe(saved.id);
+  });
+
+  it("stays silent when the preload is cancelled by pausing the set", async () => {
+    let release!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    fetchFile.mockImplementation(async (url: string) => (url.startsWith("app://damaged") ? held : file()));
+    await useSongLibrary.getState().playPlaylist([saved.id, next.id]);
+    await vi.waitFor(() => expect(fetchFile).toHaveBeenCalledWith("app://damaged/source"));
+    useSongLibrary.getState().pausePlaylist();
+    release(missing());
+    await tick();
+    expect(useSongLibrary.getState().error).toBe("");
+  });
+
+  it("stays silent when the next entry is removed while its preload is still loading", async () => {
+    let release!: (response: Response) => void;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    fetchFile.mockImplementation(async (url: string) => (url.startsWith("app://damaged") ? held : file()));
+    await useSongLibrary.getState().playPlaylist([saved.id, next.id]);
+    await vi.waitFor(() => expect(fetchFile).toHaveBeenCalledWith("app://damaged/source"));
+    expect(useSongLibrary.getState().removeFromQueue(1)).toBeNull();
+    release(missing());
+    await tick();
+    expect(useSongLibrary.getState().error).toBe("");
+  });
+
+  it("clears the warning when the next entry is removed from the queue", async () => {
+    await useSongLibrary.getState().playPlaylist([saved.id, next.id]);
+    await vi.waitFor(() => expect(useSongLibrary.getState().error).toContain("Second song"));
+    expect(useSongLibrary.getState().removeFromQueue(1)).toBeNull();
+    expect(useSongLibrary.getState()).toMatchObject({ error: "", queue: [saved.id], playlistPlaying: true });
+  });
+});

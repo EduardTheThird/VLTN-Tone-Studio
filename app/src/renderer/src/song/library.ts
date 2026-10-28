@@ -262,6 +262,14 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
   let prefetchGeneration = 0;
   /** The id of the song being loaded in the background, if any */
   let prefetching: string | null = null;
+  /** The next song whose background load failed, with the warning shown for it. Cleared when the next song changes or it loads. */
+  let preloadWarned: { id: string; message: string } | null = null;
+  const clearPreloadWarning = () => {
+    if (!preloadWarned) return;
+    // Only this warning's text is cleared, so an error from another action stays on the screen.
+    if (get().error === preloadWarned.message) set({ error: "" });
+    preloadWarned = null;
+  };
   const run = async (task: () => Promise<void>) => {
     if (get().busy) return;
     set({ busy: true, error: "", notice: "" });
@@ -298,7 +306,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
   };
   /**
    * Loads the playlist's next song in the background, so that it can start on the same clock as the current one. Only one is held
-   * besides the current song. A failure is a notice: the next song then loads after the current one, as before.
+   * besides the current song. A failure is shown at once as an error naming the song, and the join still stops the set.
    */
   /** Releases the prepared song that is held, if any. Once a song has been taken over, the library no longer holds it. */
   const dropPrepared = () => {
@@ -315,6 +323,8 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
   const prefetchNext = () => {
     const { index, queue, position, playlistPlaying, prepared } = get();
     const id = playlistPlaying ? queue[position + 1] : undefined;
+    // A warning stays until the queue's next song changes, so pausing the set does not clear it.
+    if (preloadWarned && preloadWarned.id !== queue[position + 1]) clearPreloadWarning();
     if (!id) {
       if (import.meta.env.DEV && prefetching) console.debug(`[prefetch] ${prefetching} dropped: the set has no next song`);
       prefetchGeneration++;
@@ -347,13 +357,20 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           return;
         }
         if (import.meta.env.DEV) console.debug(`[prefetch] ${id} ready`);
+        if (preloadWarned?.id === id) clearPreloadWarning();
         set({ prepared: { ...next, player } });
       })
       .catch((e) => {
-        // The notice alone is easy to miss, so the reason also goes to the console. The next play or resume prefetches again.
+        // The reason also goes to the console. The next play or resume prefetches again.
         const reason = e instanceof Error ? e.message : String(e);
         console.error(`Could not prefetch the next set song ${id}`, e);
-        if (generation === prefetchGeneration) set({ notice: `The next song could not be loaded in advance. ${reason}` });
+        // A cancelled or superseded load is silent: the load that replaced it reports its own result.
+        if (generation !== prefetchGeneration) return;
+        // Shown while the current song plays, so the performer knows before the join. The join itself still stops the set.
+        const title = index.songs.find((s) => s.id === id)?.title ?? id;
+        const message = `"${title}" cannot be loaded: ${reason.replace(/\.$/, "")}. The set will stop after this song.`;
+        preloadWarned = { id, message };
+        set({ error: message });
       })
       .finally(() => {
         if (generation === prefetchGeneration) prefetching = null;

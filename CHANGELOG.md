@@ -58,6 +58,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - A section loop or jump no longer sends the cue at its boundary twice. The cue at the old end of the passage is not sent, and a chase leaves out the patch and controllers that the cue at the new position sets, so the pedal is left on the right patch.
 - A speed change no longer re-sends the pedals' patch and controller state. The song position does not move at a speed swap, so the pedals already have that state.
 - With app MIDI clock on and no count-in, Start and the first clock pulses go out on time at the start of the audio. The audio is held back 150 ms, so the pulses are not sent as one burst. A start with a count-in is unchanged.
+- **A set warns at once when its next song cannot be loaded.** The next song loads in the background while the current one plays. If that load fails, the Performance view shows the song's name and the reason straight away, instead of only when the set reaches the join. The set still stops at the join, and the warning clears when the next song changes or loads.
 - The song BPM field takes a typed value. Typing keeps the text, and it is committed (clamped to 30–300) on blur or Enter; Escape restores the current BPM. Stepping with the arrows still sets the value at once.
 - A Bluetooth MIDI command that arrives more than 250 ms late is now dropped and counted instead of closing the Bluetooth connection.
 - Pause and panic only release channels that sent notes, so they no longer trigger the GP-180 looper Stop.
