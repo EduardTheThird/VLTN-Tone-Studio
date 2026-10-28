@@ -66,6 +66,8 @@ export interface BandInputs {
   sampleUrls: Record<string, string>;
   /** The follow-my-playing audio, from followFor. Absent when the setting is off. */
   follow?: BandFollow;
+  /** The song's source mix, for the beat levels that follow-my-playing reads. Only sent with `follow`. */
+  mix?: PcmAudio;
 }
 
 /** The follow sources the song has: the stems among FOLLOW_STEMS that were split, then the mix, which is always there. */
@@ -97,6 +99,7 @@ export function bandRequest(input: BandInputs): BandRequest {
     sampleUrls: input.sampleUrls,
   };
   if (input.follow) request.follow = input.follow;
+  if (input.follow && input.mix) request.mix = input.mix;
   return request;
 }
 

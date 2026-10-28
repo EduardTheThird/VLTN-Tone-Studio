@@ -256,6 +256,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         lengthFrames: current.audio.channels[0].length,
         sampleUrls: bandSampleUrls(),
         follow: followFor(using, useSong.getState().stems, current.audio),
+        mix: current.audio,
       };
       let request = bandRequest(input);
       const notes: string[] = [];
@@ -316,6 +317,7 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         lengthFrames: current.audio.channels[0].length,
         sampleUrls: bandSampleUrls(),
         follow: followFor(settings, useSong.getState().stems, current.audio),
+        mix: current.audio,
       });
       const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
       job.current = rendering;

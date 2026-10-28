@@ -21,10 +21,15 @@ export const MIN_CONFIDENCE = 0.3;
 export const MAX_PUSHES = 2;
 /** Pushes are added from this complexity up. */
 export const PUSH_FROM = BUSY_FROM;
-/** A beat whose loudest onset is below this share of the song's median beat is silent: a stop. */
-export const STOP_SHARE = 0.2;
-/** A beat right after a stop is a hit when its loudest onset is at least this many times the median beat. */
-export const HIT_SHARE = 1.5;
+/** A stop is a run of at least this many beats whose level is more than STOP_BELOW_DB under the song's median beat level. */
+export const STOP_MIN_BEATS = 2;
+export const STOP_BELOW_DB = 30;
+/** A hit is the first beat after a stop whose level is back within HIT_WITHIN_DB of the median, and which has an onset in the follow source. */
+export const HIT_WITHIN_DB = 12;
+/** A hit's onset is at least this share of the median beat's onset peak in the follow source. */
+export const HIT_ONSET_SHARE = 0.5;
+/** Levels of silence are floored here, so an empty beat has a finite level in dB. */
+export const LEVEL_FLOOR_DB = -120;
 /** A strong accent on a step that no kick or snare plays costs this much of its weight in the groove score. */
 export const UNCOVERED_PENALTY = 1;
 /** The follow sources that are stems. "mix" is the song's own audio, the last resort. */
@@ -156,29 +161,64 @@ function median(values: readonly number[]): number {
 }
 
 /**
- * Stops and hits, as beat indices. A beat is quiet when its loudest onset is below STOP_SHARE of the song's median beat. Every quiet beat
- * is a stop (a beat of silence or more). A hit is a loud beat right after a stop, at HIT_SHARE of the median or more.
+ * The level of each beat of the song's mix, in dB: the RMS over the beat's span, floored at LEVEL_FLOOR_DB. This is the band's own level,
+ * so a sustained chord or a ringing part counts as playing, while a bar of real silence does not.
  */
-export function stopsAndHits(onset: ArrayLike<number>, frameRate: number, grid: BeatGrid): { stops: number[]; hits: number[] } {
+export function beatLevelsDb(mono: ArrayLike<number>, sampleRate: number, grid: BeatGrid): number[] {
   const beats = grid.beats;
-  const levels = beats.map((time, beat) => peakBetween(onset, frameRate, time, time + beatSpan(beats, beat)));
-  const typical = median(levels);
-  const quiet = (beat: number) => typical > 0 && levels[beat] < STOP_SHARE * typical;
+  return beats.map((time, beat) => {
+    const first = Math.max(0, Math.round(time * sampleRate));
+    const last = Math.min(mono.length, Math.round((time + beatSpan(beats, beat)) * sampleRate));
+    let energy = 0;
+    for (let i = first; i < last; i++) energy += mono[i] * mono[i];
+    const count = Math.max(1, last - first);
+    return Math.max(LEVEL_FLOOR_DB, 10 * Math.log10(energy / count + 1e-30));
+  });
+}
+
+/**
+ * Stops and hits, as beat indices. A beat is quiet when its level in dB is more than STOP_BELOW_DB under the song's median beat level. A
+ * stop is a run of at least STOP_MIN_BEATS quiet beats, so a single quiet beat (a rest in a part) is not one. A hit is the beat right after
+ * a stop, when its level is back within HIT_WITHIN_DB of the median and the follow source has an onset there.
+ */
+export function stopsAndHits(onset: ArrayLike<number>, frameRate: number, grid: BeatGrid, levelDb: ArrayLike<number>): { stops: number[]; hits: number[] } {
+  const beats = grid.beats;
+  const typicalLevel = median(Array.from(levelDb));
+  const quiet = (beat: number) => levelDb[beat] < typicalLevel - STOP_BELOW_DB;
+  const peaks = beats.map((time, beat) => peakBetween(onset, frameRate, time, time + beatSpan(beats, beat)));
+  const typicalPeak = median(peaks);
   const stops: number[] = [];
   const hits: number[] = [];
+  let run = 0;
   beats.forEach((_, beat) => {
-    if (quiet(beat)) stops.push(beat);
-    else if (beat > 0 && quiet(beat - 1) && levels[beat] >= HIT_SHARE * typical) hits.push(beat);
+    if (quiet(beat)) {
+      run += 1;
+      return;
+    }
+    // The run that ended just before this beat is a stop when it is long enough, and this beat is then the hit candidate.
+    if (run >= STOP_MIN_BEATS) {
+      for (let back = beat - run; back < beat; back++) stops.push(back);
+      if (levelDb[beat] >= typicalLevel - HIT_WITHIN_DB && peaks[beat] >= HIT_ONSET_SHARE * typicalPeak) hits.push(beat);
+    }
+    run = 0;
   });
+  // A stop that runs to the song's end has no beat after it, so it has no hit.
+  if (run >= STOP_MIN_BEATS) for (let back = beats.length - run; back < beats.length; back++) stops.push(back);
   return { stops, hits };
 }
 
 /** The feel of a song from its follow stem, or null when auto finds no section with clear enough accents to follow. */
-export function followFeel(onset: OnsetStrength, grid: BeatGrid, plans: readonly SectionPlan[], auto: boolean): { feel: Feel | null; confidence: number } {
+export function followFeel(
+  onset: OnsetStrength,
+  grid: BeatGrid,
+  plans: readonly SectionPlan[],
+  auto: boolean,
+  levelDb: ArrayLike<number>,
+): { feel: Feel | null; confidence: number } {
   const profiles = accentProfile(onset.onset, onset.frameRate, grid, plans);
   const confidence = profiles.reduce((best, profile) => Math.max(best, profile.confidence), 0);
   if (auto && confidence < MIN_CONFIDENCE) return { feel: null, confidence };
-  const { stops, hits } = stopsAndHits(onset.onset, onset.frameRate, grid);
+  const { stops, hits } = stopsAndHits(onset.onset, onset.frameRate, grid, levelDb);
   return { feel: { profiles, stops: new Set(stops), hits: new Set(hits) }, confidence };
 }
 

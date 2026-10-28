@@ -84,14 +84,23 @@ function workerFor(): Worker {
  * The request with its follow audio summed to one channel, the same as the beat grid's source. Only that mono buffer is sent, and it is
  * transferred rather than copied.
  */
-function withMonoFollow(request: BandRequest): BandRequest {
-  if (!request.follow) return request;
+function withMono(request: BandRequest): { request: BandRequest; transfer: ArrayBuffer[] } {
+  if (!request.follow) return { request, transfer: [] };
   const { source, audio } = request.follow;
-  const mono = monoSum([audio]);
-  return { ...request, follow: { source, audio: { sampleRate: audio.sampleRate, channels: [mono] } } };
+  // One sum of the source mix (the level), reused for the follow source when that is the mix. A stem is summed on its own.
+  const level = request.mix ? monoSum([request.mix]) : null;
+  const followMono = source === "mix" && level ? level : monoSum([audio]);
+  const mixAudio = level ?? followMono;
+  const next: BandRequest = {
+    ...request,
+    follow: { source, audio: { sampleRate: audio.sampleRate, channels: [followMono] } },
+  };
+  if (request.mix) next.mix = { sampleRate: request.mix.sampleRate, channels: [mixAudio] };
+  const buffers = new Set<ArrayBuffer>([followMono.buffer as ArrayBuffer, mixAudio.buffer as ArrayBuffer]);
+  return { request: next, transfer: [...buffers] };
 }
 
-function start(body: Omit<BandWorkerMessage, "id">): BandJob {
+function start(body: Omit<BandWorkerMessage, "id">, transfer: ArrayBuffer[]): BandJob {
   current?.cancel();
   const id = nextId++;
   let resolve!: (result: BandResult) => void;
@@ -114,7 +123,6 @@ function start(body: Omit<BandWorkerMessage, "id">): BandJob {
     },
   };
   current = job;
-  const transfer = body.request.follow ? body.request.follow.audio.channels.map((channel) => channel.buffer as ArrayBuffer) : [];
   workerFor().postMessage({ id, ...body } satisfies BandWorkerMessage, transfer);
   return {
     done,
@@ -127,10 +135,12 @@ function start(body: Omit<BandWorkerMessage, "id">): BandJob {
 
 /** Generates and renders the whole song's drum and bass parts, as the request asks. */
 export function startBandRender(request: BandRequest): BandJob {
-  return start({ request: withMonoFollow(request) });
+  const { request: sent, transfer } = withMono(request);
+  return start({ request: sent }, transfer);
 }
 
 /** Renders `bars` bars of the parts from `fromTime`, for listening. Nothing is saved. */
 export function renderPreview(request: BandRequest, fromTime: number, bars = 4): BandJob {
-  return start({ request: withMonoFollow(request), preview: { fromTime, bars } });
+  const { request: sent, transfer } = withMono(request);
+  return start({ request: sent, preview: { fromTime, bars } }, transfer);
 }

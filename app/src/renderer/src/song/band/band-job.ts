@@ -6,7 +6,7 @@ import type { BandSettings, SectionPlan } from "./arrangement";
 import { onsetStrength, type BeatGrid } from "./beat-grid";
 import { generateBass } from "./bass";
 import { generateDrums } from "./drums";
-import { followFeel, type Feel } from "./feel";
+import { beatLevelsDb, followFeel, type Feel } from "./feel";
 import type { ChordAtBeat } from "./harmony";
 import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
@@ -37,6 +37,11 @@ export interface BandRequest {
   sampleUrls: Record<string, string>;
   /** The stem that follow-my-playing reads, when the setting is on. */
   follow?: BandFollow;
+  /**
+   * The song's source mix, mono, when follow-my-playing is on. Its beat levels decide stops and hits, so a sustained part still counts as
+   * playing. The client sums it once, and reuses that sum when the follow source is the mix.
+   */
+  mix?: PcmAudio;
 }
 
 /** What follow-my-playing did for a render: which source it read, and whether the parts were made to follow it. */
@@ -81,7 +86,9 @@ function feelFor(request: BandRequest): { feel?: Feel; follow?: FollowReport } {
   const { follow, settings } = request;
   if (!follow || !settings.followPlaying) return {};
   const onset = onsetStrength([follow.audio], follow.audio.sampleRate);
-  const { feel } = followFeel(onset, request.grid, request.plans, settings.followSource === "auto");
+  const mix = request.mix ?? follow.audio;
+  const levelDb = beatLevelsDb(mix.channels[0], mix.sampleRate, request.grid);
+  const { feel } = followFeel(onset, request.grid, request.plans, settings.followSource === "auto", levelDb);
   return { feel: feel ?? undefined, follow: { source: follow.source, following: feel !== null } };
 }
 

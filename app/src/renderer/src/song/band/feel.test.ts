@@ -3,6 +3,7 @@ import type { SectionPlan } from "./arrangement";
 import type { BeatGrid, OnsetStrength } from "./beat-grid";
 import {
   accentPushes,
+  beatLevelsDb,
   accentProfile,
   bassRhythmFromAccents,
   followFeel,
@@ -125,20 +126,63 @@ describe("accentProfile", () => {
 });
 
 describe("stopsAndHits", () => {
-  it("finds the quiet beats as stops, and the loud beat after them as the hit", () => {
-    // Beats 0 to 15 at 0.5 s. Beats 4 to 7 are silent, beat 8 is twice as loud as the others.
+  /** Beat levels in dB: `loud` for every beat, with the given beats set to `quiet` (silence is far under the median). */
+  const levelsWith = (quiet: number[], loud = 0, silence = -80): Float64Array => {
+    const levels = new Float64Array(16).fill(loud);
+    for (const beat of quiet) levels[beat] = silence;
+    return levels;
+  };
+  /** An onset curve over 16 beats that peaks at every beat in `beats`, at the given strength. */
+  const onsetAt = (beats: number[], strength = 1): Float64Array => {
     const onset = new Float64Array(8 * FRAME_RATE + 1);
-    for (let beat = 0; beat < 16; beat++) {
-      if (beat >= 4 && beat <= 7) continue;
-      onset[Math.round(beat * 0.5 * FRAME_RATE)] = beat === 8 ? 2 : 1;
-    }
-    expect(stopsAndHits(onset, FRAME_RATE, grid(4))).toEqual({ stops: [4, 5, 6, 7], hits: [8] });
+    for (const beat of beats) onset[Math.round(beat * 0.5 * FRAME_RATE)] = strength;
+    return onset;
+  };
+  const allBeats = Array.from({ length: 16 }, (_, beat) => beat);
+  const withoutBeats = (skip: number[]) => allBeats.filter((beat) => !skip.includes(beat));
+
+  it("gives a stop for a real bar of silence, and a hit on the beat after it with an onset", () => {
+    const onset = onsetAt(withoutBeats([4, 5, 6, 7]));
+    expect(stopsAndHits(onset, FRAME_RATE, grid(4), levelsWith([4, 5, 6, 7]))).toEqual({ stops: [4, 5, 6, 7], hits: [8] });
+  });
+
+  it("gives no stop for a sustained chord: one strum, decaying within 20 dB over each bar", () => {
+    // Each bar's first beat is the strum, and the level falls 4 dB a beat from there, so the bar stays within 12 dB.
+    const levels = Float64Array.from(allBeats, (beat) => -4 * (beat % 4));
+    const onset = onsetAt([0, 4, 8, 12]);
+    expect(stopsAndHits(onset, FRAME_RATE, grid(4), levels)).toEqual({ stops: [], hits: [] });
+  });
+
+  it("gives no stop for a single silent beat", () => {
+    expect(stopsAndHits(onsetAt(withoutBeats([5])), FRAME_RATE, grid(4), levelsWith([5]))).toEqual({ stops: [], hits: [] });
+  });
+
+  it("gives no hit when the beat after a stop has no onset in the follow source", () => {
+    // The band is silent for beats 4 to 7 and back at beat 8, but the follow stem has no attack on beat 8.
+    const onset = onsetAt(withoutBeats([4, 5, 6, 7, 8]));
+    expect(stopsAndHits(onset, FRAME_RATE, grid(4), levelsWith([4, 5, 6, 7]))).toEqual({ stops: [4, 5, 6, 7], hits: [] });
+  });
+
+  it("gives no hit when the level has not come back within 12 dB of the median", () => {
+    const levels = levelsWith([4, 5, 6, 7]);
+    levels[8] = -20;
+    expect(stopsAndHits(onsetAt(withoutBeats([4, 5, 6, 7])), FRAME_RATE, grid(4), levels)).toEqual({ stops: [4, 5, 6, 7], hits: [] });
   });
 
   it("finds no stops or hits in a song that plays throughout", () => {
-    const onset = new Float64Array(8 * FRAME_RATE + 1);
-    for (let beat = 0; beat < 16; beat++) onset[Math.round(beat * 0.5 * FRAME_RATE)] = 1;
-    expect(stopsAndHits(onset, FRAME_RATE, grid(4))).toEqual({ stops: [], hits: [] });
+    expect(stopsAndHits(onsetAt(allBeats), FRAME_RATE, grid(4), levelsWith([]))).toEqual({ stops: [], hits: [] });
+  });
+});
+
+describe("beatLevelsDb", () => {
+  it("gives each beat's RMS in dB, and floors a silent beat", () => {
+    const sampleRate = 100;
+    const mono = new Float32Array(8 * sampleRate);
+    mono.fill(0.5, 0, sampleRate);
+    const levels = beatLevelsDb(mono, sampleRate, grid(2));
+    expect(levels[0]).toBeCloseTo(20 * Math.log10(0.5), 3);
+    expect(levels[1]).toBeCloseTo(20 * Math.log10(0.5), 3);
+    expect(levels[2]).toBe(-120);
   });
 });
 
@@ -212,14 +256,15 @@ describe("followFeel", () => {
   it("follows nothing in auto when no section repeats, and follows in an explicit choice", () => {
     const random = audio(noise(8 * 2 * FRAME_RATE + 1, 9));
     const plans = [planBars(0, 8)];
-    expect(followFeel(random, grid(8), plans, true).feel).toBeNull();
-    expect(followFeel(random, grid(8), plans, false).feel).not.toBeNull();
+    const level = new Float64Array(8 * 4);
+    expect(followFeel(random, grid(8), plans, true, level).feel).toBeNull();
+    expect(followFeel(random, grid(8), plans, false, level).feel).not.toBeNull();
   });
 
   it("follows a steady accent pattern in auto, with its stops and hits", () => {
     // An onset on every beat (0, 4, 8, 12) and the accents on top, so no beat is silent.
     const steady = audio(onsetFor(8, () => [0, 4, 6, 8, 12]));
-    const result = followFeel(steady, grid(8), [planBars(0, 8)], true);
+    const result = followFeel(steady, grid(8), [planBars(0, 8)], true, new Float64Array(8 * 4));
     expect(result.feel).not.toBeNull();
     expect(result.confidence).toBeGreaterThan(0.9);
     expect(result.feel?.stops.size).toBe(0);
