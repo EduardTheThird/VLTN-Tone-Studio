@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "26"
+  # Node 24, as on the development Mac: under Node 26 its built-in localStorage hides the test one and library tests fail.
+  NODE_VERSION: "24"
 
 jobs:
   test:
