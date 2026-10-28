@@ -9,6 +9,7 @@ export const METAL: Style = {
   name: "Metal",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "tight",
   grooves: {
     1: [
       groove("Kick quarters and cross-stick", 16, lane(KICK, VEL.normal, [0, 8]), lane(SIDE_STICK, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),

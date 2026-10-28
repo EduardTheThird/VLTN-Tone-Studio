@@ -9,6 +9,7 @@ export const POP: Style = {
   name: "Pop",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "tight",
   grooves: {
     1: [
       groove("Sidestick quarters", 16, lane(SIDE_STICK, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),

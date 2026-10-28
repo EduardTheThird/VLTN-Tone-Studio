@@ -170,6 +170,18 @@ describe("Band panel", () => {
     expect(mocks.startBandRender).not.toHaveBeenCalled();
   });
 
+  it("the humanise amount and feel save, and mark the parts out of date", () => {
+    renderPanel();
+    // The sliders come in order: complexity, swing, then humanise. The aria-label sits on the root, not the thumb.
+    fireEvent.keyDown(screen.getAllByRole("slider")[2], { key: "ArrowRight" });
+    expect(savedOptions().band.humanise.amount).toBeCloseTo(0.55, 5);
+    expect(savedOptions().bandOutOfDate).toBe(true);
+    pick(screen.getByRole("combobox", { name: "Humanise feel" }), "Pushed");
+    expect(savedOptions().band.humanise).toEqual({ amount: expect.any(Number), feel: "pushed" });
+    expect(savedOptions().band.humanise.amount).toBeCloseTo(0.55, 5);
+    expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
+  });
+
   it("the follow switch saves the setting, and the source select lists only the stems that exist", () => {
     useSong.setState({ stems: { guitar: song().audio, drums: song().audio } as never });
     renderPanel();

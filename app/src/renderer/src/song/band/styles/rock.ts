@@ -9,6 +9,7 @@ export const ROCK: Style = {
   name: "Rock",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "natural",
   grooves: {
     1: [
       groove("Cross-stick quarters", 16, lane(SIDE_STICK, VEL.normal, [4, 12]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),

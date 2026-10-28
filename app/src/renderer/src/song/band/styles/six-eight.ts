@@ -12,6 +12,7 @@ export const SIX_EIGHT: Style = {
   name: "6/8",
   meter: { beatsPerBar: 2, stepsPerBeat: 3 },
   swingDefault: 0,
+  feelDefault: "natural",
   grooves: {
     1: [
       groove("Sidestick six-eight", 6, lane(KICK, VEL.normal, [0]), lane(SIDE_STICK, VEL.normal, [3]), lane(CLOSED_HAT, VEL.hat, [0, 3])),

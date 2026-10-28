@@ -8,6 +8,7 @@ import { generateBass } from "./bass";
 import { generateDrums } from "./drums";
 import { beatLevelsDb, followFeel, type Feel } from "./feel";
 import type { ChordAtBeat } from "./harmony";
+import { humanise } from "./humanise";
 import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
 import type { SampleSet } from "./samples";
@@ -93,14 +94,18 @@ function feelFor(request: BandRequest): { feel?: Feel; follow?: FollowReport } {
 }
 
 /**
- * The notes of the parts the request asks for. Drums are always generated, even when only the bass is wanted, because the bass locks to
- * the kick. Drums that were not asked for are not returned.
+ * The notes of the parts the request asks for, humanised (humanise.ts). Drums are always generated, even when only the bass is wanted,
+ * because the bass locks to the kick; the bass locks to the drums as generated, before humanising. Drums that were not asked for are not
+ * returned.
  */
 function generate(request: BandRequest): Generated {
   const { feel, follow } = feelFor(request);
-  const drums = generateDrums(request.grid, request.plans, request.settings, request.seed, feel);
-  const bass = request.parts.bass ? generateBass(request.grid, request.harmony, request.plans, request.settings, drums, request.seed, feel) : [];
-  return { notes: { drums: request.parts.drums ? drums : [], bass }, follow };
+  const { grid, plans, settings, seed } = request;
+  const drums = generateDrums(grid, plans, settings, seed, feel);
+  const bass = request.parts.bass ? generateBass(grid, request.harmony, plans, settings, drums, seed, feel) : [];
+  const drumNotes = humanise(drums, "drums", grid, plans, settings.humanise, seed);
+  const bassNotes = humanise(bass, "bass", grid, plans, settings.humanise, seed);
+  return { notes: { drums: request.parts.drums ? drumNotes : [], bass: bassNotes }, follow };
 }
 
 function render(request: BandRequest, generated: Generated, samples: SampleSet, lengthFrames: number, onStage?: (stage: BandStage) => void): BandResult {

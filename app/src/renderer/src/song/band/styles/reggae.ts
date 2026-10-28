@@ -12,6 +12,7 @@ export const REGGAE: Style = {
   name: "Reggae",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "laid-back",
   grooves: {
     1: [
       groove("Sidestick one drop", 16, lane(SIDE_STICK, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, SKANK)),

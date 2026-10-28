@@ -3,7 +3,7 @@
 // parseBandSettings, which keeps valid fields and falls back to the defaults for the rest.
 
 import { sortedSections, type Section } from "../performance/sections";
-import { ENERGIES, STYLE_IDS, type Energy, type StyleId } from "./styles/types";
+import { ENERGIES, HUMANISE_FEELS, STYLE_IDS, type Energy, type StyleId } from "./styles/types";
 
 export const DRUM_KITS = ["standard"] as const;
 export const BASS_SOUNDS = ["finger", "pick"] as const;
@@ -11,12 +11,21 @@ export const BASS_RANGES = ["low", "normal", "high"] as const;
 export const BASS_MODES = ["roots", "fifths", "octaves", "melodic", "walking"] as const;
 /** Where follow-my-playing reads its accents: a stem the band plays, or the song's mix. "auto" takes the first stem that exists. */
 export const FOLLOW_SOURCES = ["auto", "guitar", "piano", "other", "mix"] as const;
+/** The choices of the humanise feel: "style" is the style's own default, the rest are fixed feels. */
+export const HUMANISE_CHOICES = ["style", ...HUMANISE_FEELS] as const;
 
 export type DrumKit = (typeof DRUM_KITS)[number];
 export type BassSound = (typeof BASS_SOUNDS)[number];
 export type BassRange = (typeof BASS_RANGES)[number];
 export type BassMode = (typeof BASS_MODES)[number];
 export type FollowSource = (typeof FOLLOW_SOURCES)[number];
+export type HumaniseChoice = (typeof HUMANISE_CHOICES)[number];
+
+/** How the generated drums and bass are humanised: the amount from 0 (exactly on the grid) to 1, and the feel. */
+export interface HumaniseSettings {
+  amount: number;
+  feel: HumaniseChoice;
+}
 
 /** The key the overrides of a song without sections are kept under. Section ids are UUIDs, so this cannot clash with one. */
 export const WHOLE_SONG_ID = "song";
@@ -59,6 +68,8 @@ export interface BandSettings {
   /** Generated parts take their accents and stops from the playing of the follow source (feel.ts). */
   followPlaying: boolean;
   followSource: FollowSource;
+  /** Humanising of the generated drums and bass (humanise.ts). */
+  humanise: HumaniseSettings;
   /** Each generation uses this seed, so a song regenerates the same way. "Try another" picks a new one. */
   seed: number;
   /** Per-section changes, keyed by section id. Only style, energy, fill and play can be overridden. */
@@ -79,6 +90,7 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   lockToKick: true,
   followPlaying: true,
   followSource: "auto",
+  humanise: { amount: 0.5, feel: "style" },
   seed: 1,
   sections: {},
 };
@@ -159,6 +171,8 @@ const isBassSound = isOneOf(BASS_SOUNDS);
 const isBassRange = isOneOf(BASS_RANGES);
 const isBassMode = isOneOf(BASS_MODES);
 const isFollowSource = isOneOf(FOLLOW_SOURCES);
+const isHumaniseChoice = isOneOf(HUMANISE_CHOICES);
+const isHumanise = (value: unknown): value is HumaniseSettings => isRecord(value) && isUnit(value.amount) && isHumaniseChoice(value.feel);
 const isPartToggles = (value: unknown): value is PartToggles => isRecord(value) && isBool(value.drums) && isBool(value.bass);
 const optional = <T>(value: unknown, check: (candidate: unknown) => candidate is T): boolean => value === undefined || check(value);
 
@@ -190,10 +204,20 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isBool(value.lockToKick) &&
     isBool(value.followPlaying) &&
     isFollowSource(value.followSource) &&
+    isHumanise(value.humanise) &&
     isSeed(value.seed) &&
     isRecord(value.sections) &&
     Object.values(value.sections).every(isSectionOverride)
   );
+}
+
+/** Keeps each valid field of the humanise settings and falls back to the default for the rest. */
+function parseHumanise(value: unknown): HumaniseSettings {
+  const source: Record<string, unknown> = isRecord(value) ? value : {};
+  return {
+    amount: isUnit(source.amount) ? source.amount : DEFAULT_BAND_SETTINGS.humanise.amount,
+    feel: isHumaniseChoice(source.feel) ? source.feel : DEFAULT_BAND_SETTINGS.humanise.feel,
+  };
 }
 
 /** Keeps each valid field of a section override and drops the rest. */
@@ -238,6 +262,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     lockToKick: isBool(source.lockToKick) ? source.lockToKick : defaults.lockToKick,
     followPlaying: isBool(source.followPlaying) ? source.followPlaying : defaults.followPlaying,
     followSource: isFollowSource(source.followSource) ? source.followSource : defaults.followSource,
+    humanise: parseHumanise(source.humanise),
     seed: isSeed(source.seed) ? source.seed : defaults.seed,
     sections,
   };

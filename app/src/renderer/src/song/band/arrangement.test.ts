@@ -194,3 +194,23 @@ describe("follow-my-playing settings", () => {
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, followPlaying: false, followSource: "mix" })).toBe(true);
   });
 });
+
+describe("humanise settings", () => {
+  it("are at 50% with the style's feel by default", () => {
+    expect(DEFAULT_BAND_SETTINGS.humanise).toEqual({ amount: 0.5, feel: "style" });
+  });
+
+  it("keep a valid amount and feel, and fall back for each field that is invalid or missing", () => {
+    expect(parseBandSettings({ humanise: { amount: 0.2, feel: "pushed" } }).humanise).toEqual({ amount: 0.2, feel: "pushed" });
+    expect(parseBandSettings({ humanise: { amount: 3, feel: "tight" } }).humanise).toEqual({ amount: 0.5, feel: "tight" });
+    expect(parseBandSettings({ humanise: { amount: 0.2, feel: "groovy" } }).humanise).toEqual({ amount: 0.2, feel: "style" });
+    expect(parseBandSettings({ humanise: "loose" }).humanise).toEqual(DEFAULT_BAND_SETTINGS.humanise);
+    expect(parseBandSettings({ bassMode: "roots" }).humanise).toEqual(DEFAULT_BAND_SETTINGS.humanise);
+  });
+
+  it("makes a settings object with a bad humanise setting fail the full check", () => {
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 2, feel: "style" } })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 0, feel: "swing" } })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 1, feel: "laid-back" } })).toBe(true);
+  });
+});

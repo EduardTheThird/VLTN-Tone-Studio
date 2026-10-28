@@ -1,7 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_MODES, BASS_RANGES, BASS_SOUNDS, type BandSettings, type FollowSource } from "@/song/band/arrangement";
+import { BASS_MODES, BASS_RANGES, BASS_SOUNDS, HUMANISE_CHOICES, type BandSettings, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { STYLE_IDS, STYLES, type Style, type StyleId } from "@/song/band/styles";
 
 const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
@@ -14,6 +14,13 @@ const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
 const BASS_SOUND_LABELS: Record<(typeof BASS_SOUNDS)[number], string> = { finger: "Finger", pick: "Pick" };
 const BASS_RANGE_LABELS: Record<(typeof BASS_RANGES)[number], string> = { low: "Low", normal: "Normal", high: "High" };
 const FOLLOW_LABELS: Record<FollowSource, string> = { auto: "Auto", guitar: "Guitar", piano: "Piano", other: "Other", mix: "Mix" };
+const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
+  style: "Style default",
+  tight: "Tight",
+  natural: "Natural",
+  "laid-back": "Laid back",
+  pushed: "Pushed",
+};
 
 export interface BandSettingsFormProps {
   settings: BandSettings;
@@ -77,6 +84,32 @@ export function BandSettingsForm({ settings, style, followSources, onChange, onS
           value={[Math.round(settings.swing * 100)]}
           onValueChange={([percent]) => onChange({ swing: percent / 100 })}
         />
+      </label>
+      <label className="flex items-center gap-3">
+        Humanise {Math.round(settings.humanise.amount * 100)}%
+        <Slider
+          aria-label="Humanise"
+          min={0}
+          max={100}
+          step={5}
+          value={[Math.round(settings.humanise.amount * 100)]}
+          onValueChange={([percent]) => onChange({ humanise: { ...settings.humanise, amount: percent / 100 } })}
+        />
+      </label>
+      <label className="flex items-center gap-3">
+        Feel
+        <Select value={settings.humanise.feel} onValueChange={(value) => onChange({ humanise: { ...settings.humanise, feel: value as HumaniseChoice } })}>
+          <SelectTrigger aria-label="Humanise feel" className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {HUMANISE_CHOICES.map((choice) => (
+              <SelectItem key={choice} value={choice}>
+                {HUMANISE_LABELS[choice]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
       <label className="flex items-center gap-2">
         <Switch aria-label="Ghost notes" checked={settings.ghostNotes} onCheckedChange={(on) => onChange({ ghostNotes: on })} />

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, planSections, type BandSettings } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
+import { generateDrums } from "./drums";
 import { DRUM_PITCHES } from "./note";
 import { parseChordName, type ChordAtBeat } from "./harmony";
 import { previewWindow, runBandJob, runBandPreview, transferables, type BandRequest } from "./band-job";
@@ -160,5 +161,24 @@ describe("runBandJob with follow-my-playing", () => {
   it("leaves the result without a follow report when the setting is off", () => {
     const result = runBandJob(followed({ followPlaying: false }, clicks()), stubSamples());
     expect(result.follow).toBeUndefined();
+  });
+});
+
+describe("runBandJob humanising", () => {
+  it("at amount 0 gives the generated drum notes exactly", () => {
+    const settings: BandSettings = { ...DEFAULT_BAND_SETTINGS, humanise: { amount: 0, feel: "style" } };
+    const result = runBandJob(request({ settings }), stubSamples());
+    expect(result.notes.drums).toEqual(generateDrums(request().grid, request().plans, settings, 7));
+  });
+
+  it("moves the notes at a higher amount, and keeps how many notes there are and which pitches", () => {
+    const flat = runBandJob(request({ settings: { ...DEFAULT_BAND_SETTINGS, humanise: { amount: 0, feel: "style" } } }), stubSamples());
+    const humanised = runBandJob(request({ settings: { ...DEFAULT_BAND_SETTINGS, humanise: { amount: 1, feel: "laid-back" } } }), stubSamples());
+    expect(humanised.notes.drums).toHaveLength(flat.notes.drums.length);
+    expect(humanised.notes.bass).toHaveLength(flat.notes.bass.length);
+    const pitches = (notes: { pitch: number }[]) => notes.map((note) => note.pitch).sort((a, b) => a - b);
+    expect(pitches(humanised.notes.drums)).toEqual(pitches(flat.notes.drums));
+    expect(pitches(humanised.notes.bass)).toEqual(pitches(flat.notes.bass));
+    expect(humanised.notes.drums.map((note) => note.time)).not.toEqual(flat.notes.drums.map((note) => note.time));
   });
 });

@@ -9,6 +9,7 @@ export const BALLAD: Style = {
   name: "Ballad",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "laid-back",
   grooves: {
     1: [
       groove("Sidestick and ride quarters", 16, lane(KICK, VEL.normal, [0]), lane(SIDE_STICK, VEL.normal, [8]), lane(RIDE, VEL.hat, QUARTERS)),

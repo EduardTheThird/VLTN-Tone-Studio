@@ -13,6 +13,7 @@ export const SHUFFLE: Style = {
   name: "Shuffle",
   meter: { beatsPerBar: 4, stepsPerBeat: 3 },
   swingDefault: 0.5,
+  feelDefault: "laid-back",
   grooves: {
     1: [
       groove("Sidestick shuffle", 12, lane(SIDE_STICK, VEL.normal, [3, 9]), lane(CLOSED_HAT, VEL.hat, [0, 3, 6, 9])),

@@ -5,6 +5,13 @@
 export const STYLE_IDS = ["rock", "pop", "ballad", "funk", "shuffle", "country", "reggae", "metal", "six-eight", "half-time"] as const;
 export type StyleId = (typeof STYLE_IDS)[number];
 
+/**
+ * The feels the humanising gives the generated parts: how the timing and the velocities sit against the beat. "Tight" plays on the
+ * grid, "laid back" drags the snare and the hats, "pushed" plays the snare early. The settings add "style", the style's own default.
+ */
+export const HUMANISE_FEELS = ["tight", "natural", "laid-back", "pushed"] as const;
+export type HumaniseFeel = (typeof HUMANISE_FEELS)[number];
+
 /** Energy 1 is sparse, 5 is busy. */
 export type Energy = 1 | 2 | 3 | 4 | 5;
 export const ENERGIES: readonly Energy[] = [1, 2, 3, 4, 5];
@@ -64,6 +71,8 @@ export interface Style {
    * for them.
    */
   swingDefault: number;
+  /** The humanising feel this style starts at when the settings say "style" (see ../humanise.ts). */
+  feelDefault: HumaniseFeel;
   /** 2 to 4 variations per energy level. Each variation is one bar. */
   grooves: Record<Energy, DrumGroove[]>;
   /**

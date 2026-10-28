@@ -9,6 +9,7 @@ export const HALF_TIME: Style = {
   name: "Half-time",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
   swingDefault: 0,
+  feelDefault: "laid-back",
   grooves: {
     1: [
       groove("Half-time sidestick", 16, lane(KICK, VEL.normal, [0]), lane(SIDE_STICK, VEL.normal, [8]), lane(CLOSED_HAT, VEL.hat, QUARTERS)),
