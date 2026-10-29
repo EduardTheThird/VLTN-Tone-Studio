@@ -127,6 +127,10 @@ interface LibraryState {
   playlistFromHistory(name: string, since: string): Promise<void>;
   /** Changes a playlist's name, entries, sets or smart rules. */
   updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<void>;
+  /** Adds a playlist to the end of the list. Writes queue, so this is never dropped while another playlist is saving. */
+  addPlaylist(playlist: Playlist): Promise<void>;
+  /** Deletes a playlist. Its songs stay in the library. */
+  deletePlaylist(id: string): Promise<void>;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
   playPlaylist(queue: string[], position?: number, setId?: string, overrides?: (EntryOverride | null)[]): Promise<void>;
   advancePlaylist(): Promise<void>;
@@ -288,6 +292,19 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     } finally {
       set({ busy: false });
     }
+  };
+  /**
+   * Playlist writes wait in line, so a write that starts while another is still saving is not dropped. Each change is applied to the
+   * playlists as they are when its turn comes, so two quick edits both land, in order. A failed write shows its error; later writes still run.
+   */
+  let playlistWrites: Promise<void> = Promise.resolve();
+  const writePlaylists = (change: (playlists: Playlist[]) => Playlist[], notice = "Playlist saved.") => {
+    const write = playlistWrites.then(async () => {
+      await api().playlists(change(get().index.playlists));
+      set({ index: await api().index(), notice });
+    });
+    playlistWrites = write.catch((e) => set({ error: e instanceof Error ? e.message : String(e) }));
+    return playlistWrites;
   };
   const restore = async (mode: RestoreMode) => {
     const service = api();
@@ -633,12 +650,9 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         await api().playlists([...index.playlists, { id: crypto.randomUUID(), name: trimmed, songs, sets: [] }]);
         set({ index: await api().index(), notice: `Created ${trimmed} with ${songs.length} songs from the history.` });
       }),
-    updatePlaylist: (id, change) =>
-      run(async () => {
-        const playlists = get().index.playlists.map((p) => (p.id === id ? { ...p, ...change } : p));
-        await api().playlists(playlists);
-        set({ index: await api().index() });
-      }),
+    updatePlaylist: (id, change) => writePlaylists((playlists) => playlists.map((p) => (p.id === id ? { ...p, ...change } : p))),
+    addPlaylist: (playlist) => writePlaylists((playlists) => [...playlists, playlist]),
+    deletePlaylist: (id) => writePlaylists((playlists) => playlists.filter((p) => p.id !== id)),
     rememberMidi: (midiSession) => set({ midiSession }),
     pausePlaylist: () => {
       loadGeneration++;
@@ -737,11 +751,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
       }),
     load: (id, queue = [id], position = 0, overrides) => run(() => load(id, queue, position, false, overrides, false)),
-    playlists: (playlists) =>
-      run(async () => {
-        await api().playlists(playlists);
-        set({ index: await api().index(), notice: "Playlist saved." });
-      }),
+    playlists: (playlists) => writePlaylists(() => playlists),
     applyTrackSettings: () =>
       run(async () => {
         const id = useSong.getState().source?.libraryId;

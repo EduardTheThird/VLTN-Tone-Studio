@@ -22,7 +22,7 @@ export function PlaylistsPanel() {
       kind === "smart"
         ? { id, name: name.trim(), songs: [], smart: { match: "all", rules: [], sort: "title" } }
         : { id, name: name.trim(), songs: [], sets: [] };
-    void library.playlists([...library.index.playlists, next]).then(() => setSelected(id));
+    void library.addPlaylist(next).then(() => setSelected(id));
     setName("");
   };
   return (
@@ -78,7 +78,7 @@ export function PlaylistsPanel() {
               <Button
                 disabled={library.busy}
                 onClick={() => {
-                  void library.playlists(library.index.playlists.filter((p) => p.id !== playlist.id));
+                  void library.deletePlaylist(playlist.id);
                   setSelected("");
                   setConfirm("");
                 }}
