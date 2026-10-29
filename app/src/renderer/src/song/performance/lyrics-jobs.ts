@@ -3,7 +3,7 @@ import type { PcmAudio } from "../types";
 import { lyricsLrc, type LyricSegment } from "./lyrics";
 import { alignLyrics, pastedLines, type TimedWord } from "./lyrics-align";
 import { flushSettings, setSetting } from "./settings";
-import { lyricsOptions, type LyricsOptions } from "./lyrics-options";
+import { lyricsOptions, recordLyricsMade, type LyricsOptions } from "./lyrics-options";
 
 export interface LyricsJob {
   busy: boolean;
@@ -89,7 +89,10 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
               : "Lyrics timed to the vocals.",
           });
           try {
-            for (const alias of task.keys) setSetting(alias, ":lyrics", text);
+            for (const alias of task.keys) {
+              setSetting(alias, ":lyrics", text);
+              recordLyricsMade(alias, options);
+            }
             await flushSettings();
           } catch (e) {
             update(task, { error: `Lyrics timed, but saving failed: ${String(e)}. Export a copy.` });
@@ -101,7 +104,10 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
         if (text) {
           update(task, { text, status: "Lyrics ready. Review the words and timing while listening." });
           try {
-            for (const alias of task.keys) setSetting(alias, ":lyrics", text);
+            for (const alias of task.keys) {
+              setSetting(alias, ":lyrics", text);
+              recordLyricsMade(alias, options);
+            }
             await flushSettings();
           } catch (e) {
             update(task, { error: `Lyrics generated, but saving failed: ${String(e)}. Export a copy.` });

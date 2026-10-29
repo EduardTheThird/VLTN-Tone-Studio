@@ -1,5 +1,6 @@
 import { transcriptSegments, transcriptWords } from "./lyrics";
-import type { LyricsOptions } from "./lyrics-options";
+import { findLyricsQuality, runtimeFor, wasmThreads, type LyricsOptions } from "./lyrics-options";
+import { findLyricsModel } from "./lyrics-models";
 
 // `words` asks for word timings (used to time pasted lyrics); otherwise the worker returns line-level segments.
 self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: LyricsOptions; words: boolean }>) => {
@@ -12,13 +13,16 @@ self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: Lyrics
       import("onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url"),
       import("onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url"),
     ]);
+    const model = findLyricsModel(options.model);
+    if (!model) throw new Error(`Unknown lyrics model: ${String(options.model)}`);
+    const runtime = runtimeFor("gpu" in navigator);
     env.allowLocalModels = false;
     env.backends.onnx.wasm!.wasmPaths = { wasm, mjs };
-    env.backends.onnx.wasm!.numThreads = 1;
+    env.backends.onnx.wasm!.numThreads = wasmThreads(self.crossOriginIsolated, navigator.hardwareConcurrency);
     env.backends.onnx.wasm!.proxy = false;
-    const transcribe = await pipeline("automatic-speech-recognition", "Xenova/whisper-base", {
-      device: "wasm",
-      dtype: "q8",
+    const transcribe = await pipeline("automatic-speech-recognition", model.repo, {
+      device: runtime.device,
+      dtype: runtime.dtype,
       progress_callback: (p) => {
         if (p.status === "progress") self.postMessage({ status: `Downloading lyrics model: ${Math.round(p.progress)}% (${p.file})` });
       },
@@ -29,6 +33,7 @@ self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: Lyrics
       chunk_length_s: 30,
       stride_length_s: 5,
       task: "transcribe",
+      num_beams: findLyricsQuality(options.quality)?.beams ?? 1,
       ...(options.language !== "auto" ? { language: options.language } : {}),
     });
     const result = Array.isArray(output) ? output[0] : output;

@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import type { PcmAudio } from "@/song/types";
 import { cancelLyrics, generateLyrics, useLyricsJobs } from "@/song/performance/lyrics-jobs";
 import { hasSignal } from "@/song/performance/sources";
-import { LYRIC_LANGUAGES, lyricsOptions, type LyricsLanguage } from "@/song/performance/lyrics-options";
+import { loadLyricsChoice, LYRIC_LANGUAGES, lyricsOptions, saveLyricsChoice, type LyricsChoice, type LyricsLanguage } from "@/song/performance/lyrics-options";
 import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
 import { host } from "@/host";
 import { useActiveIndex } from "@/song/performance/playback-clock";
+import { LyricsModelPicker } from "./LyricsModelPicker";
 
 export function LyricsTrack({
   audio,
@@ -26,6 +27,7 @@ export function LyricsTrack({
   const busy = job?.busy ?? false;
   const [error, setError] = useState("");
   const [pasted, setPasted] = useState("");
+  const [choice, setChoice] = useState<LyricsChoice>(loadLyricsChoice);
   const activeLine = useRef<HTMLParagraphElement>(null);
   const available = useMemo(() => hasSignal(audio), [audio]);
   const lines = useMemo(
@@ -73,7 +75,7 @@ export function LyricsTrack({
   const transcribe = (pastedText?: string) => {
     if (audio && available) {
       setError("");
-      void generateLyrics(storageKey, audio, { language }, pastedText);
+      void generateLyrics(storageKey, audio, { ...choice, language }, pastedText);
     }
   };
   return (
@@ -128,6 +130,14 @@ export function LyricsTrack({
           Export lyrics
         </Button>
       </div>
+      <LyricsModelPicker
+        choice={choice}
+        disabled={busy}
+        onChange={(next) => {
+          setChoice(next);
+          saveLyricsChoice(next);
+        }}
+      />
       <details>
         <summary>Paste lyrics and time them</summary>
         <p className="text-sm text-silkscreen-3">
