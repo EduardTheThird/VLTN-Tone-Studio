@@ -1,6 +1,7 @@
 import { fft } from "../tonematch/fft";
 import type { PcmAudio, Stems } from "../types";
 import { hasSignal } from "./sources";
+import { combinedProfile, type KeyEvidence } from "../analysis/key-evidence";
 
 export const KEY_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 export const SONG_KEYS = KEY_NAMES.flatMap((root) => [`${root} major`, `${root} minor`]);
@@ -29,6 +30,19 @@ const profiles = {
   major: [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
   minor: [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
 };
+/**
+ * Temperley's key weights (the Temperley and Kostka-Payne set, as music21 tabulates it). The second profile set: the key score is the mean
+ * of the two sets' correlations. Its corpus is common-practice harmony rather than pop, so it is a second opinion, not a pop profile.
+ */
+const TEMPERLEY = {
+  major: [0.748, 0.06, 0.488, 0.082, 0.67, 0.46, 0.096, 0.715, 0.104, 0.366, 0.057, 0.4],
+  minor: [0.712, 0.084, 0.474, 0.618, 0.049, 0.46, 0.105, 0.747, 0.404, 0.067, 0.133, 0.33],
+};
+const PROFILE_SETS = [profiles, TEMPERLEY];
+/** Two keys within this correlation count as near enough for the alternatives to be listed. */
+const NEAR_SCORE = 0.1;
+/** Relatives closer than this are decided by the chords at the anchors and the bass, not by the profiles. */
+const RELATIVE_MARGIN = 0.05;
 export function keyAudio(stems: Stems | null, original?: PcmAudio): { name: string; audio: PcmAudio } | null {
   for (const name of ["guitar", "piano", "other", "bass", "vocals"] as const) {
     if (hasSignal(stems?.[name])) return { name, audio: stems![name]! };
@@ -111,4 +125,88 @@ export function detectKey(audio: PcmAudio): KeyEstimate | null {
     if (total) for (let i = 0; i < 12; i++) chroma[i] += frame[i] / total;
   }
   return keyFromChroma(chroma);
+}
+
+interface KeyScore {
+  tonic: number;
+  mode: "major" | "minor";
+  score: number;
+  name: string;
+}
+
+/** The correlation of a chroma with every key, averaged over the profile sets, best first. */
+function scoreKeys(chroma: ArrayLike<number>): KeyScore[] {
+  const values = Array.from(chroma);
+  const mean = values.reduce((a, b) => a + b, 0) / 12;
+  const centered = values.map((n) => n - mean);
+  const variance = centered.reduce((a, b) => a + b * b, 0);
+  const scores: KeyScore[] = [];
+  for (const mode of ["major", "minor"] as const) {
+    for (let tonic = 0; tonic < 12; tonic++) scores.push({ tonic, mode, score: 0, name: `${KEY_NAMES[tonic]} ${mode}` });
+  }
+  for (const set of PROFILE_SETS) {
+    for (const entry of scores) {
+      const profile = set[entry.mode];
+      const average = profile.reduce((a, b) => a + b, 0) / 12;
+      const norm = Math.sqrt(variance * profile.reduce((a, b) => a + (b - average) ** 2, 0));
+      const correlation = centered.reduce((sum, value, i) => sum + value * (profile[(i - entry.tonic + 12) % 12] - average), 0) / norm;
+      entry.score += correlation / PROFILE_SETS.length;
+    }
+  }
+  return scores.sort((a, b) => b.score - a.score);
+}
+
+/** Whether a chroma has a clear shape: a peak with at least three pitch classes above a tenth of it, and enough spread around its mean. */
+function hasShape(values: readonly number[]): boolean {
+  const max = Math.max(...values),
+    mean = values.reduce((a, b) => a + b, 0) / 12;
+  if (!(max > 0) || values.filter((n) => n > max * 0.1).length < 3) return false;
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0);
+  return Math.sqrt(variance / 12) >= mean * 0.12;
+}
+
+/** The chords at the anchors (the first and last chord and the ones ending a section) that name the candidate's tonic chord, and its bass. */
+function tonicSupport(evidence: KeyEvidence, candidate: KeyScore): number {
+  const anchors = evidence.runs.filter((run) => run.anchor);
+  const wanted = candidate.mode === "major" ? "major" : "minor";
+  const chords = anchors.length ? anchors.filter((run) => run.root === candidate.tonic && run.quality === wanted).length / anchors.length : 0;
+  return chords + (evidence.bass ? evidence.bass[candidate.tonic] : 0);
+}
+
+/** Whether two keys are relatives: the same notes in the other mode, so a major key and the minor key on its sixth degree. */
+function areRelatives(a: KeyScore, b: KeyScore): boolean {
+  if (a.mode === b.mode) return false;
+  const major = a.mode === "major" ? a : b,
+    minor = a.mode === "major" ? b : a;
+  return minor.tonic === (major.tonic + 9) % 12;
+}
+
+/**
+ * The key of a song from its evidence (spec 82): the mean correlation of the combined profile with each key, and the relative tiebreak when
+ * the top two are relatives within `RELATIVE_MARGIN`. The tonic chord at the anchors and the bass on the tonic decide it. The alternatives
+ * are the relative key and the nearer fifth-related key, when either is near the top. Null when the evidence has no clear key.
+ */
+export function detectKeyFrom(evidence: KeyEvidence): KeyEstimate | null {
+  const chroma = combinedProfile(evidence);
+  if (!chroma || !hasShape(Array.from(chroma))) return null;
+  const scores = scoreKeys(chroma);
+  let [first, second] = scores;
+  if (areRelatives(first, second) && first.score - second.score < RELATIVE_MARGIN && tonicSupport(evidence, second) > tonicSupport(evidence, first)) {
+    [first, second] = [second, first];
+  }
+  if (first.score < 0.55) return null;
+  const margin = first.score - second.score;
+  const find = (tonic: number, mode: "major" | "minor") => scores.find((s) => s.tonic === tonic && s.mode === mode)!;
+  const relative = find((first.tonic + (first.mode === "major" ? 9 : 3)) % 12, first.mode === "major" ? "minor" : "major");
+  const fifths = [find((first.tonic + 7) % 12, first.mode), find((first.tonic + 5) % 12, first.mode)].sort((a, b) => b.score - a.score);
+  const alternatives = [relative, fifths[0]].filter((s) => first.score - s.score < NEAR_SCORE);
+  return {
+    name: first.name,
+    tonic: first.tonic,
+    mode: first.mode,
+    correlation: first.score,
+    margin: Math.abs(margin),
+    confidence: first.score >= 0.75 && Math.abs(margin) >= 0.12 ? "strong" : "tentative",
+    alternatives: alternatives.map((s) => s.name),
+  };
 }

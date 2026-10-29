@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { detectKey, effectiveSongKey, keyAudio, keyFromChroma, KEY_NAMES, type KeyEstimate } from "./key";
+import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, KEY_NAMES, type KeyEstimate } from "./key";
+import type { KeyEvidence } from "../analysis/key-evidence";
 import type { PcmAudio } from "../types";
 const major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const minor = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -87,4 +88,46 @@ describe("effectiveSongKey", () => {
     expect(effectiveSongKey("", undefined, null)).toBeUndefined();
     expect(effectiveSongKey("", "", null)).toBeUndefined();
   });
+});
+
+/** Evidence with a fixed chroma, and optionally a bass and anchored chords. */
+function evidence(chroma: number[], options: Partial<Omit<KeyEvidence, "chroma">> = {}): KeyEvidence {
+  return { chroma: Float64Array.from(chroma), bass: null, chordTones: null, runs: [], ...options };
+}
+const diatonicC = [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1];
+const pitchClass = (pc: number) => Array.from({ length: 12 }, (_, i) => (i === pc ? 1 : 0));
+
+it("reads a clear major or minor chroma from the evidence", () => {
+  expect(detectKeyFrom(evidence(major.map((_, i) => major[(i - 0 + 12) % 12])))?.name).toBe("C major");
+  expect(detectKeyFrom(evidence(Array.from({ length: 12 }, (_, i) => minor[(i - 9 + 12) % 12])))?.name).toBe("A minor");
+});
+
+it("uses the bass on the tonic to choose between keys that share their notes", () => {
+  // C major and A minor have the same notes, so the chroma alone cannot choose; the bass note A is the tonic of A minor.
+  const without = detectKeyFrom(evidence(diatonicC));
+  const withBass = detectKeyFrom(evidence(diatonicC, { bass: Float64Array.from(pitchClass(9)) }));
+  expect(withBass?.name).toBe("A minor");
+  expect(without).not.toBeNull();
+});
+
+it("breaks a tie between relatives by the tonic chord at the anchors", () => {
+  // A chroma between G major and E minor (44% of the G profile), so the two are within the relative margin.
+  const rotate = (profile: number[], tonic: number) => Array.from({ length: 12 }, (_, i) => profile[(i - tonic + 12) % 12]);
+  const tie = rotate(major, 7).map((v, i) => 0.44 * v + 0.56 * rotate(minor, 4)[i]);
+  const runs = [
+    { root: 4, quality: "minor" as const, tones: [0, 3, 7], seconds: 2, anchor: true },
+    { root: 7, quality: "major" as const, tones: [0, 4, 7], seconds: 2, anchor: false },
+    { root: 4, quality: "minor" as const, tones: [0, 3, 7], seconds: 2, anchor: true },
+  ];
+  // With no chords to decide it, the profiles keep G major on top.
+  expect(detectKeyFrom(evidence(tie))?.name).toBe("G major");
+  // The first and last chords are E minor, so E minor wins.
+  expect(detectKeyFrom(evidence(tie, { runs }))?.name).toBe("E minor");
+});
+
+it("lists the relative key among the alternatives when it is near", () => {
+  // The C major scale is as much A minor, so the relative key is near the top and is listed.
+  const estimate = detectKeyFrom(evidence(diatonicC));
+  expect(estimate?.name).toBe("C major");
+  expect(estimate?.alternatives).toContain("A minor");
 });
