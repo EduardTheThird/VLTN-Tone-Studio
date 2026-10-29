@@ -19,7 +19,7 @@ import {
 import type { BandSyncOptions, BandSyncStatus, LanAddress } from "@shared/host/band-sync";
 import { HostError } from "@shared/ipc";
 import { PinAuth } from "./band-sync-auth";
-import { handle } from "./handle";
+import { handle, sendTo } from "./handle";
 import { onAudiencePublish } from "./display";
 import { serial, writeJsonAtomic } from "./fs-atomic";
 
@@ -550,10 +550,7 @@ export function registerBandSyncIpc(getWindow: () => BrowserWindow | null, root:
   const save = () => serial(file(), () => writeJsonAtomic(file(), settings)).catch(() => {});
   const server = new BandSyncServer({
     root,
-    onControl: (action) => {
-      const contents = getWindow()?.webContents;
-      if (contents && !contents.isDestroyed()) contents.send("band-sync:control", action);
-    },
+    onControl: (action) => sendTo(getWindow, "band-sync:control", action),
     onChange: () => emit(),
   });
   const status = (): BandSyncStatus => {
@@ -579,10 +576,7 @@ export function registerBandSyncIpc(getWindow: () => BrowserWindow | null, root:
       message,
     };
   };
-  const emit = () => {
-    const contents = getWindow()?.webContents;
-    if (contents && !contents.isDestroyed()) contents.send("band-sync:status", status());
-  };
+  const emit = () => sendTo(getWindow, "band-sync:status", status());
   const mainOnly = (event: IpcMainInvokeEvent) => {
     if (event.sender.id !== getWindow()?.webContents.id) throw new HostError("unauthorized", "Only the performance screen controls band sync.");
   };

@@ -17,7 +17,7 @@ import {
 } from "@shared/host/song";
 import { sanitizeFileName } from "@shared/files-naming";
 import { HostError } from "@shared/ipc";
-import { handle, showOpenDialog, showSaveDialog } from "./handle";
+import { handle, sendTo, showOpenDialog, showSaveDialog } from "./handle";
 import { songSaveFilters } from './song-save-options';
 import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
@@ -123,11 +123,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   });
   app.once('will-quit', () => stagePower.close());
   // After sleep the USB MIDI ports are re-enumerated. The renderer asks the browser for them again rather than trusting the old ones.
-  powerMonitor.on('resume', () => {
-    const win = getWindow();
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send('song:systemResume');
-  });
+  powerMonitor.on('resume', () => sendTo(getWindow, 'song:systemResume'));
   const library = new SongLibraryStore(libraryRoot());
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());
@@ -145,11 +141,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   handle('song:library:removeChart', (_e, id: string) => library.removeChart(id));
   handle('song:library:saveAnnotations', (_e, id: string, json: string) => library.saveAnnotations(id, json));
   handle('song:library:chartUrls', (_e, id: string) => library.chartUrls(id));
-  const transferProgress = (value: LibraryTransferProgress) => {
-    const win = getWindow();
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send('song:library:progress', value);
-  };
+  const transferProgress = (value: LibraryTransferProgress) => sendTo(getWindow, 'song:library:progress', value);
   handle('song:library:exportBackup', async () => {
     const stamp = new Date().toISOString().slice(0, 10);
     const selection = await showSaveDialog(getWindow(), {
@@ -190,11 +182,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   void library.migrate(transferProgress).catch((e) => console.error('Song library conversion failed', e));
   // One download per file at a time; a second request (retry, another model sharing the file) joins it.
   const pending = new Map<string, Promise<void>>();
-  const progress = (p: ModelProgress) => {
-    const win = getWindow();
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send("song:modelProgress", p);
-  };
+  const progress = (p: ModelProgress) => sendTo(getWindow, "song:modelProgress", p);
 
   function fileOnce(f: ModelFile, onBytes: (received: number) => void): Promise<void> {
     let job = pending.get(f.file);
