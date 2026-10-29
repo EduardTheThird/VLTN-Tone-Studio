@@ -25,6 +25,7 @@ const SOURCE_NOTE = {
   transcribed: "Made by the transcriber from the vocals. Edit it and it becomes yours.",
   aligned: "Your words, timed by the transcriber. Edit it and it becomes yours.",
   user: "Yours: typed, imported or edited by hand. Only you change it.",
+  unknown: "Made before version 0.9.2, when Tone Studio did not record where it came from. Kept unless you replace it.",
 } as const;
 
 export function LyricsTrack({
@@ -44,6 +45,7 @@ export function LyricsTrack({
   const status = job?.status ?? "";
   const busy = job?.busy ?? false;
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const [pasted, setPasted] = useState("");
   const [choice, setChoice] = useState<LyricsChoice>(loadLyricsChoice);
   const [onAnalysis, setOnAnalysis] = useState(loadLyricsOnAnalysis);
@@ -111,6 +113,22 @@ export function LyricsTrack({
         computer after a one-time model download; singing can be misheard. Your chart and MIDI cues are kept separately.
       </p>
       {!!text && <p className="text-sm text-silkscreen-3">{SOURCE_NOTE[source]}</p>}
+      {confirming && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span>Replace these lyrics? You can restore them afterwards.</span>
+          <Button
+            onClick={() => {
+              setConfirming(false);
+              transcribe();
+            }}
+          >
+            Replace lyrics
+          </Button>
+          <Button variant="outline" onClick={() => setConfirming(false)}>
+            Keep them
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <label>
           Lyrics language{" "}
@@ -136,7 +154,14 @@ export function LyricsTrack({
             ))}
           </select>
         </label>
-        <Button disabled={!available || busy} onClick={() => transcribe()}>
+        <Button
+          disabled={!available || busy}
+          onClick={() => {
+            // Lyrics from before 0.9.2 do not say who wrote them, so the performer confirms before they are replaced.
+            if (text && source === "unknown") setConfirming(true);
+            else transcribe();
+          }}
+        >
           {text ? "Transcribe again" : "Generate lyrics from vocals"}
         </Button>
         {text && source === "aligned" && (

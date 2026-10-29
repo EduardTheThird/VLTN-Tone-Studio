@@ -17,11 +17,15 @@ beforeEach(() => {
 });
 
 describe("chartSourceOf", () => {
-  it("reads the recorded source, and counts anything else, or no source, as user", () => {
+  it("reads the recorded source", () => {
     expect(chartSourceOf({ chartSource: "transcribed" })).toBe("transcribed");
     expect(chartSourceOf({ chartSource: "aligned" })).toBe("aligned");
-    expect(chartSourceOf({ chartSource: "bogus" })).toBe("user");
-    expect(chartSourceOf({})).toBe("user");
+    expect(chartSourceOf({ chartSource: "user" })).toBe("user");
+  });
+
+  it("reads a chart with no recorded source, or an unknown one, as unknown, never as the performer's", () => {
+    expect(chartSourceOf({})).toBe("unknown");
+    expect(chartSourceOf({ chartSource: "bogus" })).toBe("unknown");
   });
 });
 
@@ -49,7 +53,7 @@ describe("lyricsSaveValues", () => {
   it("keeps the replaced chart once, with its source, and records the new source", () => {
     const values = lyricsSaveValues({ shift: 1 }, "[00:01.00] Old", { text: "[00:02.00] New", source: "transcribed" });
     expect(values[":lyrics"]).toBe("[00:02.00] New");
-    expect(JSON.parse(values[":options"])).toEqual({ shift: 1, chartSource: "transcribed", previousChart: { text: "[00:01.00] Old", source: "user" } });
+    expect(JSON.parse(values[":options"])).toEqual({ shift: 1, chartSource: "transcribed", previousChart: { text: "[00:01.00] Old", source: "unknown" } });
   });
 
   it("keeps nothing when there was no chart to replace", () => {
@@ -65,12 +69,12 @@ describe("saving, editing and restoring a chart", () => {
     expect(getSetting("song", ":lyrics")).toBe("[00:02.00] Heard");
     const saved = readOptions<Record<string, unknown>>("song", {});
     expect(saved.chartSource).toBe("transcribed");
-    expect(saved.previousChart).toEqual({ text: "[00:01.00] Typed by hand", source: "user" });
+    expect(saved.previousChart).toEqual({ text: "[00:01.00] Typed by hand", source: "unknown" });
 
     expect(restoreLyricsChart("song")).toBe(true);
     expect(getSetting("song", ":lyrics")).toBe("[00:01.00] Typed by hand");
     const restored = readOptions<Record<string, unknown>>("song", {});
-    expect(restored.chartSource).toBe("user");
+    expect(restored.chartSource).toBe("unknown");
     expect(restored.previousChart).toBeUndefined();
     expect(restoreLyricsChart("song")).toBe(false);
   });
@@ -81,5 +85,11 @@ describe("saving, editing and restoring a chart", () => {
     expect(readOptions<Record<string, unknown>>("song", {}).chartSource).toBe("user");
     markLyricsEdited("song");
     expect(readOptions<Record<string, unknown>>("song", {}).chartSource).toBe("user");
+  });
+
+  it("records an edit to a chart from before 0.9.2 as the performer's, explicitly", () => {
+    setSetting("old", ":lyrics", "[00:02.00] Heard before 0.9.2");
+    markLyricsEdited("old");
+    expect(readOptions<Record<string, unknown>>("old", {}).chartSource).toBe("user");
   });
 });

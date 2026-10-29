@@ -77,6 +77,7 @@ it("cancels work and ignores late results without replacing saved lyrics", async
   localStorage.setItem("song:lyrics", "[00:00.00] Existing");
   render(<LyricsTrack audio={audio} storageKey="song" />);
   fireEvent.click(screen.getByText("Transcribe again"));
+  fireEvent.click(screen.getByText("Replace lyrics"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   fireEvent.click(screen.getByText("Cancel transcription"));
   await act(async () => FakeWorker.current.onmessage?.({ data: { words: [{ text: " Late", start: 0, end: 0 }] } }));
@@ -90,9 +91,20 @@ it("passes an explicit language to the local worker and retains other song optio
   render(<LyricsTrack audio={audio} storageKey="song" />);
   fireEvent.change(screen.getByLabelText("Lyrics language"), { target: { value: "afrikaans" } });
   fireEvent.click(screen.getByText("Transcribe again"));
+  fireEvent.click(screen.getByText("Replace lyrics"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   expect(FakeWorker.current.postMessage.mock.calls[0][0].options.language).toBe("afrikaans");
   expect(JSON.parse(localStorage.getItem("song:options")!)).toEqual({ shift: 3, lyricsLanguage: "afrikaans" });
+});
+
+it("asks before replacing lyrics from before 0.9.2, and keeps them when the performer says so", async () => {
+  localStorage.setItem("song:lyrics", "[00:00.00] Made earlier");
+  render(<LyricsTrack audio={audio} storageKey="song" />);
+  fireEvent.click(screen.getByText("Transcribe again"));
+  expect(screen.getByText("Replace these lyrics? You can restore them afterwards.")).toBeTruthy();
+  fireEvent.click(screen.getByText("Keep them"));
+  expect(screen.queryByText("Replace these lyrics? You can restore them afterwards.")).toBeNull();
+  expect(localStorage.getItem("song:lyrics")).toBe("[00:00.00] Made earlier");
 });
 
 it("automatically generates missing lyrics and keeps working when the tab is closed", async () => {
