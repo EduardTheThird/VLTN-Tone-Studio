@@ -76,7 +76,7 @@ it("persists timed transcription separately from charts and follows playback", a
 it("cancels work and ignores late results without replacing saved lyrics", async () => {
   localStorage.setItem("song:lyrics", "[00:00.00] Existing");
   render(<LyricsTrack audio={audio} storageKey="song" />);
-  fireEvent.click(screen.getByText("Regenerate lyrics"));
+  fireEvent.click(screen.getByText("Transcribe again"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   fireEvent.click(screen.getByText("Cancel transcription"));
   await act(async () => FakeWorker.current.onmessage?.({ data: { words: [{ text: " Late", start: 0, end: 0 }] } }));
@@ -89,7 +89,7 @@ it("passes an explicit language to the local worker and retains other song optio
   localStorage.setItem("song:options", JSON.stringify({ shift: 3 }));
   render(<LyricsTrack audio={audio} storageKey="song" />);
   fireEvent.change(screen.getByLabelText("Lyrics language"), { target: { value: "afrikaans" } });
-  fireEvent.click(screen.getByText("Regenerate lyrics"));
+  fireEvent.click(screen.getByText("Transcribe again"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   expect(FakeWorker.current.postMessage.mock.calls[0][0].options.language).toBe("afrikaans");
   expect(JSON.parse(localStorage.getItem("song:options")!)).toEqual({ shift: 3, lyricsLanguage: "afrikaans" });

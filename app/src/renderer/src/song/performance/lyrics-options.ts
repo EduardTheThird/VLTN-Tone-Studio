@@ -1,5 +1,5 @@
 import { DEFAULT_LYRICS_MODEL_ID, findLyricsModel, type LyricsModelId } from "./lyrics-models";
-import { readOptions, setSetting } from "./settings";
+import { readOptions } from "./settings";
 
 // What a transcription runs: the model and quality, chosen once for all songs and remembered across launches
 // (localStorage, like the split's choice), and the language, kept per song in its `:options`.
@@ -101,8 +101,21 @@ export function wasmThreads(isolated: boolean, cores: number): number {
   return isolated ? Math.max(1, Math.min(4, cores)) : 1;
 }
 
-/** Records on the song what made its lyrics, so a later run knows which model made them. */
-export function recordLyricsMade(key: string, options: LyricsOptions) {
-  const made = { model: options.model, quality: options.quality, language: options.language, at: new Date().toISOString() };
-  setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), lyricsMade: made }));
+const ANALYSIS_LYRICS_KEY = "vltn.song.analysis-lyrics.v1";
+
+/** Whether analysing a song also transcribes its lyrics, when the song has none. Off by default: transcription is slow. */
+export function loadLyricsOnAnalysis(): boolean {
+  try {
+    return localStorage.getItem(ANALYSIS_LYRICS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveLyricsOnAnalysis(on: boolean) {
+  try {
+    localStorage.setItem(ANALYSIS_LYRICS_KEY, on ? "1" : "0");
+  } catch {
+    /* storage unavailable: the setting is off next launch */
+  }
 }

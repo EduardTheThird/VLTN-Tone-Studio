@@ -5,10 +5,11 @@ import {
   findLyricsQuality,
   hasWebGpuAdapter,
   loadLyricsChoice,
+  loadLyricsOnAnalysis,
   lyricsOptions,
-  recordLyricsMade,
   runtimeFor,
   saveLyricsChoice,
+  saveLyricsOnAnalysis,
   wasmThreads,
 } from "./lyrics-options";
 import { clearSettingsCache } from "./settings";
@@ -94,13 +95,12 @@ describe("quality, device and threads", () => {
   });
 });
 
-describe("recordLyricsMade", () => {
-  it("records what made the lyrics and keeps the song's other options", () => {
-    localStorage.setItem("song:options", JSON.stringify({ shift: 3 }));
-    recordLyricsMade("song", { model: "small", quality: "max", language: "auto" });
-    const stored = JSON.parse(localStorage.getItem("song:options")!);
-    expect(stored.shift).toBe(3);
-    expect(stored.lyricsMade).toMatchObject({ model: "small", quality: "max", language: "auto" });
-    expect(Number.isNaN(Date.parse(stored.lyricsMade.at))).toBe(false);
+describe("transcribe lyrics when analysing", () => {
+  it("is off by default and remembers the choice", () => {
+    expect(loadLyricsOnAnalysis()).toBe(false);
+    saveLyricsOnAnalysis(true);
+    expect(loadLyricsOnAnalysis()).toBe(true);
+    saveLyricsOnAnalysis(false);
+    expect(loadLyricsOnAnalysis()).toBe(false);
   });
 });

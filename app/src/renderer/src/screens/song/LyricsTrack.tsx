@@ -1,13 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { PcmAudio } from "@/song/types";
 import { cancelLyrics, generateLyrics, useLyricsJobs } from "@/song/performance/lyrics-jobs";
+import { chartSourceOf, lrcTexts, markLyricsEdited, previousChartOf, restoreLyricsChart } from "@/song/performance/lyrics-chart";
 import { hasSignal } from "@/song/performance/sources";
-import { loadLyricsChoice, LYRIC_LANGUAGES, lyricsOptions, saveLyricsChoice, type LyricsChoice, type LyricsLanguage } from "@/song/performance/lyrics-options";
+import {
+  loadLyricsChoice,
+  loadLyricsOnAnalysis,
+  LYRIC_LANGUAGES,
+  lyricsOptions,
+  saveLyricsChoice,
+  saveLyricsOnAnalysis,
+  type LyricsChoice,
+  type LyricsLanguage,
+} from "@/song/performance/lyrics-options";
 import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
 import { host } from "@/host";
 import { useActiveIndex } from "@/song/performance/playback-clock";
 import { LyricsModelPicker } from "./LyricsModelPicker";
+
+/** What the chart's source means to the performer, shown under its title. */
+const SOURCE_NOTE = {
+  transcribed: "Made by the transcriber from the vocals. Edit it and it becomes yours.",
+  aligned: "Your words, timed by the transcriber. Edit it and it becomes yours.",
+  user: "Yours: typed, imported or edited by hand. Only you change it.",
+} as const;
 
 export function LyricsTrack({
   audio,
@@ -28,8 +46,13 @@ export function LyricsTrack({
   const [error, setError] = useState("");
   const [pasted, setPasted] = useState("");
   const [choice, setChoice] = useState<LyricsChoice>(loadLyricsChoice);
+  const [onAnalysis, setOnAnalysis] = useState(loadLyricsOnAnalysis);
   const activeLine = useRef<HTMLParagraphElement>(null);
   const available = useMemo(() => hasSignal(audio), [audio]);
+  // Read on each render: the source and the replaced chart change when a job saves or the performer restores.
+  const options = readOptions<Record<string, unknown>>(storageKey, {});
+  const source = chartSourceOf(options);
+  const previous = previousChartOf(options);
   const lines = useMemo(
     () =>
       text
@@ -53,6 +76,7 @@ export function LyricsTrack({
     if (job) useLyricsJobs.setState((s) => ({ jobs: { ...s.jobs, [storageKey]: { ...s.jobs[storageKey], text: value } } }));
     try {
       setSetting(storageKey, ":lyrics", value);
+      markLyricsEdited(storageKey);
     } catch {
       setError("Could not save lyrics locally. Export them to keep a copy.");
     }
@@ -70,7 +94,8 @@ export function LyricsTrack({
     if (job?.text !== undefined) setText(job.text);
   }, [job?.text]);
   useEffect(() => {
-    if (audio && available && !text && !job) void generateLyrics(storageKey, audio);
+    // With the analysis option on, an empty chart is filled by the analysis, not here.
+    if (audio && available && !text && !job && !loadLyricsOnAnalysis()) void generateLyrics(storageKey, audio);
   }, [audio, available, text, job, storageKey]);
   const transcribe = (pastedText?: string) => {
     if (audio && available) {
@@ -85,6 +110,7 @@ export function LyricsTrack({
         Empty lyrics are generated from the vocals stem when you open Performance. You can switch tabs while transcription runs. Transcription runs on this
         computer after a one-time model download; singing can be misheard. Your chart and MIDI cues are kept separately.
       </p>
+      {!!text && <p className="text-sm text-silkscreen-3">{SOURCE_NOTE[source]}</p>}
       <div className="flex flex-wrap items-center gap-3">
         <label>
           Lyrics language{" "}
@@ -111,8 +137,24 @@ export function LyricsTrack({
           </select>
         </label>
         <Button disabled={!available || busy} onClick={() => transcribe()}>
-          {text ? "Regenerate lyrics" : "Generate lyrics from vocals"}
+          {text ? "Transcribe again" : "Generate lyrics from vocals"}
         </Button>
+        {text && source === "aligned" && (
+          <Button variant="outline" disabled={!available || busy} onClick={() => transcribe(lrcTexts(text).join("\n"))}>
+            Time my lyrics again
+          </Button>
+        )}
+        {previous && (
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (restoreLyricsChart(storageKey)) setText(getSetting(storageKey, ":lyrics"));
+            }}
+          >
+            Restore the previous lyrics
+          </Button>
+        )}
         {busy && (
           <Button variant="outline" onClick={() => cancelLyrics(storageKey)}>
             Cancel transcription
@@ -130,6 +172,18 @@ export function LyricsTrack({
           Export lyrics
         </Button>
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={onAnalysis}
+          disabled={busy}
+          onCheckedChange={(value) => {
+            const next = value === true;
+            setOnAnalysis(next);
+            saveLyricsOnAnalysis(next);
+          }}
+        />
+        <span>Transcribe lyrics when analysing (for songs with no lyrics)</span>
+      </label>
       <LyricsModelPicker
         choice={choice}
         disabled={busy}

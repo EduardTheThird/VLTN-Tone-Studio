@@ -1,21 +1,10 @@
 import { create } from "zustand";
 import type { PcmAudio } from "../types";
-import { keepWordsWithin, lyricsLrc, songLines } from "./lyrics";
-import { alignLyrics, pastedLines, type TimedWord } from "./lyrics-align";
-import { highPass, normalisePeak } from "./lyrics-input";
-import { singingRegions, transcriptionWindows } from "./vocal-activity";
-import { flushSettings, setSetting } from "./settings";
-import { lyricsOptions, recordLyricsMade, type LyricsOptions } from "./lyrics-options";
-
-/** Chart text and status for pasted lyrics timed against the heard words. */
-function timedLyrics(lines: string[], heard: TimedWord[], duration: number): { text: string; status: string } {
-  const aligned = alignLyrics(lines, heard, duration);
-  const placed = aligned.filter((line) => line.estimated).length;
-  const status = placed
-    ? `Lyrics timed to the vocals. ${placed} line${placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
-    : "Lyrics timed to the vocals.";
-  return { text: lyricsLrc(aligned), status };
-}
+import { pastedLines } from "./lyrics-align";
+import { LyricsCancelled, transcribeLyrics } from "./lyrics-run";
+import { lyricsMadeRecord, saveLyricsChart } from "./lyrics-chart";
+import { flushSettings } from "./settings";
+import { lyricsOptions, type LyricsOptions } from "./lyrics-options";
 
 export interface LyricsJob {
   busy: boolean;
@@ -26,8 +15,7 @@ export interface LyricsJob {
 export const useLyricsJobs = create<{ jobs: Record<string, LyricsJob> }>(() => ({ jobs: {} }));
 interface Running {
   keys: Set<string>;
-  worker?: Worker;
-  cancelled: boolean;
+  abort: AbortController;
 }
 const running = new Map<string, Running>();
 function update(task: Running, patch: Partial<LyricsJob>) {
@@ -43,8 +31,7 @@ export function migrateLyricsJob(from: string, to: string) {
 export function cancelLyrics(key: string) {
   const task = running.get(key);
   if (!task) return;
-  task.cancelled = true;
-  task.worker?.terminate();
+  task.abort.abort();
   update(task, { busy: false, status: "Transcription cancelled. Generate lyrics to retry." });
   for (const alias of task.keys) running.delete(alias);
 }
@@ -59,72 +46,45 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     useLyricsJobs.setState((state) => ({ jobs: { ...state.jobs, [key]: { busy: false, status: "", error: "Paste some lyrics to time first." } } }));
     return;
   }
-  const task: Running = { keys: new Set([key]), cancelled: false };
+  const task: Running = { keys: new Set([key]), abort: new AbortController() };
   running.set(key, task);
   update(task, { busy: true, status: "Preparing vocals…", error: "" });
   const finish = () => {
-    task.worker?.terminate();
     for (const alias of task.keys) running.delete(alias);
     update(task, { busy: false });
   };
   try {
-    const context = new OfflineAudioContext(1, Math.ceil((audio.channels[0].length * 16000) / audio.sampleRate), 16000);
-    const buffer = context.createBuffer(audio.channels.length, audio.channels[0].length, audio.sampleRate);
-    audio.channels.forEach((channel, i) => buffer.copyToChannel(new Float32Array(channel), i));
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(context.destination);
-    source.start();
-    const pcm = (await context.startRendering()).getChannelData(0);
-    const duration = pcm.length / 16000;
-    if (task.cancelled) return;
-    // Only the windows with singing go to the transcriber: Whisper invents words over silence and bleed.
-    const clean = normalisePeak(highPass(pcm, 16000));
-    const regions = singingRegions(clean, 16000);
-    const windows = transcriptionWindows(regions, duration);
-    if (!windows.length) {
-      update(task, { status: "", error: "No singing found in the vocals. Import or type lyrics, or paste and time yours." });
+    const result = await transcribeLyrics({
+      audio,
+      options,
+      pasted: lines,
+      signal: task.abort.signal,
+      onStatus: (status) => update(task, { status }),
+    });
+    if (!result.text) {
+      update(task, {
+        status: lines ? "No words to time in the vocals. Check the pasted lyrics." : "No singing found in the vocals. Import or type lyrics, or retry transcription.",
+      });
       finish();
       return;
     }
-    const pieces = windows.map((w) => clean.slice(Math.round(w.start * 16000), Math.round(w.end * 16000)));
-    const worker = new Worker(new URL("./lyrics-worker.ts", import.meta.url), { type: "module" });
-    task.worker = worker;
-    update(task, { status: "Loading lyrics model… First use downloads and caches the model." });
-    worker.onmessage = async (event: MessageEvent<{ status?: string; error?: string; words?: TimedWord[] }>) => {
-      if (task.cancelled) return;
-      if (event.data.status) update(task, { status: event.data.status });
-      if (event.data.error) {
-        update(task, { error: event.data.error, status: "" });
-        finish();
-      }
-      if (event.data.words) {
-        const heard = keepWordsWithin(event.data.words, regions);
-        const { text, status } = lines ? timedLyrics(lines, heard, duration) : { text: lyricsLrc(songLines(heard)), status: "Lyrics ready. Review the words and timing while listening." };
-        if (text) {
-          update(task, { text, status });
-          try {
-            for (const alias of task.keys) {
-              setSetting(alias, ":lyrics", text);
-              recordLyricsMade(alias, options);
-            }
-            await flushSettings();
-          } catch (e) {
-            update(task, { error: `Lyrics made, but saving failed: ${String(e)}. Export a copy.` });
-          }
-        } else update(task, { status: lines ? "No words to time. Paste some lyrics first." : "No words detected. Import or type lyrics, or retry transcription." });
-        finish();
-      }
-    };
-    worker.onerror = (e) => {
-      if (!task.cancelled) {
-        update(task, { error: e.message || "Lyrics worker could not start. Retry transcription.", status: "" });
-        finish();
-      }
-    };
-    worker.postMessage({ pieces, starts: windows.map((w) => w.start), options }, pieces.map((piece) => piece.buffer));
+    const status = lines
+      ? result.placed
+        ? `Lyrics timed to the vocals. ${result.placed} line${result.placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
+        : "Lyrics timed to the vocals."
+      : "Lyrics ready. Review the words and timing while listening.";
+    update(task, { text: result.text, status });
+    try {
+      const made = lyricsMadeRecord(options, new Date().toISOString());
+      for (const alias of task.keys) saveLyricsChart(alias, { text: result.text, source: lines ? "aligned" : "transcribed", made });
+      await flushSettings();
+    } catch (e) {
+      update(task, { error: `${lines ? "Lyrics timed" : "Lyrics generated"}, but saving failed: ${String(e)}. Export a copy.` });
+    }
+    finish();
   } catch (e) {
-    if (!task.cancelled) {
+    // A cancelled run was already reported by cancelLyrics.
+    if (!(e instanceof LyricsCancelled)) {
       update(task, { error: String(e), status: "" });
       finish();
     }
