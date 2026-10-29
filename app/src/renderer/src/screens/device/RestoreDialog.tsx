@@ -20,7 +20,7 @@ import { pedalName } from "@/state/device-model";
 import { RestoreError, type BackupEntry } from "@/state/device-types";
 import { runBackupNow } from "@/screens/library/backup-now";
 import { isEmptyName } from "@/screens/library/store";
-import { describeSlots, type RestoreSource } from "./restore";
+import { alreadyMatchesCopy, describeSlots, type RestoreSource } from "./restore";
 import { classifySlots, isChangedState } from "./compare";
 import { CompareList } from "./CompareList";
 import { useAppSettings } from "./settings-store";
@@ -79,6 +79,12 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
   const inList = new Set(entries.map((e) => e.slot));
   const converted = source.converted.filter((c) => inList.has(c.slot));
   const lossy = converted.filter((c) => c.dropped.length > 0);
+  // Every slot already matches the backup, so "Write only changed slots" has nothing to write.
+  const nothingToWrite = compare !== null && onlyChanged && !slots.length;
+  const matched = alreadyMatchesCopy(pedal);
+  const replacedText = all
+    ? `Every preset on the ${pedal} is replaced with the copy in this backup.`
+    : `${describeSlots(slots, slotLabel)} on the ${pedal} are replaced with the copies in this folder.`;
 
   // Reads the pedal: a full backup first when `withBackup`, else a read of every slot. The result becomes the comparison.
   async function readPedal(withBackup: boolean) {
@@ -149,11 +155,16 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
       <AlertDialogContent className="sm:max-w-[560px]">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {all ? `Restore all ${slotCount} slots` : `Restore ${count}`} from {source.title}?
+            {nothingToWrite ? (
+              matched.title
+            ) : (
+              <>
+                {all ? `Restore all ${slotCount} slots` : `Restore ${count}`} from {source.title}?
+              </>
+            )}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {all ? `Every preset on the ${pedal} is replaced with the copy in this backup.` : `${describeSlots(slots, slotLabel)} on the ${pedal} are replaced with the copies in this folder.`} Presets you changed since then are
-            lost unless you back them up first.
+            {nothingToWrite ? matched.description : `${replacedText} Presets you changed since then are lost unless you back them up first.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -162,12 +173,17 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
           <dd className="truncate text-silkscreen" title={source.location}>
             {source.location}, {entries.length} {entries.length === 1 ? "preset" : "presets"}
           </dd>
-          <dt className="text-silkscreen-3">Replaces</dt>
-          <dd className="text-silkscreen">
-            {describeSlots(slots, slotLabel)} on the pedal, now {used} {used === 1 ? "preset" : "presets"} and {slots.length - used} empty {slots.length - used === 1 ? "slot" : "slots"}
-          </dd>
-          <dt className="text-silkscreen-3">Checks</dt>
-          <dd className="text-silkscreen">Each slot is read back after writing. Keep the pedal connected until it finishes.</dd>
+          {!nothingToWrite && (
+            <>
+              <dt className="text-silkscreen-3">Replaces</dt>
+              <dd className="text-silkscreen">
+                {describeSlots(slots, slotLabel)} on the pedal, now {used} {used === 1 ? "preset" : "presets"} and{" "}
+                {slots.length - used} empty {slots.length - used === 1 ? "slot" : "slots"}
+              </dd>
+              <dt className="text-silkscreen-3">Checks</dt>
+              <dd className="text-silkscreen">Each slot is read back after writing. Keep the pedal connected until it finishes.</dd>
+            </>
+          )}
           {source.skipped.length > 0 && (
             <>
               <dt className="text-silkscreen-3">Skipped</dt>
@@ -212,7 +228,6 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
                 Write all
               </Button>
             </div>
-            {onlyChanged && !slots.length && <p className="text-sm text-silkscreen-2">Every slot already matches this backup. Nothing needs writing.</p>}
             <CompareList rows={compare} source={entries} pedal={pedalEntries ?? []} device={device} slotLabel={slotLabel} />
           </div>
         )}
@@ -258,7 +273,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
               Stop after this slot
             </Button>
           ) : (
-            <AlertDialogCancel disabled={running}>{failure ? "Close" : "Cancel"}</AlertDialogCancel>
+            <AlertDialogCancel disabled={running}>{failure || nothingToWrite ? "Close" : "Cancel"}</AlertDialogCancel>
           )}
           {failure ? (
             (failure.failed !== null || failure.notStarted.length > 0) && (
@@ -271,7 +286,7 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             <Button variant="secondary" disabled={!connected || running || !entries.length} onClick={() => void readPedal(backupFirst)}>
               {backupFirst ? "Back up and compare" : "Read the pedal and compare"}
             </Button>
-          ) : (
+          ) : nothingToWrite ? null : (
             <Button variant="destructive" disabled={!connected || running || !slots.length} onClick={() => void write(writeList)}>
               <RotateCcw aria-hidden />
               Restore {count}
