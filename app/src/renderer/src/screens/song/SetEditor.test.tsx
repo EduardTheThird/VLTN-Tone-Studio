@@ -228,3 +228,26 @@ it("fills an empty playlist from Add songs, and saves the songs", async () => {
   });
   expect(savedPlaylists()[0].songs).toEqual(["s2"]);
 });
+
+it("creates a playlist on Enter, says so, and opens it in the panel", async () => {
+  stored = [];
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs, playlists: [] } });
+  render(<PlaylistsPanel />);
+  fireEvent.change(screen.getByLabelText("New playlist name"), { target: { value: "Friday" } });
+  await act(async () => {
+    fireEvent.keyDown(screen.getByLabelText("New playlist name"), { key: "Enter" });
+  });
+  expect(stored).toEqual([expect.objectContaining({ name: "Friday", songs: [], sets: [] })]);
+  expect(useSongLibrary.getState().notice).toBe("Created Friday.");
+  expect((screen.getByLabelText("Playlist name") as HTMLInputElement).value).toBe("Friday");
+});
+
+it("does not create a playlist from Enter when the name is empty", async () => {
+  stored = [];
+  useSongLibrary.setState({ index: { ...emptyLibrary(), songs, playlists: [] } });
+  render(<PlaylistsPanel />);
+  await act(async () => {
+    fireEvent.keyDown(screen.getByLabelText("New playlist name"), { key: "Enter" });
+  });
+  expect(api.playlists).not.toHaveBeenCalled();
+});

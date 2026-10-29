@@ -28,6 +28,8 @@ export function LibraryBrowser() {
   const [folderName, setFolderName] = useState("");
   const [batch, setBatch] = useState({ playlist: "", colour: "#3b82f6", keywords: "", folder: "" });
   const [message, setMessage] = useState("");
+  // The name for a playlist made from the selected songs. Null while the name is not being asked for.
+  const [newPlaylist, setNewPlaylist] = useState<string | null>(null);
   // Which songs the analysis dialog works on: the selection, or the whole library. Null while the dialog is closed.
   const [analysing, setAnalysing] = useState<"selected" | "all" | null>(null);
   const songs = library.index.songs;
@@ -63,6 +65,14 @@ export function LibraryBrowser() {
   const runBatch = async (change: () => Promise<void>) => {
     setMessage("");
     await change();
+  };
+  /** Makes a playlist of the selected songs. The Playlists panel opens it once it is saved. */
+  const createFromSelected = async () => {
+    const name = newPlaylist?.trim();
+    if (!name) return;
+    setMessage("");
+    const saved = await library.addPlaylist({ id: crypto.randomUUID(), name, songs: picked, sets: [], overrides: picked.map(() => null) });
+    if (saved) setNewPlaylist(null);
   };
   const deleteSelected = async () => {
     setConfirm("");
@@ -217,6 +227,30 @@ export function LibraryBrowser() {
             >
               Add to playlist
             </Button>
+            {newPlaylist === null ? (
+              <Button variant="outline" disabled={library.busy} onClick={() => setNewPlaylist("")}>
+                New playlist from selected…
+              </Button>
+            ) : (
+              <>
+                <input
+                  aria-label="Name for the new playlist"
+                  placeholder="New playlist name"
+                  className={field}
+                  value={newPlaylist}
+                  onChange={(e) => setNewPlaylist(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newPlaylist.trim()) void createFromSelected();
+                  }}
+                />
+                <Button disabled={!newPlaylist.trim() || library.busy} onClick={() => void createFromSelected()}>
+                  Create playlist
+                </Button>
+                <Button variant="outline" onClick={() => setNewPlaylist(null)}>
+                  Cancel
+                </Button>
+              </>
+            )}
             <input aria-label="Colour for selected" type="color" value={batch.colour} onChange={(e) => setBatch({ ...batch, colour: e.target.value })} />
             <Button variant="outline" disabled={library.busy} onClick={() => void library.organiseSongs(picked, { color: batch.colour })}>
               Set colour

@@ -88,6 +88,8 @@ interface LibraryState {
   busy: boolean;
   error: string;
   notice: string;
+  /** The playlist the Playlists panel should open next, set when a playlist is created. Null once the panel has opened it. */
+  focusPlaylistId: string | null;
   transfer: string;
   exportBackup(): Promise<void>;
   /** The backup waiting for the user to choose how to restore it, when some of its songs are already in the library. */
@@ -127,8 +129,10 @@ interface LibraryState {
   playlistFromHistory(name: string, since: string): Promise<void>;
   /** Changes a playlist's name, entries, sets or smart rules. Resolves true once saved, and false when it failed; the error is then on `error`. */
   updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<boolean>;
-  /** Adds a playlist to the end of the list. Writes queue, so this is never dropped while another playlist is saving. */
+  /** Adds a playlist to the end of the list, and asks the Playlists panel to open it. Writes queue, so this is never dropped. */
   addPlaylist(playlist: Playlist): Promise<boolean>;
+  /** Sets which playlist the Playlists panel opens, or clears it with null. */
+  focusPlaylist(id: string | null): void;
   /** Deletes a playlist. Its songs stay in the library. */
   deletePlaylist(id: string): Promise<boolean>;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
@@ -471,6 +475,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     busy: false,
     error: "",
     notice: "",
+    focusPlaylistId: null,
     transfer: "",
     queue: [],
     queueOverrides: [],
@@ -661,7 +666,12 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         (playlists) => playlists.map((p) => (p.id === id ? { ...p, ...change } : p)),
         `Saved ${change.name ?? get().index.playlists.find((p) => p.id === id)?.name ?? "the playlist"}.`,
       ),
-    addPlaylist: (playlist) => writePlaylists((playlists) => [...playlists, playlist]),
+    addPlaylist: (playlist) =>
+      writePlaylists((playlists) => [...playlists, playlist], `Created ${playlist.name}.`).then((ok) => {
+        if (ok) set({ focusPlaylistId: playlist.id });
+        return ok;
+      }),
+    focusPlaylist: (focusPlaylistId) => set({ focusPlaylistId }),
     deletePlaylist: (id) => writePlaylists((playlists) => playlists.filter((p) => p.id !== id)),
     rememberMidi: (midiSession) => set({ midiSession }),
     pausePlaylist: () => {

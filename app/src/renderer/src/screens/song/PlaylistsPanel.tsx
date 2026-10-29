@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -46,20 +46,29 @@ export function PlaylistsPanel() {
   const draft = dirty && edits ? edits.value : saved;
   // The saved playlist changed while the edits were open. The user's version is kept until they save or discard it.
   const changedElsewhere = dirty && !!saved && !!edits && isDirty(saved, edits.base);
-  const create = () => {
-    const id = crypto.randomUUID();
-    const next: Playlist =
-      kind === "smart"
-        ? { id, name: name.trim(), songs: [], smart: { match: "all", rules: [], sort: "title" } }
-        : { id, name: name.trim(), songs: [], sets: [] };
-    void library.addPlaylist(next).then(() => open(id));
-    setName("");
-  };
   const open = (id: string) => {
     setEdits(null);
     setProblem("");
     setSelected(id);
     setConfirm("");
+  };
+  // A playlist made elsewhere, such as from the Library browser, opens here once it is saved.
+  useEffect(() => {
+    if (!library.focusPlaylistId) return;
+    open(library.focusPlaylistId);
+    library.focusPlaylist(null);
+    // open and focusPlaylist only set state, so only a new request matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [library.focusPlaylistId]);
+  const create = () => {
+    if (!name.trim() || library.busy) return;
+    const id = crypto.randomUUID();
+    const next: Playlist =
+      kind === "smart"
+        ? { id, name: name.trim(), songs: [], smart: { match: "all", rules: [], sort: "title" } }
+        : { id, name: name.trim(), songs: [], sets: [] };
+    void library.addPlaylist(next);
+    setName("");
   };
   const choose = (id: string) => {
     if (dirty) return setPending(id);
@@ -101,7 +110,16 @@ export function PlaylistsPanel() {
     >
       <h2 className="font-semibold">Playlists / live sets</h2>
       <div className="flex flex-wrap gap-2">
-        <input aria-label="New playlist name" placeholder="New playlist name" className={field} value={name} onChange={(e) => setName(e.target.value)} />
+        <input
+          aria-label="New playlist name"
+          placeholder="New playlist name"
+          className={field}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") create();
+          }}
+        />
         <select aria-label="New playlist kind" className={field} value={kind} onChange={(e) => setKind(e.target.value as "static" | "smart")}>
           <option value="static">Playlist</option>
           <option value="smart">Smart playlist (by rules)</option>

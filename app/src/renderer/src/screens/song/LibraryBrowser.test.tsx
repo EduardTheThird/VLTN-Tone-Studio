@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { emptyLibrary, type LibrarySong } from "@shared/song-library";
+import { emptyLibrary, type Playlist, type LibrarySong } from "@shared/song-library";
 import { useSongLibrary } from "@/song/library";
 import { LibraryBrowser } from "./LibraryBrowser";
 
@@ -70,6 +70,24 @@ it("selects songs for a batch edit, and sets their colour in one save", async ()
   });
   expect(api.organise).toHaveBeenCalledTimes(1);
   expect(api.organise).toHaveBeenCalledWith({ kind: "songs", ids: ["a", "b"], patch: { color: "#3b82f6" } });
+});
+
+it("makes a playlist from the selected songs, and hands it to the Playlists panel", async () => {
+  const saved: Playlist[] = [];
+  api.playlists.mockImplementation(async (next: Playlist[]) => {
+    saved.splice(0, saved.length, ...next);
+  });
+  api.index.mockImplementation(async () => ({ ...emptyLibrary(), songs, playlists: saved }));
+  render(<LibraryBrowser />);
+  fireEvent.click(screen.getByLabelText("Select Alpha"));
+  fireEvent.click(screen.getByLabelText("Select Bravo"));
+  fireEvent.click(screen.getByText("New playlist from selected…"));
+  fireEvent.change(screen.getByLabelText("Name for the new playlist"), { target: { value: "Friday" } });
+  await act(async () => {
+    fireEvent.click(screen.getByText("Create playlist"));
+  });
+  expect(saved).toEqual([expect.objectContaining({ name: "Friday", songs: ["a", "b"], sets: [], overrides: [null, null] })]);
+  expect(useSongLibrary.getState()).toMatchObject({ focusPlaylistId: saved[0].id, notice: "Created Friday." });
 });
 
 it("creates a folder through the library and clears the name", async () => {
