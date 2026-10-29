@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import type { PcmAudio } from "@/song/types";
 import { cancelLyrics, generateLyrics, useLyricsJobs } from "@/song/performance/lyrics-jobs";
 import { chartSourceOf, lrcTexts, markLyricsEdited, previousChartOf, restoreLyricsChart } from "@/song/performance/lyrics-chart";
 import { hasSignal } from "@/song/performance/sources";
 import {
   loadLyricsChoice,
-  loadLyricsOnAnalysis,
   LYRIC_LANGUAGES,
   saveLyricsChoice,
-  saveLyricsOnAnalysis,
   type LyricsChoice,
   type LyricsLanguage,
 } from "@/song/performance/lyrics-options";
@@ -49,7 +46,6 @@ export function LyricsTrack({
   const [confirming, setConfirming] = useState(false);
   const [pasted, setPasted] = useState("");
   const [choice, setChoice] = useState<LyricsChoice>(loadLyricsChoice);
-  const [onAnalysis, setOnAnalysis] = useState(loadLyricsOnAnalysis);
   const activeLine = useRef<HTMLParagraphElement>(null);
   const available = useMemo(() => hasSignal(audio), [audio]);
   // Read on each render: the source and the replaced chart change when a job saves or the performer restores.
@@ -98,10 +94,6 @@ export function LyricsTrack({
   useEffect(() => {
     if (job?.text !== undefined) setText(job.text);
   }, [job?.text]);
-  useEffect(() => {
-    // With the analysis option on, an empty chart is filled by the analysis, not here.
-    if (audio && available && !text && !job && !loadLyricsOnAnalysis()) void generateLyrics(storageKey, audio);
-  }, [audio, available, text, job, storageKey]);
   const transcribe = (pastedText?: string) => {
     if (audio && available) {
       setError("");
@@ -211,18 +203,6 @@ export function LyricsTrack({
           Export lyrics
         </Button>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={onAnalysis}
-          disabled={busy}
-          onCheckedChange={(value) => {
-            const next = value === true;
-            setOnAnalysis(next);
-            saveLyricsOnAnalysis(next);
-          }}
-        />
-        <span>Transcribe lyrics when analysing (for songs with no lyrics)</span>
-      </label>
       <details>
         <summary>Paste lyrics and time them</summary>
         <p className="text-sm text-silkscreen-3">

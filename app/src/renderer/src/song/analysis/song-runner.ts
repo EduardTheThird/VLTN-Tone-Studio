@@ -10,8 +10,10 @@ import { create } from "zustand";
 import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { gridAtOctave, tempoOctaves } from "../performance/tempo-source";
 import { parseSections } from "../performance/sections";
+import { lyricsMadeRecord } from "../performance/lyrics-chart";
+import type { LyricsOptions } from "../performance/lyrics-options";
 import { sectionsFollowDetection, sectionsFromDetected } from "./sections";
-import { planWriteBack, parseOptions, type BatchSong } from "./apply";
+import { planWriteBack, parseOptions, type BatchSong, type LyricsWrite } from "./apply";
 import {
   METER_CERTAIN,
   PLAYBACK_INTERRUPT,
@@ -65,11 +67,12 @@ export interface RunTarget {
   audio: AnalysisAudio;
 }
 
-/** A song's saved settings: its tempo and its options. */
+/** A song's saved settings: its tempo, its options, its beat chart and its lyrics. */
 export interface SavedSong {
   bpm: string;
   options: Record<string, unknown>;
   chart: string;
+  lyrics: string;
 }
 
 export interface RunnerDeps {
@@ -77,7 +80,7 @@ export interface RunnerDeps {
   target(beatsPerBar?: number): RunTarget | null;
   /** The saved settings of a song, read when a run starts and before it writes. */
   read(key: string): SavedSong;
-  /** Writes saved settings of the song: ":bpm" and ":options". */
+  /** Writes saved settings of the song: ":bpm", ":options" and ":lyrics". */
   write(key: string, values: Record<string, string>): void;
   /** The steps a run takes, in order. The tempo step fills `captured.grid` with the beat grid it tracked. */
   steps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[];
@@ -89,9 +92,15 @@ export interface RunnerDeps {
   finished?(key: string, analysis: SongAnalysis): void;
 }
 
-/** What the tempo step captures while it runs. The step fills it in from a callback, so it is held in an object. */
+/**
+ * What the steps capture while they run. The steps fill it in from callbacks, so it is held in an object. `lyrics` is the chart the
+ * lyrics step transcribed, with the options it used; `note` is a line about the lyrics step to show after the run (no vocals, a failure).
+ */
 export interface CapturedRun {
   grid: BeatGrid | null;
+  lyrics: string | null;
+  lyricsOptions: LyricsOptions | null;
+  note: string | null;
 }
 
 export interface SongRunState {
@@ -167,8 +176,15 @@ export function createSongRunner(deps: RunnerDeps) {
   function finish(run: Run, analysis: SongAnalysis, saved: SongAnalysis | null): void {
     const { key } = run;
     const before = deps.read(key);
-    const song: BatchSong = { id: key, title: "", settings: { ":bpm": before.bpm, ":options": JSON.stringify(before.options), "": before.chart } };
-    const plan = planWriteBack(song, analysis, run.captured.grid, !!run.options.replaceManual, null);
+    const song: BatchSong = {
+      id: key,
+      title: "",
+      settings: { ":bpm": before.bpm, ":options": JSON.stringify(before.options), "": before.chart, ":lyrics": before.lyrics },
+    };
+    const { lyrics, lyricsOptions } = run.captured;
+    const lyricsWrite: LyricsWrite | null =
+      lyrics !== null && lyricsOptions ? { text: lyrics, source: "transcribed", made: lyricsMadeRecord(lyricsOptions, new Date().toISOString()) } : null;
+    const plan = planWriteBack(song, analysis, run.captured.grid, !!run.options.replaceManual, lyricsWrite);
     const options = parseOptions(plan.values[":options"]);
     // A find-the-beat run keeps the typed tempo as the performer's own, so a later analysis does not replace it.
     if (run.options.hint) options.tempoSource = "manual";
@@ -178,7 +194,9 @@ export function createSongRunner(deps: RunnerDeps) {
     }
     deps.write(key, { ...plan.values, ":options": JSON.stringify(options) });
     const notices = noticesFor(run, analysis, before, plan.tempoChange !== null);
-    state.setState((current) => ({ message: describeAnalysis(analysis), notices, revision: current.revision + 1 }));
+    const lyricsLine = lyricsWrite ? "Lyrics made." : (run.captured.note ?? "");
+    const message = [describeAnalysis(analysis), lyricsLine].filter(Boolean).join(" ");
+    state.setState((current) => ({ message, notices, revision: current.revision + 1 }));
     deps.finished?.(key, analysis);
   }
 
@@ -250,7 +268,7 @@ export function createSongRunner(deps: RunnerDeps) {
       key: target.key,
       target,
       options: automatic ? {} : { force: true, replaceManual: true, ...options },
-      captured: { grid: null },
+      captured: { grid: null, lyrics: null, lyricsOptions: null, note: null },
       controller: new AbortController(),
       from: 0,
       // A detect runs the tempo only, so the rest of the saved analysis is kept (for the same audio).

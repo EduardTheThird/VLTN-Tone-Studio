@@ -11,10 +11,13 @@ import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state
 import { readStoredBand } from "../band/stored";
 import type { StemName } from "../types";
 import { buildAnalysisAudio } from "./analysis-audio";
-import { songAudioId, type AnalysisStep } from "./song-analysis";
-import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
+import { parseAnalysis, songAudioId, type AnalysisStep } from "./song-analysis";
+import { lyricsSkipLabel, lyricsStepText } from "./batch";
+import { lyricsRunSkip } from "./lyrics-run";
+import { lyricsOptionsFrom } from "../performance/lyrics-options";
 import { createSongRunner, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
 import { loadAfterSplit, type AfterSplitStep } from "./after-split";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 
 /** A song is playing, or a playlist is. Nothing the runner does starts over the music. */
 const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
@@ -33,8 +36,37 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
 }
 
 /**
- * The steps the open song's run takes, in the order the analysis runs them: only the ones ticked under "After the split". A detect takes
- * the tempo (and the sections, for a find-the-beat) whatever is ticked, since its buttons are about the tempo.
+ * The lyrics step, when the run may transcribe the song's chart. A song with no split vocals gets a line saying so, and a chart the run
+ * must leave alone gets a line saying why. The step's status replaces the step name while the model downloads.
+ */
+function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
+  const { source, stems } = useSong.getState();
+  if (!source) return null;
+  if (!stems?.vocals) {
+    captured.note = "Split the song to get lyrics.";
+    return null;
+  }
+  const options = readOptions<Record<string, unknown>>(key, {});
+  const saved = parseAnalysis(options.analysis);
+  // A chart the run made for different audio belongs to the audio before a re-split; with no saved analysis it is kept.
+  const audioChanged = !!saved && saved.audioId !== songAudioId(source.audio, stems);
+  const skip = lyricsRunSkip(getSetting(key, ":lyrics"), options, audioChanged);
+  if (skip) {
+    captured.note = `Lyrics left as they are (${lyricsSkipLabel(skip)}).`;
+    return null;
+  }
+  captured.lyricsOptions = lyricsOptionsFrom(options);
+  return lyricsStep({
+    options: captured.lyricsOptions,
+    onText: (text) => (captured.lyrics = text),
+    onStatus: (status) => songRunner.state.setState({ step: lyricsStepText(status) }),
+    onError: (reason) => (captured.note = `Lyrics failed: ${reason}`),
+  });
+}
+
+/**
+ * The steps the open song's run takes, in the order the analysis runs them: only the ones ticked under "After the split", with lyrics
+ * last. A detect takes the tempo (and the sections, for a find-the-beat) whatever is ticked, since its buttons are about the tempo.
  */
 function appSteps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[] {
   const tempo = tempoStep((grid) => (captured.grid = grid), options.hint ?? {});
@@ -49,7 +81,9 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
     ["key", [keyStep()]],
     ["sections", [sections]],
   ];
-  return ordered.filter(([id]) => wanted[id]).flatMap(([, steps]) => steps);
+  const steps = ordered.filter(([id]) => wanted[id]).flatMap(([, made]) => made);
+  const lyrics = wanted.lyrics ? lyricsFor(key, captured) : null;
+  return lyrics ? [...steps, lyrics] : steps;
 }
 
 /** The app's runner. */
@@ -59,10 +93,12 @@ export const songRunner = createSongRunner({
     bpm: getSetting(key, ":bpm"),
     options: readOptions<Record<string, unknown>>(key, {}),
     chart: getSetting(key, ""),
+    lyrics: getSetting(key, ":lyrics"),
   }),
   write: (key, values) => {
     if (values[":bpm"] !== undefined) setSetting(key, ":bpm", values[":bpm"]);
     if (values[":options"] !== undefined) setSetting(key, ":options", values[":options"]);
+    if (values[":lyrics"] !== undefined) setSetting(key, ":lyrics", values[":lyrics"]);
   },
   steps: appSteps,
   playing: playingNow,

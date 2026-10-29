@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisAudio, AnalysisStep, SongAnalysis, StepResult } from "./song-analysis";
 import { ANALYSIS_VERSION, PLAYBACK_INTERRUPT } from "./song-analysis";
-import { createSongRunner, type RunnerDeps, type RunOptions, type SavedSong } from "./song-runner";
+import { createSongRunner, type CapturedRun, type RunnerDeps, type RunOptions, type SavedSong } from "./song-runner";
 
 const audio = {} as AnalysisAudio;
 
 /** A fake app: an in-memory song, a playback flag the test drives, and steps that return fixed results. */
-function fakeApp(over: { steps?: (options: RunOptions) => AnalysisStep[]; saved?: Partial<SavedSong> } = {}) {
-  const song: { bpm: string; options: Record<string, unknown>; chart: string } = {
+function fakeApp(over: { steps?: (options: RunOptions, captured: CapturedRun) => AnalysisStep[]; saved?: Partial<SavedSong> } = {}) {
+  const song: { bpm: string; options: Record<string, unknown>; chart: string; lyrics: string } = {
     bpm: "120",
     options: {},
     chart: "",
+    lyrics: "",
     ...over.saved,
   };
   let playing = false;
@@ -19,13 +20,14 @@ function fakeApp(over: { steps?: (options: RunOptions) => AnalysisStep[]; saved?
   const finished: SongAnalysis[] = [];
   const deps: RunnerDeps = {
     target: () => ({ key: "song", audioId: "a1", audio }),
-    read: (): SavedSong => ({ bpm: song.bpm, options: { ...song.options }, chart: song.chart }),
+    read: (): SavedSong => ({ bpm: song.bpm, options: { ...song.options }, chart: song.chart, lyrics: song.lyrics }),
     write: (_key, values) => {
       writes.push(values);
       if (values[":bpm"] !== undefined) song.bpm = values[":bpm"];
       if (values[":options"] !== undefined) song.options = JSON.parse(values[":options"]);
+      if (values[":lyrics"] !== undefined) song.lyrics = values[":lyrics"];
     },
-    steps: (_key, options) => (over.steps ? over.steps(options) : []),
+    steps: (_key, options, captured) => (over.steps ? over.steps(options, captured) : []),
     playing: () => playing,
     onPlayingChange: (listener) => {
       listeners.add(listener);
@@ -108,6 +110,38 @@ describe("the automatic run", () => {
     app.setPlaying(false);
     await settle();
     expect(app.song.bpm).toBe("88");
+  });
+});
+
+describe("the lyrics step in the run", () => {
+  const lyricsOptions = { model: "small" as const, quality: "fast" as const, language: "auto" as const };
+
+  it("writes a chart the lyrics step made, as a transcribed chart, and says so", async () => {
+    const app = fakeApp({
+      steps: (_options, captured) => [
+        {
+          name: "lyrics",
+          run: async () => {
+            captured.lyrics = "[00:01.00] first line";
+            captured.lyricsOptions = lyricsOptions;
+            return {};
+          },
+        },
+      ],
+    });
+    app.runner.analyse();
+    await settle();
+    expect(app.song.lyrics).toBe("[00:01.00] first line");
+    expect(app.song.options).toMatchObject({ chartSource: "transcribed", lyricsMade: { model: "small", quality: "fast", language: "auto" } });
+    expect(app.runner.state.getState().message).toContain("Lyrics made.");
+  });
+
+  it("leaves the chart alone and says why when the lyrics step made none", async () => {
+    const app = fakeApp({ steps: (_options, captured) => ((captured.note = "Split the song to get lyrics."), []) });
+    app.runner.analyse();
+    await settle();
+    expect(app.song.lyrics).toBe("");
+    expect(app.runner.state.getState().message).toContain("Split the song to get lyrics.");
   });
 });
 
