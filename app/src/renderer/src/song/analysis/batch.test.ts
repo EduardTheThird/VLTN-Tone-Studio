@@ -264,3 +264,27 @@ describe("runAnalysisBatch", () => {
     expect(progress).toHaveBeenNthCalledWith(1, { index: 0, total: 1, title: "Song a", step: null });
   });
 });
+
+describe("sections in the batch", () => {
+  const detected = [{ start: 0, end: 16, name: "Verse 1" }];
+  const analysisWith = (over: Partial<SongAnalysis> = {}): SongAnalysis => ({ audioId: "x", version: ANALYSIS_VERSION, ...over });
+
+  it("is one of the steps the dialog offers, ticked by default", () => {
+    expect(BATCH_STEPS.find((step) => step.id === "sections")).toMatchObject({ defaultOn: true });
+  });
+
+  it("writes detected sections to a song with none, marked as detected", () => {
+    const plan = planWriteBack(song("s"), analysisWith({ sections: detected }), null, false);
+    const options = JSON.parse(plan.values[":options"]);
+    expect(options.sections).toEqual([expect.objectContaining({ name: "Verse 1", start: 0, end: 16, source: "detected" })]);
+  });
+
+  it("leaves a song's own sections alone, and keeps the suggestion in the analysis", () => {
+    const made = [{ id: "a", name: "Intro", start: 0, end: 8, mode: "continue" }];
+    const plan = planWriteBack(song("m", {}, { sections: made }), analysisWith({ sections: detected }), null, true);
+    const options = JSON.parse(plan.values[":options"]);
+    expect(options.sections).toEqual(made);
+    expect(options.analysis.sections).toEqual(detected);
+  });
+});
+

@@ -18,8 +18,11 @@ export interface LoudnessResult {
 /** A meter estimate at or above this confidence is applied to the song. Below it, the meter is only suggested. */
 export const METER_CERTAIN = 0.6;
 
-/** Bump when an analysis improves, so songs analysed earlier are analysed again the next time they open. */
-export const ANALYSIS_VERSION = 1;
+/**
+ * Bump when an analysis improves, so songs analysed earlier are analysed again the next time they open. Version 2 adds sections: a saved
+ * song of version 1 is analysed once more, which fills in its sections. What the performer set is kept (see `planWriteBack`).
+ */
+export const ANALYSIS_VERSION = 2;
 
 /** The tempo the analysis found. `firstBeat` is the time of the first beat, in seconds, when the grid fits a straight line. */
 export interface TempoResult {

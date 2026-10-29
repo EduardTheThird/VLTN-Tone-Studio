@@ -9,7 +9,10 @@ import { chartChordTimes } from "../band/request";
 import { parseChart } from "../performance/chart";
 import { defaultChordSource } from "../performance/sources";
 import { needsTempoDetection, readTempoSource, type TempoSource } from "../performance/tempo-source";
+import { parseSections } from "../performance/sections";
+import { parseBeatGrid } from "../band/beat-grid";
 import { buildAnalysisAudio } from "./analysis-audio";
+import { sectionsToApply } from "./sections";
 import {
   ANALYSIS_VERSION,
   METER_CERTAIN,
@@ -22,7 +25,7 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
-/** The steps the Library dialog offers, in the order the dialog lists them. Sections and lyrics join when specs 74 and 75 add their steps. */
+/** The steps the Library dialog offers, in the order the dialog lists them. Lyrics join when spec 75 adds its step. */
 export const BATCH_STEPS = [
   { id: "tempo", label: "Tempo and meter", defaultOn: true },
   { id: "key", label: "Key", defaultOn: true },
@@ -30,6 +33,7 @@ export const BATCH_STEPS = [
   { id: "loudness", label: "Loudness", defaultOn: true },
   { id: "parts", label: "Drums and bass", defaultOn: true },
   { id: "silence", label: "Silence", defaultOn: true },
+  { id: "sections", label: "Sections", defaultOn: true },
 ] as const;
 export type BatchStepId = (typeof BATCH_STEPS)[number]["id"];
 export type BatchChoice = Record<BatchStepId, boolean>;
@@ -112,6 +116,9 @@ export function planWriteBack(song: BatchSong, analysis: SongAnalysis, grid: Bea
   const values: Record<string, string> = {};
   let tempoChange: WriteBack["tempoChange"] = null;
   const next: Record<string, unknown> = { ...options, analysis };
+  // Detected sections fill in a song with none. A song's own sections, and the suggestion kept in the analysis, are left as they are.
+  const sections = sectionsToApply(parseSections(options.sections), analysis.sections);
+  if (sections) next.sections = sections;
   if (analysis.tempo && tempoMayChange(song, replaceManual)) {
     const from = Number(song.settings[":bpm"]) || 0;
     values[":bpm"] = String(analysis.tempo.bpm);
@@ -161,8 +168,11 @@ export interface BatchDeps {
   playing(): boolean;
   /** Calls `listener` when playback starts or stops. Returns a function that stops the listening. */
   onPlayingChange(listener: (playing: boolean) => void): () => void;
-  /** The analysis steps for the given ids, in the order they run. `onGrid` receives the beat grid the tempo step tracks. */
-  steps(ids: readonly BatchStepId[], onGrid: (grid: BeatGrid) => void): AnalysisStep[];
+  /**
+   * The analysis steps for the given ids, in the order they run. `onGrid` receives the beat grid the tempo step tracks, and `gridOf` gives
+   * the grid the sections step should use: the one just tracked, or the one saved with the song.
+   */
+  steps(ids: readonly BatchStepId[], onGrid: (grid: BeatGrid) => void, gridOf: () => BeatGrid | null): AnalysisStep[];
   /** Writes the settings of a saved song through the library's settings writers. Not the song store. */
   write(id: string, values: Record<string, string>): void;
 }
@@ -242,7 +252,11 @@ async function analyseOne(
   const base = {
     audioId: songAudioId(mix, stems),
     audio,
-    steps: deps.steps(stepsFor(song, options), (found) => (captured.grid = found)),
+    steps: deps.steps(
+      stepsFor(song, options),
+      (found) => (captured.grid = found),
+      () => captured.grid ?? parseBeatGrid(saved.beatGrid),
+    ),
     settings: {
       read: () => parseAnalysis(saved.analysis),
       write: (analysis: SongAnalysis) => (captured.analysis = analysis),
