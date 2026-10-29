@@ -32,4 +32,29 @@ describe("lyricsStep", () => {
     await lyricsStep({ options, onText }).run(audioWith(pcm), new AbortController().signal, { audioId: "a", version: 2 });
     expect(onText).not.toHaveBeenCalled();
   });
+
+  it("passes the transcriber's status on, and reports a failure with its message before it goes on", async () => {
+    const onStatus = vi.fn();
+    transcribe.mockResolvedValueOnce({ text: "", placed: 0 });
+    await lyricsStep({ options, onText: vi.fn(), onStatus }).run(audioWith(pcm), new AbortController().signal, { audioId: "a", version: 2 });
+    expect(transcribe.mock.calls.at(-1)?.[0].onStatus).toBe(onStatus);
+
+    transcribe.mockRejectedValueOnce(new Error("Worker failed"));
+    const onError = vi.fn();
+    await expect(lyricsStep({ options, onText: vi.fn(), onError }).run(audioWith(pcm), new AbortController().signal, { audioId: "a", version: 2 })).rejects.toThrow(
+      "Worker failed",
+    );
+    expect(onError).toHaveBeenCalledWith("Worker failed");
+  });
+
+  it("does not report a stop as a failure", async () => {
+    const stop = new AbortController();
+    transcribe.mockImplementationOnce(async () => {
+      stop.abort("cancel");
+      throw new Error("Lyrics transcription was cancelled.");
+    });
+    const onError = vi.fn();
+    await expect(lyricsStep({ options, onText: vi.fn(), onError }).run(audioWith(pcm), stop.signal, { audioId: "a", version: 2 })).rejects.toThrow();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

@@ -13,8 +13,8 @@ const ASSUMED_SONG_MINUTES = 4;
 
 const WHICH_LABELS: { id: LyricsWhich; label: string }[] = [
   { id: "empty", label: "Songs with no lyrics" },
-  { id: "transcribed", label: "Songs with transcribed lyrics (transcribe again)" },
-  { id: "older", label: "Songs whose lyrics were made with another model" },
+  { id: "transcribed", label: "Songs whose lyrics Tone Studio made" },
+  { id: "older", label: "Lyrics made with a different model than this one" },
 ];
 
 export function LyricsBatchSettings({
@@ -24,6 +24,9 @@ export function LyricsBatchSettings({
   onWhich,
   retime,
   onRetime,
+  unknown,
+  onUnknown,
+  plan,
   disabled,
   songs,
 }: {
@@ -33,6 +36,10 @@ export function LyricsBatchSettings({
   onWhich(next: LyricsWhich): void;
   retime: boolean;
   onRetime(next: boolean): void;
+  unknown: boolean;
+  onUnknown(next: boolean): void;
+  /** What the run will do with the lyrics, read before it starts. */
+  plan: string;
   disabled: boolean;
   /** How many songs the lyrics step will run for. */
   songs: number;
@@ -62,6 +69,18 @@ export function LyricsBatchSettings({
         <Checkbox checked={retime} disabled={disabled} onCheckedChange={(value) => onRetime(value === true)} />
         <span>Time my pasted lyrics again (their text is kept)</span>
       </label>
+      <div className="space-y-1">
+        <label className="flex items-center gap-2">
+          <Checkbox checked={unknown} disabled={disabled} onCheckedChange={(value) => onUnknown(value === true)} />
+          <span>Include lyrics from before version 0.9.2</span>
+        </label>
+        <p className="text-[12px] text-silkscreen-3">
+          Tone Studio can&apos;t tell whether you typed these. The old lyrics are kept and can be restored on each song.
+        </p>
+      </div>
+      <p role="status" className="font-medium text-silkscreen-2">
+        {plan}
+      </p>
       <p className="text-[12px] text-silkscreen-3">
         Your own charts are never replaced. About {minutes > 0 ? `${minutes} min` : "under a minute"} for {songs} song{songs === 1 ? "" : "s"} of about{" "}
         {ASSUMED_SONG_MINUTES} minutes each. A rough guess until measured on this computer.

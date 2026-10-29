@@ -6,9 +6,10 @@ import type { LyricsOptions } from "./lyrics-options";
 
 /**
  * `transcribed`: made by the transcriber and not touched since. `aligned`: the performer's own words, timed by the transcriber.
- * `user`: typed, imported or edited by hand. A chart with no recorded source is `user`, so it is never replaced by accident.
+ * `user`: typed, imported or edited by hand. `unknown`: a chart made before 0.9.2, when the source was not recorded. Tone Studio cannot tell
+ * whether the performer typed it, so it is protected unless the performer says otherwise.
  */
-export type ChartSource = "transcribed" | "aligned" | "user";
+export type ChartSource = "transcribed" | "aligned" | "user" | "unknown";
 
 export interface LyricsMade {
   model: string;
@@ -23,8 +24,10 @@ export interface PreviousChart {
   source: ChartSource;
 }
 
+/** The recorded source of a chart. Anything other than a recorded source (including none) is `unknown`, never `user` by default. */
 export function chartSourceOf(options: Record<string, unknown>): ChartSource {
-  return options.chartSource === "transcribed" || options.chartSource === "aligned" ? options.chartSource : "user";
+  const source = options.chartSource;
+  return source === "transcribed" || source === "aligned" || source === "user" ? source : "unknown";
 }
 
 export function lyricsMadeOf(options: Record<string, unknown>): LyricsMade | null {
@@ -86,7 +89,7 @@ export function saveLyricsChart(songKey: string, chart: { text: string; source: 
   setSetting(songKey, ":options", values[":options"]);
 }
 
-/** Records that the performer edited the chart. A transcribed or aligned chart becomes `user`; the chart it replaced is not touched. */
+/** Records that the performer edited the chart. Any chart but a `user` one becomes `user`; the chart it replaced is not touched. */
 export function markLyricsEdited(songKey: string): void {
   const options = readOptions<Record<string, unknown>>(songKey, {});
   if (chartSourceOf(options) === "user") return;

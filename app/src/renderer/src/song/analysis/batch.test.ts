@@ -7,7 +7,12 @@ import {
   DEFAULT_LYRICS_BATCH,
   defaultChoice,
   describeBatch,
+  describeLyricsOutcome,
+  describeLyricsPlan,
   lyricsAction,
+  lyricsPlan,
+  lyricsStepText,
+  lyricsSkip,
   needsAnalysis,
   planWriteBack,
   runAnalysisBatch,
@@ -367,14 +372,119 @@ describe("the lyrics step", () => {
     });
   });
 
-  it("describes the lyrics made, timed and missed", () => {
+  it("leaves a chart from before 0.9.2 alone unless the option is on, and then treats it as transcribed", () => {
+    const old = song("o", { ":lyrics": text });
+    expect(lyricsAction(old, lyricsWith({ which: "transcribed" }))).toBeNull();
+    expect(lyricsSkip(old, lyricsWith({ which: "transcribed" }))).toBe("unknown");
+    expect(lyricsAction(old, lyricsWith({ which: "transcribed", unknown: true }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(old, lyricsWith({ which: "older", model: "small", unknown: true }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(old, lyricsWith({ which: "empty", unknown: true }))).toBeNull();
+  });
+
+  it("never replaces the performer's chart, even with the option on", () => {
+    const user = song("p", { ":lyrics": text }, { chartSource: "user" });
+    expect(lyricsAction(user, lyricsWith({ which: "older", unknown: true }))).toBeNull();
+    expect(lyricsSkip(user, lyricsWith({ which: "transcribed", unknown: true }))).toBe("user");
+  });
+
+  it("gives each song that is left out a reason, and counts the songs that run", () => {
+    const songs = [
+      song("a", { ":lyrics": "" }),
+      song("b", { ":lyrics": text }, { chartSource: "transcribed" }),
+      song("c", { ":lyrics": text }, { chartSource: "user" }),
+      song("d", { ":lyrics": text }),
+      song("e", { ":lyrics": "[00:01.00] Mine" }, { chartSource: "aligned" }),
+    ];
+    expect(lyricsPlan(songs, lyricsWith(), null)).toEqual({
+      run: 2,
+      skipped: [
+        { reason: "user", count: 1 },
+        { reason: "unknown", count: 1 },
+        { reason: "made", count: 1 },
+      ],
+    });
+    expect(lyricsPlan(songs, lyricsWith(), "a")).toMatchObject({ run: 1, skipped: expect.arrayContaining([{ reason: "open", count: 1 }]) });
+  });
+
+  it("says what the run will do before it starts, and how to include the charts from before 0.9.2", () => {
+    const plan = { run: 4, skipped: [{ reason: "unknown" as const, count: 2 }] };
+    expect(describeLyricsPlan(plan, { which: "transcribed", unknown: false })).toBe(
+      "Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2. Tick the box above to include them.",
+    );
+    expect(describeLyricsPlan(plan, { which: "transcribed", unknown: true })).toBe("Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2.");
+    expect(describeLyricsPlan(plan, { which: "empty", unknown: false })).toBe("Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2.");
+    expect(describeLyricsPlan({ run: 0, skipped: [{ reason: "none", count: 6 }] }, { which: "empty", unknown: false })).toBe(
+      "Lyrics: 0 of 6 songs will get new lyrics. Skipped: 6 with no lyrics.",
+    );
+  });
+
+  it("describes the lyrics made, timed and empty in one line", () => {
     expect(
       describeBatch([
-        { id: "a", title: "A", status: "lyrics", lyrics: "made" },
-        { id: "b", title: "B", status: "analysed", tempoChange: null, noBeat: false, lyrics: "timed" },
-        { id: "c", title: "C", status: "lyrics", lyrics: "none" },
+        { id: "a", title: "A", status: "lyrics", lyrics: { kind: "made" } },
+        { id: "b", title: "B", status: "analysed", tempoChange: null, noBeat: false, lyrics: { kind: "timed" } },
+        { id: "c", title: "C", status: "lyrics", lyrics: { kind: "none" } },
       ]),
-    ).toBe("Analysed 1 song. Lyrics made for 1 song. Lyrics timed for 1 song. 1 had no words heard.");
+    ).toBe("Analysed 1 song. Lyrics: 1 transcribed, 1 timed, 1 with no words heard.");
+  });
+
+  it("says how many songs' lyrics were skipped and why, and names each failure with its message", () => {
+    const skipped = (id: string) => ({ id, title: id.toUpperCase(), status: "lyrics" as const, lyrics: { kind: "skipped" as const, reason: "unknown" as const } });
+    expect(describeBatch([skipped("a"), skipped("b")])).toBe("Analysed 0 songs. Lyrics: 0 transcribed, 2 skipped (from before 0.9.2).");
+    expect(describeBatch([skipped("a"), { id: "c", title: "C", status: "lyrics", lyrics: { kind: "failed", reason: "WebGPU failed" } }])).toBe(
+      "Analysed 0 songs. Lyrics: 0 transcribed, 1 failed, 1 skipped (from before 0.9.2). C: lyrics failed: WebGPU failed.",
+    );
+  });
+
+  it("gives each song's lyrics a line of its own, with the skip reason", () => {
+    expect(describeLyricsOutcome({ kind: "skipped", reason: "unknown" })).toBe("Lyrics skipped: has lyrics from before 0.9.2");
+    expect(describeLyricsOutcome({ kind: "timed" })).toBe("lyrics timed");
+    expect(describeLyricsOutcome({ kind: "failed", reason: "Model download failed" })).toBe("lyrics failed: Model download failed");
+  });
+
+  it("shows the model download as a percentage on the lyrics step", () => {
+    expect(lyricsStepText("Downloading lyrics model: 34% (onnx/model.onnx)")).toBe("lyrics: downloading model 34%");
+    expect(lyricsStepText("Transcribing vocals locally… This may take several minutes.")).toBe("lyrics: Transcribing vocals locally… This may take several minutes.");
+  });
+
+  it("reports a song whose lyrics were skipped as analysed, with the skip reason", async () => {
+    const old = song("k", { ":bpm": "120", ":lyrics": text });
+    const { deps, writes } = fakeDeps();
+    const outcomes = await runAnalysisBatch([old], batchOptions({ onlyNeeded: false, choice: lyricsOn }), deps, new AbortController().signal);
+    expect(outcomes).toEqual([expect.objectContaining({ id: "k", status: "analysed", lyrics: { kind: "skipped", reason: "unknown" } })]);
+    expect(writes[0].values[":lyrics"]).toBeUndefined();
+  });
+
+  it("shows the model download on the lyrics step while the batch runs", async () => {
+    const empty = song("g", { ":lyrics": "" });
+    const { deps } = fakeDeps({
+      steps: (_ids, _grid, _gridOf, lyrics): AnalysisStep[] => [
+        { name: "lyrics", run: async () => (lyrics?.onStatus?.("Downloading lyrics model: 34% (model.onnx)"), {}) },
+      ],
+    });
+    const onProgress = vi.fn();
+    const lyricsOnly = { ...defaultChoice(), ...Object.fromEntries(BATCH_STEPS.map((s) => [s.id, false])), lyrics: true };
+    await runAnalysisBatch([empty], batchOptions({ onlyNeeded: true, choice: lyricsOnly }), deps, new AbortController().signal, { onProgress });
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ step: "lyrics: downloading model 34%" }));
+  });
+
+  it("reports a lyrics step that fails with its message, and writes no chart", async () => {
+    const empty = song("f", { ":lyrics": "" });
+    const { deps, writes } = fakeDeps({
+      steps: (_ids, _grid, _gridOf, lyrics): AnalysisStep[] => [
+        {
+          name: "lyrics",
+          run: async () => {
+            lyrics?.onError?.("Model download failed");
+            throw new Error("Model download failed");
+          },
+        },
+      ],
+    });
+    const lyricsOnly = { ...defaultChoice(), ...Object.fromEntries(BATCH_STEPS.map((s) => [s.id, false])), lyrics: true };
+    const outcomes = await runAnalysisBatch([empty], batchOptions({ onlyNeeded: true, choice: lyricsOnly }), deps, new AbortController().signal);
+    expect(outcomes).toEqual([{ id: "f", title: "Song f", status: "lyrics", lyrics: { kind: "failed", reason: "Model download failed" } }]);
+    expect(writes).toEqual([]);
   });
 
   it("runs only the lyrics for a song whose analysis is current, and writes the chart without touching the analysis", async () => {
@@ -387,7 +497,7 @@ describe("the lyrics step", () => {
       },
     });
     const outcomes = await runAnalysisBatch([current], batchOptions({ onlyNeeded: true, choice: lyricsOn }), deps, new AbortController().signal);
-    expect(outcomes).toEqual([{ id: "z", title: "Song z", status: "lyrics", lyrics: "made" }]);
+    expect(outcomes).toEqual([{ id: "z", title: "Song z", status: "lyrics", lyrics: { kind: "made" } }]);
     expect(writes[0].values[":lyrics"]).toBe(text);
     expect(writes[0].values[":bpm"]).toBeUndefined();
     expect(onText).not.toHaveBeenCalled();

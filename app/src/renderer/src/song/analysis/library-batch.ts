@@ -5,8 +5,7 @@ import { useSong } from "../store";
 import { loadSongAudio, useSongLibrary } from "../library";
 import { flushSettings, LIBRARY_PREFIX, setSetting } from "../performance/settings";
 import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state";
-import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
-import type { LyricsOptions } from "../performance/lyrics-options";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep, type LyricsStepInput } from "./steps";
 import { runAnalysisBatch, type BatchCallbacks, type BatchDeps, type BatchOptions, type BatchOutcome, type BatchSong, type BatchStepId } from "./batch";
 import type { AnalysisStep } from "./song-analysis";
 import type { BeatGrid } from "../band/beat-grid";
@@ -16,7 +15,7 @@ function stepsFor(
   ids: readonly BatchStepId[],
   onGrid: (grid: BeatGrid) => void,
   gridOf: () => BeatGrid | null,
-  lyrics: { options: LyricsOptions; pasted?: string[]; onText(text: string): void } | null,
+  lyrics: LyricsStepInput | null,
 ): AnalysisStep[] {
   const wanted = new Set<BatchStepId>(ids);
   const ordered: [BatchStepId, () => AnalysisStep][] = [

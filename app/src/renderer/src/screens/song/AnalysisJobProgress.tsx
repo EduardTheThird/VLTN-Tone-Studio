@@ -3,16 +3,17 @@
 
 import { Progress } from "@/components/ui/progress";
 import { describeTimeLeft, jobFraction, secondsLeft, type AnalysisJobState } from "@/song/analysis/analysis-job";
-import type { BatchOutcome } from "@/song/analysis/batch";
+import { describeLyricsOutcome, type BatchOutcome } from "@/song/analysis/batch";
 
-/** One line for a finished song: its tempo change, or why it was left alone. */
+/** One line for a finished song: its tempo change, its lyrics, or why it was left alone. */
 export function describeOutcome(outcome: BatchOutcome): string {
   switch (outcome.status) {
-    case "analysed":
-      if (outcome.noBeat) return "no clear beat";
-      return outcome.tempoChange ? `${outcome.tempoChange.from} → ${outcome.tempoChange.to}` : "tempo unchanged";
+    case "analysed": {
+      const tempo = outcome.noBeat ? "no clear beat" : outcome.tempoChange ? `${outcome.tempoChange.from} → ${outcome.tempoChange.to}` : "tempo unchanged";
+      return outcome.lyrics ? `${tempo}; ${describeLyricsOutcome(outcome.lyrics)}` : tempo;
+    }
     case "lyrics":
-      return `lyrics ${outcome.lyrics ?? "done"}`;
+      return describeLyricsOutcome(outcome.lyrics);
     case "current":
       return "up to date";
     case "skipped":
