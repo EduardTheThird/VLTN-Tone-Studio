@@ -30,10 +30,16 @@ it("saves a step that is unticked, and hides the lyrics model with lyrics off", 
   fireEvent.click(screen.getByLabelText("Lyrics"));
   expect(screen.queryByText(/to download once/)).toBeNull();
   const saved = JSON.parse(localStorage.getItem("gp5.song.afterSplit.v1") ?? "{}");
-  expect(saved).toEqual({ ...defaultAfterSplit(), lyrics: false });
+  expect(saved).toEqual({ ...defaultAfterSplit(), lyrics: false, language: "auto" });
 });
 
 it("describes the cost of the chosen lyrics model", () => {
   expect(lyricsCost(DEFAULT_LYRICS_CHOICE)).toMatch(/^Lyrics with .+: about \d+ MB to download once/);
   expect(lyricsCost({ model: "nope" as never, quality: "fast" })).toBe("");
+});
+
+it("saves the language for a song that does not set its own", () => {
+  render(<AfterSplitOptions />);
+  fireEvent.change(screen.getByLabelText("Lyrics language"), { target: { value: "german" } });
+  expect(JSON.parse(localStorage.getItem("gp5.song.afterSplit.v1") ?? "{}").language).toBe("german");
 });

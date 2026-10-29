@@ -15,11 +15,13 @@ function fakeApp(over: { steps?: (options: RunOptions, captured: CapturedRun) =>
     ...over.saved,
   };
   let playing = false;
+  let currentAudio: string | null = "a1";
   const listeners = new Set<(playing: boolean) => void>();
   const writes: Record<string, string>[] = [];
   const finished: SongAnalysis[] = [];
   const deps: RunnerDeps = {
     target: () => ({ key: "song", title: "Song", audioId: "a1", audio }),
+    audioId: () => currentAudio,
     read: (): SavedSong => ({ bpm: song.bpm, options: { ...song.options }, chart: song.chart, lyrics: song.lyrics }),
     write: (_key, values) => {
       writes.push(values);
@@ -40,7 +42,15 @@ function fakeApp(over: { steps?: (options: RunOptions, captured: CapturedRun) =>
     playing = value;
     for (const listener of listeners) listener(value);
   };
-  return { runner, song, writes, finished, setPlaying };
+  return {
+    runner,
+    song,
+    writes,
+    finished,
+    setPlaying,
+    /** A new audio for the song (a split landed, or another song opened). */
+    setAudio: (id: string | null) => (currentAudio = id),
+  };
 }
 
 /** A step that returns a fixed result. */
@@ -110,6 +120,22 @@ describe("the automatic run", () => {
     app.setPlaying(false);
     await settle();
     expect(app.song.bpm).toBe("88");
+  });
+});
+
+describe("a run parked for an older audio", () => {
+  it("is dropped when the audio changes while it waits, and never resumed", async () => {
+    const app = fakeApp({ steps: () => [stepReturning(tempo(88))] });
+    app.setPlaying(true);
+    app.runner.analyse();
+    await settle();
+    // A split landed while playback held the run: the new audio is what the run is for now.
+    app.setAudio("a2");
+    app.setPlaying(false);
+    await settle();
+    expect(app.writes).toHaveLength(0);
+    expect(app.runner.state.getState().waiting).toBe(false);
+    expect(app.runner.state.getState().running).toBe(false);
   });
 });
 

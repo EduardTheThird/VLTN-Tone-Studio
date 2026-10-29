@@ -1,5 +1,5 @@
-// The app's song runner (spec 80): the open song from the song store and its saved settings, playback from the playing state and the
-// playlist, and the steps the open song's run takes. The runner itself (song-runner.ts) imports none of these.
+// The app's song runner (spec 80): the open song from the song store and its saved settings, playback from the playing state, the playlist
+// and the Library's batch, and the steps the open song's run takes. The runner itself (song-runner.ts) imports none of these.
 
 import { useSong } from "../store";
 import { useSongLibrary } from "../library";
@@ -9,14 +9,15 @@ import { parseChart } from "../performance/chart";
 import { defaultChordSource } from "../performance/sources";
 import { getSetting, performanceKey, readOptions, setSetting } from "../performance/settings";
 import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state";
+import { LYRIC_LANGUAGES, loadLyricsChoice } from "../performance/lyrics-options";
 import { readStoredBand } from "../band/stored";
 import type { StemName } from "../types";
 import { buildAnalysisAudio } from "./analysis-audio";
 import { parseAnalysis, songAudioId, type AnalysisStep } from "./song-analysis";
 import { lyricsSkipLabel, lyricsStepText } from "./batch";
 import { lyricsRunSkip } from "./lyrics-run";
-import { lyricsOptionsFrom } from "../performance/lyrics-options";
-import { createSongRunner, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
+import { stemsWithVocals, vocalsOf } from "./vocals";
+import { createSongRunner, isSplitting, watchSongStore, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
 import { loadAfterSplit, type AfterSplitStep } from "./after-split";
 import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 
@@ -26,6 +27,12 @@ const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPl
 /** The Library's batch is going. The open song's run waits for it, so two analyses never run at once. */
 const batchRunning = () => isRunning(useAnalysisJob.getState().phase);
 
+/** The store is loading or splitting a song. The analysis waits for the split, which is heavy work of its own. */
+const splittingNow = () => isSplitting(useSong.getState().status.kind);
+
+/** Whether a run must wait now: music plays, the batch runs, or the store is splitting. */
+const busyNow = () => playingNow() || batchRunning() || splittingNow();
+
 /** True while a run is analysing now, not waiting. The Library's batch will not start over it. */
 export function songRunnerAnalysing(): boolean {
   const state = songRunner.state.getState();
@@ -34,25 +41,28 @@ export function songRunnerAnalysing(): boolean {
 
 /** The open song as a run sees it: its key, its audio at the meter given (or its own), and the chord stem chosen for it. */
 function openTarget(beatsPerBar?: number): RunTarget | null {
-  const { source, stems } = useSong.getState();
+  const { source, stems, tracks } = useSong.getState();
   if (!source) return null;
   const key = performanceKey(source);
   const options = readOptions<Record<string, unknown>>(key, {});
   const meter = beatsPerBar ?? (typeof options.beats === "number" ? options.beats : 4);
   const chordChoice = typeof options.chordChoice === "string" ? (options.chordChoice as StemName) : "";
   const chordName: StemName | "" = chordChoice && stems?.[chordChoice] ? chordChoice : defaultChordSource(stems);
-  const audio = buildAnalysisAudio({ mix: source.audio, stems, beatsPerBar: meter, chordChanges: chartChordTimes(parseChart(getSetting(key, ""))), chordName });
+  const built = buildAnalysisAudio({ mix: source.audio, stems, beatsPerBar: meter, chordChanges: chartChordTimes(parseChart(getSetting(key, ""))), chordName });
+  // Lyrics read the vocals stem; an imported vocals track stands in for it when the song was not split.
+  const audio = { ...built, stems: stemsWithVocals(built.stems, vocalsOf(stems, tracks)) };
   return { key, title: source.name, audioId: songAudioId(source.audio, stems), audio };
 }
 
 /**
- * The lyrics step, when the run may transcribe the song's chart. A song with no split vocals gets a line saying so, and a chart the run
- * must leave alone gets a line saying why. The step's status replaces the step name while the model downloads.
+ * The lyrics step, when the run may transcribe the song's chart. A song with no vocals gets a line saying so, and a chart the run must
+ * leave alone gets a line saying why. The language is the song's own, or the one chosen under After the split. The step's status
+ * replaces the step name while the model downloads.
  */
 function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
-  const { source, stems } = useSong.getState();
+  const { source, stems, tracks } = useSong.getState();
   if (!source) return null;
-  if (!stems?.vocals) {
+  if (!vocalsOf(stems, tracks)) {
     captured.note = "Split the song to get lyrics.";
     return null;
   }
@@ -65,7 +75,8 @@ function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
     captured.note = `Lyrics left as they are (${lyricsSkipLabel(skip)}).`;
     return null;
   }
-  captured.lyricsOptions = lyricsOptionsFrom(options);
+  const own = LYRIC_LANGUAGES.find((language) => language === options.lyricsLanguage);
+  captured.lyricsOptions = { ...loadLyricsChoice(), language: own ?? loadAfterSplit().language };
   return lyricsStep({
     options: captured.lyricsOptions,
     onText: (text) => (captured.lyrics = text),
@@ -82,7 +93,7 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
   const tempo = tempoStep((grid) => (captured.grid = grid), options.hint ?? {});
   const sections = sectionsStep(() => captured.grid ?? readStoredBand(key).grid ?? null);
   if (options.tempoOnly) return options.sections ? [tempo, sections] : [tempo];
-  const wanted = loadAfterSplit();
+  const wanted = loadAfterSplit().steps;
   const ordered: [AfterSplitStep, AnalysisStep[]][] = [
     ["loudness", [loudnessStep(), silenceStep()]],
     ["parts", [partsStep()]],
@@ -99,6 +110,10 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
 /** The app's runner. */
 export const songRunner = createSongRunner({
   target: (beatsPerBar) => openTarget(beatsPerBar),
+  audioId: () => {
+    const { source, stems } = useSong.getState();
+    return source ? songAudioId(source.audio, stems) : null;
+  },
   read: (key): SavedSong => ({
     bpm: getSetting(key, ":bpm"),
     options: readOptions<Record<string, unknown>>(key, {}),
@@ -111,19 +126,25 @@ export const songRunner = createSongRunner({
     if (values[":lyrics"] !== undefined) setSetting(key, ":lyrics", values[":lyrics"]);
   },
   steps: appSteps,
-  busy: () => playingNow() || batchRunning(),
+  busy: busyNow,
   onBusyChange: (listener) => {
-    const stopSong = onSongPlayingChange(() => listener(playingNow() || batchRunning()));
+    const notify = () => listener(busyNow());
+    const stopSong = onSongPlayingChange(notify);
     const stopPlaylist = useSongLibrary.subscribe((state, previous) => {
-      if (state.playlistPlaying !== previous.playlistPlaying) listener(playingNow() || batchRunning());
+      if (state.playlistPlaying !== previous.playlistPlaying) notify();
     });
     const stopBatch = useAnalysisJob.subscribe((state, previous) => {
-      if (isRunning(state.phase) !== isRunning(previous.phase)) listener(playingNow() || batchRunning());
+      if (isRunning(state.phase) !== isRunning(previous.phase)) notify();
+    });
+    // Splitting is a store status: the run parks when a split starts and resumes only when no split is going.
+    const stopSplit = useSong.subscribe((state, previous) => {
+      if (isSplitting(state.status.kind) !== isSplitting(previous.status.kind)) notify();
     });
     return () => {
       stopSong();
       stopPlaylist();
       stopBatch();
+      stopSplit();
     };
   },
   finished: (key, analysis) => {
@@ -134,13 +155,9 @@ export const songRunner = createSongRunner({
 });
 
 /**
- * Starts the automatic run when a split or an import lands (the stems change and the store is idle). Returns the function that stops
- * the watch. The Song screen also asks for the run when it opens a song.
+ * Starts the automatic run when a file opens (its mix) or a split finishes (its stems). Returns the function that stops the watch. No
+ * screen asks for the run: opening a song or finishing a split is what starts it.
  */
 export function watchSongs(): () => void {
-  return useSong.subscribe((state, previous) => {
-    if (state.status.kind !== "idle" || !state.source) return;
-    if (state.source === previous.source && state.stems === previous.stems) return;
-    songRunner.analyse();
-  });
+  return watchSongStore(useSong, () => songRunner.analyse());
 }

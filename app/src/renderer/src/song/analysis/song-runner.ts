@@ -86,9 +86,11 @@ export interface RunnerDeps {
   write(key: string, values: Record<string, string>): void;
   /** The steps a run takes, in order. The tempo step fills `captured.grid` with the beat grid it tracked. */
   steps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[];
+  /** The audio id of the open song right now, or null when none is open. A run parked for an older audio is dropped, not resumed. */
+  audioId(): string | null;
   /**
-   * Whether a run must wait: a song or a playlist is playing, or the Library's batch is going. Nothing runs then, and a run waiting for
-   * this resumes when it is false again.
+   * Whether a run must wait: a song or a playlist is playing, or the Library's batch is going, or the store is splitting. Nothing runs
+   * then, and a run waiting for this resumes when it is false again.
    */
   busy(): boolean;
   /** Calls `listener` when the busy state may have changed (playback starts or stops, the batch starts or ends). Returns how to stop. */
@@ -205,6 +207,7 @@ export function createSongRunner(deps: RunnerDeps) {
     state.setState({ step: null, detecting: false, running: false });
     if (outcome.status === "interrupted") {
       parked = { ...run, from: outcome.next, partial: outcome.analysis, controller: new AbortController() };
+      state.setState({ running: true, waiting: true });
       return;
     }
     if (outcome.status === "complete") finish(run, outcome.analysis, saved);
@@ -290,6 +293,12 @@ export function createSongRunner(deps: RunnerDeps) {
     if (!parked || deps.busy() || active) return;
     const run = parked;
     parked = null;
+    // The song's audio changed while the run waited (a split landed, or another song opened): the run is out of date, and the new
+    // audio's analysis starts from `analyse` instead.
+    if (deps.audioId() !== run.target.audioId) {
+      state.setState({ running: false, waiting: false, step: null });
+      return;
+    }
     void execute(run);
   }
 
@@ -378,3 +387,33 @@ export function createSongRunner(deps: RunnerDeps) {
 }
 
 export type SongRunner = ReturnType<typeof createSongRunner>;
+
+/** Whether the store is loading or splitting a song: the analysis waits, and a run in progress is parked, while it is. */
+export function isSplitting(kind: string): boolean {
+  return kind === "decoding" || kind === "model" || kind === "splitting";
+}
+
+/** The part of the song store's state the automatic run reads. */
+export interface WatchedSong {
+  source: unknown;
+  stems: unknown;
+  status: { kind: string };
+}
+
+/** The song store, as the automatic run sees it: its state, and a subscription to changes. */
+export interface WatchableSongStore {
+  subscribe(listener: (state: WatchedSong, previous: WatchedSong) => void): () => void;
+}
+
+/**
+ * Calls `analyse` when a song's audio lands with the store idle or done: a file opened (its mix), or a split finished (its stems). A
+ * split in progress does not start a run; the run for the split's stems starts once it is done.
+ */
+export function watchSongStore(store: WatchableSongStore, analyse: () => void): () => void {
+  return store.subscribe((state, previous) => {
+    if (state.status.kind !== "idle" && state.status.kind !== "done") return;
+    if (!state.source) return;
+    if (state.source === previous.source && state.stems === previous.stems) return;
+    analyse();
+  });
+}

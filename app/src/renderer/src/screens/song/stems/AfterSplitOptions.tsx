@@ -5,10 +5,10 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
-import { AFTER_SPLIT_STEPS, loadAfterSplit, saveAfterSplit, type AfterSplitChoice, type AfterSplitStep } from "@/song/analysis/after-split";
+import { AFTER_SPLIT_STEPS, loadAfterSplit, saveAfterSplit, type AfterSplit } from "@/song/analysis/after-split";
 import { songRunner } from "@/song/analysis/song-runner-app";
 import { runStatusLine } from "@/song/analysis/run-status";
-import { loadLyricsChoice, saveLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
+import { LYRIC_LANGUAGES, loadLyricsChoice, saveLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
 import { downloadMegabytes, findLyricsModel } from "@/song/performance/lyrics-models";
 import { LyricsModelPicker } from "../LyricsModelPicker";
 
@@ -25,13 +25,13 @@ export function lyricsCost(choice: LyricsChoice): string {
  * lyrics panel shows.
  */
 export function AfterSplitOptions({ className }: { className?: string }) {
-  const [choice, setChoice] = useState<AfterSplitChoice>(loadAfterSplit);
+  const [after, setAfter] = useState<AfterSplit>(loadAfterSplit);
+  const choice = after.steps;
   const [lyricsChoice, setLyricsChoice] = useState<LyricsChoice>(loadLyricsChoice);
   const busy = useSong((s) => s.status.kind === "decoding" || s.status.kind === "model" || s.status.kind === "splitting");
 
-  const update = (step: AfterSplitStep, on: boolean) => {
-    const next = { ...choice, [step]: on };
-    setChoice(next);
+  const update = (next: AfterSplit) => {
+    setAfter(next);
     saveAfterSplit(next);
   };
   const updateLyrics = (next: LyricsChoice) => {
@@ -49,7 +49,12 @@ export function AfterSplitOptions({ className }: { className?: string }) {
             const id = `after-split-${step.id}`;
             return (
               <div key={step.id} className="flex items-center gap-2">
-                <Checkbox id={id} checked={choice[step.id]} disabled={busy} onCheckedChange={(on) => update(step.id, on === true)} />
+                <Checkbox
+                  id={id}
+                  checked={choice[step.id]}
+                  disabled={busy}
+                  onCheckedChange={(on) => update({ ...after, steps: { ...choice, [step.id]: on === true } })}
+                />
                 <Label htmlFor={id} className="text-[13px]">
                   {step.label}
                 </Label>
@@ -60,6 +65,22 @@ export function AfterSplitOptions({ className }: { className?: string }) {
         {choice.lyrics && (
           <div className="flex flex-col gap-2 pt-2">
             <LyricsModelPicker choice={lyricsChoice} disabled={busy} onChange={updateLyrics} />
+            <label className="flex items-center gap-2 text-[13px]">
+              <span>Language for a song that does not set its own</span>
+              <select
+                aria-label="Lyrics language"
+                className="rounded border border-seam bg-transparent px-2 py-1 text-[13px]"
+                value={after.language}
+                disabled={busy}
+                onChange={(e) => update({ ...after, language: LYRIC_LANGUAGES.find((value) => value === e.target.value) ?? "auto" })}
+              >
+                {LYRIC_LANGUAGES.map((value) => (
+                  <option key={value} value={value}>
+                    {value === "auto" ? "Detect automatically" : value[0].toUpperCase() + value.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="text-[12px] text-silkscreen-3">{lyricsCost(lyricsChoice)}</p>
           </div>
         )}
