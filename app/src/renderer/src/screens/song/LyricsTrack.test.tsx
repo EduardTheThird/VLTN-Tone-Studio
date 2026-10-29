@@ -18,6 +18,8 @@ class FakeWorker {
   }
 }
 const audio = { sampleRate: 16000, channels: [new Float32Array(16000).fill(0.2)] };
+// A second of voice-level tone, so the singing detector finds a window to transcribe.
+const voice = Float32Array.from({ length: 16000 }, (_, i) => 0.3 * Math.sin(i / 3));
 beforeEach(() => {
   saveSettings.mockClear();
   for (const key of Object.keys(useLyricsJobs.getState().jobs)) cancelLyrics(key);
@@ -37,7 +39,7 @@ beforeEach(() => {
         return { buffer: null, connect() {}, start() {} };
       }
       async startRendering() {
-        return { getChannelData: () => new Float32Array(16000) };
+        return { getChannelData: () => voice };
       }
     },
   );

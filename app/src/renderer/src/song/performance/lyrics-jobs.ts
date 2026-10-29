@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { PcmAudio } from "../types";
 import { lyricsLrc, type LyricSegment } from "./lyrics";
 import { alignLyrics, pastedLines, type TimedWord } from "./lyrics-align";
+import { highPass, normalisePeak } from "./lyrics-input";
+import { singingRegions, transcriptionWindows } from "./vocal-activity";
 import { flushSettings, setSetting } from "./settings";
 import { lyricsOptions, recordLyricsMade, type LyricsOptions } from "./lyrics-options";
 
@@ -64,9 +66,17 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     source.connect(context.destination);
     source.start();
     const pcm = (await context.startRendering()).getChannelData(0);
-    // The worker takes the buffer by transfer, which empties `pcm` here, so the length is read first.
     const duration = pcm.length / 16000;
     if (task.cancelled) return;
+    // Only the windows with singing go to the transcriber: Whisper invents words over silence and bleed.
+    const clean = normalisePeak(highPass(pcm, 16000));
+    const windows = transcriptionWindows(singingRegions(clean, 16000), duration);
+    if (!windows.length) {
+      update(task, { status: "", error: "No singing found in the vocals. Import or type lyrics, or paste and time yours." });
+      finish();
+      return;
+    }
+    const pieces = windows.map((w) => clean.slice(Math.round(w.start * 16000), Math.round(w.end * 16000)));
     const worker = new Worker(new URL("./lyrics-worker.ts", import.meta.url), { type: "module" });
     task.worker = worker;
     update(task, { status: "Loading lyrics model… First use downloads and caches the model." });
@@ -122,7 +132,7 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
         finish();
       }
     };
-    worker.postMessage({ pcm, options, words: lines !== undefined }, [pcm.buffer]);
+    worker.postMessage({ pieces, starts: windows.map((w) => w.start), options, words: lines !== undefined }, pieces.map((piece) => piece.buffer));
   } catch (e) {
     if (!task.cancelled) {
       update(task, { error: String(e), status: "" });
