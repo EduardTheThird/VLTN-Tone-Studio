@@ -7,7 +7,8 @@ import { readStoredBand, writeStoredBand } from "@/song/band/stored";
 import type { Stems, PcmAudio, StemName } from "@/song/types";
 import type { MissingParts } from "@/song/band/detect";
 import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
-import { loadLyricsOnAnalysis, lyricsOptions } from "@/song/performance/lyrics-options";
+import { loadLyricsOnAnalysis } from "@/song/performance/lyrics-options";
+import { lyricsOptions } from "@/song/performance/lyrics-song-options";
 import { lyricsMadeRecord, saveLyricsChart } from "@/song/performance/lyrics-chart";
 import { buildAnalysisAudio } from "@/song/analysis/analysis-audio";
 import {
