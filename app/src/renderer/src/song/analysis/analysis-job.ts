@@ -7,6 +7,7 @@ import { useSongLibrary } from "../library";
 import { isSongPlaying } from "../performance/playing-state";
 import { describeBatch, selectSongs, type BatchOptions, type BatchOutcome, type BatchSong } from "./batch";
 import { runLibraryAnalysis } from "./library-batch";
+import { songRunnerAnalysing } from "./song-runner-app";
 
 /** Where the job is. `preparing` is set as soon as a run starts, so the first feedback shows before the first song loads. */
 export type JobPhase = "idle" | "preparing" | "loading" | "analysing" | "waiting" | "finished" | "stopped" | "failed";
@@ -104,6 +105,7 @@ export const useAnalysisJob = create<AnalysisJobState>((set, get) => ({
   openRequested: false,
   start: (songs, options) => {
     if (isRunning(get().phase)) return "An analysis is already running.";
+    if (songRunnerAnalysing()) return "A song is being analysed. Wait for it to finish, then analyse the Library.";
     if (playing()) return PLAYING_REFUSAL;
     const { run } = selectSongs(songs, options);
     const current = new AbortController();

@@ -98,6 +98,8 @@ Use **Speed & pitch** in Performance.
 
 ## Lyrics and chords
 
+Lyrics from the vocals are made by the analysis after a split, with the model chosen under **After the split** on the Stems tab, and are not started when this panel opens. The buttons below make or redo them: **Generate lyrics from vocals** for a song with none, and **Transcribe again** for a chart that the performer has not written.
+
 The reader shows the lyrics with the chords above them and follows playback. Turn **Follow playback** off to scroll freely, use **A− / A+** for text size, or **Expand performance view** for a larger reader with transport buttons. Click any chord for guitar tabs in standard tuning (`x` is muted, `0` is open); they follow the displayed transposition.
 
 To edit, choose **Edit chords, lyrics & MIDI**. Each row has a time, chords, lyrics, MIDI commands and an optional label. Playback pauses while you edit, and invalid MIDI is rejected when you save. You can also paste or import TXT, LRC or bracket-chord text under **Separate lyrics and chart editors**, and export the chart.

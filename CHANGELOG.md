@@ -59,6 +59,7 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 - **Lyrics transcription works again.** Since 0.9.2 every transcription, for one song or from the Library, failed with "window is not defined", because the lyrics worker loaded the song settings. A test now loads every worker without a page, so this can't come back unnoticed.
 
 ### Added
+- **Every new song is analysed in one run.** After a split or an import, the analysis works out the tempo and beat, key, chords, sections, loudness, the drums and bass check, and lyrics, without opening the Performance screen. The Stems tab has an **After the split** block to choose the steps and the lyrics model before you split. The run goes on while you use other screens, and the status bar shows its progress. **Analyse this song now** runs the chosen steps again for a song that is already split. See [Saved songs](SONG-LIBRARY.md#analysing-saved-songs).
 - **Lyrics from vocals is its own section** on the Performance screen, with the model and quality choice above the button. It used to be folded away under the chart editor.
 - **Analysis in the background.** A saved-song analysis keeps going when you close its dialog or leave the Song screen. The status bar shows the song, the step, a bar and the time left on every screen, and the Library shows the same line. **Run in background** closes the dialog; reopening it shows the run, and the summary stays until **Done**. A run that waits for a playlist can be released with **Run anyway** when no song plays. See [Saved songs](SONG-LIBRARY.md#analysing-saved-songs).
 - **Find the beat again from the tempo you set.** When a song's tempo was set by hand, tapped or taken from the chart, **Find the beat at N BPM** on the Performance screen finds the beat from that number, and **Keep exactly N** keeps the tempo as typed. **Undo** puts back the tempo, the grid and the sections. The Band panel's **Find the beat** starts from it too, with **Use my tempo**. See [Performance](PERFORMANCE.md).
@@ -103,6 +104,7 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 - **MIDI triggers, macros and song MIDI files.** Charts can send commands on load, play, stop or end. Saved command lists (macros) are shared by every song, and a song can attach a standard MIDI file that plays with its cues at the song's speed. Cues also accept bank select, song select and Start/Continue/Stop. Preflight flags Start and Stop cues while app MIDI clock is on. See [MIDI pedal command presets](MIDI-PEDALS.md#triggers-macros-and-song-midi-files).
 
 ### Changed
+- **Lyrics start from the analysis, not from opening the lyrics panel.** The lyrics panel no longer starts transcription when it opens, and its "Transcribe lyrics when analysing" box is replaced by the lyrics step under **After the split** on the Stems tab. The panel's own buttons are as they were.
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
 ### Fixed

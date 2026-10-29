@@ -111,6 +111,21 @@ describe("runSongAnalysis", () => {
     expect(settings.write).not.toHaveBeenCalled();
   });
 
+  it("does not save a run that playback interrupted during its last step", async () => {
+    const controller = new AbortController();
+    const last = {
+      name: "sections",
+      run: vi.fn(async () => {
+        controller.abort(PLAYBACK_INTERRUPT);
+        return { tempo: { bpm: 98, firstBeat: 0, steady: true } };
+      }),
+    };
+    const settings = memory();
+    const outcome = await runSongAnalysis({ audioId: "x", audio, steps: [last], settings, signal: controller.signal });
+    expect(outcome.status).toBe("interrupted");
+    expect(settings.write).not.toHaveBeenCalled();
+  });
+
   it("resumes an interrupted run from its step with the partial result", async () => {
     const partial = { audioId: "x", version: ANALYSIS_VERSION, tempo: { bpm: 98, firstBeat: 0, steady: true } };
     const first = step("tempo");

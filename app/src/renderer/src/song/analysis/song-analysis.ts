@@ -180,6 +180,8 @@ export async function runSongAnalysis(run: AnalysisRun): Promise<AnalysisOutcome
       failed.push(step.name);
     }
   }
+  // Playback that started during the last step still stops the run: nothing is saved over the music.
+  if (signal.aborted) return stopped(signal, run.steps.length, snapshot());
   const result = snapshot();
   run.settings.write(result);
   return { status: "complete", analysis: result };

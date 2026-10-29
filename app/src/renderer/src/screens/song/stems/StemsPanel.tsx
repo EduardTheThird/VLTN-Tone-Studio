@@ -11,6 +11,7 @@ import { useSong } from "@/song/store";
 import { STEM_NAMES } from "@/song/types";
 import { findModel, missingBytes, type SeparationModel, type SeparationModelId } from "@shared/host/song";
 import { StemMixer } from "./StemMixer";
+import { AfterSplitOptions, AnalyseSongButton, RunStatus } from "./AfterSplitOptions";
 import { megabytes, SplitOptions, useDownloadedFiles } from "./SplitOptions";
 
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
@@ -60,7 +61,16 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
 
   // A song with only imported tracks (no split stem) has nothing to mix: show the split prompt instead.
   const hasStems = !!stems && STEM_NAMES.some((n) => stems[n]);
-  if (stems && source && hasStems) return <StemMixer key={source.libraryId ?? source.name} stems={stems} songName={source.name} />;
+  if (stems && source && hasStems)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center justify-end gap-3 px-2 pt-2">
+          <RunStatus />
+          <AnalyseSongButton />
+        </div>
+        <StemMixer key={source.libraryId ?? source.name} stems={stems} songName={source.name} />
+      </div>
+    );
 
   if (status.kind === "decoding") return <Working title="Reading the song" />;
   if (status.kind === "model") {
@@ -122,6 +132,7 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
               </EmptyHeader>
               <EmptyContent className="max-w-xl gap-4">
                 <SplitOptions className="w-full" />
+                <AfterSplitOptions className="w-full" />
               </EmptyContent>
             </Empty>
             <div className={cn("flex justify-center", over && "invisible")}>{splitButton}</div>

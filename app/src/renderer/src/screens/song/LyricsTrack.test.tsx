@@ -107,8 +107,11 @@ it("asks before replacing lyrics from before 0.9.2, and keeps them when the perf
   expect(localStorage.getItem("song:lyrics")).toBe("[00:00.00] Made earlier");
 });
 
-it("automatically generates missing lyrics and keeps working when the tab is closed", async () => {
+it("starts only when asked, and keeps working when the tab is closed", async () => {
   const view = render(<LyricsTrack audio={audio} storageKey="song" />);
+  // The run after a split makes lyrics; the panel waits for the performer, so opening it starts nothing.
+  expect(FakeWorker.current).toBeUndefined();
+  fireEvent.click(screen.getByText(/Generate lyrics from vocals/));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   view.unmount();
   expect(FakeWorker.current.terminate).not.toHaveBeenCalled();
@@ -120,6 +123,7 @@ it("automatically generates missing lyrics and keeps working when the tab is clo
 
 it("keeps edited lyrics when returning to the tab", async () => {
   const view = render(<LyricsTrack audio={audio} storageKey="song" />);
+  fireEvent.click(screen.getByText(/Generate lyrics from vocals/));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   await act(async () => FakeWorker.current.onmessage?.({ data: { words: [{ text: " Draft", start: 0, end: 0 }] } }));
   fireEvent.change(screen.getByLabelText("Lyrics text track editor"), { target: { value: "[00:00.00] Corrected words" } });
@@ -130,6 +134,7 @@ it("keeps edited lyrics when returning to the tab", async () => {
 
 it("keeps a running job when a song is saved to the library and persists the finished lyrics", async () => {
   const view = render(<LyricsTrack audio={audio} storageKey="file" />);
+  fireEvent.click(screen.getByText(/Generate lyrics from vocals/));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   setSetting("vltn.song:saved", "", "[00:00] [C]");
   act(() => migrateLyricsJob("file", "vltn.song:saved"));
