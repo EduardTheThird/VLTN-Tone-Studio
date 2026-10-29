@@ -8,27 +8,23 @@ import type { PcmAudio, StemName, Stems } from "../types";
 import { chartChordTimes } from "../band/request";
 import { parseChart } from "../performance/chart";
 import { defaultChordSource } from "../performance/sources";
-import { needsTempoDetection, readTempoSource, type TempoSource } from "../performance/tempo-source";
-import { parseSections } from "../performance/sections";
 import { parseBeatGrid } from "../band/beat-grid";
+import { needsTempoDetection, readTempoSource } from "../performance/tempo-source";
 import {
   chartSourceOf,
   lrcTexts,
   lyricsMadeOf,
   lyricsMadeRecord,
-  withLyricsChart,
-  type ChartSource,
-  type LyricsMade,
-  type PreviousChart,
 } from "../performance/lyrics-chart";
 import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
 import type { LyricsModelId } from "../performance/lyrics-models";
 import { buildAnalysisAudio } from "./analysis-audio";
 import type { LyricsStepInput } from "./steps";
-import { sectionsToApply } from "./sections";
+import { planWriteBack, parseOptions, tempoMayChange, type BatchSong, type LyricsWrite, type WriteBack } from "./apply";
+
+export type { BatchSong } from "./apply";
 import {
   ANALYSIS_VERSION,
-  METER_CERTAIN,
   PLAYBACK_INTERRUPT,
   parseAnalysis,
   runSongAnalysis,
@@ -58,13 +54,6 @@ export type BatchChoice = Record<BatchStepId, boolean>;
 /** The steps every new batch starts with: all of them, as the dialog ticks them by default. */
 export function defaultChoice(): BatchChoice {
   return Object.fromEntries(BATCH_STEPS.map((step) => [step.id, step.defaultOn])) as BatchChoice;
-}
-
-/** A saved song as the batch reads it: its id, its title, and its saved settings (the tempo, the options and the chart). */
-export interface BatchSong {
-  id: string;
-  title: string;
-  settings: Record<string, string>;
 }
 
 /** Which lyrics charts the lyrics step may replace. A performer's own chart (`user`) is never replaced in bulk. */
@@ -190,28 +179,12 @@ function analysisChosen(choice: BatchChoice): boolean {
   return BATCH_STEPS.some((step) => step.id !== "lyrics" && choice[step.id]);
 }
 
-/** The options of a saved song, read from its `:options` entry. A damaged entry reads as no options. */
-export function parseOptions(json: string | undefined): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(json || "{}");
-    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
 /** True when the saved analysis is missing, of an older version, or the song has no tempo chosen by the performer. */
 export function needsAnalysis(song: BatchSong): boolean {
   const options = parseOptions(song.settings[":options"]);
   const saved = parseAnalysis(options.analysis);
   if (!saved || saved.version < ANALYSIS_VERSION) return true;
   return needsTempoDetection(song.settings[":bpm"] ?? "", readTempoSource(options));
-}
-
-/** Whether the saved tempo may be changed by the analysis. A manual, tap or chart tempo is kept, unless the performer asked to replace it. */
-export function tempoMayChange(song: BatchSong, replaceManual: boolean): boolean {
-  const source: TempoSource | null = readTempoSource(parseOptions(song.settings[":options"]));
-  return replaceManual || source === "detected" || needsTempoDetection(song.settings[":bpm"] ?? "", source);
 }
 
 /**
@@ -238,82 +211,6 @@ function wantsRun(song: BatchSong, options: BatchOptions): boolean {
 export function stepsFor(song: BatchSong, options: Pick<BatchOptions, "choice" | "replaceManual">): BatchStepId[] {
   const allowed = tempoMayChange(song, options.replaceManual);
   return BATCH_STEPS.filter((step) => options.choice[step.id] && (step.id !== "tempo" || allowed)).map((step) => step.id);
-}
-
-/** What a finished analysis changes in a saved song, as the settings the library writes. `tempoChange` is set when the tempo changed. */
-export interface WriteBack {
-  values: Record<string, string>;
-  tempoChange: { from: number; to: number } | null;
-}
-
-/**
- * The settings a finished analysis writes to a saved song. The tempo, first beat, meter (4 only, when certain) and beat grid are applied
- * under the same rules as the Performance screen: a grid the performer made is kept unless the performer asked to replace the tempo. A 3
- * is not applied, since the Performance screen only offers it. Loudness fills in only a song that has none.
- */
-export function planWriteBack(
-  song: BatchSong,
-  analysis: SongAnalysis | null,
-  grid: BeatGrid | null,
-  replaceManual: boolean,
-  lyrics: LyricsWrite | null = null,
-): WriteBack {
-  const options = parseOptions(song.settings[":options"]);
-  const values: Record<string, string> = {};
-  const next: Record<string, unknown> = analysis ? { ...options, analysis } : { ...options };
-  const tempoChange = analysis ? applyAnalysis(song, analysis, grid, replaceManual, options, next, values) : null;
-  if (lyrics) {
-    const previousText = song.settings[":lyrics"] ?? "";
-    const replaced: PreviousChart | null = previousText.trim() && previousText !== lyrics.text ? { text: previousText, source: chartSourceOf(options) } : null;
-    values[":lyrics"] = lyrics.text;
-    Object.assign(next, withLyricsChart(next, replaced, { source: lyrics.source, made: lyrics.made }));
-  }
-  values[":options"] = JSON.stringify(next);
-  return { values, tempoChange };
-}
-
-/** A lyrics chart the lyrics step made for a song, with its source and the model that made it. */
-export interface LyricsWrite {
-  text: string;
-  source: ChartSource;
-  made: LyricsMade;
-}
-
-/** The analysis's part of a write-back: the tempo, the sections and the loudness, under the rules planWriteBack describes. */
-function applyAnalysis(
-  song: BatchSong,
-  analysis: SongAnalysis,
-  grid: BeatGrid | null,
-  replaceManual: boolean,
-  options: Record<string, unknown>,
-  next: Record<string, unknown>,
-  values: Record<string, string>,
-): WriteBack["tempoChange"] {
-  let tempoChange: WriteBack["tempoChange"] = null;
-  // Detected sections fill in a song with none. A song's own sections, and the suggestion kept in the analysis, are left as they are.
-  const sections = sectionsToApply(parseSections(options.sections), analysis.sections);
-  if (sections) next.sections = sections;
-  if (analysis.tempo && tempoMayChange(song, replaceManual)) {
-    const from = Number(song.settings[":bpm"]) || 0;
-    values[":bpm"] = String(analysis.tempo.bpm);
-    tempoChange = from === analysis.tempo.bpm ? null : { from, to: analysis.tempo.bpm };
-    next.tempoSource = "detected";
-    next.firstBeat = analysis.tempo.firstBeat;
-    if (grid && (replaceManual || !options.beatGrid || options.beatGridSource === "analysis")) {
-      next.beatGrid = grid;
-      next.beatGridSource = "analysis";
-    }
-    const meter = analysis.meter;
-    if (meter && meter.confidence >= METER_CERTAIN && meter.beatsPerBar === 4 && (replaceManual || options.beatsSource !== "manual")) {
-      next.beats = 4;
-      next.beatsSource = "detected";
-    }
-  }
-  if (analysis.loudness && typeof options.songLufs !== "number") {
-    next.songLufs = analysis.loudness.lufs;
-    next.songPeakDb = analysis.loudness.peakDb;
-  }
-  return tempoChange;
 }
 
 /**
