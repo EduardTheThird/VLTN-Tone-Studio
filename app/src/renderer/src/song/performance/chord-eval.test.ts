@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { decodeFlac } from "@shared/flac";
 import { parseChart } from "./chart";
-import { chartChordEvents, parseChordName, type ChordEvent, type ParsedChord } from "../band/harmony";
+import { chartChordEvents, LAST_CHORD_SECONDS, parseChordName, type ChordEvent, type ParsedChord } from "../band/harmony";
 import { fft } from "../tonematch/fft";
 import { detectChords, type Chord } from "./chords";
 import { defaultChordSource } from "./sources";
@@ -192,8 +192,10 @@ export function scoreChords(truth: readonly ChordEvent[], detected: readonly Cho
   const score = zero();
   let ti = 0,
     di = 0;
-  // The grid is indexed, not summed, so each point lands on the same side of a chord change every run.
-  for (let i = 0; truth[0].time + i * STEP_SECONDS < duration; i++) {
+  // The grid stops where the chart's last chord stops (see chartChordEvents), so a silent tail after it is not scored. It is indexed,
+  // not summed, so each point lands on the same side of a chord change every run.
+  const end = Math.min(duration, truth[truth.length - 1].time + LAST_CHORD_SECONDS);
+  for (let i = 0; truth[0].time + i * STEP_SECONDS < end; i++) {
     const t = truth[0].time + i * STEP_SECONDS;
     while (ti + 1 < truth.length && truth[ti + 1].time <= t) ti++;
     while (di + 1 < detected.length && detected[di + 1].time <= t) di++;
