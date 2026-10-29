@@ -74,7 +74,7 @@ A song is counted as played once it reaches its halfway point. Each play records
 
 ## Analysing saved songs
 
-The analysis finds a song's tempo and meter, key, chords, loudness, missing drums or bass, and silence at each end. Songs saved before it existed have no analysis, and often a wrong tempo of 120.
+The analysis finds a song's tempo and meter, key, chords, loudness, missing drums or bass, silence at each end, and suggested sections (intro, verse, chorus and so on) on the bar lines. A song that has no sections takes the suggested ones. A song that already has its own keeps them, and the section editor offers **Replace with detected sections**, with **Undo**. Songs saved before it existed have no analysis, and often a wrong tempo of 120.
 
 - **One song.** On the Performance screen, **Detect** beside the BPM finds the tempo and meter again, even if you set them by hand. If the beat was counted as half or double the real tempo, **Use** the half or the double. **Undo** puts back the tempo, meter and beat grid from before. **Analyse again** runs every step again and replaces the tempo and meter; your key, trims, sections and chart are kept.
 - **Many songs.** Select songs and choose **Analyse selected…**, or choose **Analyse all songs…** for the whole library. Choose which steps to run. **Only songs that need it** skips songs whose analysis is current. **Replace tempos I set by hand** is off by default, so a tempo you set, tapped or took from a chart is kept.
