@@ -3,6 +3,7 @@
 
 import { useSong } from "../store";
 import { useSongLibrary } from "../library";
+import { isRunning, useAnalysisJob } from "./analysis-job";
 import { chartChordTimes } from "../band/request";
 import { parseChart } from "../performance/chart";
 import { defaultChordSource } from "../performance/sources";
@@ -22,6 +23,15 @@ import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep,
 /** A song is playing, or a playlist is. Nothing the runner does starts over the music. */
 const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
 
+/** The Library's batch is going. The open song's run waits for it, so two analyses never run at once. */
+const batchRunning = () => isRunning(useAnalysisJob.getState().phase);
+
+/** True while a run is analysing now, not waiting. The Library's batch will not start over it. */
+export function songRunnerAnalysing(): boolean {
+  const state = songRunner.state.getState();
+  return state.running && !state.waiting;
+}
+
 /** The open song as a run sees it: its key, its audio at the meter given (or its own), and the chord stem chosen for it. */
 function openTarget(beatsPerBar?: number): RunTarget | null {
   const { source, stems } = useSong.getState();
@@ -32,7 +42,7 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
   const chordChoice = typeof options.chordChoice === "string" ? (options.chordChoice as StemName) : "";
   const chordName: StemName | "" = chordChoice && stems?.[chordChoice] ? chordChoice : defaultChordSource(stems);
   const audio = buildAnalysisAudio({ mix: source.audio, stems, beatsPerBar: meter, chordChanges: chartChordTimes(parseChart(getSetting(key, ""))), chordName });
-  return { key, audioId: songAudioId(source.audio, stems), audio };
+  return { key, title: source.name, audioId: songAudioId(source.audio, stems), audio };
 }
 
 /**
@@ -101,15 +111,19 @@ export const songRunner = createSongRunner({
     if (values[":lyrics"] !== undefined) setSetting(key, ":lyrics", values[":lyrics"]);
   },
   steps: appSteps,
-  playing: playingNow,
-  onPlayingChange: (listener) => {
-    const stopSong = onSongPlayingChange(listener);
+  busy: () => playingNow() || batchRunning(),
+  onBusyChange: (listener) => {
+    const stopSong = onSongPlayingChange(() => listener(playingNow() || batchRunning()));
     const stopPlaylist = useSongLibrary.subscribe((state, previous) => {
-      if (state.playlistPlaying !== previous.playlistPlaying) listener(playingNow());
+      if (state.playlistPlaying !== previous.playlistPlaying) listener(playingNow() || batchRunning());
+    });
+    const stopBatch = useAnalysisJob.subscribe((state, previous) => {
+      if (isRunning(state.phase) !== isRunning(previous.phase)) listener(playingNow() || batchRunning());
     });
     return () => {
       stopSong();
       stopPlaylist();
+      stopBatch();
     };
   },
   finished: (key, analysis) => {

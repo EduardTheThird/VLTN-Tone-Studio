@@ -63,6 +63,8 @@ export interface RunOptions {
 /** The song a run analyses. The app builds it from the open song; a test builds it by hand. */
 export interface RunTarget {
   key: string;
+  /** The song's name, as the status bar shows it. */
+  title: string;
   audioId: string;
   audio: AnalysisAudio;
 }
@@ -84,10 +86,13 @@ export interface RunnerDeps {
   write(key: string, values: Record<string, string>): void;
   /** The steps a run takes, in order. The tempo step fills `captured.grid` with the beat grid it tracked. */
   steps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[];
-  /** Whether a song or a playlist is playing right now. Nothing runs then. */
-  playing(): boolean;
-  /** Calls `listener` when playback starts or stops. Returns the function that stops the listening. */
-  onPlayingChange(listener: (playing: boolean) => void): () => void;
+  /**
+   * Whether a run must wait: a song or a playlist is playing, or the Library's batch is going. Nothing runs then, and a run waiting for
+   * this resumes when it is false again.
+   */
+  busy(): boolean;
+  /** Calls `listener` when the busy state may have changed (playback starts or stops, the batch starts or ends). Returns how to stop. */
+  onBusyChange(listener: (busy: boolean) => void): () => void;
   /** Called once a finished run has been written, so the app can keep what the run learned beyond the settings. */
   finished?(key: string, analysis: SongAnalysis): void;
 }
@@ -106,8 +111,16 @@ export interface CapturedRun {
 export interface SongRunState {
   /** The song the current or last run belongs to. */
   songKey: string | null;
+  title: string | null;
+  /** True while a run is in progress, including one waiting for playback to stop. */
+  running: boolean;
+  /** True while a run waits for playback, or for the Library's batch, to stop. */
+  waiting: boolean;
   /** The step being run, or null when idle. */
   step: string | null;
+  /** The index of the step being run, and how many steps the run has. */
+  stepIndex: number;
+  steps: number;
   /** True while the tempo is detected again, from the Detect button. */
   detecting: boolean;
   /** What the last finished run found, as one line. */
@@ -116,6 +129,8 @@ export interface SongRunState {
   notices: RunNotice[];
   /** Counts every write, so the panel reloads its values from the settings. */
   revision: number;
+  /** When the last run ended, or null while none has. The status bar shows its summary for a while after that. */
+  endedAt: number | null;
 }
 
 /** A run in progress, or one parked until playback stops. */
@@ -139,7 +154,20 @@ const UNDO_OPTIONS = ["tempoSource", "firstBeat", "beats", "beatsSource", "beatG
 
 /** Creates a runner over the given dependencies, with its own state. */
 export function createSongRunner(deps: RunnerDeps) {
-  const state = create<SongRunState>(() => ({ songKey: null, step: null, detecting: false, message: null, notices: [], revision: 0 }));
+  const state = create<SongRunState>(() => ({
+    songKey: null,
+    title: null,
+    running: false,
+    waiting: false,
+    step: null,
+    stepIndex: 0,
+    steps: 0,
+    detecting: false,
+    message: null,
+    notices: [],
+    revision: 0,
+    endedAt: null,
+  }));
   // The run in progress, and the run waiting for playback to stop. Only one of them exists at a time.
   let active: Run | null = null;
   let parked: Run | null = null;
@@ -147,9 +175,19 @@ export function createSongRunner(deps: RunnerDeps) {
   /** Runs the steps from `run.from`. A run that was superseded, cancelled or parked leaves the state to whoever stopped it. */
   async function execute(run: Run): Promise<void> {
     active = run;
-    state.setState({ songKey: run.key, step: null, detecting: !!run.options.tempoOnly, notices: [] });
     const saved = parseAnalysis(deps.read(run.key).options.analysis);
     const steps = deps.steps(run.key, run.options, run.captured);
+    state.setState({
+      songKey: run.key,
+      title: run.target.title,
+      running: true,
+      waiting: false,
+      step: null,
+      stepIndex: 0,
+      steps: steps.length,
+      detecting: !!run.options.tempoOnly,
+      notices: [],
+    });
     const outcome: AnalysisOutcome = await runSongAnalysis({
       audioId: run.target.audioId,
       audio: run.target.audio,
@@ -160,11 +198,11 @@ export function createSongRunner(deps: RunnerDeps) {
       from: run.from,
       partial: run.partial,
       signal: run.controller.signal,
-      onStep: (_, name) => state.setState({ step: name }),
+      onStep: (index, name) => state.setState({ step: name, stepIndex: index }),
     });
     if (active !== run) return;
     active = null;
-    state.setState({ step: null, detecting: false });
+    state.setState({ step: null, detecting: false, running: false });
     if (outcome.status === "interrupted") {
       parked = { ...run, from: outcome.next, partial: outcome.analysis, controller: new AbortController() };
       return;
@@ -196,7 +234,7 @@ export function createSongRunner(deps: RunnerDeps) {
     const notices = noticesFor(run, analysis, before, plan.tempoChange !== null);
     const lyricsLine = lyricsWrite ? "Lyrics made." : (run.captured.note ?? "");
     const message = [describeAnalysis(analysis), lyricsLine].filter(Boolean).join(" ");
-    state.setState((current) => ({ message, notices, revision: current.revision + 1 }));
+    state.setState((current) => ({ message, notices, revision: current.revision + 1, running: false, waiting: false, endedAt: Date.now() }));
     deps.finished?.(key, analysis);
   }
 
@@ -238,9 +276,9 @@ export function createSongRunner(deps: RunnerDeps) {
     listen();
     active?.controller.abort("cancel");
     parked = null;
-    if (deps.playing()) {
+    if (deps.busy()) {
       parked = run;
-      state.setState({ songKey: run.key, step: null, detecting: false });
+      state.setState({ songKey: run.key, title: run.target.title, running: true, waiting: true, step: null, detecting: false });
       return;
     }
     void execute(run);
@@ -248,7 +286,7 @@ export function createSongRunner(deps: RunnerDeps) {
 
   /** Playback stopped: a parked run resumes from the step it stopped at. */
   function resumeParked(): void {
-    if (!parked || deps.playing() || active) return;
+    if (!parked || deps.busy() || active) return;
     const run = parked;
     parked = null;
     void execute(run);
@@ -277,11 +315,12 @@ export function createSongRunner(deps: RunnerDeps) {
     begin(run);
   }
 
-  // Playback pauses a run in progress, and the run resumes once playback stops. Listening starts with the first run, not on import.
+  // A busy app (playback, the Library's batch) pauses a run in progress, and the run resumes once it is idle. Listening starts with the
+  // first run, not on import.
   let stopListening: (() => void) | null = null;
   const listen = () => {
-    stopListening ??= deps.onPlayingChange((playing) => {
-      if (playing) active?.controller.abort(PLAYBACK_INTERRUPT);
+    stopListening ??= deps.onBusyChange((busy) => {
+      if (busy) active?.controller.abort(PLAYBACK_INTERRUPT);
       else resumeParked();
     });
   };
@@ -294,23 +333,23 @@ export function createSongRunner(deps: RunnerDeps) {
     },
     /** Detects the tempo and meter again, replacing the saved ones. The rest of the saved analysis is kept. Ignored during playback. */
     detect(): void {
-      if (!deps.playing()) start({ tempoOnly: true }, false);
+      if (!deps.busy()) start({ tempoOnly: true }, false);
     },
     /** Finds the beat again from a tempo the performer typed. Ignored during playback. */
     findBeat(hint: TempoHintOptions): void {
-      if (!deps.playing()) start({ tempoOnly: true, sections: true, hint }, false);
+      if (!deps.busy()) start({ tempoOnly: true, sections: true, hint }, false);
     },
     /** Runs every step again, replacing the saved tempo and meter. Ignored during playback. */
     analyseAgain(): void {
-      if (!deps.playing()) start({}, false);
+      if (!deps.busy()) start({}, false);
     },
     /** Runs the chosen steps again now, keeping what the performer chose (a manual tempo, a grid of their own). Ignored during playback. */
     analyseNow(): void {
-      if (!deps.playing()) start({ force: true, replaceManual: false }, false);
+      if (!deps.busy()) start({ force: true, replaceManual: false }, false);
     },
     /** Runs the analysis again with the meter the performer chose, so a grid laid out for the old meter is laid out again. */
     rerun(beatsPerBar?: number): void {
-      if (!deps.playing()) start({ beatsPerBar }, false);
+      if (!deps.busy()) start({ beatsPerBar }, false);
     },
     /** Presses a notice's button for the song the notice belongs to: merges its patch into the song's settings, and tells the panel to reload. */
     press(patch: NoticePatch): void {
@@ -332,7 +371,7 @@ export function createSongRunner(deps: RunnerDeps) {
       parked = null;
       active?.controller.abort("cancel");
       active = null;
-      state.setState({ step: null, detecting: false });
+      state.setState({ step: null, detecting: false, running: false, waiting: false });
     },
   };
 }

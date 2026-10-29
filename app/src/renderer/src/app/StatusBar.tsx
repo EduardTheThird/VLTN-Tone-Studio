@@ -10,6 +10,7 @@ import { attachedDevice, pedalName } from "@/state/device-model";
 import { liveStatusText } from "@/screens/rig/live-edits";
 import { keyLabel } from "./keys";
 import { AnalysisChip } from "./AnalysisChip";
+import { SongRunChip } from "./SongRunChip";
 
 const LED: Record<StatusMessage["led"], string> = { on: "bg-led-on", off: "bg-led-off", warn: "bg-led-warn", fault: "bg-led-fault" };
 
@@ -69,6 +70,7 @@ export function StatusBar() {
         </>
       )}
       <span className="flex-1" />
+      <SongRunChip />
       <AnalysisChip />
       {hints.map((h, i) => (
         <Fragment key={i}>

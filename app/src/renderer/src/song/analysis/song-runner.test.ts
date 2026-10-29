@@ -19,7 +19,7 @@ function fakeApp(over: { steps?: (options: RunOptions, captured: CapturedRun) =>
   const writes: Record<string, string>[] = [];
   const finished: SongAnalysis[] = [];
   const deps: RunnerDeps = {
-    target: () => ({ key: "song", audioId: "a1", audio }),
+    target: () => ({ key: "song", title: "Song", audioId: "a1", audio }),
     read: (): SavedSong => ({ bpm: song.bpm, options: { ...song.options }, chart: song.chart, lyrics: song.lyrics }),
     write: (_key, values) => {
       writes.push(values);
@@ -28,8 +28,8 @@ function fakeApp(over: { steps?: (options: RunOptions, captured: CapturedRun) =>
       if (values[":lyrics"] !== undefined) song.lyrics = values[":lyrics"];
     },
     steps: (_key, options, captured) => (over.steps ? over.steps(options, captured) : []),
-    playing: () => playing,
-    onPlayingChange: (listener) => {
+    busy: () => playing,
+    onBusyChange: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },

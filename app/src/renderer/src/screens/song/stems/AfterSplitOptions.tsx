@@ -7,6 +7,7 @@ import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { AFTER_SPLIT_STEPS, loadAfterSplit, saveAfterSplit, type AfterSplitChoice, type AfterSplitStep } from "@/song/analysis/after-split";
 import { songRunner } from "@/song/analysis/song-runner-app";
+import { runStatusLine } from "@/song/analysis/run-status";
 import { loadLyricsChoice, saveLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
 import { downloadMegabytes, findLyricsModel } from "@/song/performance/lyrics-models";
 import { LyricsModelPicker } from "../LyricsModelPicker";
@@ -77,5 +78,16 @@ export function AnalyseSongButton({ className }: { className?: string }) {
     <Button className={className} variant="outline" size="sm" disabled={!hasSong || busy || playing || analysing} onClick={() => songRunner.analyseNow()}>
       Analyse this song now
     </Button>
+  );
+}
+
+/** The open song's analysis as a line under the Stems tab, while it runs: the same words the status bar shows. */
+export function RunStatus({ className }: { className?: string }) {
+  const run = songRunner.state();
+  if (!run.running) return null;
+  return (
+    <p className={cn("text-[12px] text-silkscreen-3", className)} role="status">
+      {runStatusLine(run)}
+    </p>
   );
 }
