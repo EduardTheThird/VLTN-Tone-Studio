@@ -405,6 +405,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
     },
+    onParts: (found) => {
+      // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
+      if (!useSong.getState().missingParts) useSong.setState({ missingParts: found });
+    },
     onLoudness: (found) => {
       // A level the loudness control measured earlier is kept; the analysis only fills in a song that has none.
       if (loudness.lufs !== null && loudness.peakDb !== null) return;

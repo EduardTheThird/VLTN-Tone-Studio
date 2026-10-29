@@ -2,6 +2,7 @@
 // silence as later steps are added. Each step is a small job that returns what it found. This file runs them in order, keeps the results,
 // and stops when playback starts. It imports no React or screen code, so the same run can later work through saved songs headless (spec 72).
 
+import type { MissingParts } from "../band/detect";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio, Stems } from "../types";
@@ -51,6 +52,8 @@ export interface SongAnalysis {
   tempo?: TempoResult;
   meter?: MeterResult;
   loudness?: LoudnessResult;
+  /** Whether the song has drums and bass, and where they are absent. Only set when the song was split or has stems. */
+  parts?: MissingParts;
   key?: KeyResult;
   chords?: ChordsResult;
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
@@ -67,6 +70,8 @@ export interface NamedAudio {
 export interface AnalysisAudio {
   /** The song's mix, measured for loudness. */
   mix: PcmAudio;
+  /** The split stems, or null for a song that was not split. */
+  stems: Stems | null;
   sources: readonly PcmAudio[];
   sampleRate: number;
   beatsPerBar: number;
@@ -180,6 +185,8 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   if (typeof record.audioId !== "string" || typeof record.version !== "number") return null;
   const tempo = record.tempo as Record<string, unknown> | undefined;
   const validTempo = !!tempo && typeof tempo.bpm === "number" && typeof tempo.firstBeat === "number" && typeof tempo.steady === "boolean";
+  const parts = record.parts as Record<string, unknown> | undefined;
+  const validParts = typeof parts?.drums === "string" && typeof parts.bass === "string" && !!parts.absentSections && typeof parts.absentSections === "object";
   const loudness = record.loudness as Record<string, unknown> | undefined;
   const validLoudness = typeof loudness?.lufs === "number" && typeof loudness.peakDb === "number";
   const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
@@ -194,6 +201,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     version: record.version,
     ...(validTempo ? { tempo: { bpm: tempo.bpm as number, firstBeat: tempo.firstBeat as number, steady: tempo.steady as boolean } } : {}),
     ...(validMeter ? { meter: { beatsPerBar: meter.beatsPerBar as 3 | 4, confidence: meter.confidence as number } } : {}),
+    ...(validParts ? { parts: parts as unknown as MissingParts } : {}),
     ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
@@ -206,8 +214,10 @@ export function describeAnalysis(analysis: SongAnalysis): string {
   const found = analysis.tempo ? `Tempo ${analysis.tempo.bpm} BPM${analysis.tempo.steady ? "" : " (the tempo varies)"}` : "No steady tempo found";
   const meter = analysis.meter ? `. Meter ${analysis.meter.beatsPerBar}/4${analysis.meter.confidence < METER_CERTAIN ? " (not certain)" : ""}` : "";
   const loudness = analysis.loudness ? `. Loudness ${analysis.loudness.lufs.toFixed(1)} LUFS` : "";
+  const absent = (["drums", "bass"] as const).filter((part) => analysis.parts?.[part] === "absent");
+  const parts = absent.length ? `. Missing ${absent.join(" and ")}` : "";
   const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
   const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${loudness}${key}${chords}${failed}`;
+  return `${found}${meter}${loudness}${parts}${key}${chords}${failed}`;
 }

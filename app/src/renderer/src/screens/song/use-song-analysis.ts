@@ -7,6 +7,7 @@ import { beatSources } from "@/song/band/request";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
 import type { Stems, PcmAudio, StemName } from "@/song/types";
 import { keyAudio } from "@/song/performance/key";
+import type { MissingParts } from "@/song/band/detect";
 import { readOptions, setSetting } from "@/song/performance/settings";
 import {
   describeAnalysis,
@@ -21,7 +22,7 @@ import {
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { chordsStep, keyStep, loudnessStep, tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "@/song/analysis/steps";
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -49,6 +50,8 @@ export interface SongAnalysisInput {
   onMeter(meter: MeterResult): void;
   /** Called with the loudness a finished run measured. The panel saves it when the song has none yet. */
   onLoudness(loudness: LoudnessResult): void;
+  /** Called with the drums and bass check of a finished run. The panel uses it when the song has no check yet. */
+  onParts(parts: MissingParts): void;
 }
 
 export interface SongAnalysisControl {
@@ -83,6 +86,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     controller.current = run;
     const audio: AnalysisAudio = {
       mix,
+      stems,
       sources: beatSources(stems, mix),
       sampleRate: mix.sampleRate,
       beatsPerBar,
@@ -98,7 +102,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     void runSongAnalysis({
       audioId,
       audio,
-      steps: [loudnessStep(), tempo, chordsStep(), keyStep()],
+      steps: [loudnessStep(), partsStep(), chordsStep(), tempo, keyStep()],
       settings: storedAnalysis(songKey),
       from: from.from,
       partial: from.partial,
@@ -118,6 +122,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (outcome.analysis.tempo) latest.current.onTempo(outcome.analysis.tempo);
       if (outcome.analysis.meter) latest.current.onMeter(outcome.analysis.meter);
       if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
+      if (outcome.analysis.parts) latest.current.onParts(outcome.analysis.parts);
     });
   };
 

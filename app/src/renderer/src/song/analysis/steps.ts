@@ -8,6 +8,7 @@ import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio } from "../types";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
+import { detectMissingParts } from "../band/detect";
 import type { AnalysisStep } from "./song-analysis";
 
 /**
@@ -79,6 +80,17 @@ export function loudnessStep(): AnalysisStep {
     async run(audio) {
       const { lufs, peakDb } = await measureLoudnessInWorker(audio.mix);
       return Number.isFinite(lufs) ? { loudness: { lufs, peakDb } } : {};
+    },
+  };
+}
+
+/** Checks whether the drums and bass stems carry the mix, so a missing part is noticed before it is played. Nothing is saved without stems. */
+export function partsStep(): AnalysisStep {
+  return {
+    name: "parts",
+    async run(audio) {
+      if (!audio.stems || !(audio.stems.drums || audio.stems.bass)) return {};
+      return { parts: detectMissingParts(audio.mix, audio.stems) };
     },
   };
 }

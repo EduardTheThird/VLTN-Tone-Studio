@@ -17,11 +17,11 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordsStep, keyStep, loudnessStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "./steps";
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
-const audio = { mix: { sampleRate: 44100, channels: [] }, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
+const audio = { mix: { sampleRate: 44100, channels: [] }, stems: null, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -111,5 +111,17 @@ describe("loudnessStep", () => {
   it("records nothing for a silent song", async () => {
     loudness.measure.mockResolvedValueOnce({ lufs: -Infinity, peakDb: -Infinity });
     expect(await loudnessStep().run(audio, new AbortController().signal)).toEqual({});
+  });
+});
+
+describe("partsStep", () => {
+  it("records nothing for a song that was not split", async () => {
+    expect(await partsStep().run(audio, new AbortController().signal)).toEqual({});
+  });
+
+  it("checks the drums and bass against the mix", async () => {
+    const pcm = { sampleRate: 44100, channels: [new Float32Array(44100)] };
+    const result = await partsStep().run({ ...audio, mix: pcm, stems: { drums: pcm, bass: pcm } }, new AbortController().signal);
+    expect(result.parts).toMatchObject({ drums: expect.any(String), bass: expect.any(String), absentSections: { drums: [], bass: [] } });
   });
 });
