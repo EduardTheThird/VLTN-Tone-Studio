@@ -1,8 +1,8 @@
 // The speech models that can transcribe lyrics. transformers.js downloads a model from its Hugging Face repo on first
 // use and caches it, so this registry holds only what the UI shows: the repo, the download sizes and the licence.
 // Sizes are the sum of the files each device loads (the q8 encoder and decoder on WASM, fp16 on WebGPU), as listed
-// in each repo on 29 Oct 2026. Candidates that failed the check (no transformers.js ONNX repo found, or an unreadable
-// repo) are left out; see spec 75's Status.
+// in each repo on 29 Oct 2026. Every repo must have `alignment_heads` in its generation config and a decoder that
+// exports cross attentions, or word timestamps (which lyrics timing needs) fail. Evidence is in spec 75's Status.
 
 export type LyricsModelId = "base" | "small" | "turbo";
 
@@ -37,10 +37,11 @@ export const LYRICS_MODELS: readonly LyricsModel[] = [
     id: "turbo",
     label: "Best",
     description: "Most accurate on singing. Largest download and the slowest.",
-    repo: "onnx-community/whisper-large-v3-turbo",
-    // The ONNX repo carries no licence tag; the weights are OpenAI's whisper-large-v3-turbo, MIT-licensed.
-    licence: "MIT (weights; repo has no tag)",
-    bytes: { wasm: 1_084_758_911, webgpu: 1_618_569_942 },
+    // The plain turbo ONNX export has no cross-attention outputs, so word timestamps fail on it. This "_timestamped"
+    // re-export has them.
+    repo: "onnx-community/whisper-large-v3-turbo_timestamped",
+    licence: "Apache-2.0",
+    bytes: { wasm: 1_084_880_793, webgpu: 1_618_692_224 },
   },
 ];
 

@@ -9,7 +9,7 @@ describe("lyrics models", () => {
   });
 
   it("looks models up by id and ignores unknown values", () => {
-    expect(findLyricsModel("turbo")?.repo).toBe("onnx-community/whisper-large-v3-turbo");
+    expect(findLyricsModel("turbo")?.repo).toBe("onnx-community/whisper-large-v3-turbo_timestamped");
     expect(findLyricsModel("distil-en")).toBeUndefined();
     expect(findLyricsModel(undefined)).toBeUndefined();
   });
