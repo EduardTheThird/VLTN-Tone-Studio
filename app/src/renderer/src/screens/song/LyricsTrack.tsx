@@ -25,6 +25,7 @@ export function LyricsTrack({
   const status = job?.status ?? "";
   const busy = job?.busy ?? false;
   const [error, setError] = useState("");
+  const [pasted, setPasted] = useState("");
   const activeLine = useRef<HTMLParagraphElement>(null);
   const available = useMemo(() => hasSignal(audio), [audio]);
   const lines = useMemo(
@@ -69,10 +70,10 @@ export function LyricsTrack({
   useEffect(() => {
     if (audio && available && !text && !job) void generateLyrics(storageKey, audio);
   }, [audio, available, text, job, storageKey]);
-  const transcribe = () => {
+  const transcribe = (pastedText?: string) => {
     if (audio && available) {
       setError("");
-      void generateLyrics(storageKey, audio, { language });
+      void generateLyrics(storageKey, audio, { language }, pastedText);
     }
   };
   return (
@@ -107,7 +108,7 @@ export function LyricsTrack({
             ))}
           </select>
         </label>
-        <Button disabled={!available || busy} onClick={() => void transcribe()}>
+        <Button disabled={!available || busy} onClick={() => transcribe()}>
           {text ? "Regenerate lyrics" : "Generate lyrics from vocals"}
         </Button>
         {busy && (
@@ -127,6 +128,22 @@ export function LyricsTrack({
           Export lyrics
         </Button>
       </div>
+      <details>
+        <summary>Paste lyrics and time them</summary>
+        <p className="text-sm text-silkscreen-3">
+          One line per lyric line; a blank line starts a new section. Your words are kept exactly as typed. Only the timing comes from the vocals.
+        </p>
+        <textarea
+          aria-label="Pasted lyrics"
+          className="min-h-32 w-full rounded border border-seam bg-transparent p-2"
+          disabled={busy}
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+        />
+        <Button disabled={!available || busy || !pasted.trim()} onClick={() => transcribe(pasted)}>
+          Time pasted lyrics
+        </Button>
+      </details>
       {!available && <p>Split the song to get a vocals stem with audio before generating lyrics.</p>}
       <p role="status">{status || (!text ? "No lyrics yet. Generate them from vocals, or import a lyric chart below." : "")}</p>
       {(error || job?.error) && (

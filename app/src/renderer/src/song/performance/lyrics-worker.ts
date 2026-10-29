@@ -1,8 +1,9 @@
-import { transcriptSegments } from "./lyrics";
+import { transcriptSegments, transcriptWords } from "./lyrics";
 import type { LyricsOptions } from "./lyrics-options";
 
-self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: LyricsOptions }>) => {
-  const { pcm, options } = event.data;
+// `words` asks for word timings (used to time pasted lyrics); otherwise the worker returns line-level segments.
+self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: LyricsOptions; words: boolean }>) => {
+  const { pcm, options, words } = event.data;
   try {
     // Load inside the handler so module/asset failures reach the UI instead of
     // terminating worker startup with an opaque error event.
@@ -24,14 +25,16 @@ self.onmessage = async (event: MessageEvent<{ pcm: Float32Array; options: Lyrics
     });
     self.postMessage({ status: "Transcribing vocals locally… This may take several minutes." });
     const output = await transcribe(pcm, {
-      return_timestamps: true,
+      return_timestamps: words ? "word" : true,
       chunk_length_s: 30,
       stride_length_s: 5,
       task: "transcribe",
       ...(options.language !== "auto" ? { language: options.language } : {}),
     });
     const result = Array.isArray(output) ? output[0] : output;
-    self.postMessage({ segments: transcriptSegments(result.chunks ?? [], pcm.length / 16000) });
+    const duration = pcm.length / 16000;
+    if (words) self.postMessage({ words: transcriptWords(result.chunks ?? [], duration) });
+    else self.postMessage({ segments: transcriptSegments(result.chunks ?? [], duration) });
     await transcribe.dispose();
   } catch (e) {
     self.postMessage({ error: e instanceof Error ? e.message : String(e) });

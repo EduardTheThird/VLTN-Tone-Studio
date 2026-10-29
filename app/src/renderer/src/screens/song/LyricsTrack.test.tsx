@@ -125,3 +125,26 @@ it("keeps a running job when a song is saved to the library and persists the fin
   render(<LyricsTrack audio={audio} storageKey="vltn.song:saved" />);
   expect(screen.getByText("Saved words")).toBeTruthy();
 });
+
+it("times pasted lyrics from the heard word timings and keeps the typed words", async () => {
+  localStorage.setItem("song:lyrics", "[00:00.00] Old");
+  render(<LyricsTrack audio={audio} storageKey="song" />);
+  expect((screen.getByRole("button", { name: "Time pasted lyrics" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Pasted lyrics"), { target: { value: "Hold on\nI'm coming" } });
+  fireEvent.click(screen.getByRole("button", { name: "Time pasted lyrics" }));
+  await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
+  expect(FakeWorker.current.postMessage.mock.calls[0][0].words).toBe(true);
+  await act(async () =>
+    FakeWorker.current.onmessage?.({
+      data: {
+        words: [
+          { text: " hold", start: 2, end: 2.4 },
+          { text: " on", start: 2.5, end: 2.8 },
+          { text: " im", start: 6, end: 6.2 },
+          { text: " coming", start: 6.3, end: 6.9 },
+        ],
+      },
+    }),
+  );
+  expect(localStorage.getItem("song:lyrics")).toBe("[00:02.00] Hold on\n[00:06.00] I'm coming");
+});

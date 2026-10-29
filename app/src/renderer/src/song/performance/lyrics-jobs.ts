@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { PcmAudio } from "../types";
 import { lyricsLrc, type LyricSegment } from "./lyrics";
+import { alignLyrics, pastedLines, type TimedWord } from "./lyrics-align";
 import { flushSettings, setSetting } from "./settings";
 import { lyricsOptions, type LyricsOptions } from "./lyrics-options";
 
@@ -35,9 +36,17 @@ export function cancelLyrics(key: string) {
   update(task, { busy: false, status: "Transcription cancelled. Generate lyrics to retry." });
   for (const alias of task.keys) running.delete(alias);
 }
-/** Jobs belong to the song, not a mounted tab. No pedal or MIDI access. */
-export async function generateLyrics(key: string, audio: PcmAudio, options: LyricsOptions = lyricsOptions(key)): Promise<void> {
+/**
+ * Jobs belong to the song, not a mounted tab. No pedal or MIDI access.
+ * With `pasted` lyrics, the transcriber only times them: the chart keeps the pasted words and gets the heard timings.
+ */
+export async function generateLyrics(key: string, audio: PcmAudio, options: LyricsOptions = lyricsOptions(key), pasted?: string): Promise<void> {
   if (running.has(key)) return;
+  const lines = pasted === undefined ? undefined : pastedLines(pasted);
+  if (lines && !lines.some(Boolean)) {
+    useLyricsJobs.setState((state) => ({ jobs: { ...state.jobs, [key]: { busy: false, status: "", error: "Paste some lyrics to time first." } } }));
+    return;
+  }
   const task: Running = { keys: new Set([key]), cancelled: false };
   running.set(key, task);
   update(task, { busy: true, status: "Preparing vocals…", error: "" });
@@ -55,18 +64,39 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     source.connect(context.destination);
     source.start();
     const pcm = (await context.startRendering()).getChannelData(0);
+    // The worker takes the buffer by transfer, which empties `pcm` here, so the length is read first.
+    const duration = pcm.length / 16000;
     if (task.cancelled) return;
     const worker = new Worker(new URL("./lyrics-worker.ts", import.meta.url), { type: "module" });
     task.worker = worker;
     update(task, { status: "Loading lyrics model… First use downloads and caches the model." });
-    worker.onmessage = async (event: MessageEvent<{ status?: string; error?: string; segments?: LyricSegment[] }>) => {
+    worker.onmessage = async (event: MessageEvent<{ status?: string; error?: string; segments?: LyricSegment[]; words?: TimedWord[] }>) => {
       if (task.cancelled) return;
       if (event.data.status) update(task, { status: event.data.status });
       if (event.data.error) {
         update(task, { error: event.data.error, status: "" });
         finish();
       }
-      if (event.data.segments) {
+      if (event.data.words && lines) {
+        const aligned = alignLyrics(lines, event.data.words, duration);
+        const placed = aligned.filter((line) => line.estimated).length;
+        const text = lyricsLrc(aligned);
+        if (text) {
+          update(task, {
+            text,
+            status: placed
+              ? `Lyrics timed to the vocals. ${placed} line${placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
+              : "Lyrics timed to the vocals.",
+          });
+          try {
+            for (const alias of task.keys) setSetting(alias, ":lyrics", text);
+            await flushSettings();
+          } catch (e) {
+            update(task, { error: `Lyrics timed, but saving failed: ${String(e)}. Export a copy.` });
+          }
+        } else update(task, { status: "No words to time. Paste some lyrics first." });
+        finish();
+      } else if (event.data.segments) {
         const text = lyricsLrc(event.data.segments);
         if (text) {
           update(task, { text, status: "Lyrics ready. Review the words and timing while listening." });
@@ -86,7 +116,7 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
         finish();
       }
     };
-    worker.postMessage({ pcm, options }, [pcm.buffer]);
+    worker.postMessage({ pcm, options, words: lines !== undefined }, [pcm.buffer]);
   } catch (e) {
     if (!task.cancelled) {
       update(task, { error: String(e), status: "" });

@@ -1,17 +1,35 @@
 import { lrcTime } from "./chart";
+import type { TimedWord } from "./lyrics-align";
 export interface LyricSegment {
   time: number;
   text: string;
 }
-export function transcriptSegments(chunks: { text: string; timestamp: [number | null, number | null] }[], duration: number): LyricSegment[] {
+type Chunk = { text: string; timestamp: [number | null, number | null] };
+
+/** Keep generated text inert when copied into the chart's MIDI-aware syntax. */
+export function cleanText(text: string): string {
+  return text
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\{midi:/gi, "{midi :")
+    .trim();
+}
+
+/** Word chunks from a word-timestamp run, in song time. Chunks without a usable start or end are dropped. */
+export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
+  return chunks.flatMap((chunk) => {
+    const [start, end] = chunk.timestamp;
+    const text = cleanText(chunk.text);
+    return start !== null && end !== null && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start < duration && text
+      ? [{ text, start, end: Math.min(end, duration) }]
+      : [];
+  });
+}
+
+export function transcriptSegments(chunks: Chunk[], duration: number): LyricSegment[] {
   const segments = chunks
     .flatMap((chunk) => {
       const time = chunk.timestamp[0];
-      // Keep generated text inert when copied into the chart's MIDI-aware syntax.
-      const text = chunk.text
-        .replace(/[\r\n]+/g, " ")
-        .replace(/\{midi:/gi, "{midi :")
-        .trim();
+      const text = cleanText(chunk.text);
       return time !== null && Number.isFinite(time) && time >= 0 && time < duration && text ? [{ time, text }] : [];
     })
     .sort((a, b) => a.time - b.time);
