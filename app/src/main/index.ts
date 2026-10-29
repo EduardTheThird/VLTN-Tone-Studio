@@ -23,6 +23,7 @@ import { isAudienceContents, registerDisplayIpc } from "./ipc/display";
 import { registerBandSyncIpc } from "./ipc/band-sync";
 import { APP_SCHEME_PRIVILEGES } from "./app-scheme";
 import { devUserDataPath } from "./user-data";
+import { isOwnRenderer } from "./permissions";
 
 // Development runs keep their own library and settings, so testing never touches the installed app's songs.
 // Before the single-instance lock, which is per data folder.
@@ -242,17 +243,19 @@ app.on("open-file", (e, path) => {
 app.whenReady().then(async () => {
   // WebMIDI with SysEx in the renderer (src/renderer/src/gp5/), plus audio-only capture for the capture editor's
   // NAM audition (audio interface input). Nothing else is granted; video is always denied.
+  // Only our own pages get them (isOwnRenderer): the default session is shared with anything else that loads there.
   const allowed = new Set(["midi", "midiSysex"]);
+  const devUrl = process.env.ELECTRON_RENDERER_URL;
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
-    if (isAudienceContents(wc)) return cb(false);
+    if (isAudienceContents(wc) || !isOwnRenderer(details.requestingUrl, devUrl)) return cb(false);
     if (permission === "media") {
       const types = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
       return cb(types.length > 0 && types.every((t) => t === "audio"));
     }
     cb(allowed.has(permission));
   });
-  session.defaultSession.setPermissionCheckHandler((wc, permission, _origin, details) => {
-    if (isAudienceContents(wc)) return false;
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+    if (isAudienceContents(wc) || !isOwnRenderer(details.requestingUrl ?? requestingOrigin, devUrl)) return false;
     return permission === "media" ? details.mediaType === "audio" : allowed.has(permission);
   });
   session.defaultSession.setBluetoothPairingHandler((details, callback) => {
