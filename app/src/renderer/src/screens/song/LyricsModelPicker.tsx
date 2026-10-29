@@ -1,12 +1,28 @@
+import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { downloadMegabytes, LYRICS_MODELS, type LyricsModelId } from "@/song/performance/lyrics-models";
-import { LYRICS_QUALITIES, type LyricsChoice, type LyricsQualityId } from "@/song/performance/lyrics-options";
+import { hasWebGpuAdapter, LYRICS_QUALITIES, type LyricsChoice, type LyricsQualityId } from "@/song/performance/lyrics-options";
+
+/** Whether the transcriber will run on WebGPU here, asked the same way the worker asks. */
+function useWebGpu(): boolean {
+  const [webgpu, setWebgpu] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void hasWebGpuAdapter(typeof navigator === "undefined" ? undefined : navigator.gpu).then((ok) => {
+      if (live) setWebgpu(ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return webgpu;
+}
 
 /** Model and quality for the next transcription. Laid out like the stem split's pickers, so the two read as one family. */
 export function LyricsModelPicker({ choice, disabled, onChange }: { choice: LyricsChoice; disabled: boolean; onChange: (next: LyricsChoice) => void }) {
-  const webgpu = typeof navigator !== "undefined" && "gpu" in navigator;
+  const webgpu = useWebGpu();
   const quality = LYRICS_QUALITIES.find((q) => q.id === choice.quality) ?? LYRICS_QUALITIES[0];
   return (
     <div className="flex flex-col gap-3 text-left">

@@ -66,9 +66,34 @@ export function lyricsOptions(key: string): LyricsOptions {
   return { ...loadLyricsChoice(), language };
 }
 
-/** Where the model runs: WebGPU when the browser has it (fp16 files), otherwise WASM (q8 files). */
-export function runtimeFor(webgpu: boolean): { device: "webgpu" | "wasm"; dtype: "fp16" | "q8" } {
-  return webgpu ? { device: "webgpu", dtype: "fp16" } : { device: "wasm", dtype: "q8" };
+export interface LyricsRuntime {
+  device: "webgpu" | "wasm";
+  dtype: "fp16" | "q8";
+}
+
+export const WASM_RUNTIME: LyricsRuntime = { device: "wasm", dtype: "q8" };
+export const WEBGPU_RUNTIME: LyricsRuntime = { device: "webgpu", dtype: "fp16" };
+
+/** Where the model runs: WebGPU (fp16 files) when an adapter is present, otherwise WASM (q8 files). */
+export function runtimeFor(webgpu: boolean): LyricsRuntime {
+  return webgpu ? WEBGPU_RUNTIME : WASM_RUNTIME;
+}
+
+/**
+ * Whether WebGPU can really be used. `navigator.gpu` exists in browsers that have no usable adapter (for example a
+ * blocked GPU), so the adapter request decides. Any failure counts as no.
+ */
+export async function hasWebGpuAdapter(gpu: { requestAdapter(): Promise<unknown> } | undefined): Promise<boolean> {
+  try {
+    return gpu !== undefined && (await gpu.requestAdapter()) != null;
+  } catch {
+    return false;
+  }
+}
+
+/** The runtime to retry on when `failed` didn't work: WebGPU falls back once to WASM; WASM has nothing further. */
+export function fallbackRuntime(failed: LyricsRuntime): LyricsRuntime | undefined {
+  return failed.device === "webgpu" ? WASM_RUNTIME : undefined;
 }
 
 /** WASM threads: more only when the page is cross-origin isolated (SharedArrayBuffer), capped at four. */

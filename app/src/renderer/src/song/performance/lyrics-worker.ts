@@ -1,5 +1,5 @@
 import { transcriptWords } from "./lyrics";
-import { findLyricsQuality, runtimeFor, wasmThreads, type LyricsOptions } from "./lyrics-options";
+import { fallbackRuntime, findLyricsQuality, hasWebGpuAdapter, runtimeFor, wasmThreads, type LyricsOptions, type LyricsRuntime } from "./lyrics-options";
 import { findLyricsModel } from "./lyrics-models";
 import type { TimedWord } from "./lyrics-align";
 
@@ -17,41 +17,58 @@ self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: nu
     ]);
     const model = findLyricsModel(options.model);
     if (!model) throw new Error(`Unknown lyrics model: ${String(options.model)}`);
-    const runtime = runtimeFor("gpu" in navigator);
     env.allowLocalModels = false;
     env.backends.onnx.wasm!.wasmPaths = { wasm, mjs };
     env.backends.onnx.wasm!.numThreads = wasmThreads(self.crossOriginIsolated, navigator.hardwareConcurrency);
     env.backends.onnx.wasm!.proxy = false;
-    const transcribe = await pipeline("automatic-speech-recognition", model.repo, {
-      device: runtime.device,
-      dtype: runtime.dtype,
-      progress_callback: (p) => {
-        if (p.status === "progress") self.postMessage({ status: `Downloading lyrics model: ${Math.round(p.progress)}% (${p.file})` });
-      },
-    });
-    const heard: TimedWord[] = [];
-    for (let i = 0; i < pieces.length; i++) {
-      self.postMessage({
-        status: pieces.length > 1 ? `Transcribing vocals locally, part ${i + 1} of ${pieces.length}…` : "Transcribing vocals locally… This may take several minutes.",
+
+    // One full pass on one runtime. Pipelines are disposed on the way out, so a retry starts clean.
+    const transcribeWith = async (runtime: LyricsRuntime): Promise<TimedWord[]> => {
+      const transcribe = await pipeline("automatic-speech-recognition", model.repo, {
+        device: runtime.device,
+        dtype: runtime.dtype,
+        progress_callback: (p) => {
+          if (p.status === "progress") self.postMessage({ status: `Downloading lyrics model: ${Math.round(p.progress)}% (${p.file})` });
+        },
       });
-      const output = await transcribe(pieces[i], {
-        return_timestamps: "word",
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        task: "transcribe",
-        num_beams: findLyricsQuality(options.quality)?.beams ?? 1,
-        // Stops the decoder looping on one phrase, which Whisper does over quiet or repetitive audio.
-        no_repeat_ngram_size: 3,
-        ...(options.language !== "auto" ? { language: options.language } : {}),
-      });
-      const result = Array.isArray(output) ? output[0] : output;
-      const duration = pieces[i].length / 16000;
-      const offset = starts[i];
-      // Times from a window are relative to it; move them back to song time.
-      heard.push(...transcriptWords(result.chunks ?? [], duration).map((w) => ({ ...w, start: w.start + offset, end: w.end + offset })));
+      try {
+        const heard: TimedWord[] = [];
+        for (let i = 0; i < pieces.length; i++) {
+          self.postMessage({
+            status: pieces.length > 1 ? `Transcribing vocals locally, part ${i + 1} of ${pieces.length}…` : "Transcribing vocals locally… This may take several minutes.",
+          });
+          const output = await transcribe(pieces[i], {
+            return_timestamps: "word",
+            chunk_length_s: 30,
+            stride_length_s: 5,
+            task: "transcribe",
+            num_beams: findLyricsQuality(options.quality)?.beams ?? 1,
+            ...(options.language !== "auto" ? { language: options.language } : {}),
+          });
+          const result = Array.isArray(output) ? output[0] : output;
+          const duration = pieces[i].length / 16000;
+          const offset = starts[i];
+          // Times from a window are relative to it; move them back to song time.
+          heard.push(...transcriptWords(result.chunks ?? [], duration).map((w) => ({ ...w, start: w.start + offset, end: w.end + offset })));
+        }
+        return heard;
+      } finally {
+        await transcribe.dispose();
+      }
+    };
+
+    // WebGPU is tried when an adapter exists. If it fails at any point, the whole run retries once on the CPU.
+    const preferred = runtimeFor(await hasWebGpuAdapter(navigator.gpu));
+    let heard: TimedWord[];
+    try {
+      heard = await transcribeWith(preferred);
+    } catch (e) {
+      const fallback = fallbackRuntime(preferred);
+      if (!fallback) throw e;
+      self.postMessage({ status: "Graphics acceleration unavailable, using the CPU" });
+      heard = await transcribeWith(fallback);
     }
     self.postMessage({ words: heard });
-    await transcribe.dispose();
   } catch (e) {
     self.postMessage({ error: e instanceof Error ? e.message : String(e) });
   }

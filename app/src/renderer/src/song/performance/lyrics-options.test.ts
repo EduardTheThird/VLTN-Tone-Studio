@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_LYRICS_CHOICE,
+  fallbackRuntime,
   findLyricsQuality,
+  hasWebGpuAdapter,
   loadLyricsChoice,
   lyricsOptions,
   recordLyricsMade,
@@ -48,6 +50,26 @@ describe("lyricsOptions", () => {
     expect(lyricsOptions("song").language).toBe("auto");
     localStorage.setItem("song:options", "{bad");
     expect(lyricsOptions("song").language).toBe("auto");
+  });
+});
+
+describe("WebGPU choice", () => {
+  it("counts WebGPU only when an adapter really comes back", async () => {
+    expect(await hasWebGpuAdapter(undefined)).toBe(false);
+    expect(await hasWebGpuAdapter({ requestAdapter: async () => null })).toBe(false);
+    expect(await hasWebGpuAdapter({ requestAdapter: async () => ({}) })).toBe(true);
+    expect(
+      await hasWebGpuAdapter({
+        requestAdapter: async () => {
+          throw new Error("blocked");
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("falls back from WebGPU to WASM once and never beyond", () => {
+    expect(fallbackRuntime({ device: "webgpu", dtype: "fp16" })).toEqual({ device: "wasm", dtype: "q8" });
+    expect(fallbackRuntime({ device: "wasm", dtype: "q8" })).toBeUndefined();
   });
 });
 
