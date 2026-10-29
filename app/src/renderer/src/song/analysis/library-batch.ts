@@ -7,7 +7,7 @@ import { flushSettings, LIBRARY_PREFIX, setSetting } from "../performance/settin
 import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state";
 import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 import type { LyricsOptions } from "../performance/lyrics-options";
-import { runAnalysisBatch, type BatchDeps, type BatchOptions, type BatchOutcome, type BatchProgress, type BatchSong, type BatchStepId } from "./batch";
+import { runAnalysisBatch, type BatchCallbacks, type BatchDeps, type BatchOptions, type BatchOutcome, type BatchSong, type BatchStepId } from "./batch";
 import type { AnalysisStep } from "./song-analysis";
 import type { BeatGrid } from "../band/beat-grid";
 
@@ -55,10 +55,10 @@ export async function runLibraryAnalysis(
   songs: readonly BatchSong[],
   options: BatchOptions,
   signal: AbortSignal,
-  onProgress?: (progress: BatchProgress) => void,
+  callbacks: BatchCallbacks = {},
 ): Promise<BatchOutcome[]> {
   try {
-    return await runAnalysisBatch(songs, options, libraryBatchDeps, signal, onProgress);
+    return await runAnalysisBatch(songs, options, libraryBatchDeps, signal, callbacks);
   } finally {
     await flushSettings();
     await useSongLibrary.getState().refresh();

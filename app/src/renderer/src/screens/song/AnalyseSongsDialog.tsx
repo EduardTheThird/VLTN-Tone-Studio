@@ -71,7 +71,7 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
     setStopped(false);
     setRunning(true);
     try {
-      const result = await runLibraryAnalysis(songs, options, controller.signal, setProgress);
+      const result = await runLibraryAnalysis(songs, options, controller.signal, { onProgress: setProgress });
       setOutcomes(result);
       setStopped(controller.signal.aborted);
     } catch (e) {

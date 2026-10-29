@@ -53,7 +53,7 @@ it("runs the batch with the choices as they are, and shows the tempos it changed
     [alpha, bravo],
     expect.objectContaining({ onlyNeeded: true, replaceManual: false, openSongId: null }),
     expect.any(AbortSignal),
-    expect.any(Function),
+    expect.objectContaining({ onProgress: expect.any(Function) }),
   );
   expect(await screen.findByText("Analysed 1 song. Tempo changed on 1 (Alpha: 120 → 98).")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Open" })).toBeTruthy();
@@ -68,6 +68,6 @@ it("can leave a step out of the batch", () => {
     [alpha],
     expect.objectContaining({ choice: expect.objectContaining({ key: false }) }),
     expect.any(AbortSignal),
-    expect.any(Function),
+    expect.objectContaining({ onProgress: expect.any(Function) }),
   );
 });

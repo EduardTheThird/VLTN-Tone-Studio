@@ -258,12 +258,29 @@ export type BatchOutcome =
   | { id: string; title: string; status: "skipped"; reason: "open" }
   | { id: string; title: string; status: "failed"; reason: string };
 
-/** The progress of a batch, for the busy line. `step` is null until the first step of the song starts. */
+/**
+ * The progress of a batch. `step` is null until the first step of the song starts. `stepIndex` counts the steps the song has finished
+ * and `steps` is how many it runs, so the caller can show how far through the song the batch is.
+ */
 export interface BatchProgress {
   index: number;
   total: number;
   title: string;
   step: string | null;
+  stepIndex: number;
+  steps: number;
+}
+
+/** What the batch tells its caller as it runs. Every callback is optional. */
+export interface BatchCallbacks {
+  /** Called before each song's first step, and as each step starts. */
+  onProgress?(progress: BatchProgress): void;
+  /** Called with true when the batch starts waiting for playback to stop, and with false when it goes on. */
+  onWaiting?(waiting: boolean): void;
+  /** Called before a song's audio is loaded. */
+  onLoading?(title: string): void;
+  /** Called after each song in the run, with how it came out. */
+  onSongDone?(outcome: BatchOutcome): void;
 }
 
 /** What the batch needs from the app. The library, the playback and the steps all arrive through here, so the loop has no imports from them. */
@@ -290,13 +307,18 @@ export interface BatchDeps {
   write(id: string, values: Record<string, string>): void;
 }
 
-/** Waits until nothing is playing, or the batch is cancelled. A playing song holds the batch, so no audio is decoded during playback. */
-function whenIdle(deps: BatchDeps, signal: AbortSignal): Promise<void> {
+/**
+ * Waits until nothing is playing, or the batch is cancelled. A playing song holds the batch, so no audio is decoded during playback.
+ * `onWaiting` is told when the wait starts and when it ends, so the caller can say why nothing is happening.
+ */
+function whenIdle(deps: BatchDeps, signal: AbortSignal, onWaiting?: (waiting: boolean) => void): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted || !deps.playing()) return resolve();
+    onWaiting?.(true);
     const finish = () => {
       stopListening();
       signal.removeEventListener("abort", finish);
+      onWaiting?.(false);
       resolve();
     };
     const stopListening = deps.onPlayingChange((playing) => {
@@ -309,43 +331,49 @@ function whenIdle(deps: BatchDeps, signal: AbortSignal): Promise<void> {
 /**
  * Analyses the songs one at a time and writes each result back to its saved song. Playback pauses the batch between steps, and the song
  * resumes from the step it stopped at once playback stops. Cancelling stops after the current step and leaves the songs not reached as
- * they were. `onProgress` is told before each song's first step.
+ * they were. The callbacks are told as the batch runs (see BatchCallbacks).
  */
 export async function runAnalysisBatch(
   songs: readonly BatchSong[],
   options: BatchOptions,
   deps: BatchDeps,
   signal: AbortSignal,
-  onProgress?: (progress: BatchProgress) => void,
+  callbacks: BatchCallbacks = {},
 ): Promise<BatchOutcome[]> {
   const { run, openSkipped } = selectSongs(songs, options);
   const outcomes: BatchOutcome[] = openSkipped.map((song) => ({ id: song.id, title: song.title, status: "skipped", reason: "open" }));
   for (const [index, song] of run.entries()) {
     if (signal.aborted) break;
     if (deps.isOpen(song.id)) {
-      outcomes.push({ id: song.id, title: song.title, status: "skipped", reason: "open" });
+      const skipped: BatchOutcome = { id: song.id, title: song.title, status: "skipped", reason: "open" };
+      outcomes.push(skipped);
+      callbacks.onSongDone?.(skipped);
       continue;
     }
-    await whenIdle(deps, signal);
+    await whenIdle(deps, signal, callbacks.onWaiting);
     if (signal.aborted) break;
-    const progress = (step: string | null) => onProgress?.({ index, total: run.length, title: song.title, step });
-    progress(null);
-    const outcome = await analyseOne(song, options, deps, signal, progress);
+    const progress = (step: string | null, stepIndex: number, steps: number) =>
+      callbacks.onProgress?.({ index, total: run.length, title: song.title, step, stepIndex, steps });
+    progress(null, 0, stepsFor(song, options).length);
+    const outcome = await analyseOne(song, options, deps, signal, { progress, loading: callbacks.onLoading, waiting: callbacks.onWaiting });
     if (!outcome) break;
     outcomes.push(outcome);
+    callbacks.onSongDone?.(outcome);
   }
   return outcomes;
 }
 
+/** What `analyseOne` tells the batch as a song runs: its step, the load, and the waits for playback. */
+interface SongHooks {
+  progress(step: string | null, stepIndex: number, steps: number): void;
+  loading?(title: string): void;
+  waiting?(waiting: boolean): void;
+}
+
 /** Analyses one song. Returns null when the batch was cancelled, so the song is left as it was. */
-async function analyseOne(
-  song: BatchSong,
-  options: BatchOptions,
-  deps: BatchDeps,
-  signal: AbortSignal,
-  onStep: (step: string) => void,
-): Promise<BatchOutcome | null> {
+async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDeps, signal: AbortSignal, hooks: SongHooks): Promise<BatchOutcome | null> {
   let loaded: { source: PcmAudio; stems: Stems };
+  hooks.loading?.(song.title);
   try {
     loaded = await deps.load(song.id);
   } catch (e) {
@@ -372,15 +400,16 @@ async function analyseOne(
   const lyricsOptions: LyricsOptions = { model: lyrics.model, quality: lyrics.quality, language: languageOf(saved) };
   // The captures are held in objects: the steps and the store fill them in from callbacks, which TypeScript cannot follow.
   const captured: { grid: BeatGrid | null; analysis: SongAnalysis | null; lyrics: string | null } = { grid: null, analysis: null, lyrics: null };
+  const steps = deps.steps(
+    runAnalysis ? analysisIds : [],
+    (found) => (captured.grid = found),
+    () => captured.grid ?? parseBeatGrid(saved.beatGrid),
+    action ? { options: lyricsOptions, pasted: action.kind === "retime" ? action.lines : undefined, onText: (text) => (captured.lyrics = text) } : null,
+  );
   const base = {
     audioId: songAudioId(mix, stems),
     audio,
-    steps: deps.steps(
-      runAnalysis ? analysisIds : [],
-      (found) => (captured.grid = found),
-      () => captured.grid ?? parseBeatGrid(saved.beatGrid),
-      action ? { options: lyricsOptions, pasted: action.kind === "retime" ? action.lines : undefined, onText: (text) => (captured.lyrics = text) } : null,
-    ),
+    steps,
     settings: {
       read: () => parseAnalysis(saved.analysis),
       write: (analysis: SongAnalysis) => (captured.analysis = analysis),
@@ -388,7 +417,7 @@ async function analyseOne(
     // Lyrics-only songs keep their saved analysis, so the run starts from it and nothing is recomputed.
     force: !options.onlyNeeded || !runAnalysis,
     partial: runAnalysis ? undefined : (parseAnalysis(saved.analysis) ?? undefined),
-    onStep: (_: number, name: string) => onStep(name),
+    onStep: (index: number, name: string) => hooks.progress(name, index, steps.length),
   };
   // Playback interrupts the run between steps; the run resumes from the step it stopped at once playback stops. Cancelling stops the
   // run with its reason, and nothing is written.
@@ -406,7 +435,7 @@ async function analyseOne(
       if (signal.aborted) run.abort("cancel");
       outcome = await runSongAnalysis({ ...base, ...(resume ? { from: resume.from, partial: resume.partial } : {}), signal: run.signal });
       if (outcome.status !== "interrupted" || signal.aborted) break;
-      await whenIdle(deps, signal);
+      await whenIdle(deps, signal, hooks.waiting);
       if (signal.aborted) break;
       resume = { from: outcome.next, partial: outcome.analysis };
     }
