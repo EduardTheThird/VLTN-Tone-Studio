@@ -1,11 +1,21 @@
 import { create } from "zustand";
 import type { PcmAudio } from "../types";
-import { lyricsLrc, type LyricSegment } from "./lyrics";
+import { keepWordsWithin, lyricsLrc, songLines } from "./lyrics";
 import { alignLyrics, pastedLines, type TimedWord } from "./lyrics-align";
 import { highPass, normalisePeak } from "./lyrics-input";
 import { singingRegions, transcriptionWindows } from "./vocal-activity";
 import { flushSettings, setSetting } from "./settings";
 import { lyricsOptions, recordLyricsMade, type LyricsOptions } from "./lyrics-options";
+
+/** Chart text and status for pasted lyrics timed against the heard words. */
+function timedLyrics(lines: string[], heard: TimedWord[], duration: number): { text: string; status: string } {
+  const aligned = alignLyrics(lines, heard, duration);
+  const placed = aligned.filter((line) => line.estimated).length;
+  const status = placed
+    ? `Lyrics timed to the vocals. ${placed} line${placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
+    : "Lyrics timed to the vocals.";
+  return { text: lyricsLrc(aligned), status };
+}
 
 export interface LyricsJob {
   busy: boolean;
@@ -70,7 +80,8 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     if (task.cancelled) return;
     // Only the windows with singing go to the transcriber: Whisper invents words over silence and bleed.
     const clean = normalisePeak(highPass(pcm, 16000));
-    const windows = transcriptionWindows(singingRegions(clean, 16000), duration);
+    const regions = singingRegions(clean, 16000);
+    const windows = transcriptionWindows(regions, duration);
     if (!windows.length) {
       update(task, { status: "", error: "No singing found in the vocals. Import or type lyrics, or paste and time yours." });
       finish();
@@ -80,24 +91,18 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     const worker = new Worker(new URL("./lyrics-worker.ts", import.meta.url), { type: "module" });
     task.worker = worker;
     update(task, { status: "Loading lyrics model… First use downloads and caches the model." });
-    worker.onmessage = async (event: MessageEvent<{ status?: string; error?: string; segments?: LyricSegment[]; words?: TimedWord[] }>) => {
+    worker.onmessage = async (event: MessageEvent<{ status?: string; error?: string; words?: TimedWord[] }>) => {
       if (task.cancelled) return;
       if (event.data.status) update(task, { status: event.data.status });
       if (event.data.error) {
         update(task, { error: event.data.error, status: "" });
         finish();
       }
-      if (event.data.words && lines) {
-        const aligned = alignLyrics(lines, event.data.words, duration);
-        const placed = aligned.filter((line) => line.estimated).length;
-        const text = lyricsLrc(aligned);
+      if (event.data.words) {
+        const heard = keepWordsWithin(event.data.words, regions);
+        const { text, status } = lines ? timedLyrics(lines, heard, duration) : { text: lyricsLrc(songLines(heard)), status: "Lyrics ready. Review the words and timing while listening." };
         if (text) {
-          update(task, {
-            text,
-            status: placed
-              ? `Lyrics timed to the vocals. ${placed} line${placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
-              : "Lyrics timed to the vocals.",
-          });
+          update(task, { text, status });
           try {
             for (const alias of task.keys) {
               setSetting(alias, ":lyrics", text);
@@ -105,24 +110,9 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
             }
             await flushSettings();
           } catch (e) {
-            update(task, { error: `Lyrics timed, but saving failed: ${String(e)}. Export a copy.` });
+            update(task, { error: `Lyrics made, but saving failed: ${String(e)}. Export a copy.` });
           }
-        } else update(task, { status: "No words to time. Paste some lyrics first." });
-        finish();
-      } else if (event.data.segments) {
-        const text = lyricsLrc(event.data.segments);
-        if (text) {
-          update(task, { text, status: "Lyrics ready. Review the words and timing while listening." });
-          try {
-            for (const alias of task.keys) {
-              setSetting(alias, ":lyrics", text);
-              recordLyricsMade(alias, options);
-            }
-            await flushSettings();
-          } catch (e) {
-            update(task, { error: `Lyrics generated, but saving failed: ${String(e)}. Export a copy.` });
-          }
-        } else update(task, { status: "No words detected. Import or type lyrics, or retry transcription." });
+        } else update(task, { status: lines ? "No words to time. Paste some lyrics first." : "No words detected. Import or type lyrics, or retry transcription." });
         finish();
       }
     };
@@ -132,7 +122,7 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
         finish();
       }
     };
-    worker.postMessage({ pieces, starts: windows.map((w) => w.start), options, words: lines !== undefined }, pieces.map((piece) => piece.buffer));
+    worker.postMessage({ pieces, starts: windows.map((w) => w.start), options }, pieces.map((piece) => piece.buffer));
   } catch (e) {
     if (!task.cancelled) {
       update(task, { error: String(e), status: "" });
