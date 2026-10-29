@@ -119,7 +119,9 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
         signal: abort.current.signal,
         onProgress: (done, total) => void host.app.setProgress(done / total).catch(() => {}),
       });
-      notifySuccess(`${list.length === 1 ? "1 slot" : `${list.length} slots`} restored`, `${describeSlots(list.map((e) => e.slot), slotLabel)} now hold the presets from ${source.title}. Each slot was checked by reading it back.`);
+      const countText = list.length === 1 ? "1 slot" : `${list.length} slots`;
+      const slotText = describeSlots(list.map((e) => e.slot), slotLabel);
+      notifySuccess(`${countText} restored`, `${slotText} now hold the presets from ${source.title}. Each slot was checked by reading it back.`);
       onOpenChange(false);
     } catch (e) {
       if (e instanceof RestoreError) setFailure({ message: e.failed === null ? e.message : describeError(e.cause), done: e.done, failed: e.failed, notStarted: e.notStarted });
@@ -220,7 +222,9 @@ export function RestoreDialog({ source, onOpenChange }: { source: RestoreSource 
             <Checkbox id={checkId} checked={backupFirst} disabled={running} onCheckedChange={(v) => setBackupFirst(v === true)} className="mt-px" />
             <Label htmlFor={checkId} className="flex flex-col items-start gap-0.5 text-sm">
               <b className="font-semibold">Back up the pedal first</b>
-              <span className="font-normal text-silkscreen-3">Saves what is on the pedal now to a new folder, then compares it with this backup. Takes about {backupSeconds} seconds.</span>
+              <span className="font-normal text-silkscreen-3">
+                Saves what is on the pedal now to a new folder, then compares it with this backup. Takes about {backupSeconds} seconds.
+              </span>
             </Label>
           </div>
         )}

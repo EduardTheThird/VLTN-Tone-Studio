@@ -59,7 +59,13 @@ export function SettingsView() {
           </Row>
           {/* Pruning runs in the desktop app, where the backups folder is. */}
           {isElectron && (
-            <Row label="Keep backups" description="After each backup, the older backups of that pedal move to the Trash. Pinned backups are never moved, and backups of other pedals are left alone.">
+            <Row
+              label="Keep backups"
+              description={
+                "After each backup, the older backups of that pedal move to the Trash. " +
+                "Pinned backups are never moved, and backups of other pedals are left alone."
+              }
+            >
               <Select
                 value={settings.backupRetention}
                 disabled={!loaded}

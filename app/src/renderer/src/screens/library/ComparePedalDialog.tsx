@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { describeError } from "@/app/notify";
 import { host } from "@/host";
 import { useDevice, useProfile } from "@/state/device";
@@ -48,7 +56,8 @@ export function ComparePedalDialog({ collection, onOpenChange }: { collection: C
       return;
     }
     if (d.unsavedChanges > 0) {
-      setError(`The Rig has ${d.unsavedChanges} unsaved ${d.unsavedChanges === 1 ? "change" : "changes"}. Save or discard them first. Reading the pedal would drop them.`);
+      const changes = `${d.unsavedChanges} unsaved ${d.unsavedChanges === 1 ? "change" : "changes"}`;
+      setError(`The Rig has ${changes}. Save or discard them first. Reading the pedal would drop them.`);
       return;
     }
     setReading(true);

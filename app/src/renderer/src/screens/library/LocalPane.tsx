@@ -1,5 +1,22 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { ArchiveIcon, ArrowDownToLineIcon, DownloadIcon, FolderOpenIcon, FolderPlusIcon, GitCompareArrowsIcon, PinIcon, PinOffIcon, HistoryIcon, ImportIcon, InfoIcon, ListMusicIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowDownToLineIcon,
+  DownloadIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  GitCompareArrowsIcon,
+  PinIcon,
+  PinOffIcon,
+  HistoryIcon,
+  ImportIcon,
+  InfoIcon,
+  ListMusicIcon,
+  PencilIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -27,7 +44,9 @@ function subtitle(c: CollectionInfo): string {
   switch (c.kind) {
     case "backup": {
       const all = c.count === profileOrDefault(c.device).slotCount;
-      const when = `${formatDay(c.createdAt)} ${new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}, ${all ? `all ${c.count} slots` : `${c.count} ${c.count === 1 ? "slot" : "slots"}`}`;
+      const time = new Date(c.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+      const amount = all ? `all ${c.count} slots` : `${c.count} ${c.count === 1 ? "slot" : "slots"}`;
+      const when = `${formatDay(c.createdAt)} ${time}, ${amount}`;
       return c.pinned ? `Pinned · ${when}` : when;
     }
     case "imported":

@@ -156,7 +156,17 @@ export class LibraryStore {
     const path = join(this.libraryDir, dir);
     const meta = await this.readMeta(dir);
     const files = await this.prstFiles(path);
-    return { id: `library/${dir}`, kind: meta.kind, title: meta.title, device: null, createdAt: meta.createdAt, count: files.length, path, incomplete: false, pinned: false };
+    return {
+      id: `library/${dir}`,
+      kind: meta.kind,
+      title: meta.title,
+      device: null,
+      createdAt: meta.createdAt,
+      count: files.length,
+      path,
+      incomplete: false,
+      pinned: false,
+    };
   }
 
   async listCollections(): Promise<CollectionInfo[]> {
