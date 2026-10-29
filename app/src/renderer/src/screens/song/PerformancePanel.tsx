@@ -22,6 +22,7 @@ import { parseChart } from "@/song/performance/chart";
 import { useSongAnalysis } from "./use-song-analysis";
 import { METER_CERTAIN, songAudioId } from "@/song/analysis/song-analysis";
 import { withLoudness } from "@/song/audio/loudness";
+import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -392,6 +393,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // The song analysis fills in what the performer has not set: the tempo here, and the rest as its steps are added. Nothing it finds
   // replaces a value that was chosen, which is why a tempo is applied only when no source is recorded for it.
   const chordChanges = useMemo(() => chartChordTimes(parseChart(chart)), [chart]);
+  const [silence, setSilence] = useState<{ songKey: string; ends: SilenceEnds } | null>(null);
   const analysis = useSongAnalysis({
     songKey: key,
     mix: source?.audio ?? null,
@@ -405,6 +407,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
     },
+    onSilence: (found) => setSilence({ songKey: key, ends: found }),
     onParts: (found) => {
       // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
       if (!useSong.getState().missingParts) useSong.setState({ missingParts: found });
@@ -540,7 +543,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         />
         <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
         <SpeedControls session={session} bpm={bpm} />
-        <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
+        <SongShapeControls
+          key={key}
+          songKey={key}
+          audio={source?.audio ?? null}
+          silence={silence?.songKey === key ? silence.ends : null}
+          onChange={() => setShapeVersion((v) => v + 1)}
+        />
         <SessionMidiHealth session={session} />
         <SongKey
           stems={stems}

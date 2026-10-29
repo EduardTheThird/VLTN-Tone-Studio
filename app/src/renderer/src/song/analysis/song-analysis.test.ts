@@ -143,6 +143,11 @@ describe("parseAnalysis", () => {
     expect(parseAnalysis({ audioId: "x", version: 1, parts: { drums: "absent" } })).toEqual({ audioId: "x", version: 1 });
   });
 
+  it("keeps the silence at the ends", () => {
+    const value = { audioId: "x", version: 1, silence: { start: 0.8, end: 6.8 } };
+    expect(parseAnalysis(value)).toEqual(value);
+  });
+
   it("keeps a loudness level", () => {
     const value = { audioId: "x", version: 1, loudness: { lufs: -9.8, peakDb: -0.4 } };
     expect(parseAnalysis(value)).toEqual(value);

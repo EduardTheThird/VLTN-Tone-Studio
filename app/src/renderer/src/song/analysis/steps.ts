@@ -9,6 +9,7 @@ import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio } from "../types";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
+import { silenceEnds } from "./silence";
 import type { AnalysisStep } from "./song-analysis";
 
 /**
@@ -80,6 +81,17 @@ export function loudnessStep(): AnalysisStep {
     async run(audio) {
       const { lufs, peakDb } = await measureLoudnessInWorker(audio.mix);
       return Number.isFinite(lufs) ? { loudness: { lufs, peakDb } } : {};
+    },
+  };
+}
+
+/** Finds the silence at the start and end of the mix. Nothing is saved for a silent song. */
+export function silenceStep(): AnalysisStep {
+  return {
+    name: "silence",
+    async run(audio) {
+      const ends = silenceEnds(audio.mix);
+      return ends ? { silence: ends } : {};
     },
   };
 }

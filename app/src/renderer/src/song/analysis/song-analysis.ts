@@ -3,6 +3,7 @@
 // and stops when playback starts. It imports no React or screen code, so the same run can later work through saved songs headless (spec 72).
 
 import type { MissingParts } from "../band/detect";
+import type { SilenceEnds } from "./silence";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio, Stems } from "../types";
@@ -54,6 +55,8 @@ export interface SongAnalysis {
   loudness?: LoudnessResult;
   /** Whether the song has drums and bass, and where they are absent. Only set when the song was split or has stems. */
   parts?: MissingParts;
+  /** The silence before the first sound and after the last. Offered as a trim; never applied. */
+  silence?: SilenceEnds;
   key?: KeyResult;
   chords?: ChordsResult;
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
@@ -187,6 +190,8 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   const validTempo = !!tempo && typeof tempo.bpm === "number" && typeof tempo.firstBeat === "number" && typeof tempo.steady === "boolean";
   const parts = record.parts as Record<string, unknown> | undefined;
   const validParts = typeof parts?.drums === "string" && typeof parts.bass === "string" && !!parts.absentSections && typeof parts.absentSections === "object";
+  const silence = record.silence as Record<string, unknown> | undefined;
+  const validSilence = typeof silence?.start === "number" && typeof silence.end === "number";
   const loudness = record.loudness as Record<string, unknown> | undefined;
   const validLoudness = typeof loudness?.lufs === "number" && typeof loudness.peakDb === "number";
   const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
@@ -202,6 +207,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     ...(validTempo ? { tempo: { bpm: tempo.bpm as number, firstBeat: tempo.firstBeat as number, steady: tempo.steady as boolean } } : {}),
     ...(validMeter ? { meter: { beatsPerBar: meter.beatsPerBar as 3 | 4, confidence: meter.confidence as number } } : {}),
     ...(validParts ? { parts: parts as unknown as MissingParts } : {}),
+    ...(validSilence ? { silence: { start: silence!.start as number, end: silence!.end as number } } : {}),
     ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),

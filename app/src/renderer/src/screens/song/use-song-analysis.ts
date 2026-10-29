@@ -22,7 +22,8 @@ import {
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
+import type { SilenceEnds } from "@/song/analysis/silence";
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -52,6 +53,8 @@ export interface SongAnalysisInput {
   onLoudness(loudness: LoudnessResult): void;
   /** Called with the drums and bass check of a finished run. The panel uses it when the song has no check yet. */
   onParts(parts: MissingParts): void;
+  /** Called with the silence at the ends of the song. The shape controls offer it as a trim. */
+  onSilence(silence: SilenceEnds): void;
 }
 
 export interface SongAnalysisControl {
@@ -102,7 +105,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     void runSongAnalysis({
       audioId,
       audio,
-      steps: [loudnessStep(), partsStep(), chordsStep(), tempo, keyStep()],
+      steps: [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep()],
       settings: storedAnalysis(songKey),
       from: from.from,
       partial: from.partial,
@@ -123,6 +126,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (outcome.analysis.meter) latest.current.onMeter(outcome.analysis.meter);
       if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
       if (outcome.analysis.parts) latest.current.onParts(outcome.analysis.parts);
+      if (outcome.analysis.silence) latest.current.onSilence(outcome.analysis.silence);
     });
   };
 
