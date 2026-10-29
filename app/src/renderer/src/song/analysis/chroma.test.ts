@@ -50,6 +50,14 @@ describe("chroma", () => {
     expect(argmax(bassChroma![0])).toBe(4);
   });
 
+  it("keeps the E of an A4 with an E5 as loud as the A, not lost between sampled bins", () => {
+    // Above a few hundred hertz a log bin is wider than an FFT bin, so the peak of the E5 must not fall between two sampled points.
+    const pair = Float32Array.from({ length: RATE * 2 }, (_, i) => 0.1 * (Math.sin((2 * Math.PI * 440 * i) / RATE) + Math.sin((2 * Math.PI * 659.255 * i) / RATE)));
+    const { treble } = chromaFrames(mono(pair), spansOf(2));
+    expect(treble[0][4]).toBeGreaterThan(0.35);
+    expect(treble[0][9]).toBeGreaterThan(0.35);
+  });
+
   it("does not light up the fifth of a harmonic-rich tone more than its root", () => {
     // A C3 with partials falling off as 1/k: the fifth only sounds from the third harmonic, so it must stay below the root.
     const partials = Array.from({ length: 8 }, (_, k) => 1 / (k + 1));

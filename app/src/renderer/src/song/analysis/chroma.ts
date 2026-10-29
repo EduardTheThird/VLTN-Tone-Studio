@@ -107,8 +107,10 @@ function transform(audio: PcmAudio, from: number, size: number): boolean {
 }
 
 /**
- * The log-frequency level of the span, after the floor is taken off. The FFT magnitude is read at each log bin's frequency, by linear
- * interpolation between the two FFT bins either side (a triangular weighting). Returns null for silence.
+ * The log-frequency level of the span, after the floor is taken off. Each log bin takes the strongest of two readings. The first reads the
+ * FFT at the bin's own frequency, by linear interpolation between the two FFT bins either side. The second shares every FFT bin between the
+ * two log bins either side of it, with triangular weights in log frequency. The second matters above a few hundred hertz, where a log bin
+ * is wider than an FFT bin is apart: a peak that falls between the two sampled points would otherwise vanish. Returns null for silence.
  */
 function logLevels(audio: PcmAudio, span: ChromaSpan): Float64Array | null {
   const sampleRate = audio.sampleRate;
@@ -118,15 +120,27 @@ function logLevels(audio: PcmAudio, span: ChromaSpan): Float64Array | null {
   const { re, im } = buffersOf();
   // A Hann window of `size` samples gives a sine of amplitude A a peak of A · size / 4, so this scale reads the amplitude back.
   const scale = 4 / at.size;
-  const raw = new Float64Array(LOG_BINS);
+  const amplitude = (k: number) => Math.hypot(re[k], im[k]) * scale;
+  const magnitude = new Float64Array(LOG_BINS);
   for (let j = 0; j < LOG_BINS; j++) {
     const bin = (logHz(j) * CHROMA_FFT) / sampleRate;
     const k = Math.floor(bin),
       frac = bin - k;
     if (k < 1 || k + 1 >= CHROMA_FFT / 2) continue;
-    const magnitude = Math.hypot(re[k], im[k]) * (1 - frac) + Math.hypot(re[k + 1], im[k + 1]) * frac;
-    raw[j] = Math.log(1 + LOG_GAIN * magnitude * scale);
+    magnitude[j] = amplitude(k) * (1 - frac) + amplitude(k + 1) * frac;
   }
+  for (let k = 1; k < CHROMA_FFT / 2; k++) {
+    const hz = (k * sampleRate) / CHROMA_FFT;
+    if (hz < LOG_LOW_HZ || hz >= LOG_HIGH_HZ) continue;
+    const x = BINS_PER_OCTAVE * Math.log2(hz / LOG_LOW_HZ);
+    const j = Math.floor(x),
+      frac = x - j;
+    const value = amplitude(k);
+    magnitude[j] = Math.max(magnitude[j], value * (1 - frac));
+    if (j + 1 < LOG_BINS) magnitude[j + 1] = Math.max(magnitude[j + 1], value * frac);
+  }
+  const raw = new Float64Array(LOG_BINS);
+  for (let j = 0; j < LOG_BINS; j++) raw[j] = Math.log(1 + LOG_GAIN * magnitude[j]);
   return subtractFloor(raw);
 }
 
