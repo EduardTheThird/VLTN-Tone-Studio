@@ -1,4 +1,4 @@
-import { app, net, powerMonitor, powerSaveBlocker, type BrowserWindow } from "electron";
+import { app, net, powerMonitor, powerSaveBlocker, shell, type BrowserWindow } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -21,6 +21,7 @@ import { downloadPart as downloadPartFile, PROGRESS_EVERY_BYTES } from "./model-
 import { songSaveFilters } from './song-save-options';
 import { StagePower } from './stage-power';
 import { SongLibraryStore } from './song-library-store';
+import { createTrash } from './trash';
 import type { LibraryChange, LibrarySong, LibraryTransferProgress, Playlist, RestoreMode } from '@shared/song-library';
 
 // The Song screen's separation models (src/shared/host/song.ts): each file is downloaded on first use into
@@ -86,7 +87,8 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
   app.once('will-quit', () => stagePower.close());
   // After sleep the USB MIDI ports are re-enumerated. The renderer asks the browser for them again rather than trusting the old ones.
   powerMonitor.on('resume', () => sendTo(getWindow, 'song:systemResume'));
-  const library = new SongLibraryStore(libraryRoot());
+  // Deleted songs and PDFs go to the OS Trash; the library's own .trash folder only when the OS refuses.
+  const library = new SongLibraryStore(libraryRoot(), Date.now, createTrash(libraryRoot(), (path) => shell.trashItem(path)));
   handle('song:library:preflight', (_e, ids: string[]) => library.preflight(ids));
   handle('song:library:index', () => library.index());
   handle('song:library:begin', (_e, song: LibrarySong) => library.begin(song));
