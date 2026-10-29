@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
@@ -87,6 +88,7 @@ export function PerformanceTransport({
   onDetect,
   detectDisabled = false,
   detecting = false,
+  beatHint,
   onTap,
   metronome,
 }: {
@@ -98,10 +100,13 @@ export function PerformanceTransport({
   onDetect?: () => void;
   detectDisabled?: boolean;
   detecting?: boolean;
+  /** Finds the beat again from the typed tempo. `lock` keeps that tempo exactly. Not shown when not given. */
+  beatHint?: { bpm: number; onFind(lock: boolean): void };
   onTap: () => void;
   metronome: MetronomeSettings;
 }) {
   const library = useSongLibrary();
+  const [keepExact, setKeepExact] = useState(false);
   const [crossfade, setCrossfade] = useState(readCrossfade);
   const source = useSong((s) => s.source);
   const player = useSession(session, (s) => s.player);
@@ -207,6 +212,22 @@ export function PerformanceTransport({
             <Button variant="outline" disabled={detectDisabled} title="Detect the tempo from the audio" onClick={onDetect}>
               {detecting ? "Detecting…" : "Detect"}
             </Button>
+          )}
+          {beatHint && (
+            <>
+              <Button
+                variant="outline"
+                disabled={detectDisabled || playing}
+                title={`Find the beat again from ${beatHint.bpm} BPM, so the click lines up with the recording`}
+                onClick={() => beatHint.onFind(keepExact)}
+              >
+                Find the beat at {beatHint.bpm} BPM
+              </Button>
+              <label className="flex items-center gap-1.5 text-xs">
+                <Checkbox checked={keepExact} onCheckedChange={(value) => setKeepExact(value === true)} />
+                Keep exactly {beatHint.bpm}
+              </label>
+            </>
           )}
           <Button variant="outline" disabled={playing} title="Tap the tempo (T). Sets the song BPM while stopped." onClick={onTap}>
             Tap tempo

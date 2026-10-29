@@ -23,7 +23,7 @@ import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
 import { METER_CERTAIN, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
-import { sectionsToApply, type DetectedSection } from "@/song/analysis/sections";
+import { sectionsFollowDetection, sectionsFromDetected, sectionsToApply, type DetectedSection } from "@/song/analysis/sections";
 import { withLoudness } from "@/song/audio/loudness";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
@@ -100,6 +100,13 @@ interface DetectSnapshot {
   beatsSource: unknown;
   grid: BeatGrid | null;
   beatGridSource: unknown;
+}
+
+/** A find-the-beat run in progress: the tempo the performer typed, whether it was locked, and the sections before the run. */
+interface PendingFind {
+  hint: number;
+  lock: boolean;
+  sections: Section[];
 }
 
 /** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
@@ -475,6 +482,9 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     onDetect: (found, meter): Notice => {
       // The Detect or Analyse again button took a snapshot before its run, so Undo puts back what the run replaced.
       const before = detectBefore.current ?? snapshotTempo();
+      const find = pendingFind.current;
+      pendingFind.current = null;
+      if (find) return foundBeat(found, find, before);
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
       // The meter replaces a manual one only when the beats agree on it; a weak reading is left alone.
@@ -491,9 +501,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       };
     },
     onSilence: (found) => setSilence({ songKey: key, ends: found }),
-    onSections: (found) => {
+    onSections: (found, rerun) => {
       setSuggested(found);
-      setSectionList((current) => sectionsToApply(current, found) ?? current);
+      // A find-the-beat run lays the sections on the new grid, but only those the performer has not changed since detection.
+      setSectionList((current) => sectionsToApply(current, found) ?? (rerun && sectionsFollowDetection(current, suggested) ? sectionsFromDetected(found) : current));
     },
     onParts: (found) => {
       // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
@@ -533,6 +544,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     };
   };
   const detectBefore = useRef<DetectSnapshot | null>(null);
+  const pendingFind = useRef<PendingFind | null>(null);
   const restoreTempo = (before: DetectSnapshot) => {
     setBpm(before.bpm);
     setFirstBeat(before.firstBeat);
@@ -579,8 +591,35 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   };
   const detectTempo = (analyseAgain: boolean) => {
     detectBefore.current = snapshotTempo();
+    pendingFind.current = null;
     if (analyseAgain) analysis.analyseAgain();
     else analysis.detect();
+  };
+  // Finds the beat again from the typed tempo. The sections as they are now are kept, so Undo can put back any the run re-laid.
+  const findBeat = (lock: boolean) => {
+    detectBefore.current = snapshotTempo();
+    pendingFind.current = { hint: bpm, lock, sections: sectionList };
+    analysis.findBeat({ tempoHint: bpm, lockTempo: lock });
+  };
+  // A tempo the performer set, by hand, by tapping or from the chart: the beat can be found again from it.
+  const typedTempo = tempoSource === "manual" || tempoSource === "tap" || tempoSource === "chart";
+  // The notice for a find-the-beat run. The performer's tempo is kept as manual, so a later analysis does not replace it.
+  const foundBeat = (found: { bpm: number; firstBeat: number }, find: PendingFind, before: DetectSnapshot): Notice => {
+    changeTempo(found.bpm, "manual");
+    setFirstBeat(found.firstBeat);
+    const first = `First beat ${found.firstBeat.toFixed(2)} s.`;
+    return {
+      text: find.lock ? `Beat aligned at ${found.bpm} BPM. ${first}` : `Beat found at ${found.bpm} BPM (you set ${find.hint}). ${first}`,
+      actions: [
+        {
+          label: "Undo",
+          run: () => {
+            undoDetect(before);
+            setSectionList(find.sections);
+          },
+        },
+      ],
+    };
   };
 
   const saveChart = (value: string) => {
@@ -696,6 +735,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           onDetect={() => detectTempo(false)}
           detectDisabled={!source || playing || library.playlistPlaying || !!library.busy || analysis.step !== null}
           detecting={analysis.detecting}
+          beatHint={typedTempo ? { bpm, onFind: findBeat } : undefined}
           metronome={{
             metronome,
             onMetronome: setMetronome,

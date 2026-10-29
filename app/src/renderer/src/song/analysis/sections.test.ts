@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  sectionsFollowDetection,
   sectionsFromDetected,
   sectionsToApply,
   BAR_DETECT,
@@ -188,6 +189,23 @@ describe("applying detected sections", () => {
     { start: 0, end: 16, name: "Verse 1" },
     { start: 16, end: 32, name: "Chorus 1" },
   ];
+
+  it("follows a new detection only while the sections are still the detected ones, untouched", () => {
+    const current = sectionsFromDetected(detected, ids());
+    expect(sectionsFollowDetection(current, detected)).toBe(true);
+    // A boundary moved by hand, a renamed section, a changed mode or colour, or a section removed: each keeps the list as it is.
+    expect(sectionsFollowDetection([{ ...current[0], end: 15 }, current[1]], detected)).toBe(false);
+    expect(sectionsFollowDetection([{ ...current[0], name: "Intro" }, current[1]], detected)).toBe(false);
+    expect(sectionsFollowDetection([{ ...current[0], mode: "loop" }, current[1]], detected)).toBe(false);
+    expect(sectionsFollowDetection([{ ...current[0], color: "#ff0000" }, current[1]], detected)).toBe(false);
+    expect(sectionsFollowDetection([current[0]], detected)).toBe(false);
+  });
+
+  it("does not follow a detection for sections the performer made by hand", () => {
+    const byHand = [{ id: "a", name: "Verse 1", start: 0, end: 16, mode: "continue" as const }, { id: "b", name: "Chorus 1", start: 16, end: 32, mode: "continue" as const }];
+    expect(sectionsFollowDetection(byHand, detected)).toBe(false);
+    expect(sectionsFollowDetection([], detected)).toBe(false);
+  });
   const ids = () => {
     let n = 0;
     return () => `id-${++n}`;

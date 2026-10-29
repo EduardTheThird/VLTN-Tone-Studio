@@ -10,6 +10,8 @@ const fake = vi.hoisted(() => ({
   }),
   // The tempo hint each tempo step was made with, in the order the runs started.
   hints: [] as unknown[],
+  // What the sections step finds. Nothing by default, so the summary of a run stays as it was.
+  sectionsResult: {} as { sections?: unknown[] },
 }));
 vi.mock("@/song/analysis/steps", () => ({
   tempoStep: (_onGrid: unknown, hint: unknown) => {
@@ -21,7 +23,7 @@ vi.mock("@/song/analysis/steps", () => ({
   loudnessStep: () => ({ name: "loudness", run: async () => ({}) }),
   partsStep: () => ({ name: "parts", run: async () => ({}) }),
   silenceStep: () => ({ name: "silence", run: async () => ({}) }),
-  sectionsStep: () => ({ name: "sections", run: async () => ({}) }),
+  sectionsStep: () => ({ name: "sections", run: async () => fake.sectionsResult }),
 }));
 
 import { useSongAnalysis, type SongAnalysisInput } from "./use-song-analysis";
@@ -49,6 +51,7 @@ beforeEach(() => {
   localStorage.clear();
   fake.run.mockClear();
   fake.hints.length = 0;
+  fake.sectionsResult = {};
 });
 
 describe("useSongAnalysis", () => {
@@ -122,6 +125,17 @@ describe("useSongAnalysis", () => {
     expect(fake.hints.at(-1)).toEqual({ tempoHint: 98, lockTempo: true });
     expect(onTempo).toHaveBeenCalledTimes(1);
     expect(fake.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("finds the beat and re-runs the sections on the new grid, flagged as a re-run", async () => {
+    const onSections = vi.fn();
+    fake.sectionsResult = { sections: [] };
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onSections }) });
+    await waitFor(() => expect(onSections).toHaveBeenCalledTimes(1));
+    expect(onSections.mock.calls[0]).toEqual([[], false]);
+    act(() => result.current.findBeat({ tempoHint: 98 }));
+    await waitFor(() => expect(onSections).toHaveBeenCalledTimes(2));
+    expect(onSections.mock.calls[1]).toEqual([[], true]);
   });
 
   it("does not find the beat during playback", async () => {
