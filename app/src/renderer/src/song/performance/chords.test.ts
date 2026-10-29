@@ -48,3 +48,20 @@ describe("chord frames", () => {
     ]);
   });
 });
+
+it("names a I-V-vi-IV loop with no key given, so the key prior comes from the harmony itself", () => {
+  const sampleRate = 22050,
+    seconds = 2;
+  const loop = [
+    [55, 59, 62, 67],
+    [62, 66, 69],
+    [64, 67, 71],
+    [60, 64, 67],
+  ];
+  const pcm = Float32Array.from({ length: loop.length * sampleRate * seconds }, (_, i) => {
+    const notes = loop[Math.floor(i / (sampleRate * seconds))];
+    return notes.reduce((sum, midi) => sum + 0.12 * Math.sin((2 * Math.PI * 440 * 2 ** ((midi - 69) / 12) * i) / sampleRate), 0);
+  });
+  const names = detectChords({ harmony: { sampleRate, channels: [pcm] }, bass: null, beats: null, key: null }).map((chord) => chord.name);
+  expect(names).toEqual(["G", "D", "Em", "C"]);
+});

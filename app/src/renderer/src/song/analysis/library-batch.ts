@@ -11,7 +11,7 @@ import type { AnalysisStep } from "./song-analysis";
 import type { BeatGrid } from "../band/beat-grid";
 
 /** The steps in the order the analysis runs them. The tempo step gives the beat grid to the batch, which saves it with the song. */
-function stepsFor(
+export function stepsFor(
   ids: readonly BatchStepId[],
   onGrid: (grid: BeatGrid) => void,
   gridOf: () => BeatGrid | null,
@@ -23,8 +23,8 @@ function stepsFor(
     ["silence", silenceStep],
     ["parts", partsStep],
     ["tempo", () => tempoStep(onGrid)],
-    ["key", keyStep],
     ["chords", () => chordsStep(gridOf)],
+    ["key", keyStep],
     ["sections", () => sectionsStep(gridOf)],
   ];
   const steps = ordered.filter(([id]) => wanted.has(id)).map(([, make]) => make());

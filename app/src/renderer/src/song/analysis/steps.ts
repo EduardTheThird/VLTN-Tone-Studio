@@ -134,7 +134,8 @@ export function chordsStep(gridOf: () => BeatGrid | null = () => null): Analysis
   return {
     name: "chords",
     async run(audio, signal, soFar) {
-      // The key the song analysis found (it runs before the chords) sets the key prior; without it the harmony estimates the key.
+      // The key runs after the chords, so the key prior is normally the harmony's own estimate. A run that resumes with a key already found
+      // passes it on here instead.
       const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null, key: soFar.key?.estimate.name ?? null };
       const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
       return { chords: { source: audio.harmony.name, chords } };

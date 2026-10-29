@@ -35,13 +35,14 @@ import {
 } from "./song-analysis";
 
 /**
- * The steps the Library dialog offers, in the order the dialog lists them. Lyrics come last: transcription is the slowest step, and it runs
- * after the others for each song. It is off by default, since it can take a long time and downloads a model the first time.
+ * The steps the Library dialog offers, in the order the dialog lists them and the analysis runs them (the key comes after the chords).
+ * Lyrics come last: transcription is the slowest step, and it runs after the others for each song. It is off by default, since it can
+ * take a long time and downloads a model the first time.
  */
 export const BATCH_STEPS = [
   { id: "tempo", label: "Tempo and meter", defaultOn: true },
-  { id: "key", label: "Key", defaultOn: true },
   { id: "chords", label: "Chords", defaultOn: true },
+  { id: "key", label: "Key", defaultOn: true },
   { id: "loudness", label: "Loudness", defaultOn: true },
   { id: "parts", label: "Drums and bass", defaultOn: true },
   { id: "silence", label: "Silence", defaultOn: true },

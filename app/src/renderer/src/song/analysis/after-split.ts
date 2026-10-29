@@ -7,8 +7,8 @@ import { LYRIC_LANGUAGES, loadLyricsOnAnalysis, type LyricsLanguage } from "../p
 
 export const AFTER_SPLIT_STEPS = [
   { id: "tempo", label: "Tempo and beat" },
-  { id: "key", label: "Key" },
   { id: "chords", label: "Chords" },
+  { id: "key", label: "Key" },
   { id: "sections", label: "Sections" },
   { id: "loudness", label: "Loudness and silence" },
   { id: "parts", label: "Drums and bass check" },

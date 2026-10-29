@@ -108,8 +108,8 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
     ["loudness", [loudnessStep(), silenceStep()]],
     ["parts", [partsStep()]],
     ["tempo", [tempo]],
-    ["key", [keyStep()]],
     ["chords", [chords]],
+    ["key", [keyStep()]],
     ["sections", [sections]],
   ];
   const steps = ordered.filter(([id]) => wanted[id]).flatMap(([, made]) => made);
