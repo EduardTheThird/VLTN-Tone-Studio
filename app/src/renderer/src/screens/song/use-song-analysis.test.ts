@@ -31,6 +31,7 @@ const base = (over: Partial<SongAnalysisInput> = {}): SongAnalysisInput => ({
   playing: false,
   onTempo: vi.fn(),
   onMeter: vi.fn(),
+  onDetect: vi.fn(() => null),
   onLoudness: vi.fn(),
   onParts: vi.fn(),
   onSilence: vi.fn(),
@@ -83,11 +84,43 @@ describe("useSongAnalysis", () => {
 
   it("shows the notice a finished run gives, with its action until the next run starts", async () => {
     const undo = vi.fn();
-    const onTempo = vi.fn(() => ({ text: "Tempo detected: 98 BPM (was 120).", action: { label: "Undo", run: undo } }));
+    const onTempo = vi.fn(() => ({ text: "Tempo detected: 98 BPM (was 120).", actions: [{ label: "Undo", run: undo }] }));
     const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onTempo }) });
     await waitFor(() => expect(result.current.notices.map((n) => n.text)).toEqual(["Tempo detected: 98 BPM (was 120)."]));
-    act(() => result.current.notices[0].action?.run());
+    act(() => result.current.notices[0].actions?.[0].run());
     expect(undo).toHaveBeenCalledTimes(1);
+  });
+
+  it("detects the tempo again through onDetect, not onTempo, and runs only the tempo step", async () => {
+    const onTempo = vi.fn();
+    const onDetect = vi.fn(() => null);
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onTempo, onDetect }) });
+    await waitFor(() => expect(onTempo).toHaveBeenCalledTimes(1));
+    act(() => result.current.detect());
+    expect(result.current.detecting).toBe(true);
+    await waitFor(() => expect(onDetect).toHaveBeenCalledWith({ bpm: 98, firstBeat: 0.4, steady: true }, { beatsPerBar: 3, confidence: 0.9 }));
+    expect(onTempo).toHaveBeenCalledTimes(1);
+    expect(result.current.detecting).toBe(false);
+    expect(fake.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not detect during playback", async () => {
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ playing: true }) });
+    act(() => result.current.detect());
+    act(() => result.current.analyseAgain());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fake.run).not.toHaveBeenCalled();
+  });
+
+  it("analyses again through onDetect, so the saved tempo and meter are replaced", async () => {
+    const onDetect = vi.fn(() => null);
+    const onTempo = vi.fn();
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onDetect, onTempo }) });
+    await waitFor(() => expect(onTempo).toHaveBeenCalledTimes(1));
+    act(() => result.current.analyseAgain());
+    await waitFor(() => expect(onDetect).toHaveBeenCalledTimes(1));
+    expect(onTempo).toHaveBeenCalledTimes(1);
+    expect(fake.run).toHaveBeenCalledTimes(2);
   });
 
   it("reruns a finished song from the start, and does not rerun during playback", async () => {

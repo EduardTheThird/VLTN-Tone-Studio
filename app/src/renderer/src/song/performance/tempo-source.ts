@@ -1,4 +1,4 @@
-import type { BeatGrid } from "../band/beat-grid";
+import { doubleTempo, halveTempo, type BeatGrid } from "../band/beat-grid";
 
 /**
  * Where a song's tempo came from. Earlier builds saved 120 for every song that was never given a tempo, so a saved 120 with no source is
@@ -34,4 +34,22 @@ export function tempoFromGrid(grid: BeatGrid): { bpm: number; firstBeat: number;
   if (!Number.isFinite(bpm) || bpm <= 0) return null;
   const firstBeat = grid.steady ? grid.steady.firstBeat : (grid.beats[grid.downbeat] ?? grid.beats[0]);
   return { bpm, firstBeat, steady: !!grid.steady };
+}
+
+/**
+ * The half and double of a tempo, to 0.1 BPM, kept in the song range. A detected 140 offers 70 and 280, so the performer can pick the
+ * one that matches the song when the beat tracker counted the wrong beats.
+ */
+export function tempoOctaves(bpm: number): number[] {
+  return [bpm / 2, bpm * 2].map((value) => Math.round(value * 10) / 10).filter((value) => value >= 30 && value <= 300);
+}
+
+/**
+ * The grid at another tempo from `octave`: the half keeps every other beat and the double adds the midpoints, as the Band panel's tempo
+ * buttons do. Used when the performer picks a half or double tempo for a grid already laid out.
+ */
+export function gridAtOctave(grid: BeatGrid, from: number, to: number): BeatGrid {
+  if (to < from) return halveTempo(grid);
+  if (to > from) return doubleTempo(grid);
+  return grid;
 }

@@ -16,7 +16,9 @@ import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type 
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
-import { needsTempoDetection, readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
+import { gridAtOctave, needsTempoDetection, readTempoSource, tempoOctaves, type TempoSource } from "@/song/performance/tempo-source";
+import { readStoredBand, writeStoredBand } from "@/song/band/stored";
+import type { BeatGrid } from "@/song/band/beat-grid";
 import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
@@ -83,6 +85,19 @@ function readGlobalMetronome(): MetronomeMode {
 }
 
 const NO_TRACKS: Record<string, TrackInfo> = {};
+
+/** The tempo, meter and beat grid as they were before a Detect run, so its Undo can put them back. */
+interface DetectSnapshot {
+  /** The saved BPM text, so an undo writes back exactly what was saved, including an empty tempo. */
+  savedBpm: string;
+  bpm: number;
+  firstBeat: number;
+  tempoSource: TempoSource | null;
+  beats: number;
+  beatsSource: unknown;
+  grid: BeatGrid | null;
+  beatGridSource: unknown;
+}
 
 /** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
 export function PerformancePanel({ shown = true }: { shown?: boolean }) {
@@ -418,13 +433,33 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       if (saved !== "120") return null;
       return {
         text: `Tempo detected: ${found.bpm} BPM (was ${previous.bpm}).`,
-        action: {
-          label: "Undo",
-          run: () => {
-            changeTempo(previous.bpm, "manual");
-            setFirstBeat(previous.firstBeat);
+        actions: [
+          {
+            label: "Undo",
+            run: () => {
+              changeTempo(previous.bpm, "manual");
+              setFirstBeat(previous.firstBeat);
+            },
           },
-        },
+        ],
+      };
+    },
+    onDetect: (found, meter): Notice => {
+      // The Detect or Analyse again button took a snapshot before its run, so Undo puts back what the run replaced.
+      const before = detectBefore.current ?? snapshotTempo();
+      changeTempo(found.bpm, "detected");
+      setFirstBeat(found.firstBeat);
+      // The meter replaces a manual one only when the beats agree on it; a weak reading is left alone.
+      if (meter && meter.confidence >= METER_CERTAIN) {
+        if (meter.beatsPerBar !== beats) applyMeter(meter.beatsPerBar);
+        else changeBeats(meter.beatsPerBar, "detected");
+      }
+      return {
+        text: `Tempo detected: ${found.bpm} BPM.`,
+        actions: [
+          ...tempoOctaves(found.bpm).map((value) => ({ label: `Use ${value}`, run: () => useTempoOctave(found.bpm, value, before) })),
+          { label: "Undo", run: () => undoDetect(before) },
+        ],
       };
     },
     onSilence: (found) => setSilence({ songKey: key, ends: found }),
@@ -447,9 +482,73 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         return null;
       }
       if (beats === 3) return null;
-      return { text: "Sounds like 3/4.", action: { label: "Use it", run: () => applyMeter(3) } };
+      return { text: "Sounds like 3/4.", actions: [{ label: "Use it", run: () => applyMeter(3) }] };
     },
   });
+
+  // The tempo, first beat, meter and beat grid as they are now, so a Detect run can be undone.
+  const snapshotTempo = (): DetectSnapshot => {
+    const options = readOptions<Record<string, unknown>>(key, {});
+    return {
+      savedBpm: getSetting(key, ":bpm"),
+      bpm,
+      firstBeat,
+      tempoSource,
+      beats,
+      beatsSource: options.beatsSource,
+      grid: readStoredBand(key).grid,
+      beatGridSource: options.beatGridSource,
+    };
+  };
+  const detectBefore = useRef<DetectSnapshot | null>(null);
+  const restoreTempo = (before: DetectSnapshot) => {
+    setBpm(before.bpm);
+    setFirstBeat(before.firstBeat);
+    setTempoSource(before.tempoSource);
+    setBeats(before.beats);
+    setBeatsManual(before.beatsSource === "manual");
+    try {
+      setSetting(key, ":bpm", before.savedBpm);
+      writeStoredBand(key, { beatGrid: before.grid });
+      setSetting(
+        key,
+        ":options",
+        JSON.stringify({
+          ...readOptions(key, {}),
+          tempoSource: before.tempoSource ?? undefined,
+          firstBeat: before.firstBeat,
+          beatsSource: before.beatsSource,
+          beatGridSource: before.beatGridSource,
+        }),
+      );
+    } catch (e) {
+      session.fail(e);
+    }
+  };
+  const undoDetect = (before: DetectSnapshot) => {
+    restoreTempo(before);
+    analysis.show([]);
+  };
+  // Picks the half or double of the detected tempo. The grid is laid out at that tempo, so the Band panel and the click agree.
+  const useTempoOctave = (detected: number, value: number, before: DetectSnapshot) => {
+    const grid = readStoredBand(key).grid;
+    const laid: BeatGrid | null = grid ? gridAtOctave(grid, detected, value) : null;
+    changeTempo(value, "detected");
+    if (laid) setFirstBeat(laid.steady?.firstBeat ?? laid.beats[laid.downbeat] ?? firstBeat);
+    try {
+      if (laid) {
+        writeStoredBand(key, { beatGrid: laid });
+        setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatGridSource: "analysis" }));
+      }
+    } catch (e) {
+      session.fail(e);
+    }
+    analysis.show([{ text: `Tempo set to ${value} BPM.`, actions: [{ label: "Undo", run: () => undoDetect(before) }] }]);
+  };
+  const detectTempo = () => {
+    detectBefore.current = snapshotTempo();
+    analysis.detect();
+  };
 
   const saveChart = (value: string) => {
     session.pause();
@@ -534,17 +633,17 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         {analysis.notices.map((notice) => (
           <p key={notice.text} className="flex flex-wrap items-center gap-2 text-xs" role="status">
             <span>{notice.text}</span>
-            {notice.action ? (
-              <Button variant="outline" size="sm" disabled={playing || library.playlistPlaying} onClick={notice.action.run}>
-                {notice.action.label}
+            {notice.actions?.map((action) => (
+              <Button key={action.label} variant="outline" size="sm" disabled={playing || library.playlistPlaying || analysis.step !== null} onClick={action.run}>
+                {action.label}
               </Button>
-            ) : null}
+            ))}
           </p>
         ))}
-        {analysis.step || analysis.message ? (
+        {analysis.step || analysis.detecting || analysis.message ? (
           <p className="flex flex-wrap items-center gap-2 text-xs" role="status">
-            <span>{analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
-            {analysis.step ? (
+            <span>{analysis.detecting ? "Detecting…" : analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
+            {analysis.step || analysis.detecting ? (
               <Button variant="outline" size="sm" onClick={analysis.cancel}>
                 Cancel
               </Button>
@@ -556,6 +655,9 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           stage={stage}
           bpm={bpm}
           onBpm={(value) => changeTempo(value, "manual")}
+          onDetect={detectTempo}
+          detectDisabled={!source || playing || library.playlistPlaying || !!library.busy || analysis.step !== null}
+          detecting={analysis.detecting}
           metronome={{
             metronome,
             onMetronome: setMetronome,

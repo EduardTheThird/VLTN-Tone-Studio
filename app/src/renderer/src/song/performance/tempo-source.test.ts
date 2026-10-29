@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
-import { needsTempoDetection, readTempoSource, tempoFromGrid } from "./tempo-source";
+import { gridAtOctave, needsTempoDetection, readTempoSource, tempoFromGrid, tempoOctaves } from "./tempo-source";
+import { halveTempo, doubleTempo } from "../band/beat-grid";
 
 describe("readTempoSource", () => {
   it("reads a recorded source", () => {
@@ -55,5 +56,34 @@ describe("tempoFromGrid", () => {
   it("keeps the tempo in the song range", () => {
     expect(tempoFromGrid(grid({ bpm: 350 }))?.bpm).toBe(300);
     expect(tempoFromGrid(grid({ bpm: 12 }))?.bpm).toBe(30);
+  });
+});
+
+describe("tempoOctaves", () => {
+  it("offers the half and the double of a detected tempo", () => {
+    expect(tempoOctaves(140)).toEqual([70, 280]);
+  });
+
+  it("rounds to 0.1 BPM", () => {
+    expect(tempoOctaves(97.3)).toEqual([48.7, 194.6]);
+  });
+
+  it("drops a tempo outside the song range", () => {
+    expect(tempoOctaves(40)).toEqual([80]);
+    expect(tempoOctaves(200)).toEqual([100]);
+  });
+});
+
+describe("gridAtOctave", () => {
+  const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.5);
+  const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 120, steady: null };
+
+  it("halves a grid when the tempo goes down, and doubles it when it goes up", () => {
+    expect(gridAtOctave(grid, 120, 60)).toEqual(halveTempo(grid));
+    expect(gridAtOctave(grid, 120, 240)).toEqual(doubleTempo(grid));
+  });
+
+  it("leaves the grid alone for the same tempo", () => {
+    expect(gridAtOctave(grid, 120, 120)).toBe(grid);
   });
 });
