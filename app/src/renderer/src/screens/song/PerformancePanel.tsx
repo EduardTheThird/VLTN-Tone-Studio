@@ -367,7 +367,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
 
   // The view actions of the remote bindings. The session is handed them again whenever the screen changes.
   useEffect(() => {
-    session.setView(buildViewHost({ stage, setStage, metronome, setMetronome, mix, setMix, tracks, tap }));
+    session.setView(buildViewHost({ stage, setStage, metronome, setMetronome, mix, setMix, tracks, partChoices: partChoice, choosePart, tap }));
   });
 
   /** Writes the live loop and release choices into the sections' stored modes, which are saved with the song. */
