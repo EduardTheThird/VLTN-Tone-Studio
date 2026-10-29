@@ -243,7 +243,8 @@ export function createSongRunner(deps: RunnerDeps) {
     const out: RunNotice[] = [];
     const undo: NoticeAction = { label: "Undo", patch: undoPatch(before) };
     if (analysis.tempo && run.options.hint) {
-      const text = run.options.hint.lockTempo ? `Beat aligned at ${analysis.tempo.bpm} BPM.` : `Beat found at ${analysis.tempo.bpm} BPM (you set ${run.options.hint.tempoHint}).`;
+      const { hint } = run.options;
+      const text = hint.lockTempo ? `Beat aligned at ${analysis.tempo.bpm} BPM.` : `Beat found at ${analysis.tempo.bpm} BPM (you set ${hint.tempoHint}).`;
       out.push({ text: `${text} First beat ${analysis.tempo.firstBeat.toFixed(2)} s.`, actions: [undo] });
     } else if (analysis.tempo && run.options.tempoOnly) {
       const octaves = tempoOctaveChoices(analysis.tempo.bpm).map((value) => ({ label: `Use ${value}`, patch: octavePatch(run, analysis, value) }));
