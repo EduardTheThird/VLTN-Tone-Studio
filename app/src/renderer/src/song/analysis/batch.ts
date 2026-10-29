@@ -24,6 +24,7 @@ import {
 import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
 import type { LyricsModelId } from "../performance/lyrics-models";
 import { buildAnalysisAudio } from "./analysis-audio";
+import type { LyricsStepInput } from "./steps";
 import { sectionsToApply } from "./sections";
 import {
   ANALYSIS_VERSION,
@@ -89,16 +90,24 @@ export const DEFAULT_LYRICS_BATCH: LyricsBatchOptions = { model: "small", qualit
  */
 export type LyricsSkip = "open" | "none" | "user" | "pasted" | "unknown" | "made" | "model";
 
-/** The order the reasons are listed in, and the words each one reads as after a count. */
-const LYRICS_SKIPS: { reason: LyricsSkip; label: string }[] = [
-  { reason: "open", label: "open on the Performance screen" },
-  { reason: "none", label: "with no lyrics" },
-  { reason: "user", label: "written by you" },
-  { reason: "pasted", label: "your pasted lyrics, not re-timed" },
-  { reason: "unknown", label: "from before 0.9.2" },
-  { reason: "made", label: "made by Tone Studio" },
-  { reason: "model", label: "made with this model" },
+/**
+ * The order the reasons are listed in. `label` reads after a count in the summary ("2 from before 0.9.2"); `has` completes "Lyrics
+ * skipped: " for one song.
+ */
+const LYRICS_SKIPS: { reason: LyricsSkip; label: string; has: string }[] = [
+  { reason: "open", label: "open on the Performance screen", has: "is open on the Performance screen" },
+  { reason: "none", label: "with no lyrics", has: "has no lyrics" },
+  { reason: "user", label: "written by you", has: "has lyrics you wrote" },
+  { reason: "pasted", label: "your pasted lyrics, not re-timed", has: "has your pasted lyrics, not re-timed" },
+  { reason: "unknown", label: "from before 0.9.2", has: "has lyrics from before 0.9.2" },
+  { reason: "made", label: "made by Tone Studio", has: "has lyrics Tone Studio made" },
+  { reason: "model", label: "made with this model", has: "has lyrics made with this model" },
 ];
+
+/** The words for a skip reason, as the summary and a song's line in the list read them. */
+export function lyricsSkipLabel(reason: LyricsSkip): string {
+  return LYRICS_SKIPS.find((skip) => skip.reason === reason)?.label ?? reason;
+}
 
 export interface BatchOptions {
   /** Analyse only the songs whose saved analysis is missing, older, or has no tempo of its own. */
@@ -171,7 +180,7 @@ export function describeLyricsPlan(plan: LyricsPlan, lyrics: Pick<LyricsBatchOpt
   const total = plan.run + plan.skipped.reduce((sum, skip) => sum + skip.count, 0);
   const head = `Lyrics: ${plan.run} of ${total} song${total === 1 ? "" : "s"} will get new lyrics.`;
   if (!plan.skipped.length) return head;
-  const skipped = plan.skipped.map(({ reason, count }) => `${count} ${LYRICS_SKIPS.find((s) => s.reason === reason)?.label ?? reason}`).join(", ");
+  const skipped = plan.skipped.map(({ reason, count }) => `${count} ${lyricsSkipLabel(reason)}`).join(", ");
   const hint = !lyrics.unknown && lyrics.which !== "empty" && plan.skipped.some((skip) => skip.reason === "unknown") ? " Tick the box above to include them." : "";
   return `${head} Skipped: ${skipped}.${hint}`;
 }
@@ -307,10 +316,34 @@ function applyAnalysis(
   return tempoChange;
 }
 
-/** How one song came out of the batch. A cancelled song is not listed: it is left as it was. */
-/** What the lyrics step did for a song: a chart made from the vocals, the performer's words timed, nothing heard, or it failed. */
-export type LyricsOutcome = "made" | "timed" | "none" | "failed";
+/**
+ * What the lyrics step did for a song: a chart made from the vocals (`made`), the performer's words timed (`timed`), no words heard
+ * (`none`), a failure with its message (`failed`), or a skip with its reason (`skipped`).
+ */
+export type LyricsOutcome =
+  | { kind: "made" }
+  | { kind: "timed" }
+  | { kind: "none" }
+  | { kind: "failed"; reason: string }
+  | { kind: "skipped"; reason: LyricsSkip };
 
+/** One line for a song's lyrics in the list: what was made, timed or skipped, and why. */
+export function describeLyricsOutcome(outcome: LyricsOutcome): string {
+  switch (outcome.kind) {
+    case "made":
+      return "lyrics transcribed";
+    case "timed":
+      return "lyrics timed";
+    case "none":
+      return "lyrics: no words heard";
+    case "failed":
+      return `lyrics failed: ${outcome.reason}`;
+    case "skipped":
+      return `Lyrics skipped: ${LYRICS_SKIPS.find((skip) => skip.reason === outcome.reason)?.has ?? outcome.reason}`;
+  }
+}
+
+/** How one song came out of the batch. A cancelled song is not listed: it is left as it was. */
 export type BatchOutcome =
   | { id: string; title: string; status: "analysed"; tempoChange: WriteBack["tempoChange"]; noBeat: boolean; lyrics: LyricsOutcome | null }
   | { id: string; title: string; status: "lyrics"; lyrics: LyricsOutcome }
@@ -361,7 +394,7 @@ export interface BatchDeps {
     ids: readonly BatchStepId[],
     onGrid: (grid: BeatGrid) => void,
     gridOf: () => BeatGrid | null,
-    lyrics: { options: LyricsOptions; pasted?: string[]; onText(text: string): void } | null,
+    lyrics: LyricsStepInput | null,
   ): AnalysisStep[];
   /** Writes the settings of a saved song through the library's settings writers. Not the song store. */
   write(id: string, values: Record<string, string>): void;
@@ -456,15 +489,36 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
   // With the analysis not needed (only songs that need it), the saved analysis is kept and only the lyrics step runs.
   const analysisIds = ids.filter((id) => id !== "lyrics");
   const runAnalysis = analysisIds.length > 0 && (!options.onlyNeeded || needsAnalysis(song));
-  if (!runAnalysis && !action) return { id: song.id, title: song.title, status: "current" };
+  // A chart the lyrics step leaves alone says why, so the song is not reported as simply up to date.
+  const skip: LyricsSkip | null = lyricsOn && !action ? lyricsSkip(song, lyrics) : null;
+  const skipped: LyricsOutcome | null = skip ? { kind: "skipped", reason: skip } : null;
+  if (!runAnalysis && !action) {
+    if (skipped) return { id: song.id, title: song.title, status: "lyrics", lyrics: skipped };
+    return { id: song.id, title: song.title, status: "current" };
+  }
   const lyricsOptions: LyricsOptions = { model: lyrics.model, quality: lyrics.quality, language: languageOf(saved) };
   // The captures are held in objects: the steps and the store fill them in from callbacks, which TypeScript cannot follow.
-  const captured: { grid: BeatGrid | null; analysis: SongAnalysis | null; lyrics: string | null } = { grid: null, analysis: null, lyrics: null };
+  const captured: { grid: BeatGrid | null; analysis: SongAnalysis | null; lyrics: string | null; lyricsError: string | null; step: { index: number; name: string } } = {
+    grid: null,
+    analysis: null,
+    lyrics: null,
+    lyricsError: null,
+    step: { index: 0, name: "" },
+  };
   const steps = deps.steps(
     runAnalysis ? analysisIds : [],
     (found) => (captured.grid = found),
     () => captured.grid ?? parseBeatGrid(saved.beatGrid),
-    action ? { options: lyricsOptions, pasted: action.kind === "retime" ? action.lines : undefined, onText: (text) => (captured.lyrics = text) } : null,
+    action
+      ? {
+          options: lyricsOptions,
+          pasted: action.kind === "retime" ? action.lines : undefined,
+          onText: (text) => (captured.lyrics = text),
+          // The transcriber's status (a model download, the CPU fallback) replaces the step's name while it lasts.
+          onStatus: (status) => hooks.progress(lyricsStepText(status), captured.step.index, steps.length),
+          onError: (reason) => (captured.lyricsError = reason),
+        }
+      : null,
   );
   const base = {
     audioId: songAudioId(mix, stems),
@@ -477,7 +531,10 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
     // Lyrics-only songs keep their saved analysis, so the run starts from it and nothing is recomputed.
     force: !options.onlyNeeded || !runAnalysis,
     partial: runAnalysis ? undefined : (parseAnalysis(saved.analysis) ?? undefined),
-    onStep: (index: number, name: string) => hooks.progress(name, index, steps.length),
+    onStep: (index: number, name: string) => {
+      captured.step = { index, name };
+      hooks.progress(name, index, steps.length);
+    },
   };
   // Playback interrupts the run between steps; the run resumes from the step it stopped at once playback stops. Cancelling stops the
   // run with its reason, and nothing is written.
@@ -505,8 +562,15 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
   }
   if (signal.aborted || !outcome || outcome.status !== "complete") return null;
   if (deps.isOpen(song.id)) return { id: song.id, title: song.title, status: "skipped", reason: "open" };
-  const lyricsFailed = outcome.analysis.failed?.includes("lyrics") ?? false;
-  const lyricsOutcome: LyricsOutcome | null = !action ? null : lyricsFailed ? "failed" : captured.lyrics === null ? "none" : action.kind === "retime" ? "timed" : "made";
+  const lyricsOutcome: LyricsOutcome | null = !lyricsOn
+    ? null
+    : !action
+      ? skipped
+      : captured.lyricsError !== null
+        ? { kind: "failed", reason: captured.lyricsError }
+        : captured.lyrics === null
+          ? { kind: "none" }
+          : { kind: action.kind === "retime" ? "timed" : "made" };
   // Only a run that really analysed the song writes its analysis. A current analysis is not run again, so it is not written again.
   const analysis = runAnalysis ? captured.analysis : null;
   const lyricsWrite: LyricsWrite | null =
@@ -514,12 +578,12 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
       ? { text: captured.lyrics, source: action.kind === "retime" ? "aligned" : "transcribed", made: lyricsMadeRecord(lyricsOptions, new Date().toISOString()) }
       : null;
   if (!analysis && !lyricsWrite) {
-    if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? "none" };
+    if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? { kind: "none" } };
     return { id: song.id, title: song.title, status: "current" };
   }
   const plan = planWriteBack(song, analysis, captured.grid, options.replaceManual, lyricsWrite);
   deps.write(song.id, plan.values);
-  if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? "none" };
+  if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? { kind: "none" } };
   return { id: song.id, title: song.title, status: "analysed", tempoChange: plan.tempoChange, noBeat: !!analysis && !analysis.tempo, lyrics: lyricsOutcome };
 }
 
@@ -547,15 +611,37 @@ export function describeBatch(outcomes: readonly BatchOutcome[]): string {
   if (current) parts.push(`${current} already up to date.`);
   const open = outcomes.filter((o) => o.status === "skipped").length;
   if (open) parts.push(`${open} skipped (open).`);
-  const lyrics = outcomes.flatMap((o) => (o.status === "analysed" || o.status === "lyrics" ? [o.lyrics] : []));
-  const made = lyrics.filter((l) => l === "made").length;
-  const timed = lyrics.filter((l) => l === "timed").length;
-  if (made) parts.push(`Lyrics made for ${made} song${made === 1 ? "" : "s"}.`);
-  if (timed) parts.push(`Lyrics timed for ${timed} song${timed === 1 ? "" : "s"}.`);
-  const nothing = lyrics.filter((l) => l === "none").length;
-  if (nothing) parts.push(`${nothing} had no words heard.`);
-  const lyricsFailed = lyrics.filter((l) => l === "failed").length;
-  if (lyricsFailed) parts.push(`${lyricsFailed} lyrics could not be made.`);
+  const lyrics = outcomes.flatMap((o) => (o.status === "analysed" || o.status === "lyrics" ? (o.lyrics ? [o.lyrics] : []) : []));
+  if (lyrics.length) parts.push(describeLyricsSummary(lyrics));
   for (const f of outcomes) if (f.status === "failed") parts.push(`${f.title}: ${f.reason}`);
+  for (const o of outcomes) {
+    if ((o.status === "analysed" || o.status === "lyrics") && o.lyrics?.kind === "failed") parts.push(`${o.title}: ${describeLyricsOutcome(o.lyrics)}.`);
+  }
   return parts.join(" ");
+}
+
+/**
+ * The lyrics line of the summary: how many charts were made, timed, found empty, failed or skipped, and why the skipped ones were skipped.
+ * "Lyrics: 0 transcribed, 6 skipped (from before 0.9.2)."
+ */
+function describeLyricsSummary(lyrics: readonly LyricsOutcome[]): string {
+  const count = (kind: LyricsOutcome["kind"]) => lyrics.filter((l) => l.kind === kind).length;
+  const parts = [`${count("made")} transcribed`];
+  if (count("timed")) parts.push(`${count("timed")} timed`);
+  if (count("none")) parts.push(`${count("none")} with no words heard`);
+  if (count("failed")) parts.push(`${count("failed")} failed`);
+  for (const { reason, label } of LYRICS_SKIPS) {
+    const skipped = lyrics.filter((l) => l.kind === "skipped" && l.reason === reason).length;
+    if (skipped) parts.push(`${skipped} skipped (${label})`);
+  }
+  return `Lyrics: ${parts.join(", ")}.`;
+}
+
+/**
+ * The line the batch's status shows for the lyrics step while the transcriber runs. A model download reads as "downloading model 34%";
+ * any other status is shown as the transcriber gives it.
+ */
+export function lyricsStepText(status: string): string {
+  const download = /^Downloading lyrics model: (\d+)%/.exec(status);
+  return download ? `lyrics: downloading model ${download[1]}%` : `lyrics: ${status}`;
 }

@@ -176,6 +176,10 @@ export interface LyricsStepInput {
   pasted?: string[];
   /** Receives the chart text when the step found words. The caller decides whether to save it. */
   onText(text: string): void;
+  /** Receives the transcriber's status as it goes, such as a model download. */
+  onStatus?(status: string): void;
+  /** Receives why the step failed, before the error goes on to the run. A stop is not a failure, so nothing is reported for it. */
+  onError?(reason: string): void;
 }
 
 /**
@@ -188,8 +192,13 @@ export function lyricsStep(input: LyricsStepInput): AnalysisStep {
     async run(audio, signal) {
       const vocals = audio.stems?.vocals;
       if (!vocals) return {};
-      const { text } = await transcribeLyrics({ audio: vocals, options: input.options, pasted: input.pasted, signal });
-      if (text) input.onText(text);
+      try {
+        const { text } = await transcribeLyrics({ audio: vocals, options: input.options, pasted: input.pasted, signal, onStatus: input.onStatus });
+        if (text) input.onText(text);
+      } catch (e) {
+        if (!signal.aborted) input.onError?.(e instanceof Error ? e.message : String(e));
+        throw e;
+      }
       return {};
     },
   };
