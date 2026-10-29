@@ -341,7 +341,7 @@ Check the receiving device on the rig before relying on it, and see the timecode
 
 ## Generated drums and bass
 
-For a song with no drums or no bass, the Band panel can generate them to play along. The split notice names the part that is missing. Press **Band** on the Performance screen to open the panel and make it.
+The Band panel can generate drums and bass to play along, for a song that is missing them and for one that already has them. The split notice names a part that is missing. Press **Band** on the Performance screen to open the panel and make them.
 
 **Find the beat.** Press **Find the beat** first. It listens to the drums stem if there is one, then the pitched stems, then the whole mix. The panel shows what it found, for example "120.0 BPM, steady, 16 beats, 4 per bar". The parts follow this beat grid, so check it before you generate.
 
@@ -377,6 +377,8 @@ If the grid is wrong, correct it:
 Everything here works offline, and the samples ship with the app. Generating, removing, previewing and exporting are all off during playback, so press Stop first.
 
 The parts are normal tracks in the mixer, so you can mute, solo or set their volume. The bass follows the song's pitch shift, as set by **Follows pitch** on its track. The drums do not, since a drum hit has no pitch to shift.
+
+**What plays.** Under the Band panel's status, each part has its own choice: **Original** plays the drums or bass the split found, **Generated** plays the band's part, and **Both** plays the two together. Generated and Both need a generated part, so generate the part first. Generate switches a part that was on Original to Generated, so you hear what you made, and says so. Remove generated parts puts both parts back on Original. The choice is saved with the song, and works on a song that already has the part. Switching only changes the mute levels of the two tracks, so a switch during playback is click-free and playback keeps going. Your volume and pan on each track stay as they were. Apply to similar songs copies the choice when both songs have generated parts. Remote and MIDI bindings can toggle a part between Original and Generated with **Toggle drums: original or generated** and **Toggle bass: original or generated**.
 
 **Limits.**
 
