@@ -20,12 +20,13 @@ import type { AnalysisStep } from "./song-analysis";
 export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
   return {
     name: "tempo",
-    async run(audio, signal) {
+    async run(audio, signal, soFar) {
+      // The chart's chord changes are used when it has them. Otherwise the chords the analysis found stand in for them.
       const job = startBeatGrid({
         sources: audio.sources,
         sampleRate: audio.sampleRate,
         beatsPerBar: audio.beatsPerBar,
-        chordChanges: audio.chordChanges,
+        chordChanges: audio.chordChanges.length ? audio.chordChanges : chordChangeTimes(soFar.chords?.chords ?? []),
       });
       const stop = () => job.cancel();
       signal.addEventListener("abort", stop, { once: true });
@@ -42,6 +43,11 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
       return meter ? { tempo, meter } : { tempo };
     },
   };
+}
+
+/** The times the chord name changes, in seconds. The first chord is not a change. */
+export function chordChangeTimes(chords: readonly Chord[]): number[] {
+  return chords.flatMap((chord, i) => (i > 0 && chord.name !== chords[i - 1].name ? [chord.time] : []));
 }
 
 /**

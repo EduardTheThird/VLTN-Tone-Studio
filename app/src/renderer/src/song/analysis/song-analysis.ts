@@ -92,8 +92,11 @@ export type StepResult = Partial<Omit<SongAnalysis, "audioId" | "version" | "fai
 export interface AnalysisStep {
   /** Written to `failed` when the step throws. */
   name: string;
-  /** Does the work for one song. Throws on failure; the run records it and carries on. */
-  run(audio: AnalysisAudio, signal: AbortSignal): Promise<StepResult>;
+  /**
+   * Does the work for one song. `soFar` is what the earlier steps have found, so a later step can use it (the tempo step reads the chord
+   * changes from it). Throws on failure; the run records it and carries on.
+   */
+  run(audio: AnalysisAudio, signal: AbortSignal, soFar: SongAnalysis): Promise<StepResult>;
 }
 
 export interface AnalysisSettings {
@@ -165,7 +168,7 @@ export async function runSongAnalysis(run: AnalysisRun): Promise<AnalysisOutcome
     const step = run.steps[index];
     run.onStep?.(index, step.name);
     try {
-      Object.assign(analysis, await step.run(run.audio, signal));
+      Object.assign(analysis, await step.run(run.audio, signal, analysis));
     } catch (e) {
       if (signal.aborted) return stopped(signal, index, snapshot());
       failed.push(step.name);

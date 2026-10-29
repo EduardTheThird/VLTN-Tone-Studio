@@ -50,6 +50,14 @@ describe("runSongAnalysis", () => {
     expect(settings.write).toHaveBeenCalledWith(outcome.status === "complete" ? outcome.analysis : null);
   });
 
+  it("passes each step what the earlier steps found", async () => {
+    const seen: unknown[] = [];
+    const first = { name: "first", run: async () => ({ tempo: { bpm: 98, firstBeat: 0, steady: true } }) };
+    const second = { name: "second", run: async (_a: unknown, _s: unknown, soFar: SongAnalysis) => (seen.push(soFar.tempo), {}) };
+    await runSongAnalysis({ audioId: "x", audio, steps: [first, second], settings: memory() });
+    expect(seen).toEqual([{ bpm: 98, firstBeat: 0, steady: true }]);
+  });
+
   it("records a failed step and still runs the rest", async () => {
     const failing = { name: "tempo", run: vi.fn(async () => { throw new Error("no"); }) };
     const after = step("chords", { chords: [] });

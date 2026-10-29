@@ -17,10 +17,11 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "./steps";
+import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "./steps";
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
+const nothingFound = { audioId: "", version: 0 };
 const audio = { mix: { sampleRate: 44100, channels: [] }, stems: null, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 afterEach(() => {
@@ -31,7 +32,7 @@ describe("tempoStep", () => {
   it("returns the tempo of the tracked grid and passes the grid on", async () => {
     job.done = Promise.resolve(grid);
     const onGrid = vi.fn();
-    const result = await tempoStep(onGrid).run(audio, new AbortController().signal);
+    const result = await tempoStep(onGrid).run(audio, new AbortController().signal, nothingFound);
     expect(result).toEqual({ tempo: { bpm: 100, firstBeat: 0.5, steady: true } });
     expect(onGrid).toHaveBeenCalledWith(grid);
     expect(job.start).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100, beatsPerBar: 4 }));
@@ -40,7 +41,7 @@ describe("tempoStep", () => {
   it("returns the meter the beats fall into with the tempo", async () => {
     job.done = Promise.resolve(grid);
     job.meter = Promise.resolve({ beatsPerBar: 3, confidence: 0.9 });
-    const result = await tempoStep().run(audio, new AbortController().signal);
+    const result = await tempoStep().run(audio, new AbortController().signal, nothingFound);
     expect(result).toMatchObject({ tempo: { bpm: 100 }, meter: { beatsPerBar: 3, confidence: 0.9 } });
     job.meter = Promise.resolve(null);
   });
@@ -48,7 +49,7 @@ describe("tempoStep", () => {
   it("returns nothing, and passes no grid on, when the grid is too short", async () => {
     job.done = Promise.resolve({ ...grid, beats: beats.slice(0, 3) });
     const onGrid = vi.fn();
-    expect(await tempoStep(onGrid).run(audio, new AbortController().signal)).toEqual({});
+    expect(await tempoStep(onGrid).run(audio, new AbortController().signal, nothingFound)).toEqual({});
     expect(onGrid).not.toHaveBeenCalled();
   });
 
@@ -57,7 +58,7 @@ describe("tempoStep", () => {
       queueMicrotask(() => reject(new Error("cancelled")));
     });
     const controller = new AbortController();
-    const pending = tempoStep().run(audio, controller.signal);
+    const pending = tempoStep().run(audio, controller.signal, nothingFound);
     controller.abort("playback");
     await expect(pending).rejects.toThrow();
     expect(job.cancel).toHaveBeenCalled();
@@ -81,47 +82,79 @@ describe("keyStep and chordsStep", () => {
 
   it("reads the key from the key stem and records the stem", async () => {
     reply = { estimate };
-    const result = await keyStep().run({ ...audio, keySource: { name: "guitar", audio: stem }, chordSource: null }, new AbortController().signal);
+    const result = await keyStep().run({ ...audio, keySource: { name: "guitar", audio: stem }, chordSource: null }, new AbortController().signal, nothingFound);
     expect(result).toEqual({ key: { source: "guitar", estimate } });
   });
 
   it("reads nothing when there is no key stem", async () => {
-    expect(await keyStep().run({ ...audio, keySource: null, chordSource: null }, new AbortController().signal)).toEqual({});
+    expect(await keyStep().run({ ...audio, keySource: null, chordSource: null }, new AbortController().signal, nothingFound)).toEqual({});
   });
 
   it("reads the chords from the chord stem and records the stem", async () => {
     reply = { chords: [{ time: 0, name: "Em", confidence: 0.9 }] };
-    const result = await chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal);
+    const result = await chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal, nothingFound);
     expect(result).toEqual({ chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
   });
 
   it("fails when the worker reports an error", async () => {
     reply = { error: "boom" };
-    await expect(chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal)).rejects.toThrow("boom");
+    await expect(chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal, nothingFound)).rejects.toThrow("boom");
   });
 });
 
 describe("loudnessStep", () => {
   it("measures the mix and records its level", async () => {
     loudness.measure.mockResolvedValueOnce({ lufs: -9.8, peakDb: -0.4 });
-    expect(await loudnessStep().run(audio, new AbortController().signal)).toEqual({ loudness: { lufs: -9.8, peakDb: -0.4 } });
+    expect(await loudnessStep().run(audio, new AbortController().signal, nothingFound)).toEqual({ loudness: { lufs: -9.8, peakDb: -0.4 } });
     expect(loudness.measure).toHaveBeenCalledWith(audio.mix);
   });
 
   it("records nothing for a silent song", async () => {
     loudness.measure.mockResolvedValueOnce({ lufs: -Infinity, peakDb: -Infinity });
-    expect(await loudnessStep().run(audio, new AbortController().signal)).toEqual({});
+    expect(await loudnessStep().run(audio, new AbortController().signal, nothingFound)).toEqual({});
   });
 });
 
 describe("partsStep", () => {
   it("records nothing for a song that was not split", async () => {
-    expect(await partsStep().run(audio, new AbortController().signal)).toEqual({});
+    expect(await partsStep().run(audio, new AbortController().signal, nothingFound)).toEqual({});
   });
 
   it("checks the drums and bass against the mix", async () => {
     const pcm = { sampleRate: 44100, channels: [new Float32Array(44100)] };
-    const result = await partsStep().run({ ...audio, mix: pcm, stems: { drums: pcm, bass: pcm } }, new AbortController().signal);
+    const result = await partsStep().run({ ...audio, mix: pcm, stems: { drums: pcm, bass: pcm } }, new AbortController().signal, nothingFound);
     expect(result.parts).toMatchObject({ drums: expect.any(String), bass: expect.any(String), absentSections: { drums: [], bass: [] } });
+  });
+});
+
+describe("chordChangeTimes", () => {
+  it("gives the times the chord name changes", () => {
+    expect(
+      chordChangeTimes([
+        { time: 0, name: "Em", confidence: 1 },
+        { time: 1, name: "Em", confidence: 1 },
+        { time: 2, name: "C", confidence: 1 },
+        { time: 3, name: "G", confidence: 1 },
+      ]),
+    ).toEqual([2, 3]);
+    expect(chordChangeTimes([])).toEqual([]);
+  });
+});
+
+describe("tempoStep chord changes", () => {
+  it("uses the chord changes the analysis found when the chart has none", async () => {
+    job.done = Promise.resolve(grid);
+    job.start.mockClear();
+    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
+    await tempoStep().run(audio, new AbortController().signal, soFar);
+    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [2] }));
+  });
+
+  it("keeps the chart's chord changes when it has them", async () => {
+    job.done = Promise.resolve(grid);
+    job.start.mockClear();
+    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
+    await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, soFar);
+    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [5] }));
   });
 });
