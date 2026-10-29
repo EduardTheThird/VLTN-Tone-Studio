@@ -793,6 +793,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           beats={beats}
           bpm={bpm}
           firstBeat={firstBeat}
+          typedTempo={typedTempo}
           onMetronome={(tempo, first) => {
             changeTempo(tempo, "detected");
             setFirstBeat(first);

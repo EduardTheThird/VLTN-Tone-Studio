@@ -53,6 +53,8 @@ export interface BandPanelProps {
   beats: number;
   bpm: number;
   firstBeat: number;
+  /** True when the performer set the tempo by hand, tapped it or took it from the chart. The beat can then be found from it. */
+  typedTempo?: boolean;
   /** Sets the metronome's tempo and first beat. Used by "Set metronome to this tempo". */
   onMetronome(bpm: number, firstBeat: number): void;
   /** The song position now, in seconds. The preview starts here when no section row is selected. */
@@ -133,11 +135,14 @@ function BandBody({
   beats,
   bpm,
   firstBeat,
+  typedTempo = false,
   onMetronome,
   getPosition,
   partChoices,
   onPartChoice,
 }: BandPanelProps) {
+  // On by default when the tempo was set by hand: the beat is then found near it, not from the tracker's own pick.
+  const [useMyTempo, setUseMyTempo] = useState(true);
   const [stored] = useState(() => readStoredBand(songKey));
   const [settings, setSettings] = useState<BandSettings>(stored.settings);
   const [grid, setGrid] = useState<BeatGrid | null>(stored.grid);
@@ -242,6 +247,7 @@ function BandBody({
         sampleRate: current.audio.sampleRate,
         beatsPerBar: beats,
         chordChanges: chartChordTimes(cues),
+        tempoHint: typedTempo && useMyTempo ? bpm : undefined,
       });
       job.current = found;
       const next = await found.done;
@@ -443,6 +449,7 @@ function BandBody({
         onCancel={() => job.current?.cancel()}
         onFixed={usesFixed}
         onSetTempo={setTo}
+        myTempo={typedTempo ? { bpm, use: useMyTempo, onUse: setUseMyTempo } : undefined}
       />
 
       <BandSettingsForm settings={settings} style={style} followSources={followSources} onChange={change} onStyle={changeStyle} />
