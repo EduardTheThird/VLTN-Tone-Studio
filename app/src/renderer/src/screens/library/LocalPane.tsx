@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { ArchiveIcon, ArrowDownToLineIcon, DownloadIcon, FolderOpenIcon, FolderPlusIcon, HistoryIcon, ImportIcon, InfoIcon, ListMusicIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, ArrowDownToLineIcon, DownloadIcon, FolderOpenIcon, FolderPlusIcon, GitCompareArrowsIcon, HistoryIcon, ImportIcon, InfoIcon, ListMusicIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -17,6 +17,7 @@ import { usePedalName, useDevice } from "@/state/device";
 import { pedalName, profileOrDefault, slotLabel } from "@/state/device-model";
 import type { CollectionInfo, LocalPreset } from "@shared/host/files";
 import { useLibraryActions } from "./actions";
+import { ComparePedalDialog } from "./ComparePedalDialog";
 import { useLibrary } from "./store";
 import { formatDay, hasFiles, SLOTS_MIME, LOCAL_MIME, startDrag, endDrag } from "./dnd";
 
@@ -119,6 +120,7 @@ function CollectionItem({ c, current }: { c: CollectionInfo; current: boolean })
   const Icon = ICONS[c.kind];
   const accepts = c.kind !== "backup" && drag?.kind === "slots";
 
+  const [comparing, setComparing] = useState(false);
   const reveal = () => host.files.revealCollection(c.id).catch((e) => notifyError("Couldn't show the folder", e));
 
   return (
@@ -171,6 +173,12 @@ function CollectionItem({ c, current }: { c: CollectionInfo; current: boolean })
                 Rename
               </ContextMenuItem>
             )}
+            {c.kind === "backup" && (
+              <ContextMenuItem onSelect={() => setComparing(true)}>
+                <GitCompareArrowsIcon />
+                Compare with pedal
+              </ContextMenuItem>
+            )}
             {c.kind !== "collection" && host.kind !== "electron" && <ContextMenuItem disabled>{c.kind === "backup" ? "Backups are read-only" : "Built-in collection"}</ContextMenuItem>}
           </ContextMenuGroup>
           {c.kind === "collection" && (
@@ -186,6 +194,7 @@ function CollectionItem({ c, current }: { c: CollectionInfo; current: boolean })
           )}
         </ContextMenuContent>
       </ContextMenu>
+      <ComparePedalDialog collection={comparing ? c : null} onOpenChange={(open) => !open && setComparing(false)} />
     </li>
   );
 }
