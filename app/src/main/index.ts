@@ -178,7 +178,8 @@ async function createWindow() {
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       contextIsolation: true,
-      sandbox: false, // unchanged by spec 43 (the audience window is sandboxed, see ipc/display.ts); nodeIntegration stays off and only the typed bridge is exposed
+      // The preload bundle only imports electron, so the sandbox holds. Keep it that way (see electron.vite.config.ts).
+      sandbox: true,
       nodeIntegration: false,
       backgroundThrottling: false, // backups and writes must not be throttled
     },

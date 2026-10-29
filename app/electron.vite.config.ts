@@ -6,7 +6,8 @@ import { pdfjsAssets } from "./scripts/pdfjs-assets";
 
 export default defineConfig({
   main: { plugins: [externalizeDepsPlugin()], resolve: { alias: { "@shared": resolve("src/shared") } } },
-  // Both preloads are CommonJS: the audience window is sandboxed, and a sandboxed preload cannot be an ES module.
+  // Both preloads are CommonJS and sandboxed (the main window and the audience window). A sandboxed preload can only
+  // require "electron", "events", "timers" and "url", and cannot be an ES module, so keep shared code inlined here.
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { "@shared": resolve("src/shared") } },
