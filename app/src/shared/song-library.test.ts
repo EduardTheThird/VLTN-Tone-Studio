@@ -183,6 +183,25 @@ describe("applying track settings to similar songs", () => {
     expect(copyTrackSettings(song([flacTrack("source")]), from)).toBeNull();
   });
 
+  it("copies the drums and bass choice when both songs have a generated part", () => {
+    const choice = { drums: "generated", bass: "original" };
+    const source = song([flacTrack("source"), imported("Drums (generated)", 0), imported("Click", 1)]);
+    const withChoice = { ...source, settings: { ":options": JSON.stringify({ partChoice: choice, generatedParts: { drums: "track0" } }) } };
+    const to = { ...song([flacTrack("source"), imported("Drums (generated)", 0), imported("Click", 1)]), id: "22222222-2222-3333-4444-555555555555" };
+    const copied = copyTrackSettings(withChoice, to)!;
+    expect(JSON.parse(copied.settings[":options"])).toEqual({ partChoice: choice });
+  });
+
+  it("removes the target's choice when the source has no generated part to match", () => {
+    const to = {
+      ...song([flacTrack("source"), imported("Keys L", 0), imported("Click", 1)]),
+      id: "22222222-2222-3333-4444-555555555555",
+      settings: { ":options": JSON.stringify({ partChoice: { drums: "both", bass: "both" }, beats: 4 }) },
+    };
+    const copied = copyTrackSettings(from, to)!;
+    expect(JSON.parse(copied.settings[":options"])).toEqual({ beats: 4 });
+  });
+
   it("never copies a song's options, so its generated part keys stay with that song", () => {
     // A generated part's track key means something only in the song that made it, so the other song keeps its own options.
     const withRecord = { ...from, settings: { ":options": JSON.stringify({ generatedParts: { drums: "track0" } }) } };
