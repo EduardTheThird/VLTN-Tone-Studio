@@ -4,6 +4,9 @@
 
 import type { PcmAudio } from "../types";
 
+/** A meter estimate at or above this confidence is applied to the song. Below it, the meter is only suggested. */
+export const METER_CERTAIN = 0.6;
+
 /** Bump when an analysis improves, so songs analysed earlier are analysed again the next time they open. */
 export const ANALYSIS_VERSION = 1;
 
@@ -14,12 +17,19 @@ export interface TempoResult {
   steady: boolean;
 }
 
+/** The meter the beats fall into. `confidence` is how clearly the chosen meter stands out, from 0 to 1. */
+export interface MeterResult {
+  beatsPerBar: 3 | 4;
+  confidence: number;
+}
+
 /** What the analysis saved for one song. It is keyed on the audio it was run on, so a re-split runs it again. */
 export interface SongAnalysis {
   /** A fingerprint of the audio analysed (see `audioFingerprint`). */
   audioId: string;
   version: number;
   tempo?: TempoResult;
+  meter?: MeterResult;
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
   failed?: string[];
 }
@@ -130,11 +140,14 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   if (typeof record.audioId !== "string" || typeof record.version !== "number") return null;
   const tempo = record.tempo as Record<string, unknown> | undefined;
   const validTempo = !!tempo && typeof tempo.bpm === "number" && typeof tempo.firstBeat === "number" && typeof tempo.steady === "boolean";
+  const meter = record.meter as Record<string, unknown> | undefined;
+  const validMeter = !!meter && (meter.beatsPerBar === 3 || meter.beatsPerBar === 4) && typeof meter.confidence === "number";
   const failed = Array.isArray(record.failed) && record.failed.every((name) => typeof name === "string") ? record.failed : undefined;
   return {
     audioId: record.audioId,
     version: record.version,
     ...(validTempo ? { tempo: { bpm: tempo.bpm as number, firstBeat: tempo.firstBeat as number, steady: tempo.steady as boolean } } : {}),
+    ...(validMeter ? { meter: { beatsPerBar: meter.beatsPerBar as 3 | 4, confidence: meter.confidence as number } } : {}),
     ...(failed?.length ? { failed } : {}),
   };
 }
@@ -142,6 +155,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
 /** One line for the status under the song: what was found, and what failed. */
 export function describeAnalysis(analysis: SongAnalysis): string {
   const found = analysis.tempo ? `Tempo ${analysis.tempo.bpm} BPM${analysis.tempo.steady ? "" : " (the tempo varies)"}` : "No steady tempo found";
+  const meter = analysis.meter ? `. Meter ${analysis.meter.beatsPerBar}/4${analysis.meter.confidence < METER_CERTAIN ? " (not certain)" : ""}` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${failed}`;
+  return `${found}${meter}${failed}`;
 }

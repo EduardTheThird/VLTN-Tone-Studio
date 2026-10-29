@@ -15,6 +15,7 @@ import {
   runSongAnalysis,
   type AnalysisAudio,
   type AnalysisSettings,
+  type MeterResult,
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
@@ -40,6 +41,8 @@ export interface SongAnalysisInput {
   playing: boolean;
   /** Called with the tempo a finished run found. The panel decides whether to apply it. */
   onTempo(tempo: TempoResult): void;
+  /** Called with the meter a finished run found. The panel decides whether to apply it. */
+  onMeter(meter: MeterResult): void;
 }
 
 export interface SongAnalysisControl {
@@ -99,6 +102,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (outcome.status !== "complete") return;
       setMessage(describeAnalysis(outcome.analysis));
       if (outcome.analysis.tempo) latest.current.onTempo(outcome.analysis.tempo);
+      if (outcome.analysis.meter) latest.current.onMeter(outcome.analysis.meter);
     });
   };
 

@@ -3,6 +3,7 @@ import type { PcmAudio } from "../types";
 import {
   detectBeatGrid,
   doubleTempo,
+  estimateMeter,
   estimateTempo,
   fitSteady,
   fixedBeatGrid,
@@ -401,5 +402,45 @@ describe("fixedBeatGrid", () => {
   it("gives an empty grid for a tempo that cannot be used", () => {
     expect(fixedBeatGrid(0, 0, 4, 10).beats).toEqual([]);
     expect(fixedBeatGrid(120, 0, 4, 0).beats).toEqual([]);
+  });
+});
+
+describe("estimateMeter", () => {
+  // Beats every 0.5 s at a frame rate of 100. The first beat of each bar carries a strong low onset, the others a weak one, and a chord
+  // change falls on each bar's first beat, as it does in a real song.
+  function accented(beatsPerBar: number, bars = 12) {
+    const beats = Array.from({ length: beatsPerBar * bars }, (_, i) => i * 0.5);
+    const low = new Float64Array(Math.ceil((beats.length * 0.5 + 1) * 100));
+    beats.forEach((beat, i) => {
+      low[Math.round(beat * 100)] = i % beatsPerBar === 0 ? 1 : 0.2;
+    });
+    const chords = beats.filter((_, i) => i % beatsPerBar === 0);
+    return { beats, low, chords };
+  }
+
+  it("finds three beats in a bar", () => {
+    const { beats, low, chords } = accented(3);
+    expect(estimateMeter(beats, low, 100, chords).beatsPerBar).toBe(3);
+  });
+
+  it("finds four beats in a bar", () => {
+    const { beats, low, chords } = accented(4);
+    expect(estimateMeter(beats, low, 100, chords).beatsPerBar).toBe(4);
+  });
+
+  it("is confident when the accents are clear", () => {
+    const { beats, low, chords } = accented(3);
+    expect(estimateMeter(beats, low, 100, chords).confidence).toBeGreaterThan(0.6);
+  });
+
+  it("has no confidence when every beat sounds the same", () => {
+    const beats = Array.from({ length: 48 }, (_, i) => i * 0.5);
+    const low = new Float64Array(Math.ceil(25 * 100) + 1).fill(0.5);
+    const estimate = estimateMeter(beats, low, 100, []);
+    expect(estimate.confidence).toBeLessThan(0.1);
+  });
+
+  it("falls back to four beats when there are too few beats to tell", () => {
+    expect(estimateMeter([0, 0.5, 1], new Float64Array(200), 100)).toEqual({ beatsPerBar: 4, confidence: 0 });
   });
 });

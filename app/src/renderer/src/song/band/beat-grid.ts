@@ -350,18 +350,17 @@ export function trackBeats(onset: ArrayLike<number>, frameRate: number, bpm: num
 }
 
 /**
- * The bar phase, as an index into `beats`. Each phase scores its low-band onset, scaled to 0 to 1 by the strongest phase, plus
- * CHORD_WEIGHT times its share of the chord changes that fall within CHORD_WINDOW_SECONDS of one of its beats. Ties go to the earlier beat.
+ * The score of each bar phase, as an index into `beats`. Each phase scores its low-band onset, scaled to 0 to 1 by the strongest phase,
+ * plus CHORD_WEIGHT times its share of the chord changes that fall within CHORD_WINDOW_SECONDS of one of its beats.
  */
-export function pickDownbeat(
+export function phaseScores(
   beats: readonly number[],
   lowOnset: ArrayLike<number>,
   frameRate: number,
   beatsPerBar: number,
   chordChanges: readonly number[] = [],
-): number {
+): number[] {
   const bar = Math.max(1, Math.floor(beatsPerBar));
-  if (!beats.length) return 0;
   const lowSum = new Float64Array(bar),
     chordHits = new Float64Array(bar);
   beats.forEach((beat, i) => {
@@ -383,16 +382,60 @@ export function pickDownbeat(
   }
   const lowMax = Math.max(...lowSum),
     hitTotal = chordHits.reduce((a, b) => a + b, 0);
-  let bestPhase = 0,
-    bestScore = -Infinity;
-  for (let p = 0; p < bar; p++) {
-    const score = (lowMax > 0 ? lowSum[p] / lowMax : 0) + CHORD_WEIGHT * (chordHits[p] / Math.max(1, hitTotal));
-    if (score > bestScore) {
-      bestScore = score;
-      bestPhase = p;
-    }
-  }
+  return Array.from(lowSum, (low, p) => (lowMax > 0 ? low / lowMax : 0) + CHORD_WEIGHT * (chordHits[p] / Math.max(1, hitTotal)));
+}
+
+/**
+ * The bar phase, as an index into `beats`: the phase with the highest score (see `phaseScores`). Ties go to the earlier beat.
+ */
+export function pickDownbeat(
+  beats: readonly number[],
+  lowOnset: ArrayLike<number>,
+  frameRate: number,
+  beatsPerBar: number,
+  chordChanges: readonly number[] = [],
+): number {
+  if (!beats.length) return 0;
+  const scores = phaseScores(beats, lowOnset, frameRate, beatsPerBar, chordChanges);
+  let bestPhase = 0;
+  scores.forEach((score, p) => {
+    if (score > scores[bestPhase]) bestPhase = p;
+  });
   return bestPhase;
+}
+
+/** The meters `estimateMeter` chooses between. Six and other compound meters are not detected, so they keep the default. */
+export const METER_CANDIDATES = [3, 4] as const;
+
+export interface MeterEstimate {
+  beatsPerBar: 3 | 4;
+  /** How much the chosen meter stands out from the other, from 0 to 1. Zero when the beats cannot tell them apart. */
+  confidence: number;
+}
+
+/** The fewest beats a meter estimate is made from. Fewer than this and every meter fits the beats equally well. */
+export const METER_MIN_BEATS = 12;
+
+/**
+ * Which of 3 or 4 beats a bar the beats fall into. A real bar has one strong beat, so the phases of the right meter differ more in onset
+ * and chord changes than the phases of the wrong one do. Each candidate scores its contrast (the top phase above the mean, as a share of
+ * the top); the stronger contrast wins, and confidence is the share by which it beats the other. Too few beats give 4 with no confidence.
+ */
+export function estimateMeter(
+  beats: readonly number[],
+  lowOnset: ArrayLike<number>,
+  frameRate: number,
+  chordChanges: readonly number[] = [],
+): MeterEstimate {
+  if (beats.length < METER_MIN_BEATS) return { beatsPerBar: 4, confidence: 0 };
+  const contrast = (bar: number) => {
+    const scores = phaseScores(beats, lowOnset, frameRate, bar, chordChanges);
+    const top = Math.max(...scores);
+    return top > 0 ? (top - scores.reduce((a, b) => a + b, 0) / scores.length) / top : 0;
+  };
+  const [three, four] = METER_CANDIDATES.map(contrast);
+  if (three > four) return { beatsPerBar: 3, confidence: (three - four) / Math.max(three, 1e-9) };
+  return { beatsPerBar: 4, confidence: Math.max(0, (four - three) / Math.max(four, 1e-9)) };
 }
 
 /** Least-squares line through beats[i] at each index i in `indices`. Null when the indices do not spread out. */
@@ -536,13 +579,27 @@ export function snapToAttack(mono: ArrayLike<number>, sampleRate: number, beats:
 
 /** The whole pipeline: onset strength, tempo, beats, the grid's ends, then the downbeat. Chord changes are optional and in seconds. */
 export function detectBeatGrid(sources: readonly PcmAudio[], sampleRate: number, beatsPerBar: number, chordChanges: readonly number[] = []): BeatGrid {
+  return analyseBeats(sources, sampleRate, beatsPerBar, chordChanges).grid;
+}
+
+/**
+ * The beat grid and the meter the beats fall into, from one pass over the audio. The grid is laid out for `beatsPerBar`; the meter is
+ * estimated from the beats alone, so it does not depend on the meter the caller guessed.
+ */
+export function analyseBeats(
+  sources: readonly PcmAudio[],
+  sampleRate: number,
+  beatsPerBar: number,
+  chordChanges: readonly number[] = [],
+): { grid: BeatGrid; meter: MeterEstimate } {
   const { onset, low, frameRate } = onsetStrength(sources, sampleRate);
   const { bpm } = estimateTempo(onset, frameRate);
   const tracked = trackBeats(onset, frameRate, bpm);
   const duration = sources.reduce((max, source) => Math.max(max, (source.channels[0]?.length ?? 0) / sampleRate), 0);
   const beats = snapToAttack(monoSum(sources), sampleRate, extendBeats(tracked, onset, frameRate, duration));
   const downbeat = pickDownbeat(beats, low, frameRate, beatsPerBar, chordChanges);
-  return makeGrid(beatsPerBar, beats, downbeat);
+  const grid = makeGrid(beatsPerBar, beats, downbeat);
+  return { grid, meter: estimateMeter(grid.beats, low, frameRate, chordChanges) };
 }
 
 /** The most beats in a bar the stored grid may have. Anything larger is not a meter the engine knows. */

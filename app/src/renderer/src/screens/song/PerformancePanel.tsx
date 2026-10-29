@@ -20,6 +20,7 @@ import { needsTempoDetection, readTempoSource, type TempoSource } from "@/song/p
 import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { useSongAnalysis } from "./use-song-analysis";
+import { METER_CERTAIN } from "@/song/analysis/song-analysis";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -129,6 +130,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         startDelay: "",
         sections: [] as unknown[],
         timecodeOffset: "",
+        beatsSource: "" as "" | "detected" | "manual",
       }),
     [key],
   );
@@ -142,6 +144,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
     [tempoSource, setTempoSource] = useState<TempoSource | null>(() => readTempoSource(options)),
     [beats, setBeats] = useState(options.beats),
+    [beatsManual, setBeatsManual] = useState(() => options.beatsSource === "manual"),
     [shift, setShift] = useState(options.shift),
     [capo, setCapo] = useState(() => clampCapo(options.capo));
 
@@ -266,6 +269,16 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     const value = tapBpm(tapsRef.current);
     if (value && !session.state.playing) changeTempo(value, "tap");
   };
+  // A meter the performer picked is kept; only a meter that was never chosen is changed by the analysis.
+  const changeBeats = (value: number) => {
+    setBeats(value);
+    setBeatsManual(true);
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: "manual" }));
+    } catch (e) {
+      session.fail(e);
+    }
+  };
   // Every change to the tempo records where it came from. The saved source is what stops the analysis overwriting a tempo the performer chose.
   const changeTempo = (value: number, source: TempoSource) => {
     setBpm(value);
@@ -389,6 +402,15 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
     },
+    onMeter: (found) => {
+      if (beatsManual || found.confidence < METER_CERTAIN) return;
+      setBeats(found.beatsPerBar);
+      try {
+        setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: "detected" }));
+      } catch (e) {
+        session.fail(e);
+      }
+    },
   });
 
   const saveChart = (value: string) => {
@@ -492,7 +514,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             firstBeat,
             onFirstBeat: setFirstBeat,
             beats,
-            onBeats: setBeats,
+            onBeats: changeBeats,
             volume,
             onVolume: setVolume,
             lead,

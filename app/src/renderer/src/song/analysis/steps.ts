@@ -7,8 +7,9 @@ import { tempoFromGrid } from "../performance/tempo-source";
 import type { AnalysisStep } from "./song-analysis";
 
 /**
- * Tracks the beat of the song's audio. `onGrid` receives the whole grid, which the caller saves with the band settings, since the grid is
- * too large for the analysis record. The tempo goes to the analysis; the grid is only passed on when it is long enough to trust.
+ * Tracks the beat of the song's audio, and reads the meter from the same beats. `onGrid` receives the whole grid, which the caller saves
+ * with the band settings, since the grid is too large for the analysis record. The tempo goes to the analysis; the grid is only passed on
+ * when it is long enough to trust.
  */
 export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
   return {
@@ -28,10 +29,11 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
       } finally {
         signal.removeEventListener("abort", stop);
       }
+      const meter = await job.meter;
       const tempo = tempoFromGrid(grid);
-      if (!tempo) return {};
+      if (!tempo) return meter ? { meter } : {};
       onGrid?.(grid);
-      return { tempo };
+      return meter ? { tempo, meter } : { tempo };
     },
   };
 }

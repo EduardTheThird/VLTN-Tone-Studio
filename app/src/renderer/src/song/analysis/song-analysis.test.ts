@@ -131,6 +131,12 @@ describe("parseAnalysis", () => {
     expect(parseAnalysis(value)).toEqual(value);
   });
 
+  it("keeps a meter with its confidence", () => {
+    const value = { audioId: "x", version: 1, meter: { beatsPerBar: 3, confidence: 0.8 } };
+    expect(parseAnalysis(value)).toEqual(value);
+    expect(parseAnalysis({ audioId: "x", version: 1, meter: { beatsPerBar: 5, confidence: 0.8 } })).toEqual({ audioId: "x", version: 1 });
+  });
+
   it("drops a damaged tempo but keeps the record", () => {
     expect(parseAnalysis({ audioId: "x", version: 1, tempo: { bpm: "98" } })).toEqual({ audioId: "x", version: 1 });
   });
@@ -147,5 +153,9 @@ describe("describeAnalysis", () => {
     expect(describeAnalysis({ audioId: "x", version: 1, tempo: { bpm: 98, firstBeat: 0, steady: true } })).toBe("Tempo 98 BPM");
     expect(describeAnalysis({ audioId: "x", version: 1, failed: ["tempo"] })).toBe("No steady tempo found. Could not work out: tempo");
     expect(describeAnalysis({ audioId: "x", version: 1, tempo: { bpm: 101, firstBeat: 0, steady: false } })).toBe("Tempo 101 BPM (the tempo varies)");
+    expect(describeAnalysis({ audioId: "x", version: 1, tempo: { bpm: 98, firstBeat: 0, steady: true }, meter: { beatsPerBar: 3, confidence: 0.9 } })).toBe(
+      "Tempo 98 BPM. Meter 3/4",
+    );
+    expect(describeAnalysis({ audioId: "x", version: 1, meter: { beatsPerBar: 4, confidence: 0.2 } })).toBe("No steady tempo found. Meter 4/4 (not certain)");
   });
 });

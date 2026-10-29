@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
 
-const job = vi.hoisted(() => ({ done: null as Promise<BeatGrid> | null, cancel: vi.fn(), start: vi.fn() }));
+const job = vi.hoisted(() => ({
+  done: null as Promise<BeatGrid> | null,
+  meter: Promise.resolve(null) as Promise<{ beatsPerBar: 3 | 4; confidence: number } | null>,
+  cancel: vi.fn(),
+  start: vi.fn(),
+}));
 vi.mock("../band/beat-grid-client", () => ({
   startBeatGrid: (request: unknown) => {
     job.start(request);
-    return { done: job.done, cancel: job.cancel };
+    return { done: job.done, meter: job.meter, cancel: job.cancel };
   },
 }));
 
@@ -27,6 +32,14 @@ describe("tempoStep", () => {
     expect(result).toEqual({ tempo: { bpm: 100, firstBeat: 0.5, steady: true } });
     expect(onGrid).toHaveBeenCalledWith(grid);
     expect(job.start).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100, beatsPerBar: 4 }));
+  });
+
+  it("returns the meter the beats fall into with the tempo", async () => {
+    job.done = Promise.resolve(grid);
+    job.meter = Promise.resolve({ beatsPerBar: 3, confidence: 0.9 });
+    const result = await tempoStep().run(audio, new AbortController().signal);
+    expect(result).toMatchObject({ tempo: { bpm: 100 }, meter: { beatsPerBar: 3, confidence: 0.9 } });
+    job.meter = Promise.resolve(null);
   });
 
   it("returns nothing, and passes no grid on, when the grid is too short", async () => {
