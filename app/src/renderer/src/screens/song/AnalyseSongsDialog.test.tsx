@@ -41,6 +41,20 @@ it("says how many songs will run, leaving out the ones that are already analysed
   expect(screen.getByRole("button", { name: "Analyse 1 song" })).toBeTruthy();
 });
 
+it("says before the run what the lyrics step will do, and does not start when no song qualifies", () => {
+  const before2: BatchSong = { id: "o", title: "Old", settings: { ":bpm": "120", ":options": "{}", ":lyrics": "[00:01.00] Words from before" } };
+  open([before2]);
+  for (const name of ["Tempo and meter", "Key", "Chords", "Loudness", "Drums and bass", "Silence", "Sections"]) {
+    fireEvent.click(screen.getByRole("checkbox", { name }));
+  }
+  fireEvent.click(screen.getByRole("checkbox", { name: "Lyrics" }));
+  fireEvent.click(screen.getByLabelText("Songs whose lyrics Tone Studio made"));
+  expect(screen.getByText("Lyrics: 0 of 1 song will get new lyrics. Skipped: 1 from before 0.9.2. Tick the box above to include them.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Analyse 0 songs" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include lyrics from before version 0.9.2" }));
+  expect((screen.getByRole("button", { name: "Analyse 1 song" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 it("refuses to start while a song plays, and does not run the batch", () => {
   setSongPlaying(true);
   open([alpha]);

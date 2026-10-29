@@ -7,7 +7,10 @@ import {
   DEFAULT_LYRICS_BATCH,
   defaultChoice,
   describeBatch,
+  describeLyricsPlan,
   lyricsAction,
+  lyricsPlan,
+  lyricsSkip,
   needsAnalysis,
   planWriteBack,
   runAnalysisBatch,
@@ -365,6 +368,52 @@ describe("the lyrics step", () => {
       lyricsMade: { model: "small" },
       previousChart: { text: "[00:00.00] Typed", source: "user" },
     });
+  });
+
+  it("leaves a chart from before 0.9.2 alone unless the option is on, and then treats it as transcribed", () => {
+    const old = song("o", { ":lyrics": text });
+    expect(lyricsAction(old, lyricsWith({ which: "transcribed" }))).toBeNull();
+    expect(lyricsSkip(old, lyricsWith({ which: "transcribed" }))).toBe("unknown");
+    expect(lyricsAction(old, lyricsWith({ which: "transcribed", unknown: true }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(old, lyricsWith({ which: "older", model: "small", unknown: true }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(old, lyricsWith({ which: "empty", unknown: true }))).toBeNull();
+  });
+
+  it("never replaces the performer's chart, even with the option on", () => {
+    const user = song("p", { ":lyrics": text }, { chartSource: "user" });
+    expect(lyricsAction(user, lyricsWith({ which: "older", unknown: true }))).toBeNull();
+    expect(lyricsSkip(user, lyricsWith({ which: "transcribed", unknown: true }))).toBe("user");
+  });
+
+  it("gives each song that is left out a reason, and counts the songs that run", () => {
+    const songs = [
+      song("a", { ":lyrics": "" }),
+      song("b", { ":lyrics": text }, { chartSource: "transcribed" }),
+      song("c", { ":lyrics": text }, { chartSource: "user" }),
+      song("d", { ":lyrics": text }),
+      song("e", { ":lyrics": "[00:01.00] Mine" }, { chartSource: "aligned" }),
+    ];
+    expect(lyricsPlan(songs, lyricsWith(), null)).toEqual({
+      run: 2,
+      skipped: [
+        { reason: "user", count: 1 },
+        { reason: "unknown", count: 1 },
+        { reason: "made", count: 1 },
+      ],
+    });
+    expect(lyricsPlan(songs, lyricsWith(), "a")).toMatchObject({ run: 1, skipped: expect.arrayContaining([{ reason: "open", count: 1 }]) });
+  });
+
+  it("says what the run will do before it starts, and how to include the charts from before 0.9.2", () => {
+    const plan = { run: 4, skipped: [{ reason: "unknown" as const, count: 2 }] };
+    expect(describeLyricsPlan(plan, { which: "transcribed", unknown: false })).toBe(
+      "Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2. Tick the box above to include them.",
+    );
+    expect(describeLyricsPlan(plan, { which: "transcribed", unknown: true })).toBe("Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2.");
+    expect(describeLyricsPlan(plan, { which: "empty", unknown: false })).toBe("Lyrics: 4 of 6 songs will get new lyrics. Skipped: 2 from before 0.9.2.");
+    expect(describeLyricsPlan({ run: 0, skipped: [{ reason: "none", count: 6 }] }, { which: "empty", unknown: false })).toBe(
+      "Lyrics: 0 of 6 songs will get new lyrics. Skipped: 6 with no lyrics.",
+    );
   });
 
   it("describes the lyrics made, timed and missed", () => {

@@ -8,7 +8,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { isRunning, useAnalysisJob } from "@/song/analysis/analysis-job";
-import { BATCH_STEPS, defaultChoice, selectSongs, type BatchChoice, type BatchOutcome, type BatchSong, type LyricsWhich } from "@/song/analysis/batch";
+import {
+  BATCH_STEPS,
+  defaultChoice,
+  describeLyricsPlan,
+  lyricsPlan,
+  selectSongs,
+  type BatchChoice,
+  type BatchOutcome,
+  type BatchSong,
+  type LyricsWhich,
+} from "@/song/analysis/batch";
 import { loadLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
 import { LyricsBatchSettings } from "./LyricsBatchSettings";
 import { AnalysisJobProgress } from "./AnalysisJobProgress";
@@ -31,6 +41,7 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
   const [lyricsChoice, setLyricsChoice] = useState<LyricsChoice>(loadLyricsChoice);
   const [which, setWhich] = useState<LyricsWhich>("empty");
   const [retime, setRetime] = useState(true);
+  const [unknown, setUnknown] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // The elapsed time and the time left are shown while a run goes on, so the clock ticks once a second only while it is open and running.
   const [now, setNow] = useState(() => Date.now());
@@ -41,8 +52,10 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
     return () => clearInterval(timer);
   }, [running, open]);
 
-  const options = { onlyNeeded, replaceManual, choice, openSongId: openId, lyrics: { ...lyricsChoice, which, retime } };
+  const lyrics = { ...lyricsChoice, which, retime, unknown };
+  const options = { onlyNeeded, replaceManual, choice, openSongId: openId, lyrics };
   const { run } = selectSongs(songs, options);
+  const plan = lyricsPlan(songs, lyrics, openId);
   const selectionText =
     `${songs.length} song${songs.length === 1 ? "" : "s"} in the selection. ${run.length} will be analysed. ` +
     "The open song is skipped. Each song is analysed without opening it.";
@@ -81,8 +94,11 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
               onWhich={setWhich}
               retime={retime}
               onRetime={setRetime}
+              unknown={unknown}
+              onUnknown={setUnknown}
+              plan={describeLyricsPlan(plan, lyrics)}
               disabled={running}
-              songs={run.length}
+              songs={plan.run}
             />
           )}
           <label className="flex items-center gap-2 text-sm">

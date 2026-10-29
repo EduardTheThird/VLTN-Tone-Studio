@@ -76,9 +76,29 @@ export interface LyricsBatchOptions {
   which: LyricsWhich;
   /** Re-times the `aligned` charts (the performer's own words) with the model chosen. Their text is kept. */
   retime: boolean;
+  /** Treats charts from before 0.9.2 (source `unknown`) as transcribed, so the `transcribed` and `older` choices may replace them. */
+  unknown: boolean;
 }
 
-export const DEFAULT_LYRICS_BATCH: LyricsBatchOptions = { model: "small", quality: "fast", which: "empty", retime: true };
+export const DEFAULT_LYRICS_BATCH: LyricsBatchOptions = { model: "small", quality: "fast", which: "empty", retime: true, unknown: false };
+
+/**
+ * Why the lyrics step leaves a song's chart alone: no lyrics yet (under a choice that replaces only existing lyrics), the performer's own
+ * words (`user`), pasted words not re-timed (`pasted`), a chart from before 0.9.2 (`unknown`), a chart Tone Studio made (`made`), or one
+ * made with the model chosen (`model`). `open` is for the song open on the Performance screen.
+ */
+export type LyricsSkip = "open" | "none" | "user" | "pasted" | "unknown" | "made" | "model";
+
+/** The order the reasons are listed in, and the words each one reads as after a count. */
+const LYRICS_SKIPS: { reason: LyricsSkip; label: string }[] = [
+  { reason: "open", label: "open on the Performance screen" },
+  { reason: "none", label: "with no lyrics" },
+  { reason: "user", label: "written by you" },
+  { reason: "pasted", label: "your pasted lyrics, not re-timed" },
+  { reason: "unknown", label: "from before 0.9.2" },
+  { reason: "made", label: "made by Tone Studio" },
+  { reason: "model", label: "made with this model" },
+];
 
 export interface BatchOptions {
   /** Analyse only the songs whose saved analysis is missing, older, or has no tempo of its own. */
@@ -96,24 +116,64 @@ export interface BatchOptions {
 export type LyricsAction = { kind: "transcribe" } | { kind: "retime"; lines: string[] };
 
 /**
- * The lyrics step's action for a song, or null when it leaves the song's chart alone. An empty chart is filled only for `empty`. A
- * transcribed chart is replaced for `transcribed`, or for `older` when it was made with another model. An aligned chart is timed again
- * when `retime` is on. A `user` chart is never touched.
+ * Why the lyrics step leaves a song's chart alone, or null when it runs for the song. An empty chart is filled only for `empty`. A
+ * `user` chart is never replaced. An aligned chart is timed again when `retime` is on. A transcribed chart is replaced for `transcribed`,
+ * or for `older` when it was made with another model. A chart from before 0.9.2 is replaced only with `unknown` on, and then as a
+ * transcribed chart.
  */
-export function lyricsAction(song: BatchSong, lyrics: LyricsBatchOptions): LyricsAction | null {
+export function lyricsSkip(song: BatchSong, lyrics: LyricsBatchOptions): LyricsSkip | null {
   const options = parseOptions(song.settings[":options"]);
   const text = song.settings[":lyrics"] ?? "";
-  if (!text.trim()) return lyrics.which === "empty" ? { kind: "transcribe" } : null;
-  const source: ChartSource = chartSourceOf(options);
-  if (source === "aligned") {
-    const lines = lrcTexts(text);
-    return lyrics.retime && lines.some(Boolean) ? { kind: "retime", lines } : null;
+  if (!text.trim()) return lyrics.which === "empty" ? null : "none";
+  const source = chartSourceOf(options);
+  if (source === "user") return "user";
+  if (source === "aligned") return lyrics.retime && lrcTexts(text).some(Boolean) ? null : "pasted";
+  if (source === "unknown" && !lyrics.unknown) return "unknown";
+  if (lyrics.which === "empty") return source === "unknown" ? "unknown" : "made";
+  if (lyrics.which === "transcribed") return null;
+  return (lyricsMadeOf(options)?.model ?? "") !== lyrics.model ? null : "model";
+}
+
+/**
+ * The lyrics step's action for a song, or null when it leaves the song's chart alone (see lyricsSkip). An aligned chart is timed again
+ * with its own lines; any other chart is transcribed.
+ */
+export function lyricsAction(song: BatchSong, lyrics: LyricsBatchOptions): LyricsAction | null {
+  if (lyricsSkip(song, lyrics)) return null;
+  const text = song.settings[":lyrics"] ?? "";
+  if (text.trim() && chartSourceOf(parseOptions(song.settings[":options"])) === "aligned") return { kind: "retime", lines: lrcTexts(text) };
+  return { kind: "transcribe" };
+}
+
+/** What the lyrics step will do across a selection: how many songs get new lyrics, and how many are skipped, by reason. */
+export interface LyricsPlan {
+  run: number;
+  skipped: { reason: LyricsSkip; count: number }[];
+}
+
+/** The lyrics plan for the songs given, before a run starts. The open song is skipped, as the batch skips it. */
+export function lyricsPlan(songs: readonly BatchSong[], lyrics: LyricsBatchOptions, openSongId: string | null): LyricsPlan {
+  const counts = new Map<LyricsSkip, number>();
+  let run = 0;
+  for (const song of songs) {
+    const reason = song.id === openSongId ? "open" : lyricsSkip(song, lyrics);
+    if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    else run++;
   }
-  if (source === "transcribed") {
-    if (lyrics.which === "transcribed") return { kind: "transcribe" };
-    if (lyrics.which === "older" && (lyricsMadeOf(options)?.model ?? "") !== lyrics.model) return { kind: "transcribe" };
-  }
-  return null;
+  return { run, skipped: LYRICS_SKIPS.flatMap(({ reason }) => (counts.has(reason) ? [{ reason, count: counts.get(reason) ?? 0 }] : [])) };
+}
+
+/**
+ * One paragraph for the dialog, read before a run starts: how many songs get new lyrics and why the others are skipped. The hint for the
+ * charts from before 0.9.2 is given only where the option can include them: not under the choice of songs with no lyrics.
+ */
+export function describeLyricsPlan(plan: LyricsPlan, lyrics: Pick<LyricsBatchOptions, "which" | "unknown">): string {
+  const total = plan.run + plan.skipped.reduce((sum, skip) => sum + skip.count, 0);
+  const head = `Lyrics: ${plan.run} of ${total} song${total === 1 ? "" : "s"} will get new lyrics.`;
+  if (!plan.skipped.length) return head;
+  const skipped = plan.skipped.map(({ reason, count }) => `${count} ${LYRICS_SKIPS.find((s) => s.reason === reason)?.label ?? reason}`).join(", ");
+  const hint = !lyrics.unknown && lyrics.which !== "empty" && plan.skipped.some((skip) => skip.reason === "unknown") ? " Tick the box above to include them." : "";
+  return `${head} Skipped: ${skipped}.${hint}`;
 }
 
 /** Whether any analysis step (not lyrics) is chosen. */
