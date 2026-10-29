@@ -32,6 +32,8 @@ function sectionKeyLines(songKey: string, mix: PcmAudio | undefined, stems: Stem
   return (saved.keySections ?? []).map(({ sectionId, key }) => `${saved.sections?.[Number(sectionId)]?.name ?? "Section"}: ${key.name}`);
 }
 
+const FLAVOUR_NAMES = { mixolydian: "Mixolydian", dorian: "Dorian" } as const;
+
 /** The song's key readout and override. It reports the key the chord names are spelled by, so the panel's screens follow the same key. */
 export function SongKey({
   stems,
@@ -119,11 +121,13 @@ export function SongKey({
   const spellingKey = effectiveSongKey(override, libraryKey, estimate);
   useEffect(() => onSpellingKey?.(spellingKey), [spellingKey, onSpellingKey]);
   const name = override || estimate?.name;
+  // A modal flavour is named after the key, such as "G major (Mixolydian)". The key itself, and the transposition, stay the major or minor key.
+  const flavour = !override && estimate?.flavour ? ` (${FLAVOUR_NAMES[estimate.flavour]})` : "";
   const root = name ? KEY_NAMES.indexOf(name.split(" ")[0]) : -1;
   const displayed = root < 0 ? "" : `${KEY_NAMES[(((root + shift) % 12) + 12) % 12]} ${name!.split(" ")[1]}`;
   return (
     <section aria-label="Song key" className="flex flex-wrap items-center gap-3 rounded-lg border border-seam px-3 py-2 text-sm">
-      <strong>Song key: {name || (busy ? "Analysing…" : "Unknown")}</strong>
+      <strong>Song key: {name ? `${name}${flavour}` : busy ? "Analysing…" : "Unknown"}</strong>
       <label>
         Key override{" "}
         <select

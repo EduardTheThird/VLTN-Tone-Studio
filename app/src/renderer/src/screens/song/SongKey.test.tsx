@@ -86,3 +86,10 @@ it("lists the sections in another key from the saved analysis of this audio", ()
   render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" />);
   expect(screen.getByText(/Section keys: Last chorus: A major/)).toBeTruthy();
 });
+
+it("names a modal flavour after the key, and leaves the key itself to the transposition", () => {
+  const estimate = { name: "G major", tonic: 7, mode: "major", confidence: "strong", correlation: 0.8, margin: 0.2, alternatives: [], flavour: "mixolydian" };
+  localStorage.setItem("song:options", JSON.stringify({ detectedKey: estimate, keyAudioSource: "guitar" }));
+  render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" shift={0} />);
+  expect(screen.getByText("Song key: G major (Mixolydian)")).toBeTruthy();
+});
