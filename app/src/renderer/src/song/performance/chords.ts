@@ -5,6 +5,16 @@ export interface Chord {
   name: string;
   confidence: number;
 }
+
+/**
+ * What the chord detector reads. `harmony` carries the chords (guitar, piano and the other stems, or the mix); `bass` is the bass stem
+ * when it has a signal; `beats` are the beat times of the song's grid, when one is known, and the chords then change only on beats.
+ */
+export interface ChordsInput {
+  harmony: PcmAudio;
+  bass: PcmAudio | null;
+  beats: number[] | null;
+}
 /** A one-window blip between identical neighbours is usually leakage or an attack transient. */
 export function smoothChordFrames(frames: Chord[]): Chord[] {
   const stable = frames.map((frame, i) =>
@@ -15,7 +25,8 @@ export function smoothChordFrames(frames: Chord[]): Chord[] {
   return stable.filter((frame, i) => i === 0 || frame.name !== stable[i - 1].name);
 }
 /** Windowed chroma template estimate. Major/minor only; never a transcription guarantee. */
-export function detectChords(audio: PcmAudio): Chord[] {
+export function detectChords(input: ChordsInput): Chord[] {
+  const audio = input.harmony;
   const n = 8192,
     hop = Math.round(audio.sampleRate / 2);
   const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];

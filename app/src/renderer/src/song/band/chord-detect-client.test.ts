@@ -33,21 +33,21 @@ describe("chord detection client", () => {
   it("posts the audio to the chord worker and resolves with the chords", async () => {
     vi.stubGlobal("Worker", FakeWorker);
     FakeWorker.reply = { chords: [{ time: 0, name: "Am", confidence: 0.9 }] };
-    const job = startChordDetection(audio);
+    const job = startChordDetection({ harmony: audio, bass: null, beats: null });
     await expect(job.done).resolves.toEqual([{ time: 0, name: "Am", confidence: 0.9 }]);
-    expect(FakeWorker.last?.posted).toBe(audio);
+    expect(FakeWorker.last?.posted).toEqual({ harmony: audio, bass: null, beats: null });
     expect(FakeWorker.last?.terminated).toBe(true);
   });
 
   it("rejects with the worker's error", async () => {
     vi.stubGlobal("Worker", FakeWorker);
     FakeWorker.reply = { error: "bad audio" };
-    await expect(startChordDetection(audio).done).rejects.toThrow("bad audio");
+    await expect(startChordDetection({ harmony: audio, bass: null, beats: null }).done).rejects.toThrow("bad audio");
   });
 
   it("cancelling ends the worker and rejects with an AbortError", async () => {
     vi.stubGlobal("Worker", FakeWorker);
-    const job = startChordDetection(audio);
+    const job = startChordDetection({ harmony: audio, bass: null, beats: null });
     job.cancel();
     await expect(job.done).rejects.toMatchObject({ name: "AbortError" });
     expect(FakeWorker.last?.terminated).toBe(true);

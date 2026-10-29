@@ -88,7 +88,11 @@ export interface AnalysisAudio {
   chordChanges: number[];
   /** The stem the key is read from, or null when there is no audio with a signal. */
   keySource: NamedAudio | null;
-  /** The stem the chords are read from, or null when no chord stem is chosen. */
+  /** The audio the chords are read from: the performer's chord stem, else the harmony stems added together, else the mix. */
+  harmony: NamedAudio;
+  /** The bass stem, when it has a signal. The chords read the bass note from it. */
+  bass: PcmAudio | null;
+  /** The stem the sections read the harmony from, or null when no chord stem is chosen. */
   chordSource: NamedAudio | null;
 }
 

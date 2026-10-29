@@ -4,7 +4,7 @@
 import { startBeatGrid } from "../band/beat-grid-client";
 import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
-import type { Chord } from "../performance/chords";
+import type { Chord, ChordsInput } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
@@ -131,14 +131,14 @@ export function keyStep(): AnalysisStep {
   };
 }
 
-/** Reads the chords from the chord stem. Nothing is saved when no chord stem is chosen. */
+/** Reads the chords from the harmony (the chosen stem, else the harmony stems added together, else the mix), with the bass stem when there is one. */
 export function chordsStep(): AnalysisStep {
   return {
     name: "chords",
     async run(audio, signal) {
-      if (!audio.chordSource) return {};
-      const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), audio.chordSource.audio, signal);
-      return { chords: { source: audio.chordSource.name, chords } };
+      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: null };
+      const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
+      return { chords: { source: audio.harmony.name, chords } };
     },
   };
 }

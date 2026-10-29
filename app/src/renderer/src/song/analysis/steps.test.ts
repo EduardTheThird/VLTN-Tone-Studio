@@ -19,6 +19,8 @@ vi.mock("../band/beat-grid-client", () => ({
 
 import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
 
+const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
+
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
 const nothingFound = { audioId: "", version: 0 };
@@ -30,7 +32,7 @@ const audio = {
   beatsPerBar: 4,
   chordChanges: [],
   keySource: null,
-  chordSource: null,
+  harmony: NO_HARMONY, bass: null, chordSource: null,
 };
 
 afterEach(() => {
@@ -97,23 +99,26 @@ describe("keyStep and chordsStep", () => {
 
   it("reads the key from the key stem and records the stem", async () => {
     reply = { estimate };
-    const result = await keyStep().run({ ...audio, keySource: { name: "guitar", audio: stem }, chordSource: null }, new AbortController().signal, nothingFound);
+    const keyed = { ...audio, keySource: { name: "guitar", audio: stem }, harmony: NO_HARMONY, bass: null, chordSource: null };
+    const result = await keyStep().run(keyed, new AbortController().signal, nothingFound);
     expect(result).toEqual({ key: { source: "guitar", estimate } });
   });
 
   it("reads nothing when there is no key stem", async () => {
-    expect(await keyStep().run({ ...audio, keySource: null, chordSource: null }, new AbortController().signal, nothingFound)).toEqual({});
+    const unkeyed = { ...audio, keySource: null, harmony: NO_HARMONY, bass: null, chordSource: null };
+    expect(await keyStep().run(unkeyed, new AbortController().signal, nothingFound)).toEqual({});
   });
 
-  it("reads the chords from the chord stem and records the stem", async () => {
+  it("reads the chords from the harmony and records its name", async () => {
     reply = { chords: [{ time: 0, name: "Em", confidence: 0.9 }] };
-    const result = await chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal, nothingFound);
-    expect(result).toEqual({ chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
+    const bass = { sampleRate: 44100, channels: [new Float32Array(4)] };
+    const result = await chordsStep().run({ ...audio, keySource: null, harmony: { name: "other+piano", audio: stem }, bass }, new AbortController().signal, nothingFound);
+    expect(result).toEqual({ chords: { source: "other+piano", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
   });
 
   it("fails when the worker reports an error", async () => {
     reply = { error: "boom" };
-    const failing = { ...audio, keySource: null, chordSource: { name: "other", audio: stem } };
+    const failing = { ...audio, keySource: null, harmony: { name: "other", audio: stem }, bass: null };
     await expect(chordsStep().run(failing, new AbortController().signal, nothingFound)).rejects.toThrow("boom");
   });
 });
@@ -204,7 +209,7 @@ describe("sectionsStep", () => {
     const withChords = {
       ...audio,
       mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] },
-      chordSource: { name: "other", audio: chords },
+      harmony: NO_HARMONY, bass: null, chordSource: { name: "other", audio: chords },
     };
     await sectionsStep(() => grid).run(withChords, new AbortController().signal, nothingFound);
     const input = posted[0] as { harmony: unknown; spans: { start: number }[]; options: { snap: number } };

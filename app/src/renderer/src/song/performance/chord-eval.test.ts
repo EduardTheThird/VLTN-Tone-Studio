@@ -116,7 +116,7 @@ interface EvalSong {
 /** The detectors the eval compares. The first is the frozen baseline; the last is the detector under test. */
 const DETECTORS: { name: string; run: (song: EvalSong) => Chord[] }[] = [
   { name: "baseline (spec 80)", run: (song) => legacyDetectChords(chordAudio(song)) },
-  { name: "current", run: (song) => detectChords(chordAudio(song)) },
+  { name: "current", run: (song) => detectChords({ harmony: chordAudio(song), bass: null, beats: null }) },
 ];
 
 /** The audio the chord analysis reads when no chord stem is chosen: the first stem with a signal, else the mix. */

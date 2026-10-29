@@ -48,7 +48,14 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
   const meter = beatsPerBar ?? (typeof options.beats === "number" ? options.beats : 4);
   const chordChoice = typeof options.chordChoice === "string" ? (options.chordChoice as StemName) : "";
   const chordName: StemName | "" = chordChoice && stems?.[chordChoice] ? chordChoice : defaultChordSource(stems);
-  const built = buildAnalysisAudio({ mix: source.audio, stems, beatsPerBar: meter, chordChanges: chartChordTimes(parseChart(getSetting(key, ""))), chordName });
+  const built = buildAnalysisAudio({
+    mix: source.audio,
+    stems,
+    beatsPerBar: meter,
+    chordChanges: chartChordTimes(parseChart(getSetting(key, ""))),
+    chordChoice,
+    chordName,
+  });
   // Lyrics read the vocals stem; an imported vocals track stands in for it when the song was not split.
   const audio = { ...built, stems: stemsWithVocals(built.stems, vocalsOf(stems, tracks)) };
   return { key, title: source.name, audioId: songAudioId(source.audio, stems), audio };

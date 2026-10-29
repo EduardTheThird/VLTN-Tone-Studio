@@ -1,23 +1,47 @@
 // Builds the audio one song's analysis runs on, from its mix and stems. The panel and the headless batch (spec 72) both build it here, so a
 // song analysed from the Library gets the same sources, key stem and chord stem as one analysed on the Performance screen.
 
-import { beatSources } from "../band/request";
+import { beatSources, sumAudio } from "../band/request";
+import { hasSignal } from "../performance/sources";
 import { keyAudio } from "../performance/key";
-import type { PcmAudio, Stems, StemName } from "../types";
-import type { AnalysisAudio } from "./song-analysis";
+import type { PcmAudio, StemName, Stems } from "../types";
+import type { AnalysisAudio, NamedAudio } from "./song-analysis";
 
-/** The inputs that come from the song itself: its mix, its stems, its meter, its chart's chord changes, and the chosen chord stem. */
+/** The inputs that come from the song itself: its mix, its stems, its meter, its chart's chord changes, and the chord stems it uses. */
 export interface SongAudioInput {
   mix: PcmAudio;
   stems: Stems | null;
   beatsPerBar: number;
   chordChanges: number[];
-  /** The stem the chords are read from. Empty when none is chosen. */
+  /** The stem the performer chose for the chords. Empty when the song's own rules pick the harmony. */
+  chordChoice?: StemName | "";
+  /** The stem the sections read the harmony from. Empty when none is chosen. */
   chordName: StemName | "";
 }
 
-/** The audio an analysis runs on: the beat sources, the key stem and the chord stem, chosen the same way for every song. */
-export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordName }: SongAudioInput): AnalysisAudio {
+/** The stems that carry the harmony without the bass or the drums. Their sum is the default harmony when the song is split. */
+export const HARMONY_STEMS: readonly StemName[] = ["other", "guitar", "piano"];
+
+/**
+ * The audio the chords are read from, and the name they are stored under. The performer's own choice wins when that stem has a signal.
+ * Otherwise the harmony stems with a signal are added together, and otherwise the song's mix is used. The name says which were used, so a
+ * change of source is analysed again.
+ */
+export function harmonyOf(stems: Stems | null, mix: PcmAudio, chordChoice: StemName | "" = ""): NamedAudio {
+  if (chordChoice && hasSignal(stems?.[chordChoice])) return { name: chordChoice, audio: stems![chordChoice]! };
+  const parts = HARMONY_STEMS.filter((name) => hasSignal(stems?.[name]));
+  if (parts.length === 1) return { name: parts[0], audio: stems![parts[0]]! };
+  if (parts.length) return { name: parts.join("+"), audio: sumAudio(parts.map((name) => stems![name]!)) };
+  return { name: "mix", audio: mix };
+}
+
+/** The bass stem when it has a signal, which the chords read for the bass note. Null otherwise. */
+export function bassOf(stems: Stems | null): PcmAudio | null {
+  return hasSignal(stems?.bass) ? stems!.bass! : null;
+}
+
+/** The audio an analysis runs on: the beat sources, the key stem, the harmony and the bass for the chords, and the section chord stem. */
+export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordChoice = "", chordName }: SongAudioInput): AnalysisAudio {
   return {
     mix,
     stems,
@@ -26,6 +50,8 @@ export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chor
     beatsPerBar,
     chordChanges,
     keySource: keyAudio(stems, mix),
+    harmony: harmonyOf(stems, mix, chordChoice),
+    bass: bassOf(stems),
     chordSource: chordName && stems?.[chordName] ? { name: chordName, audio: stems[chordName] } : null,
   };
 }

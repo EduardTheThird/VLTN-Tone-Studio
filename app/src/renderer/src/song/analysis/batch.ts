@@ -376,6 +376,7 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
     stems,
     beatsPerBar: typeof saved.beats === "number" ? saved.beats : 4,
     chordChanges: chartChordTimes(parseChart(song.settings[""] ?? "")),
+    chordChoice: chosenChordStem(saved, stems),
     chordName: chordNameFor(saved, stems),
   });
   // The lyrics step is decided from the chart before the run, so a chart that the batch may not replace is never transcribed.
@@ -489,11 +490,15 @@ function languageOf(saved: Record<string, unknown>): LyricsLanguage {
   return LYRIC_LANGUAGES.find((value) => value === saved.lyricsLanguage) ?? "auto";
 }
 
+/** The chord stem the performer chose for a song, when the stem is in the song. Empty otherwise. */
+function chosenChordStem(options: Record<string, unknown>, stems: Stems): StemName | "" {
+  const chosen = options.chordChoice;
+  return typeof chosen === "string" && chosen && stems[chosen as StemName] ? (chosen as StemName) : "";
+}
+
 /** The chord stem a song uses: its own choice when the stem is in the song, else the first stem with a signal. */
 function chordNameFor(options: Record<string, unknown>, stems: Stems): StemName | "" {
-  const chosen = options.chordChoice;
-  if (typeof chosen === "string" && chosen && stems[chosen as StemName]) return chosen as StemName;
-  return defaultChordSource(stems);
+  return chosenChordStem(options, stems) || defaultChordSource(stems);
 }
 
 /** One line for the summary: what the batch changed, and what it could not do. */

@@ -365,7 +365,7 @@ describe("Band panel", () => {
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalled());
-    expect(mocks.startChordDetection).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100 }));
+    expect(mocks.startChordDetection).toHaveBeenCalledWith(expect.objectContaining({ harmony: expect.objectContaining({ sampleRate: 44100 }) }));
     expect(mocks.startBandRender.mock.calls[0][0].harmony[0].chord?.name).toBe("Am");
     expect(screen.queryByText(/No chords were found/)).toBeNull();
   });

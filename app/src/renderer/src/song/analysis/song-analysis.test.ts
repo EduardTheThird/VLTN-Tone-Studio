@@ -11,6 +11,8 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
+const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
+
 const audio = {
   mix: { sampleRate: 44100, channels: [] },
   stems: null,
@@ -19,7 +21,7 @@ const audio = {
   beatsPerBar: 4,
   chordChanges: [],
   keySource: null,
-  chordSource: null,
+  harmony: NO_HARMONY, bass: null, chordSource: null,
 };
 
 function memory(initial: SongAnalysis | null = null) {

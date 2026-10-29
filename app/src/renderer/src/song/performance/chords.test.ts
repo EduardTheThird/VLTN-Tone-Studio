@@ -6,8 +6,9 @@ it("rejects silence and recognises an opposite-phase stereo major chord", () => 
   const channel = Float32Array.from({ length: sampleRate * 2 }, (_, i) =>
     [261.626, 329.628, 391.995].reduce((s, f) => s + 0.1 * Math.sin((2 * Math.PI * f * i) / sampleRate), 0),
   );
-  expect(detectChords({ sampleRate, channels: [new Float32Array(sampleRate)] })[0].name).toBe("N");
-  const stereo = detectChords({ sampleRate, channels: [channel, channel.map((n) => -n)] });
+  const input = (harmony: { sampleRate: number; channels: Float32Array[] }) => ({ harmony, bass: null, beats: null });
+  expect(detectChords(input({ sampleRate, channels: [new Float32Array(sampleRate)] }))[0].name).toBe("N");
+  const stereo = detectChords(input({ sampleRate, channels: [channel, channel.map((n) => -n)] }));
   expect(stereo[0].name).toBe("C");
 });
 it("removes isolated flicker while preserving sustained changes and silence", () => {
