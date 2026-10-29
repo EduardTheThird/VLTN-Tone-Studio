@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "
 import { join } from "node:path";
 import { HostError } from "@shared/ipc";
 import { writeJsonAtomic } from "./fs-atomic";
+import { backupsToPrune, type BackupRetention } from "@shared/backup-retention";
 import { createTrash, sweepLibraryTrash, type TrashFn } from "./trash";
 import type { BackupSlot, CollectionInfo, CollectionKind, LocalPreset, NewPreset, PickedFile } from "@shared/host/files";
 import { MAX_PRST_BYTES, PRST_MODELS, isDeviceKey, profileFor, prstName, sniffPrst, type DeviceKey } from "@shared/devices";
@@ -297,6 +298,17 @@ export class LibraryStore {
     if (root !== "library") throw new HostError("invalid", "Backups are read-only");
     if ((await this.readMeta(dir)).kind !== "collection") throw new HostError("invalid", "Only your own collections can be deleted");
     await this.trash(path);
+  }
+
+  /**
+   * Moves the backups of `device` that `policy` no longer keeps to the Trash, oldest first. Pinned backups and other models'
+   * backups stay. Returns the ids moved.
+   */
+  async pruneBackups(device: DeviceKey, policy: BackupRetention, now = new Date()): Promise<string[]> {
+    const backups = (await this.listCollections()).filter((c) => c.kind === "backup" && c.device === device);
+    const doomed = backupsToPrune(backups, policy, now);
+    for (const c of doomed) await this.trash(this.collectionPath(c.id).path);
+    return doomed.map((c) => c.id);
   }
 
   /** Drops entries that have been in the in-library Trash for 30 days. Run at start-up. */

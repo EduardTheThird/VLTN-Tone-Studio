@@ -349,3 +349,34 @@ describe("pinning a backup", () => {
     await expect(store.setBackupPinned("backups/gp5-2000-01-01", true)).rejects.toThrow(/no longer exists/);
   });
 });
+
+describe("keeping backups (Keep backups setting)", () => {
+  const slots = [{ slot: 0, name: "GreatPedal", prst: fakePrst("GreatPedal") }];
+  const dayOf = (d: number) => new Date(2026, 9, d, 9, 0);
+  const now = dayOf(29);
+
+  it("moves the oldest backups beyond the newest 10 to the Trash", async () => {
+    for (let d = 1; d <= 12; d++) await store.saveBackup(slots, dayOf(d));
+    const moved = await store.pruneBackups("gp5", "10", now);
+    expect(moved).toEqual(["backups/gp5-2026-10-01", "backups/gp5-2026-10-02"]);
+    const left = (await store.listCollections()).filter((c) => c.kind === "backup").map((c) => c.id);
+    expect(left).toHaveLength(10);
+    expect(left).not.toContain("backups/gp5-2026-10-01");
+    expect(await readdir(join(root, ".trash"))).toHaveLength(2);
+  });
+
+  it("keeps pinned backups and never prunes another model's", async () => {
+    for (let d = 1; d <= 3; d++) await store.saveBackup(slots, dayOf(d));
+    await store.saveBackup([{ slot: 0, name: "Lead", prst: fakeGp200Prst("Lead") }], dayOf(4), "gp200");
+    await store.setBackupPinned("backups/gp5-2026-10-01", true);
+    expect(await store.pruneBackups("gp5", "10", now)).toEqual([]);
+    expect(await store.pruneBackups("gp5", "30", now)).toEqual([]);
+    const ayearOn = new Date(now.getTime() + 365 * 86_400_000);
+    expect(await store.pruneBackups("gp5", "90d", ayearOn)).toEqual(["backups/gp5-2026-10-02", "backups/gp5-2026-10-03"]);
+  });
+
+  it("prunes nothing when the setting keeps every backup", async () => {
+    for (let d = 1; d <= 12; d++) await store.saveBackup(slots, dayOf(d));
+    expect(await store.pruneBackups("gp5", "all", now)).toEqual([]);
+  });
+});
