@@ -286,6 +286,10 @@ export function createSongRunner(deps: RunnerDeps) {
     analyseAgain(): void {
       if (!deps.playing()) start({}, false);
     },
+    /** Runs the chosen steps again now, keeping what the performer chose (a manual tempo, a grid of their own). Ignored during playback. */
+    analyseNow(): void {
+      if (!deps.playing()) start({ force: true, replaceManual: false }, false);
+    },
     /** Runs the analysis again with the meter the performer chose, so a grid laid out for the old meter is laid out again. */
     rerun(beatsPerBar?: number): void {
       if (!deps.playing()) start({ beatsPerBar }, false);

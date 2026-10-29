@@ -14,6 +14,7 @@ import { buildAnalysisAudio } from "./analysis-audio";
 import { songAudioId, type AnalysisStep } from "./song-analysis";
 import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 import { createSongRunner, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
+import { loadAfterSplit, type AfterSplitStep } from "./after-split";
 
 /** A song is playing, or a playlist is. Nothing the runner does starts over the music. */
 const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
@@ -31,12 +32,24 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
   return { key, audioId: songAudioId(source.audio, stems), audio };
 }
 
-/** The steps the open song's run takes: the full list, or the tempo (and sections) for a detect. Lyrics join in a later step of this change. */
+/**
+ * The steps the open song's run takes, in the order the analysis runs them: only the ones ticked under "After the split". A detect takes
+ * the tempo (and the sections, for a find-the-beat) whatever is ticked, since its buttons are about the tempo.
+ */
 function appSteps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[] {
   const tempo = tempoStep((grid) => (captured.grid = grid), options.hint ?? {});
   const sections = sectionsStep(() => captured.grid ?? readStoredBand(key).grid ?? null);
   if (options.tempoOnly) return options.sections ? [tempo, sections] : [tempo];
-  return [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections];
+  const wanted = loadAfterSplit();
+  const ordered: [AfterSplitStep, AnalysisStep[]][] = [
+    ["loudness", [loudnessStep(), silenceStep()]],
+    ["parts", [partsStep()]],
+    ["chords", [chordsStep()]],
+    ["tempo", [tempo]],
+    ["key", [keyStep()]],
+    ["sections", [sections]],
+  ];
+  return ordered.filter(([id]) => wanted[id]).flatMap(([, steps]) => steps);
 }
 
 /** The app's runner. */
