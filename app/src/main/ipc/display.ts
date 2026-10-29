@@ -1,10 +1,11 @@
 import { app, BrowserWindow, screen, type IpcMainInvokeEvent } from "electron";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mergeAudienceState, parseAudienceUpdate, type AudienceState, type AudienceUpdate } from "@shared/audience";
 import type { AudienceDisplayInfo, AudienceStatus } from "@shared/host/audience";
 import { HostError } from "@shared/ipc";
 import { handle } from "./handle";
+import { writeJsonAtomicSync } from "./fs-atomic";
 
 // The audience display (spec 43). A second window loads the same renderer bundle with `?view=audience`. It has no Node access, a
 // sandboxed preload that only reads the state it is sent, and the same Content-Security-Policy as the main window (main/index.ts serves
@@ -226,7 +227,7 @@ export function readDisplayId(path: string): number | null {
 
 export function writeDisplayId(path: string, displayId: number | null): void {
   try {
-    writeFileSync(path, JSON.stringify({ displayId }));
+    writeJsonAtomicSync(path, { displayId });
   } catch {
     // The choice still holds for this run; only remembering it across runs failed.
   }

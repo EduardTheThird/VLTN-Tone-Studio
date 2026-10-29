@@ -48,6 +48,7 @@ import { appendPlay, withoutSong } from "@shared/library-history";
 import { removeEntry } from "@shared/playlist-sets";
 import { isStringList } from "@shared/library-filter";
 import { validateAnnotations } from "@shared/chart-annotations";
+import { writeJsonAtomic } from "./fs-atomic";
 
 export type DiskIndex = SongLibrary & { revisions: Record<string, string> };
 /** A save session or staging folder older than this is abandoned: the renderer crashed or the user gave up. */
@@ -193,10 +194,8 @@ export class SongLibraryStore {
   }
   private async publish(index: DiskIndex): Promise<void> {
     await mkdir(this.root, { recursive: true });
-    const temp = join(this.root, `index-${randomUUID()}.tmp`);
     // A v4 library is refused by older apps, which would otherwise misread the metadata and folders. See SONG-LIBRARY.md.
-    await writeFile(temp, JSON.stringify({ ...index, version: LIBRARY_VERSION }));
-    await rename(temp, join(this.root, "library.json"));
+    await writeJsonAtomic(join(this.root, "library.json"), { ...index, version: LIBRARY_VERSION });
   }
   async preflight(ids: string[]): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
     if (!Array.isArray(ids) || ids.length > 10000 || ids.some((id) => typeof id !== "string" || !validId(id))) throw new Error("Invalid playlist song IDs.");
