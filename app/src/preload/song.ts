@@ -35,6 +35,7 @@ export const songApi: SongHostApi = {
   },
   downloadedFiles: () => invoke("song:downloadedFiles"),
   downloadModel: (id) => invoke("song:downloadModel", id),
+  cancelDownload: (id) => invoke("song:cancelDownload", id),
   modelFile: (file) => invoke("song:modelFile", file),
   deleteModel: (id) => invoke("song:deleteModel", id),
   onSystemResume(callback) {
