@@ -2,9 +2,9 @@
 // once, so a song that is closed or re-split during analysis does not keep a thread busy.
 
 import type { PcmAudio } from "../types";
-import { monoSum, type BeatGrid, type MeterEstimate } from "./beat-grid";
+import { monoSum, type BeatGrid, type MeterEstimate, type TempoHintOptions } from "./beat-grid";
 
-export interface BeatGridRequest {
+export interface BeatGridRequest extends TempoHintOptions {
   sources: readonly PcmAudio[];
   sampleRate: number;
   beatsPerBar: number;
@@ -13,7 +13,7 @@ export interface BeatGridRequest {
 }
 
 /** What the worker receives. The stems are already summed, so only one mono buffer is sent, and it is transferred, not copied. */
-export interface BeatGridMessage {
+export interface BeatGridMessage extends TempoHintOptions {
   mono: Float32Array;
   sampleRate: number;
   beatsPerBar: number;
@@ -34,7 +34,14 @@ export interface BeatGridJob {
  */
 export function startBeatGrid(request: BeatGridRequest): BeatGridJob {
   const mono = monoSum(request.sources);
-  const message: BeatGridMessage = { mono, sampleRate: request.sampleRate, beatsPerBar: request.beatsPerBar, chordChanges: request.chordChanges };
+  const message: BeatGridMessage = {
+    mono,
+    sampleRate: request.sampleRate,
+    beatsPerBar: request.beatsPerBar,
+    chordChanges: request.chordChanges,
+    tempoHint: request.tempoHint,
+    lockTempo: request.lockTempo,
+  };
   const worker = new Worker(new URL("./beat-grid-worker.ts", import.meta.url), { type: "module" });
   let rejectDone: (error: Error) => void = () => {},
     resolveMeter: (meter: MeterEstimate | null) => void = () => {};

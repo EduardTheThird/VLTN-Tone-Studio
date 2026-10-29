@@ -13,6 +13,7 @@ import {
   onsetStrength,
   parseBeatGrid,
   pickDownbeat,
+  refineTempo,
   shiftDownbeat,
   trackBeats,
   type BeatGrid,
@@ -191,6 +192,53 @@ describe("tempo of a click track", () => {
     expect(Math.abs(estimateTempo(onset, frameRate).bpm - bpm)).toBeLessThanOrEqual(1);
     expect(Math.abs(grid.bpm - bpm)).toBeLessThanOrEqual(1);
     expect(hitRate(grid.beats, steadyBeats(bpm))).toBeGreaterThanOrEqual(0.95);
+  });
+});
+
+describe("a tempo the performer typed", () => {
+  // A click that is really at 97.6 BPM, typed as 98 (close) or 97, and as 120 (far off).
+  const beats = steadyBeats(97.6);
+  const audio = clickAudio(beats, 4);
+
+  it("refines a close hint to the tempo of the audio", () => {
+    const { onset, frameRate } = onsetStrength([audio], RATE);
+    expect(Math.abs(refineTempo(onset, frameRate, 98) - 97.6)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(refineTempo(onset, frameRate, 97) - 97.6)).toBeLessThanOrEqual(0.1);
+  });
+
+  it("stays within the spread of a far hint, rather than jumping to the audio's tempo", () => {
+    const { onset, frameRate } = onsetStrength([audio], RATE);
+    const refined = refineTempo(onset, frameRate, 120);
+    expect(refined).toBeGreaterThanOrEqual(120 * 0.96);
+    expect(refined).toBeLessThanOrEqual(120 * 1.04);
+  });
+
+  it("tracks the beats at the refined tempo", () => {
+    const grid = detectBeatGrid([audio], RATE, 4, [], { tempoHint: 98 });
+    expect(Math.abs(grid.bpm - 97.6)).toBeLessThanOrEqual(0.3);
+    expect(hitRate(grid.beats, beats)).toBeGreaterThanOrEqual(0.95);
+  });
+
+  it("returns zero for a silent curve, which has no tempo to refine", () => {
+    expect(refineTempo(new Float64Array(4000), 86, 98)).toBe(0);
+  });
+
+  it("keeps the typed tempo exactly when it is locked, and finds the beats on that grid", () => {
+    // Clicks at 120 BPM, typed as 118. The audio disagrees with the typed tempo, but a lock keeps what the performer set: every beat is 60 / 118 apart.
+    const locked = detectBeatGrid([clickAudio(steadyBeats(120), 4)], RATE, 4, [], { tempoHint: 118, lockTempo: true });
+    expect(locked.steady?.bpm).toBeCloseTo(118, 6);
+    expect(locked.bpm).toBeCloseTo(118, 6);
+    expect(locked.beats[1] - locked.beats[0]).toBeCloseTo(60 / 118, 6);
+  });
+
+  it("locks to the exact tempo and puts the downbeat on the thump", () => {
+    const truth = steadyBeats(120);
+    const grid = detectBeatGrid([clickAudio(truth, 4)], RATE, 4, [], { tempoHint: 120, lockTempo: true });
+    expect(grid.bpm).toBeCloseTo(120, 6);
+    // Thumps fall on every fourth click: the first one is at 0.5 s, so the downbeat is 0.5 s modulo 2 s.
+    const downbeatTime = grid.beats[grid.downbeat];
+    expect(Math.abs((downbeatTime % 2) - FIRST_BEAT)).toBeLessThanOrEqual(0.03);
+    expect(hitRate(grid.beats, truth)).toBeGreaterThanOrEqual(0.95);
   });
 });
 
