@@ -3,19 +3,17 @@
 // cancels it. The results are saved with the song and handed back to the panel, which decides what to apply.
 
 import { useEffect, useRef, useState } from "react";
-import { beatSources } from "@/song/band/request";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
 import type { Stems, PcmAudio, StemName } from "@/song/types";
-import { keyAudio } from "@/song/performance/key";
 import type { MissingParts } from "@/song/band/detect";
 import { readOptions, setSetting } from "@/song/performance/settings";
+import { buildAnalysisAudio } from "@/song/analysis/analysis-audio";
 import {
   describeAnalysis,
   parseAnalysis,
   songAudioId,
   PLAYBACK_INTERRUPT,
   runSongAnalysis,
-  type AnalysisAudio,
   type AnalysisSettings,
   type LoudnessResult,
   type MeterResult,
@@ -129,16 +127,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     if (!mix) return;
     const run = new AbortController();
     controller.current = run;
-    const audio: AnalysisAudio = {
-      mix,
-      stems,
-      sources: beatSources(stems, mix),
-      sampleRate: mix.sampleRate,
-      beatsPerBar,
-      chordChanges,
-      keySource: keyAudio(stems, mix),
-      chordSource: chordName && stems?.[chordName] ? { name: chordName, audio: stems[chordName] } : null,
-    };
+    const audio = buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordName });
     const audioId = songAudioId(mix, stems);
     const tempo = tempoStep((grid) => {
       // A performer's own grid is kept, unless the performer asked for the tempo again. The analysis's grid is replaced, so it always agrees

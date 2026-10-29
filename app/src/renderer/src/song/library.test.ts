@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
-import { useSongLibrary } from "./library";
+import { loadSongAudio, useSongLibrary } from "./library";
 import { clearSettingsCache, flushSettings, getSetting, performanceKey, setSetting } from "./performance/settings";
 import { useNav } from "@/state/nav";
 
@@ -60,6 +60,19 @@ beforeEach(() => {
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
   useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], position: -1, playlistPlaying: false, midiSession: null });
 });
+it("loads a saved song's audio for an analysis without opening it or changing the open song", async () => {
+  const loaded = await loadSongAudio(saved.id);
+  expect(loaded.source.channels[0]).toEqual(audio.channels[0]);
+  expect(Object.keys(loaded.stems)).toEqual(["guitar"]);
+  expect(useSong.getState().source).toBeNull();
+  expect(useSong.getState().stems).toBeNull();
+  expect(useNav.getState().param).not.toBe("performance");
+});
+
+it("refuses to load audio for a song that is not in the library", async () => {
+  await expect(loadSongAudio("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow("Song is missing from the library.");
+});
+
 it("loads saved source/stems and preserves queue positions for repeated entries", async () => {
   await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
   expect(useSong.getState().source?.audio.channels[0]).toEqual(audio.channels[0]);
