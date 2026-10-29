@@ -101,7 +101,8 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     const tempo = tempoStep((grid) => {
       if (!readStoredBand(songKey).grid) writeStoredBand(songKey, { beatGrid: grid });
     });
-    setStep("tempo");
+    // The label fills in when the first step starts, so it never names a step that has not begun.
+    setStep(null);
     void runSongAnalysis({
       audioId,
       audio,
@@ -116,7 +117,10 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (controller.current !== run) return;
       controller.current = null;
       if (outcome.status === "interrupted") {
-        resume.current = { from: outcome.next, partial: outcome.analysis };
+        const next = { from: outcome.next, partial: outcome.analysis };
+        // Playback may have stopped while this step was still running. The effect below has already seen that, so restart here.
+        if (latest.current.playing) resume.current = next;
+        else start(next);
         return;
       }
       setStep(null);

@@ -62,6 +62,25 @@ describe("useSongAnalysis", () => {
     await waitFor(() => expect(onTempo).toHaveBeenCalled());
   });
 
+  it("restarts a run that was interrupted by playback when playback stopped before the run ended", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // A step that cannot be aborted, like the loudness worker: it finishes after playback has already stopped.
+    fake.run.mockImplementationOnce(async () => {
+      await gate;
+      return { tempo: { bpm: 98, firstBeat: 0.4, steady: true }, meter: { beatsPerBar: 3, confidence: 0.9 } };
+    });
+    const onTempo = vi.fn();
+    const { rerender } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onTempo }) });
+    await waitFor(() => expect(fake.run).toHaveBeenCalledTimes(1));
+    rerender(base({ onTempo, playing: true }));
+    rerender(base({ onTempo, playing: false }));
+    release();
+    await waitFor(() => expect(onTempo).toHaveBeenCalledWith({ bpm: 98, firstBeat: 0.4, steady: true }));
+    // The finished tempo was kept, so the step is not run a second time.
+    expect(fake.run).toHaveBeenCalledTimes(1);
+  });
+
   it("is saved, so opening the song again runs nothing", async () => {
     const first = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base() });
     await waitFor(() => expect(first.result.current.message).toBe("Tempo 98 BPM. Meter 3/4"));
