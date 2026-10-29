@@ -31,7 +31,7 @@ Everything here works in the desktop app. The browser build can play a song and 
 3. Add lyrics, chords and MIDI cues (below).
 4. Enter a title and artist and choose **Save song to library**. Use **Save song changes** after later edits.
 
-**Key.** Performance estimates the song's major or minor key in the background, from the guitar stem first and the original mix as a last resort. It shows **Unknown** rather than guess. Use **Key override** to save a correction. The key only changes how chords are displayed, never the audio or any MIDI.
+**Key.** The song analysis estimates the song's major or minor key from its harmony (the chord stem, or the guitar, piano and other stems together, or the mix), with its bass and the chords it found, after the chords. A key and its relative (the other mode on the same notes) that are close are decided by the first and last chords and the bass. The chords can also show a Mixolydian or Dorian flavour, which the readout names, such as "G major (Mixolydian)". A section that is clearly in another key is listed under the readout, such as "Last chorus: A major". The Performance panel's own estimate reads one stem (guitar first, then the other stems, then the original mix) and shows **Unknown** rather than guess. Use **Key override** to save a correction. The key only changes how chords are displayed, never the audio or any MIDI.
 
 **Metronome.** Choose **Off**, **While stopped** (a rehearsal click on the grid), **While playing** or **Both** from the **Metronome** menu. The choice is saved for each song and starts from the last one used. To line it up with a recording that has an intro, pause on the first downbeat and choose **Metronome settings → Set first beat here**. Fine-tune with **First beat (seconds)**, or **Reset first beat**. The grid is fixed, so it cannot follow a recording that speeds up or slows down. It does not move lyrics or MIDI cues.
 
@@ -454,6 +454,6 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - Playlist joins are gapless only when the next song is ready in time. Otherwise there is a short gap, and a notice says so.
 - Audio is stretched or pitch-shifted only by [speed and pitch](#speed-and-pitch). The metronome is never stretched.
 - Audio outputs, speed and pitch, gapless joins and multitrack import are not yet tested on hardware.
-- Chord estimates cover the common chord types only: no extended chords such as ninths or altered chords. Key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. The project has not yet measured chord accuracy on real recordings.
+- Chord estimates cover the common chord types only: no extended chords such as ninths or altered chords. Key estimates are less certain for modal music, relative keys and key changes, and a key in a section is only listed when it is clear. Lyrics from Whisper can be wrong. The project has not yet measured chord accuracy on real recordings.
 - Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
 - Bluetooth editor management and RTP-MIDI are not supported.
