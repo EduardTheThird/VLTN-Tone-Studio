@@ -1,5 +1,4 @@
 import { DEFAULT_LYRICS_MODEL_ID, findLyricsModel, type LyricsModelId } from "./lyrics-models";
-import { readOptions } from "./settings";
 
 // What a transcription runs: the model and quality, chosen once for all songs and remembered across launches
 // (localStorage, like the split's choice), and the language, kept per song in its `:options`.
@@ -60,9 +59,9 @@ export interface LyricsOptions extends LyricsChoice {
   language: LyricsLanguage;
 }
 
-export function lyricsOptions(key: string): LyricsOptions {
-  const { lyricsLanguage } = readOptions<{ lyricsLanguage?: unknown }>(key, {});
-  const language = LYRIC_LANGUAGES.find((value) => value === lyricsLanguage) ?? "auto";
+/** The options for one song: the remembered model and quality, and the song's own language (`lyricsLanguage` in its options). */
+export function lyricsOptionsFrom(songOptions: { lyricsLanguage?: unknown }): LyricsOptions {
+  const language = LYRIC_LANGUAGES.find((value) => value === songOptions.lyricsLanguage) ?? "auto";
   return { ...loadLyricsChoice(), language };
 }
 

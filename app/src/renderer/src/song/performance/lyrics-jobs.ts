@@ -4,7 +4,8 @@ import { pastedLines } from "./lyrics-align";
 import { LyricsCancelled, transcribeLyrics } from "./lyrics-run";
 import { lyricsMadeRecord, saveLyricsChart } from "./lyrics-chart";
 import { flushSettings } from "./settings";
-import { lyricsOptions, type LyricsOptions } from "./lyrics-options";
+import { type LyricsOptions } from "./lyrics-options";
+import { lyricsOptions } from "./lyrics-song-options";
 
 export interface LyricsJob {
   busy: boolean;

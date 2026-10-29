@@ -6,12 +6,12 @@ import {
   hasWebGpuAdapter,
   loadLyricsChoice,
   loadLyricsOnAnalysis,
-  lyricsOptions,
   runtimeFor,
   saveLyricsChoice,
   saveLyricsOnAnalysis,
   wasmThreads,
 } from "./lyrics-options";
+import { lyricsOptions } from "./lyrics-song-options";
 import { clearSettingsCache } from "./settings";
 
 beforeEach(() => {
