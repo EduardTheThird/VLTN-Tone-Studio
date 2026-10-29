@@ -16,6 +16,7 @@ import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type 
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
+import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -136,6 +137,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // A saved song with a PDF shows the PDF unless the performer chose the text chart for it.
   const [chartView, setChartView] = useState<ChartView>(() => (getSetting(key, ":chart") === "text" ? "text" : "pdf"));
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
+    [tempoSource, setTempoSource] = useState<TempoSource | null>(() => readTempoSource(options)),
     [beats, setBeats] = useState(options.beats),
     [shift, setShift] = useState(options.shift),
     [capo, setCapo] = useState(() => clampCapo(options.capo));
@@ -259,7 +261,17 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const tap = () => {
     tapsRef.current = recordTap(tapsRef.current, performance.now());
     const value = tapBpm(tapsRef.current);
-    if (value && !session.state.playing) setBpm(value);
+    if (value && !session.state.playing) changeTempo(value, "tap");
+  };
+  // Every change to the tempo records where it came from. The saved source is what stops the analysis overwriting a tempo the performer chose.
+  const changeTempo = (value: number, source: TempoSource) => {
+    setBpm(value);
+    setTempoSource(source);
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), tempoSource: source }));
+    } catch (e) {
+      session.fail(e);
+    }
   };
   // Key presses run their bindings (the T key taps the tempo by default). Typing in a field never does: the session checks that.
   useEffect(() => {
@@ -301,7 +313,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
    * title or artist is not changed, since the library does not hold them. The import is refused during playback, so this runs when stopped.
    */
   const applyImportedMetadata = (metadata: ChartMetadata) => {
-    if (metadata.tempo !== undefined) setBpm(metadata.tempo);
+    if (metadata.tempo !== undefined) changeTempo(metadata.tempo, "chart");
     if (metadata.capo !== undefined) setCapo(clampCapo(metadata.capo));
     const id = source?.libraryId;
     const patch = { ...(metadata.key ? { key: metadata.key } : {}), ...(metadata.year !== undefined ? { year: metadata.year } : {}) };
@@ -369,13 +381,15 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       session.fail(e);
     }
   };
+  // Nothing is saved until the performer or an analysis chooses a tempo. Writing on mount would save the 120 default as if it were chosen.
   useEffect(() => {
+    if (!tempoSource) return;
     try {
       setSetting(key, ":bpm", String(bpm));
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, bpm]);
+  }, [session, key, bpm, tempoSource]);
   useEffect(() => {
     setMix({ ...mixDefaults(tracks), ...options.mix });
   }, [player]);
@@ -442,7 +456,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           session={session}
           stage={stage}
           bpm={bpm}
-          onBpm={setBpm}
+          onBpm={(value) => changeTempo(value, "manual")}
           metronome={{
             metronome,
             onMetronome: setMetronome,
@@ -495,7 +509,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           bpm={bpm}
           firstBeat={firstBeat}
           onMetronome={(tempo, first) => {
-            setBpm(tempo);
+            changeTempo(tempo, "detected");
             setFirstBeat(first);
           }}
           getPosition={() => session.position}
