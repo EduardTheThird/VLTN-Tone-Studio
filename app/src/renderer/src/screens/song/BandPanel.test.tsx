@@ -255,6 +255,27 @@ describe("Band panel", () => {
     expect(savedOptions().beatGrid.beats).toHaveLength(16);
   });
 
+  it("finds the beat from the tempo the performer set, while Use my tempo is on", () => {
+    mocks.startBeatGrid.mockReturnValue({ done: Promise.resolve(grid), cancel: vi.fn() });
+    renderPanel({ typedTempo: true, bpm: 98 });
+    // On by default, so the typed tempo is the hint.
+    fireEvent.click(screen.getByRole("button", { name: "Find the beat" }));
+    expect(mocks.startBeatGrid).toHaveBeenLastCalledWith(expect.objectContaining({ tempoHint: 98 }));
+  });
+
+  it("finds the beat from the tracker's own tempo once Use my tempo is off", () => {
+    mocks.startBeatGrid.mockReturnValue({ done: Promise.resolve(grid), cancel: vi.fn() });
+    renderPanel({ typedTempo: true, bpm: 98 });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use my tempo/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Find the beat" }));
+    expect(mocks.startBeatGrid).toHaveBeenLastCalledWith(expect.objectContaining({ tempoHint: undefined }));
+  });
+
+  it("offers Use my tempo only when the tempo was set by hand", () => {
+    renderPanel();
+    expect(screen.queryByRole("checkbox", { name: /Use my tempo/ })).toBeNull();
+  });
+
   it("applies the corrections to the stored grid", () => {
     stored({ beatGrid: grid });
     renderPanel();

@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
+import { isRunning, useAnalysisJob } from "@/song/analysis/analysis-job";
 import { NO_BROWSE, browseSongs, folderRows, type BrowseState } from "@/song/library-browse";
 import { formatTime } from "@/song/stems/mix";
 import { runningSeconds } from "@/song/performance/running-time";
@@ -32,6 +33,14 @@ export function LibraryBrowser() {
   const [newPlaylist, setNewPlaylist] = useState<string | null>(null);
   // Which songs the analysis dialog works on: the selection, or the whole library. Null while the dialog is closed.
   const [analysing, setAnalysing] = useState<"selected" | "all" | null>(null);
+  // The status bar asks for the dialog on a running analysis. The dialog then shows that run, whichever songs it started on.
+  const openRequested = useAnalysisJob((s) => s.openRequested);
+  const analysisRunning = isRunning(useAnalysisJob((s) => s.phase));
+  useEffect(() => {
+    if (!openRequested) return;
+    useAnalysisJob.getState().consumeOpenRequest();
+    setAnalysing("all");
+  }, [openRequested]);
   const songs = library.index.songs;
   const folders = library.index.folders;
   const result = useMemo(() => browseSongs(songs, folders, view), [songs, folders, view]);
@@ -151,7 +160,7 @@ export function LibraryBrowser() {
         {result.songs.length} shown{view.folderId ? ` in ${chosen?.name ?? "this folder"}` : ""}
       </p>
       <Button variant="outline" disabled={library.busy || !songs.length} onClick={() => setAnalysing("all")}>
-        Analyse all songs…
+        {analysisRunning ? "Analysis running…" : "Analyse all songs…"}
       </Button>
       {result.letters.length > 0 && (
         <nav aria-label="Jump to letter" className="flex flex-wrap gap-1 text-sm">
@@ -289,7 +298,7 @@ export function LibraryBrowser() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" disabled={library.busy} onClick={() => setAnalysing("selected")}>
-              Analyse selected…
+              {analysisRunning ? "Analysis running…" : "Analyse selected…"}
             </Button>
             <Button variant="outline" onClick={() => setSelected(new Set())}>
               Clear selection

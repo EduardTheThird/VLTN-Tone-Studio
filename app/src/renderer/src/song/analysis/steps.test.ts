@@ -47,6 +47,12 @@ describe("tempoStep", () => {
     expect(job.start).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100, beatsPerBar: 4 }));
   });
 
+  it("passes a typed tempo and its lock on to the tracker", async () => {
+    job.done = Promise.resolve(grid);
+    await tempoStep(undefined, { tempoHint: 98, lockTempo: true }).run(audio, new AbortController().signal, nothingFound);
+    expect(job.start).toHaveBeenCalledWith(expect.objectContaining({ tempoHint: 98, lockTempo: true }));
+  });
+
   it("returns the meter the beats fall into with the tempo", async () => {
     job.done = Promise.resolve(grid);
     job.meter = Promise.resolve({ beatsPerBar: 3, confidence: 0.9 });

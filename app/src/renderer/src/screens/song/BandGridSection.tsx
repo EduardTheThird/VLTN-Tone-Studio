@@ -1,5 +1,6 @@
 import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { doubleTempo, halveTempo, nudgeGrid, shiftDownbeat, type BeatGrid } from "@/song/band/beat-grid";
 import type { ChordAtBeat } from "@/song/band/harmony";
 import { BandGrid } from "./BandGrid";
@@ -20,10 +21,12 @@ export interface BandGridSectionProps {
   onFixed(): void;
   /** Writes a steady grid's tempo to the metronome. */
   onSetTempo(): void;
+  /** The tempo the performer set by hand, which the beat is found from when `use` is on. Not shown when not given. */
+  myTempo?: { bpm: number; use: boolean; onUse(use: boolean): void };
 }
 
 /** The beat grid: find the beat, the corrections to it, the fixed tempo, and the strip that shows it. */
-export function BandGridSection({ grid, harmony, blocked, busy, work, onGrid, onFind, onCancel, onFixed, onSetTempo }: BandGridSectionProps) {
+export function BandGridSection({ grid, harmony, blocked, busy, work, onGrid, onFind, onCancel, onFixed, onSetTempo, myTempo }: BandGridSectionProps) {
   return (
     <section aria-label="Beat grid" className="flex flex-col gap-3">
       <h3 className="font-semibold">Beat grid</h3>
@@ -31,6 +34,12 @@ export function BandGridSection({ grid, harmony, blocked, busy, work, onGrid, on
         <Button size="sm" variant="outline" disabled={blocked} onClick={onFind}>
           Find the beat
         </Button>
+        {myTempo && (
+          <label className="flex items-center gap-1.5 text-xs">
+            <Checkbox checked={myTempo.use} disabled={blocked} onCheckedChange={(value) => myTempo.onUse(value === true)} />
+            Use my tempo ({myTempo.bpm} BPM)
+          </label>
+        )}
         <Button size="sm" variant="outline" disabled={blocked || !grid} onClick={() => grid && onGrid(halveTempo(grid))}>
           Half tempo
         </Button>

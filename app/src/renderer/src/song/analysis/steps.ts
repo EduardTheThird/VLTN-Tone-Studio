@@ -2,7 +2,7 @@
 // result to the run and returns nothing to the screen, so it can run headless.
 
 import { startBeatGrid } from "../band/beat-grid-client";
-import type { BeatGrid } from "../band/beat-grid";
+import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
@@ -18,9 +18,10 @@ import type { LyricsOptions } from "../performance/lyrics-options";
 /**
  * Tracks the beat of the song's audio, and reads the meter from the same beats. `onGrid` receives the whole grid, which the caller saves
  * with the band settings, since the grid is too large for the analysis record. The tempo goes to the analysis; the grid is only passed on
- * when it is long enough to trust.
+ * when it is long enough to trust. `hint` is a tempo the performer typed: the tracker refines it, or keeps it when locked. Without it the
+ * tracker picks the tempo itself.
  */
-export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
+export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOptions = {}): AnalysisStep {
   return {
     name: "tempo",
     async run(audio, signal, soFar) {
@@ -30,6 +31,8 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void): AnalysisStep {
         sampleRate: audio.sampleRate,
         beatsPerBar: audio.beatsPerBar,
         chordChanges: audio.chordChanges.length ? audio.chordChanges : chordChangeTimes(soFar.chords?.chords ?? []),
+        tempoHint: hint.tempoHint,
+        lockTempo: hint.lockTempo,
       });
       const stop = () => job.cancel();
       signal.addEventListener("abort", stop, { once: true });

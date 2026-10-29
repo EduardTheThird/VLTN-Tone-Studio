@@ -230,22 +230,8 @@ export function estimateTempo(onset: ArrayLike<number>, frameRate: number): Temp
   const minLag = Math.max(1, Math.floor((60 * frameRate) / TEMPO_MAX_BPM)),
     maxLag = Math.ceil((60 * frameRate) / TEMPO_MIN_BPM);
   if (n <= maxLag + 1) return { bpm: 0, candidates: [] };
-  const smooth = smoothCurve(onset, TEMPO_SMOOTH_FRAMES);
-  let mean = 0;
-  for (let t = 0; t < n; t++) mean += smooth[t];
-  mean /= n;
-  const x = new Float64Array(n);
-  for (let t = 0; t < n; t++) x[t] = smooth[t] - mean;
-  // Autocorrelation at each lag, normalised by the energy at lag 0 and by the number of pairs.
-  const acf = new Float64Array(maxLag + 2);
-  let energy = 0;
-  for (let t = 0; t < n; t++) energy += x[t] * x[t];
-  if (!(energy > 0)) return { bpm: 0, candidates: [] };
-  for (let lag = 0; lag <= maxLag + 1; lag++) {
-    let sum = 0;
-    for (let t = 0; t + lag < n; t++) sum += x[t] * x[t + lag];
-    acf[lag] = sum / (n - lag) / (energy / n);
-  }
+  const acf = onsetAutocorrelation(onset, maxLag);
+  if (!acf) return { bpm: 0, candidates: [] };
   let best = minLag,
     bestScore = -Infinity;
   for (let lag = minLag; lag <= maxLag; lag++) {
@@ -265,6 +251,76 @@ export function estimateTempo(onset: ArrayLike<number>, frameRate: number): Temp
   if ((60 * frameRate) / slowLag < TEMPO_FAST_BPM && fasterLag >= minLag && acf[fasterLag] >= TEMPO_FAST_RATIO * acf[best]) best = fasterLag;
   const bpm = (60 * frameRate) / peakLag(acf, best);
   return { bpm, candidates: [bpm, bpm / 2, bpm * 2] };
+}
+
+/**
+ * Normalised autocorrelation of the smoothed onset curve, with its mean removed, at lags 0 to maxLag + 1. The curve must be longer than
+ * maxLag + 1 frames. Null when the curve has no energy.
+ */
+function onsetAutocorrelation(onset: ArrayLike<number>, maxLag: number): Float64Array | null {
+  const n = onset.length;
+  const smooth = smoothCurve(onset, TEMPO_SMOOTH_FRAMES);
+  let mean = 0;
+  for (let t = 0; t < n; t++) mean += smooth[t];
+  mean /= n;
+  const x = new Float64Array(n);
+  for (let t = 0; t < n; t++) x[t] = smooth[t] - mean;
+  // Autocorrelation at each lag, normalised by the energy at lag 0 and by the number of pairs.
+  const acf = new Float64Array(maxLag + 2);
+  let energy = 0;
+  for (let t = 0; t < n; t++) energy += x[t] * x[t];
+  if (!(energy > 0)) return null;
+  for (let lag = 0; lag <= maxLag + 1; lag++) {
+    let sum = 0;
+    for (let t = 0; t + lag < n; t++) sum += x[t] * x[t + lag];
+    acf[lag] = sum / (n - lag) / (energy / n);
+  }
+  return acf;
+}
+
+/** How far either side of a typed tempo `refineTempo` searches, as a share of it. */
+export const TEMPO_REFINE_SPREAD = 0.04;
+
+/**
+ * The tempo near `hint` that the onset curve supports best. The autocorrelation is read every 0.1 BPM within `spread` of the hint, between
+ * frames by linear interpolation, and the highest reading wins. Only the hint is refined, so a 98 can come out as 97.6 but never as its
+ * double or half. A hint the audio does not support still gets its best reading in the spread. Zero when the curve has no energy.
+ */
+export function refineTempo(onset: ArrayLike<number>, frameRate: number, hint: number, spread = TEMPO_REFINE_SPREAD): number {
+  if (!(hint > 0) || !(frameRate > 0)) return 0;
+  const low = hint * (1 - spread),
+    high = hint * (1 + spread);
+  const maxLag = Math.ceil((60 * frameRate) / low);
+  if (onset.length <= maxLag + 1) return 0;
+  const acf = onsetAutocorrelation(onset, maxLag);
+  if (!acf) return 0;
+  let best = 0,
+    bestScore = -Infinity;
+  for (let tenths = Math.ceil(low * 10); tenths <= Math.floor(high * 10); tenths++) {
+    const lag = (60 * frameRate * 10) / tenths;
+    const whole = Math.floor(lag),
+      share = lag - whole;
+    const score = acf[whole] * (1 - share) + acf[whole + 1] * share;
+    if (score > bestScore) {
+      bestScore = score;
+      best = tenths / 10;
+    }
+  }
+  return best;
+}
+
+/** Where the beats fall within one beat interval, in seconds from 0 to `interval`: the circular mean of their positions. Zero for no beats. */
+function beatPhase(beats: readonly number[], interval: number): number {
+  if (!beats.length) return 0;
+  let x = 0,
+    y = 0;
+  for (const beat of beats) {
+    const angle = (2 * Math.PI * beat) / interval;
+    x += Math.cos(angle);
+    y += Math.sin(angle);
+  }
+  const angle = Math.atan2(y, x);
+  return ((angle < 0 ? angle + 2 * Math.PI : angle) / (2 * Math.PI)) * interval;
 }
 
 /** The autocorrelation peak at `lag`, refined by a parabola through its neighbours, in frames. Needs `acf` to cover lag + 1. */
@@ -577,26 +633,52 @@ export function snapToAttack(mono: ArrayLike<number>, sampleRate: number, beats:
   });
 }
 
+/** What the performer said about the tempo before the beats are tracked. Without it, the tracker picks its own tempo. */
+export interface TempoHintOptions {
+  /** The tempo the performer typed, in BPM. The tracker refines it within TEMPO_REFINE_SPREAD rather than picking another. */
+  tempoHint?: number;
+  /** Use `tempoHint` exactly, and find only where the beats fall and which one is the downbeat. */
+  lockTempo?: boolean;
+}
+
 /** The whole pipeline: onset strength, tempo, beats, the grid's ends, then the downbeat. Chord changes are optional and in seconds. */
-export function detectBeatGrid(sources: readonly PcmAudio[], sampleRate: number, beatsPerBar: number, chordChanges: readonly number[] = []): BeatGrid {
-  return analyseBeats(sources, sampleRate, beatsPerBar, chordChanges).grid;
+export function detectBeatGrid(
+  sources: readonly PcmAudio[],
+  sampleRate: number,
+  beatsPerBar: number,
+  chordChanges: readonly number[] = [],
+  options: TempoHintOptions = {},
+): BeatGrid {
+  return analyseBeats(sources, sampleRate, beatsPerBar, chordChanges, options).grid;
 }
 
 /**
  * The beat grid and the meter the beats fall into, from one pass over the audio. The grid is laid out for `beatsPerBar`; the meter is
- * estimated from the beats alone, so it does not depend on the meter the caller guessed.
+ * estimated from the beats alone, so it does not depend on the meter the caller guessed. With a locked tempo the beats sit on an exact
+ * grid at that tempo, and the tracker only decides where it starts and which beat is the downbeat.
  */
 export function analyseBeats(
   sources: readonly PcmAudio[],
   sampleRate: number,
   beatsPerBar: number,
   chordChanges: readonly number[] = [],
+  options: TempoHintOptions = {},
 ): { grid: BeatGrid; meter: MeterEstimate } {
   const { onset, low, frameRate } = onsetStrength(sources, sampleRate);
-  const { bpm } = estimateTempo(onset, frameRate);
+  const hint = options.tempoHint && options.tempoHint > 0 ? options.tempoHint : 0;
+  // A locked tempo is tracked as typed, so the beats it finds are the phase of that exact grid.
+  const bpm = hint ? (options.lockTempo ? hint : refineTempo(onset, frameRate, hint)) : estimateTempo(onset, frameRate).bpm;
   const tracked = trackBeats(onset, frameRate, bpm);
   const duration = sources.reduce((max, source) => Math.max(max, (source.channels[0]?.length ?? 0) / sampleRate), 0);
   const beats = snapToAttack(monoSum(sources), sampleRate, extendBeats(tracked, onset, frameRate, duration));
+  if (hint && options.lockTempo) {
+    const interval = 60 / hint;
+    const locked = fixedBeatGrid(hint, beatPhase(beats, interval), beatsPerBar, duration);
+    const downbeat = pickDownbeat(locked.beats, low, frameRate, beatsPerBar, chordChanges);
+    // The fit of an exact grid is the tempo the performer set. Its first beat is the downbeat, as tempoFromGrid reads it for a grid that is not steady.
+    const grid: BeatGrid = { ...locked, downbeat, steady: { bpm: hint, firstBeat: locked.beats[downbeat] ?? 0 } };
+    return { grid, meter: estimateMeter(grid.beats, low, frameRate, chordChanges) };
+  }
   const downbeat = pickDownbeat(beats, low, frameRate, beatsPerBar, chordChanges);
   const grid = makeGrid(beatsPerBar, beats, downbeat);
   return { grid, meter: estimateMeter(grid.beats, low, frameRate, chordChanges) };

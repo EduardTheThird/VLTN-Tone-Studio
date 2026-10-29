@@ -263,8 +263,31 @@ describe("runAnalysisBatch", () => {
   it("reports progress with the song and the step it is on", async () => {
     const { deps } = fakeDeps();
     const progress = vi.fn();
-    await runAnalysisBatch([song("a")], batchOptions(), deps, new AbortController().signal, progress);
-    expect(progress).toHaveBeenNthCalledWith(1, { index: 0, total: 1, title: "Song a", step: null });
+    await runAnalysisBatch([song("a")], batchOptions(), deps, new AbortController().signal, { onProgress: progress });
+    expect(progress).toHaveBeenNthCalledWith(1, expect.objectContaining({ index: 0, total: 1, title: "Song a", step: null, stepIndex: 0 }));
+    expect(progress).toHaveBeenNthCalledWith(2, { index: 0, total: 1, title: "Song a", step: "tempo", stepIndex: 0, steps: 1 });
+  });
+
+  it("tells the caller when it waits for playback and when it goes on", async () => {
+    const { deps, setPlaying } = fakeDeps();
+    const waiting = vi.fn();
+    setPlaying(true);
+    const done = runAnalysisBatch([song("a")], batchOptions(), deps, new AbortController().signal, { onWaiting: waiting });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(waiting.mock.calls).toEqual([[true]]);
+    setPlaying(false);
+    await done;
+    expect(waiting.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it("tells the caller each song as it starts loading and as it finishes, in order", async () => {
+    const { deps } = fakeDeps();
+    const events: string[] = [];
+    await runAnalysisBatch([song("a"), song("b")], batchOptions(), deps, new AbortController().signal, {
+      onLoading: (title) => events.push(`loading ${title}`),
+      onSongDone: (outcome) => events.push(`done ${outcome.id}`),
+    });
+    expect(events).toEqual(["loading Song a", "done a", "loading Song b", "done b"]);
   });
 });
 

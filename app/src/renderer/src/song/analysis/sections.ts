@@ -278,6 +278,22 @@ export function sectionsToApply(current: readonly Section[], detected: readonly 
 }
 
 /**
+ * Whether the song's sections are still the ones detection suggested last time, untouched by hand. Only those may be replaced by a new
+ * detection. A name, a boundary, a mode or a colour the performer changed, or a section added or removed, keeps them as they are.
+ */
+export function sectionsFollowDetection(current: readonly Section[], previous: readonly DetectedSection[]): boolean {
+  return (
+    current.length > 0 &&
+    current.length === previous.length &&
+    current.every((section, i) => {
+      const was = previous[i];
+      const untouched = section.mode === "continue" && section.color === undefined;
+      return section.source === "detected" && untouched && section.name === was.name && section.start === was.start && section.end === was.end;
+    })
+  );
+}
+
+/**
  * How many of the `truth` boundaries have a `found` boundary within `tolerance` seconds. Each found boundary counts for at most one truth
  * boundary. Used to measure the detector on fixtures with known boundaries.
  */

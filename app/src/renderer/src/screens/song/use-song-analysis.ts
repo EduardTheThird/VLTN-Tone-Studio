@@ -25,7 +25,7 @@ import {
 import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import type { DetectedSection } from "@/song/analysis/sections";
-import type { BeatGrid } from "@/song/band/beat-grid";
+import type { BeatGrid, TempoHintOptions } from "@/song/band/beat-grid";
 
 /** The lyrics step for a song with no lyrics: fills the chart only while it is still empty, so a chart saved meanwhile is never replaced. */
 function analysisLyrics(songKey: string) {
@@ -71,8 +71,11 @@ export interface SongAnalysisInput {
   onParts(parts: MissingParts): void;
   /** Called with the silence at the ends of the song. The shape controls offer it as a trim. */
   onSilence(silence: SilenceEnds): void;
-  /** Called with the sections a finished run suggested. The panel applies them to a song with none; otherwise they are offered in the section editor. */
-  onSections(sections: DetectedSection[]): void;
+  /**
+   * Called with the sections a finished run suggested. The panel applies them to a song with none; otherwise they are offered in the section editor.
+   * `rerun` is set when a find-the-beat run made them, so the panel may also replace sections it can tell are still the detected ones.
+   */
+  onSections(sections: DetectedSection[], rerun: boolean): void;
 }
 
 /** A line the status shows after a run, with at most a few buttons. Shown until the next run starts. */
@@ -99,6 +102,11 @@ export interface SongAnalysisControl {
   rerun(beatsPerBar?: number): void;
   /** Detects the tempo and meter again, replacing the saved ones. The rest of the saved analysis is kept. Ignored during playback. */
   detect(): void;
+  /**
+   * Finds the beat again from a tempo the performer typed: refined near it, or kept exactly when locked. Replaces the saved tempo and grid,
+   * as detect does. Ignored during playback.
+   */
+  findBeat(hint: TempoHintOptions): void;
   /** Runs every step again, replacing the saved tempo and meter. Ignored during playback. */
   analyseAgain(): void;
   /** Replaces the notices, so an action can show what it changed. */
@@ -116,6 +124,10 @@ interface Resume {
   detect?: boolean;
   /** Runs the tempo step only, and keeps the rest of the saved analysis. */
   tempoOnly?: boolean;
+  /** A tempo the performer typed, which the tempo step tracks from. */
+  hint?: TempoHintOptions;
+  /** Runs the sections step after the tempo step, on the grid the tempo step tracked. */
+  sections?: boolean;
 }
 
 const notice = (value: Notice | null): Notice[] => (value ? [value] : []);
@@ -156,12 +168,16 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (!from.detect && readStoredBand(songKey).grid && !gridFromAnalysis(songKey)) return;
       writeStoredBand(songKey, { beatGrid: grid });
       setSetting(songKey, ":options", JSON.stringify({ ...readOptions(songKey, {}), beatGridSource: "analysis" }));
-    });
+    }, from.hint);
     // The sections step uses the grid this run tracked, or the one saved with the song when the tempo step did not run.
     const sections = sectionsStep(() => captured.grid ?? readStoredBand(songKey).grid ?? null);
     // The lyrics step is the slowest, so it runs last, and only for a song with no lyrics yet (it never replaces a chart).
     const lyrics = loadLyricsOnAnalysis() && !getSetting(songKey, ":lyrics").trim() ? [analysisLyrics(songKey)] : [];
-    const steps = from.tempoOnly ? [tempo] : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections, ...lyrics];
+    const steps = from.tempoOnly
+      ? from.sections
+        ? [tempo, sections]
+        : [tempo]
+      : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections, ...lyrics];
     // The label fills in when the first step starts, so it never names a step that has not begun.
     setStep(null);
     setNotices([]);
@@ -182,7 +198,15 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       controller.current = null;
       if (outcome.status === "interrupted") {
         // A forced run stays forced, so a saved analysis of the old meter is not taken in its place.
-        const next: Resume = { from: outcome.next, partial: outcome.analysis, force: from.force, detect: from.detect, tempoOnly: from.tempoOnly };
+        const next: Resume = {
+          from: outcome.next,
+          partial: outcome.analysis,
+          force: from.force,
+          detect: from.detect,
+          tempoOnly: from.tempoOnly,
+          hint: from.hint,
+          sections: from.sections,
+        };
         // Playback may have stopped while this step was still running. The effect below has already seen that, so restart here.
         if (latest.current.playing) resume.current = next;
         else start(next);
@@ -200,12 +224,15 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
         if (outcome.analysis.meter) found.push(...notice(latest.current.onMeter(outcome.analysis.meter)));
       }
       setNotices(found);
-      // A detect run only ran the tempo, so the rest of the saved analysis is not handed back again.
-      if (from.tempoOnly) return;
+      // A detect run only ran the tempo, so the rest of the saved analysis is not handed back again. A find-the-beat run also re-ran the sections.
+      if (from.tempoOnly) {
+        if (from.sections && outcome.analysis.sections) latest.current.onSections(outcome.analysis.sections, true);
+        return;
+      }
       if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
       if (outcome.analysis.parts) latest.current.onParts(outcome.analysis.parts);
       if (outcome.analysis.silence) latest.current.onSilence(outcome.analysis.silence);
-      if (outcome.analysis.sections) latest.current.onSections(outcome.analysis.sections);
+      if (outcome.analysis.sections) latest.current.onSections(outcome.analysis.sections, false);
     });
   };
 
@@ -253,6 +280,9 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     },
     detect() {
       restart({ from: 0, force: true, detect: true, tempoOnly: true });
+    },
+    findBeat(hint) {
+      restart({ from: 0, force: true, detect: true, tempoOnly: true, sections: true, hint });
     },
     analyseAgain() {
       restart({ from: 0, force: true, detect: true });
