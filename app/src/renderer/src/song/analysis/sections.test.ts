@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  sectionsFromDetected,
+  sectionsToApply,
   BAR_DETECT,
   TIME_DETECT,
   TIME_FRAME_S,
@@ -178,5 +180,34 @@ describe("boundary accuracy on synthetic songs", () => {
       }
     }
     expect(hits / total).toBeGreaterThanOrEqual(0.7);
+  });
+});
+
+describe("applying detected sections", () => {
+  const detected = [
+    { start: 0, end: 16, name: "Verse 1" },
+    { start: 16, end: 32, name: "Chorus 1" },
+  ];
+  const ids = () => {
+    let n = 0;
+    return () => `id-${++n}`;
+  };
+
+  it("turns each detected section into a continue section marked as detected", () => {
+    expect(sectionsFromDetected(detected, ids())).toEqual([
+      { id: "id-1", name: "Verse 1", start: 0, end: 16, mode: "continue", source: "detected" },
+      { id: "id-2", name: "Chorus 1", start: 16, end: 32, mode: "continue", source: "detected" },
+    ]);
+  });
+
+  it("applies the detected sections to a song with none", () => {
+    expect(sectionsToApply([], detected, ids())?.map((s) => s.name)).toEqual(["Verse 1", "Chorus 1"]);
+  });
+
+  it("leaves a song that has sections alone, and applies nothing when nothing was found", () => {
+    const made = [{ id: "a", name: "Intro", start: 0, end: 8, mode: "continue" as const }];
+    expect(sectionsToApply(made, detected)).toBeNull();
+    expect(sectionsToApply([], [])).toBeNull();
+    expect(sectionsToApply([], undefined)).toBeNull();
   });
 });

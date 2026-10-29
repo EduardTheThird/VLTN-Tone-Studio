@@ -3,7 +3,7 @@
 // measurements here. The detector finds where the music changes (a self-similarity novelty curve), then names the spans by how they
 // repeat, how loud they are and whether vocals are in them.
 
-import { MAX_SECTIONS } from "../performance/sections";
+import { MAX_SECTIONS, type Section } from "../performance/sections";
 
 /** What the detector knows about one unit of the song: a bar, or a time frame when the song has no beat grid. */
 export interface SectionUnit {
@@ -258,6 +258,23 @@ export function detectSections(units: readonly SectionUnit[], options: DetectOpt
   const infos = assignKinds(spansFromCuts(cuts, units.length).map((span) => summarise(span, units, vectors)));
   const names = nameSections(infos);
   return infos.map((info, i) => ({ start: units[info.from].start, end: units[info.to - 1].end, name: names[i] }));
+}
+
+/**
+ * The sections a song gets from a detection. Each one is a new section with its stored mode set to continue, marked as detected. `newId`
+ * gives each section its id; the default is a fresh random id.
+ */
+export function sectionsFromDetected(detected: readonly DetectedSection[], newId: () => string = () => crypto.randomUUID()): Section[] {
+  return detected.map((section) => ({ id: newId(), name: section.name, start: section.start, end: section.end, mode: "continue", source: "detected" }));
+}
+
+/**
+ * What a finished detection does to a song's sections. A song with no sections takes the detected ones. A song that already has sections
+ * keeps them, and this returns null: the performer replaces them from the section editor, where Undo is offered.
+ */
+export function sectionsToApply(current: readonly Section[], detected: readonly DetectedSection[] | undefined, newId?: () => string): Section[] | null {
+  if (current.length || !detected?.length) return null;
+  return sectionsFromDetected(detected, newId);
 }
 
 /**

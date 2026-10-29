@@ -16,6 +16,7 @@ vi.mock("@/song/analysis/steps", () => ({
   loudnessStep: () => ({ name: "loudness", run: async () => ({}) }),
   partsStep: () => ({ name: "parts", run: async () => ({}) }),
   silenceStep: () => ({ name: "silence", run: async () => ({}) }),
+  sectionsStep: () => ({ name: "sections", run: async () => ({}) }),
 }));
 
 import { useSongAnalysis, type SongAnalysisInput } from "./use-song-analysis";
@@ -35,6 +36,7 @@ const base = (over: Partial<SongAnalysisInput> = {}): SongAnalysisInput => ({
   onLoudness: vi.fn(),
   onParts: vi.fn(),
   onSilence: vi.fn(),
+  onSections: vi.fn(),
   ...over,
 });
 

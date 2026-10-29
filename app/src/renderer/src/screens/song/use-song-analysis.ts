@@ -20,8 +20,10 @@ import {
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { chordsStep, keyStep, loudnessStep, partsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
 import type { SilenceEnds } from "@/song/analysis/silence";
+import type { DetectedSection } from "@/song/analysis/sections";
+import type { BeatGrid } from "@/song/band/beat-grid";
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -55,6 +57,8 @@ export interface SongAnalysisInput {
   onParts(parts: MissingParts): void;
   /** Called with the silence at the ends of the song. The shape controls offer it as a trim. */
   onSilence(silence: SilenceEnds): void;
+  /** Called with the sections a finished run suggested. The panel applies them to a song with none; otherwise they are offered in the section editor. */
+  onSections(sections: DetectedSection[]): void;
 }
 
 /** A line the status shows after a run, with at most a few buttons. Shown until the next run starts. */
@@ -129,14 +133,19 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     controller.current = run;
     const audio = buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordName });
     const audioId = songAudioId(mix, stems);
+    // The grid the tempo step tracked, kept for the sections step: it is too large for the analysis record.
+    const captured: { grid: BeatGrid | null } = { grid: null };
     const tempo = tempoStep((grid) => {
+      captured.grid = grid;
       // A performer's own grid is kept, unless the performer asked for the tempo again. The analysis's grid is replaced, so it always agrees
       // with the meter it was laid out for.
       if (!from.detect && readStoredBand(songKey).grid && !gridFromAnalysis(songKey)) return;
       writeStoredBand(songKey, { beatGrid: grid });
       setSetting(songKey, ":options", JSON.stringify({ ...readOptions(songKey, {}), beatGridSource: "analysis" }));
     });
-    const steps = from.tempoOnly ? [tempo] : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep()];
+    // The sections step uses the grid this run tracked, or the one saved with the song when the tempo step did not run.
+    const sections = sectionsStep(() => captured.grid ?? readStoredBand(songKey).grid ?? null);
+    const steps = from.tempoOnly ? [tempo] : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections];
     // The label fills in when the first step starts, so it never names a step that has not begun.
     setStep(null);
     setNotices([]);
@@ -180,6 +189,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
       if (outcome.analysis.parts) latest.current.onParts(outcome.analysis.parts);
       if (outcome.analysis.silence) latest.current.onSilence(outcome.analysis.silence);
+      if (outcome.analysis.sections) latest.current.onSections(outcome.analysis.sections);
     });
   };
 

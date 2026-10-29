@@ -22,7 +22,8 @@ import type { BeatGrid } from "@/song/band/beat-grid";
 import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
-import { METER_CERTAIN, songAudioId } from "@/song/analysis/song-analysis";
+import { METER_CERTAIN, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
+import { sectionsToApply, type DetectedSection } from "@/song/analysis/sections";
 import { withLoudness } from "@/song/audio/loudness";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
@@ -157,6 +158,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   // Sections are part of the song; their live changes are not saved (see sections.ts).
   const [sectionList, setSectionList] = useState<Section[]>(() => parseSections(options.sections));
+  // The sections the song analysis suggested most recently. They are applied only to a song with no sections; otherwise the editor offers them.
+  const [suggested, setSuggested] = useState<DetectedSection[]>(() => parseAnalysis(readOptions<Record<string, unknown>>(key, {}).analysis)?.sections ?? []);
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState("");
   const [chart, setChart] = useState(() => getSetting(key, ""));
@@ -488,6 +491,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       };
     },
     onSilence: (found) => setSilence({ songKey: key, ends: found }),
+    onSections: (found) => {
+      setSuggested(found);
+      setSectionList((current) => sectionsToApply(current, found) ?? current);
+    },
     onParts: (found) => {
       // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
       if (!useSong.getState().missingParts) useSong.setState({ missingParts: found });
@@ -757,6 +764,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         <SectionEditor
           sections={sectionList}
           onSections={setSectionList}
+          suggested={suggested}
           duration={player?.duration ?? 0}
           bpm={bpm}
           firstBeat={firstBeat}
