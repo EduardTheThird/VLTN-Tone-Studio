@@ -1,6 +1,6 @@
 import { app, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import type { Duplex } from "node:stream";
 import { join, resolve, sep } from "node:path";
 import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
@@ -19,8 +19,9 @@ import {
 import type { BandSyncOptions, BandSyncStatus, LanAddress } from "@shared/host/band-sync";
 import { HostError } from "@shared/ipc";
 import { PinAuth } from "./band-sync-auth";
-import { handle } from "./handle";
+import { handle, sendTo } from "./handle";
 import { onAudiencePublish } from "./display";
+import { serial, writeJsonAtomic } from "./fs-atomic";
 
 // Band sync (spec 44). Off until the performer starts it. The server listens on one private LAN address the performer picks, serves the
 // follower page from a fixed list of built files, and speaks JSON over a WebSocket. It is not encrypted: the PIN is the only protection,
@@ -546,13 +547,10 @@ export function registerBandSyncIpc(getWindow: () => BrowserWindow | null, root:
       settings = { ...DEFAULT_SETTINGS };
     }
   };
-  const save = () => writeFile(file(), JSON.stringify(settings)).catch(() => {});
+  const save = () => serial(file(), () => writeJsonAtomic(file(), settings)).catch(() => {});
   const server = new BandSyncServer({
     root,
-    onControl: (action) => {
-      const contents = getWindow()?.webContents;
-      if (contents && !contents.isDestroyed()) contents.send("band-sync:control", action);
-    },
+    onControl: (action) => sendTo(getWindow, "band-sync:control", action),
     onChange: () => emit(),
   });
   const status = (): BandSyncStatus => {
@@ -578,10 +576,7 @@ export function registerBandSyncIpc(getWindow: () => BrowserWindow | null, root:
       message,
     };
   };
-  const emit = () => {
-    const contents = getWindow()?.webContents;
-    if (contents && !contents.isDestroyed()) contents.send("band-sync:status", status());
-  };
+  const emit = () => sendTo(getWindow, "band-sync:status", status());
   const mainOnly = (event: IpcMainInvokeEvent) => {
     if (event.sender.id !== getWindow()?.webContents.id) throw new HostError("unauthorized", "Only the performance screen controls band sync.");
   };

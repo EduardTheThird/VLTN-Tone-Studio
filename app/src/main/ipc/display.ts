@@ -1,10 +1,11 @@
 import { app, BrowserWindow, screen, type IpcMainInvokeEvent } from "electron";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mergeAudienceState, parseAudienceUpdate, type AudienceState, type AudienceUpdate } from "@shared/audience";
 import type { AudienceDisplayInfo, AudienceStatus } from "@shared/host/audience";
 import { HostError } from "@shared/ipc";
-import { handle } from "./handle";
+import { handle, sendTo } from "./handle";
+import { writeJsonAtomicSync } from "./fs-atomic";
 
 // The audience display (spec 43). A second window loads the same renderer bundle with `?view=audience`. It has no Node access, a
 // sandboxed preload that only reads the state it is sent, and the same Content-Security-Policy as the main window (main/index.ts serves
@@ -226,7 +227,7 @@ export function readDisplayId(path: string): number | null {
 
 export function writeDisplayId(path: string, displayId: number | null): void {
   try {
-    writeFileSync(path, JSON.stringify({ displayId }));
+    writeJsonAtomicSync(path, { displayId });
   } catch {
     // The choice still holds for this run; only remembering it across runs failed.
   }
@@ -315,10 +316,7 @@ function createAudienceWindow(mode: AudienceMode, bounds: Rect, hooks: AudienceW
 
 /** Sends the audience status to the performance window. The controller closes during quit, after that window may already be destroyed. */
 export function sendAudienceStatus(getWindow: () => BrowserWindow | null, status: AudienceStatus): void {
-  const window = getWindow();
-  if (!window || window.isDestroyed()) return;
-  const contents = window.webContents;
-  if (!contents.isDestroyed()) contents.send("audience:status", status);
+  sendTo(getWindow, "audience:status", status);
 }
 
 /** Registers the audience IPC and the display events. Only the performance window may call it; the audience window has no access. */

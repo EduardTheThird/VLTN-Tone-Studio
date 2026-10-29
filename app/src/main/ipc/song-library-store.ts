@@ -2,6 +2,7 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { exportBackup, readBackup, readBackupIndex } from "./song-library-backup";
+import { createTrash, sweepLibraryTrash, type TrashFn } from "./trash";
 import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
 import {
   CHART_ANNOTATIONS_FILE,
@@ -48,6 +49,7 @@ import { appendPlay, withoutSong } from "@shared/library-history";
 import { removeEntry } from "@shared/playlist-sets";
 import { isStringList } from "@shared/library-filter";
 import { validateAnnotations } from "@shared/chart-annotations";
+import { writeJsonAtomic } from "./fs-atomic";
 
 export type DiskIndex = SongLibrary & { revisions: Record<string, string> };
 /** A save session or staging folder older than this is abandoned: the renderer crashed or the user gave up. */
@@ -135,9 +137,12 @@ export class SongLibraryStore {
   constructor(
     private root: string,
     private now: () => number = Date.now,
+    /** Takes a deleted song or its PDF out of the library. Desktop passes the OS Trash; the default keeps it in `<root>/.trash`. */
+    private trash: TrashFn = createTrash(root),
   ) {}
-  /** Sweeps now and then every 10 minutes. */
+  /** Sweeps now and then every 10 minutes. The library's Trash is emptied of 30-day-old entries once, at start-up. */
   startSweeping(): void {
+    void sweepLibraryTrash(this.root).catch((e) => console.error("Song library trash sweep failed", e));
     const sweep = () => void this.sweep().catch((e) => console.error("Song library sweep failed", e));
     sweep();
     this.sweeper = setInterval(sweep, SWEEP_INTERVAL_MS);
@@ -193,10 +198,8 @@ export class SongLibraryStore {
   }
   private async publish(index: DiskIndex): Promise<void> {
     await mkdir(this.root, { recursive: true });
-    const temp = join(this.root, `index-${randomUUID()}.tmp`);
     // A v4 library is refused by older apps, which would otherwise misread the metadata and folders. See SONG-LIBRARY.md.
-    await writeFile(temp, JSON.stringify({ ...index, version: LIBRARY_VERSION }));
-    await rename(temp, join(this.root, "library.json"));
+    await writeJsonAtomic(join(this.root, "library.json"), { ...index, version: LIBRARY_VERSION });
   }
   async preflight(ids: string[]): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
     if (!Array.isArray(ids) || ids.length > 10000 || ids.some((id) => typeof id !== "string" || !validId(id))) throw new Error("Invalid playlist song IDs.");
@@ -608,7 +611,7 @@ export class SongLibraryStore {
       });
       await this.publish(index);
       if (validId(rev ?? ""))
-        for (const { file } of chartFiles(song.chart)) await rm(join(this.root, rev, file), { force: true }).catch(() => {});
+        for (const { file } of chartFiles(song.chart)) await this.trash(join(this.root, rev, file)).catch(() => {});
     });
   }
   /**
@@ -670,7 +673,7 @@ export class SongLibraryStore {
       delete index.revisions[id];
       index.history = withoutSong(index.history, id);
       await this.publish(index);
-      if (rev && validId(rev)) await rm(join(this.root, rev), { recursive: true, force: true }).catch(() => {});
+      if (rev && validId(rev)) await this.trash(join(this.root, rev)).catch(() => {});
     });
   }
 }

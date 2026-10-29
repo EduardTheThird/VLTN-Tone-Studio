@@ -104,6 +104,18 @@ it("deletes a playlist without deleting songs and removes deleted songs from eve
   await expect(store.audioUrls(s.song.id)).rejects.toThrow();
 });
 
+it("moves a removed song's folder into the library's .trash rather than deleting it", async () => {
+  const s = await flacSong();
+  await saveFlacSong(store, s);
+  const revision = JSON.parse(await readFile(join(root, "library.json"), "utf8")).revisions[s.song.id];
+  await store.remove(s.song.id);
+  expect(await readdir(root)).toEqual(expect.arrayContaining([".trash"]));
+  expect(await readdir(root)).not.toContain(revision);
+  const [entry] = await readdir(join(root, ".trash"));
+  expect(entry.endsWith(`-${revision}`)).toBe(true);
+  expect((await readdir(join(root, ".trash", entry))).some((f) => f.endsWith(".flac"))).toBe(true);
+});
+
 it("preflights saved files without loading them, deduplicates IDs and reports missing or truncated audio", async () => {
   const first = await flacSong(1),
     second = await flacSong(2);

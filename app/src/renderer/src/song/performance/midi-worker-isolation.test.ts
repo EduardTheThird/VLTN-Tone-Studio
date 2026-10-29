@@ -1,23 +1,26 @@
 // @vitest-environment node
 import { expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { stripTypeScriptTypes } from "node:module";
+import { transformSync } from "esbuild";
 import { Worker } from "node:worker_threads";
 
+/** TypeScript source to plain JavaScript, imports kept (Node 26 dropped stripTypeScriptTypes' transform mode). */
+const toJs = (source: string) => transformSync(source, { loader: "ts", format: "esm" }).code;
+
 it("runs the production scheduler in a separate thread while the host thread is blocked", async () => {
-  const engine = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
+  const engine = toJs(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8")).replace(
     /import[^;]+from ['"]\.\/(midi-chase|midi-pedal-order|speed|timecode)['"];?/g,
     "",
   );
-  const chase = stripTypeScriptTypes(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
+  const chase = toJs(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8")).replace(
     /import[^;]+from ['"]\.\/chart['"];?/,
     "",
   );
   // These have no imports; the scheduler reads their clamp, frame encoding and pedal order, so the worker needs them too.
-  const pedalOrder = stripTypeScriptTypes(await readFile(new URL("./midi-pedal-order.ts", import.meta.url), "utf8"), { mode: "transform" });
-  const speed = stripTypeScriptTypes(await readFile(new URL("./speed.ts", import.meta.url), "utf8"), { mode: "transform" });
-  const timecode = stripTypeScriptTypes(await readFile(new URL("./timecode.ts", import.meta.url), "utf8"), { mode: "transform" });
-  const entry = stripTypeScriptTypes(await readFile(new URL("./midi-scheduler-worker.ts", import.meta.url), "utf8"), { mode: "transform" }).replace(
+  const pedalOrder = toJs(await readFile(new URL("./midi-pedal-order.ts", import.meta.url), "utf8"));
+  const speed = toJs(await readFile(new URL("./speed.ts", import.meta.url), "utf8"));
+  const timecode = toJs(await readFile(new URL("./timecode.ts", import.meta.url), "utf8"));
+  const entry = toJs(await readFile(new URL("./midi-scheduler-worker.ts", import.meta.url), "utf8")).replace(
     /import[^;]+from ['"]\.\/midi-scheduler['"];?/,
     "",
   );
