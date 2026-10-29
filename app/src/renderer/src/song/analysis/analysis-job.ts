@@ -1,6 +1,7 @@
 // The Library's batch analysis as a job (spec 77). The run lives here, outside any component, so it keeps going when the Analyse dialog is
 // closed or the user leaves the Song screen. The status bar, the Library line and the dialog all read the same state.
 
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { useSongLibrary } from "../library";
 import { isSongPlaying } from "../performance/playing-state";
@@ -44,6 +45,11 @@ export interface AnalysisJobState {
   stop(): void;
   /** Clears an ended run's summary, so the dialog can start from a clean state. Does nothing while a run is going. */
   dismiss(): void;
+  /**
+   * Stops waiting for a playlist that is marked as playing when no song is. The flag can be left set by a playlist that stopped without
+   * clearing it. Only the user calls this ("Run anyway"): a playlist also pauses between songs, when no song is playing for a moment.
+   */
+  releaseWait(): void;
   requestOpen(): void;
   consumeOpenRequest(): void;
 }
@@ -137,6 +143,34 @@ export const useAnalysisJob = create<AnalysisJobState>((set, get) => ({
   dismiss: () => {
     if (!isRunning(get().phase)) set({ ...IDLE });
   },
+  releaseWait: () => {
+    if (get().waitingFor !== "playlist" || isSongPlaying()) return;
+    console.warn("The playlist is marked as playing, but no song is. Clearing the mark so the analysis can go on.");
+    useSongLibrary.setState({ playlistPlaying: false });
+  },
   requestOpen: () => set({ openRequested: true }),
   consumeOpenRequest: () => set({ openRequested: false }),
 }));
+
+/** The line that says what a run is doing now, for the status bar and the Library. */
+export function jobLine(job: AnalysisJobState, now: number): string {
+  const position = `${Math.min(job.done + 1, job.total)}/${job.total}`;
+  if (job.phase === "waiting") return `Analysing songs: waiting for ${job.waitingFor === "song" ? "playback to stop" : "the playlist to stop"}`;
+  if (job.phase === "loading" && job.current) return `Analysing songs: loading ${job.current.title}…`;
+  if (job.phase === "preparing" || !job.current) return "Analysing songs…";
+  const step = job.current.step ? ` (${job.current.step})` : "";
+  const left = job.startedAt === null ? null : secondsLeft(now, job.startedAt, job.done, job.total);
+  return `Analysing songs ${position} · ${job.current.title}${step}${left === null ? "" : ` · ${describeTimeLeft(left)} left`}`;
+}
+
+/** The time now, ticking once a second while `active`, so the time left and the elapsed time stay current on screen. */
+export function useJobClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}

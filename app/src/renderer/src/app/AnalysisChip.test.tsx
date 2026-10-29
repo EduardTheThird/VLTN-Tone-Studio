@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { AnalysisChip, SUMMARY_MS, analysisChipText } from "./AnalysisChip";
-import { useAnalysisJob, type AnalysisJobState } from "@/song/analysis/analysis-job";
+import { AnalysisChip, SUMMARY_MS } from "./AnalysisChip";
+import { jobLine, useAnalysisJob, type AnalysisJobState } from "@/song/analysis/analysis-job";
 import { useNav } from "@/state/nav";
 
 vi.mock("@/song/analysis/library-batch", () => ({ runLibraryAnalysis: vi.fn() }));
@@ -61,7 +61,7 @@ it("says it is waiting for playback, and loading a song, while it is held", () =
 });
 
 it("names the playlist when the playlist, not a song, is what it waits for", () => {
-  expect(analysisChipText(job({ phase: "waiting", total: 2, waitingFor: "playlist" }), Date.now())).toBe("Analysing songs: waiting for the playlist to stop");
+  expect(jobLine(job({ phase: "waiting", total: 2, waitingFor: "playlist" }), Date.now())).toBe("Analysing songs: waiting for the playlist to stop");
 });
 
 it("opens the Library's Analyse dialog on the run when clicked", () => {

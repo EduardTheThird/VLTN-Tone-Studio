@@ -4,36 +4,17 @@
 import { useEffect, useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { describeTimeLeft, isRunning, jobFraction, secondsLeft, useAnalysisJob, type AnalysisJobState } from "@/song/analysis/analysis-job";
+import { isRunning, jobFraction, jobLine, useAnalysisJob, useJobClock } from "@/song/analysis/analysis-job";
 import { useNav } from "@/state/nav";
 
 /** How long the summary stays in the status bar after a run ends, unless it is clicked first. */
 export const SUMMARY_MS = 15_000;
 
-/** The one line the chip shows while a run goes on. */
-export function analysisChipText(job: AnalysisJobState, now: number): string {
-  const position = `${Math.min(job.done + 1, job.total)}/${job.total}`;
-  if (job.phase === "waiting") return `Analysing songs: waiting for ${job.waitingFor === "song" ? "playback to stop" : "the playlist to stop"}`;
-  if (job.phase === "loading" && job.current) return `Analysing songs: loading ${job.current.title}…`;
-  if (job.phase === "preparing" || !job.current) return "Analysing songs…";
-  const step = job.current.step ? ` (${job.current.step})` : "";
-  const left = job.startedAt === null ? null : secondsLeft(now, job.startedAt, job.done, job.total);
-  return `Analysing songs ${position} · ${job.current.title}${step}${left === null ? "" : ` · ${describeTimeLeft(left)} left`}`;
-}
-
 export function AnalysisChip() {
   const job = useAnalysisJob();
   const running = isRunning(job.phase);
-  const [now, setNow] = useState(() => Date.now());
+  const now = useJobClock(running);
   const [summary, setSummary] = useState(false);
-
-  // The clock ticks once a second while a run goes on, for the time left.
-  useEffect(() => {
-    if (!running) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [running]);
 
   // The summary shows for SUMMARY_MS after the run ends. A run that ended long before this mounted is not shown again.
   useEffect(() => {
@@ -54,7 +35,7 @@ export function AnalysisChip() {
   };
   const failed = job.phase === "failed";
   const stopped = job.phase === "stopped";
-  const text = running ? analysisChipText(job, now) : failed ? `Analysis failed: ${job.error ?? ""}` : (job.summary ?? "");
+  const text = running ? jobLine(job, now) : failed ? `Analysis failed: ${job.error ?? ""}` : (job.summary ?? "");
   const percent = running ? Math.round(jobFraction(job) * 100) : 100;
 
   return (

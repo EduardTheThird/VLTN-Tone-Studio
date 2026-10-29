@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAnalysisJob, describeTimeLeft, jobFraction, secondsLeft, PLAYING_REFUSAL } from "./analysis-job";
+import { useAnalysisJob, describeTimeLeft, jobFraction, jobLine, secondsLeft, PLAYING_REFUSAL, type AnalysisJobState } from "./analysis-job";
 import { defaultChoice, type BatchOptions, type BatchOutcome, type BatchSong } from "./batch";
 import { runLibraryAnalysis } from "./library-batch";
 import { setSongPlaying } from "../performance/playing-state";
 
 vi.mock("./library-batch", () => ({ runLibraryAnalysis: vi.fn() }));
-vi.mock("../library", () => ({ useSongLibrary: { getState: () => ({ playlistPlaying: false }) } }));
+// The library's playlist flag is the only part of the library the job reads, so a plain object stands in for the store.
+const library = vi.hoisted(() => ({ playlistPlaying: false }));
+vi.mock("../library", () => ({
+  useSongLibrary: { getState: () => library, setState: (patch: object) => Object.assign(library, patch) },
+}));
 const run = vi.mocked(runLibraryAnalysis);
 
 const song = (id: string): BatchSong => ({ id, title: `Song ${id}`, settings: { ":bpm": "120", ":options": "{}" } });
@@ -141,5 +145,44 @@ describe("the progress maths", () => {
   it("describes the time left in words", () => {
     expect(describeTimeLeft(30)).toBe("under a minute");
     expect(describeTimeLeft(240)).toBe("about 4 min");
+  });
+});
+
+describe("releasing a playlist that is marked as playing", () => {
+  it("clears the playlist mark when the batch waits for it and no song plays", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    library.playlistPlaying = true;
+    useAnalysisJob.setState({ phase: "waiting", waitingFor: "playlist" });
+    useAnalysisJob.getState().releaseWait();
+    expect(library.playlistPlaying).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("does nothing while a song is playing, since the run is then really waiting", () => {
+    library.playlistPlaying = true;
+    setSongPlaying(true);
+    useAnalysisJob.setState({ phase: "waiting", waitingFor: "song" });
+    useAnalysisJob.getState().releaseWait();
+    expect(library.playlistPlaying).toBe(true);
+    library.playlistPlaying = false;
+  });
+});
+
+describe("the line for the status bar and the Library", () => {
+  const job = (over: Partial<AnalysisJobState>) => ({ ...useAnalysisJob.getState(), ...over }) as AnalysisJobState;
+
+  it("names the song, its step and the time left", () => {
+    const now = 1_000_000;
+    expect(
+      jobLine(
+        job({ phase: "analysing", total: 12, done: 2, current: { title: "Title", step: "tempo", stepIndex: 3, steps: 7 }, startedAt: now - 120_000 }),
+        now,
+      ),
+    ).toBe("Analysing songs 3/12 · Title (tempo) · about 10 min left");
+  });
+
+  it("says what a held run is waiting for", () => {
+    expect(jobLine(job({ phase: "waiting", waitingFor: "song" }), 0)).toBe("Analysing songs: waiting for playback to stop");
   });
 });

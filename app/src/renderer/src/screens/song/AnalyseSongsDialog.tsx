@@ -126,6 +126,11 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Run in background
               </Button>
+              {job.phase === "waiting" && job.waitingFor === "playlist" && (
+                <Button variant="outline" onClick={() => job.releaseWait()}>
+                  Run anyway
+                </Button>
+              )}
               <Button variant="outline" onClick={() => job.stop()}>
                 Stop
               </Button>

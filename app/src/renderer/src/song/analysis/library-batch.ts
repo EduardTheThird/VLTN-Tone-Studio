@@ -32,12 +32,26 @@ function stepsFor(
   return lyrics ? [...steps, lyricsStep(lyrics)] : steps;
 }
 
+/** Whether a song or a playlist is playing. */
+const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
+
 /** The app's side of the batch: loads from the library, writes through the library's settings, and reads the open song and playback. */
 export const libraryBatchDeps: BatchDeps = {
   load: (id) => loadSongAudio(id),
   isOpen: (id) => useSong.getState().source?.libraryId === id,
-  playing: () => isSongPlaying() || useSongLibrary.getState().playlistPlaying,
-  onPlayingChange: (listener) => onSongPlayingChange(listener),
+  playing: playingNow,
+  // A playlist's flag counts as playing too, so a change to it reaches the listener as a song's start or stop does. That is what lets a
+  // wait for a playlist end when the flag is cleared by hand ("Run anyway").
+  onPlayingChange: (listener) => {
+    const stopSong = onSongPlayingChange(listener);
+    const stopPlaylist = useSongLibrary.subscribe((state, previous) => {
+      if (state.playlistPlaying !== previous.playlistPlaying) listener(playingNow());
+    });
+    return () => {
+      stopSong();
+      stopPlaylist();
+    };
+  },
   steps: stepsFor,
   write: (id, values) => {
     const key = `${LIBRARY_PREFIX}${id}`;
