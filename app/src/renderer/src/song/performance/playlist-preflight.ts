@@ -10,6 +10,7 @@ import { playRange } from "./transition";
 import { clampSpeed, effectiveBpm } from "./speed";
 import { orderedKeys } from "../tracks";
 import { describeBinding, type Binding } from "./bindings";
+import { readTempoSource } from "./tempo-source";
 import { bindingClaiming, triggerClashes, type SongEntry } from "./song-triggers";
 
 /** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
@@ -54,7 +55,7 @@ export function playlistPreflight(
     if (song) {
       if (config.tempoOnStart && !config.outputName)
         warnings.push("Automatic tempo is enabled but no MIDI output preference is saved. Select and arm the intended output before performing.");
-      let options: { clock?: boolean; sections?: unknown; beats?: unknown; firstBeat?: unknown } = {};
+      let options: { clock?: boolean; sections?: unknown; beats?: unknown; firstBeat?: unknown; analysis?: unknown; tempoSource?: unknown } = {};
       try {
         const value = JSON.parse(song.settings[":options"] || "{}");
         if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
@@ -65,6 +66,10 @@ export function playlistPreflight(
       const raw = song.settings[":bpm"];
       const bpm = raw ? Number(raw) : 120;
       if (!raw) warnings.push("No saved BPM; playback defaults to 120. Confirm the recording tempo.");
+      // Earlier builds saved 120 for songs that were never given a tempo. Such a tempo has no source and is only a guess.
+      else if (raw === "120" && !readTempoSource(options))
+        warnings.push("BPM may be the old 120 default. Open the song to detect it, or confirm the tempo.");
+      if (!options.analysis) warnings.push("Song not analysed yet. Open it once so its tempo, key and parts are worked out.");
       if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) errors.push("Saved BPM must be between 30 and 300.");
       // The pedal is sent the tempo the song plays at, so the tempo range applies to the BPM times the saved speed.
       const speed = clampSpeed(options as Record<string, unknown>);
