@@ -74,6 +74,10 @@ A song is counted as played once it reaches its halfway point. Each play records
 
 ## Analysing saved songs
 
+**New songs.** A song that is split or imported is analysed on its own, in one run, as soon as its audio is ready. Choose the steps on the Stems tab, under **After the split**: tempo and beat, key, chords, sections, loudness and silence, the drums and bass check, and lyrics. Lyrics use the model and quality you choose there, and make a chart from the vocals of a split song. An imported song with no split vocals gets no lyrics; split it to get them. The run keeps going while you use other screens, pauses while a song or playlist plays, and shows its progress in the status bar. **Analyse this song now** runs the chosen steps again for a song that is already split, and keeps a tempo you set by hand.
+
+A lyrics chart is replaced by a new run only when the audio changed (a re-split), and only if the run made it. Your own lyrics, lyrics you timed from pasted text, and lyrics from before 0.9.2 are kept.
+
 The analysis finds a song's tempo and meter, key, chords, loudness, missing drums or bass, silence at each end, and suggested sections (intro, verse, chorus and so on) on the bar lines. A song that has no sections takes the suggested ones. A song that already has its own keeps them, and the section editor offers **Replace with detected sections**, with **Undo**. Songs saved before it existed have no analysis, and often a wrong tempo of 120.
 
 - **One song.** On the Performance screen, **Detect** beside the BPM finds the tempo and meter again, even if you set them by hand. If the beat was counted as half or double the real tempo, **Use** the half or the double. **Undo** puts back the tempo, meter and beat grid from before. **Analyse again** runs every step again and replaces the tempo and meter; your key, trims, sections and chart are kept.
