@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
 
 const job = vi.hoisted(() => ({
@@ -14,11 +14,11 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { tempoStep } from "./steps";
+import { chordsStep, keyStep, tempoStep } from "./steps";
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
-const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [] };
+const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -58,5 +58,42 @@ describe("tempoStep", () => {
     controller.abort("playback");
     await expect(pending).rejects.toThrow();
     expect(job.cancel).toHaveBeenCalled();
+  });
+});
+
+describe("keyStep and chordsStep", () => {
+  const stem = { sampleRate: 44100, channels: [new Float32Array(4)] };
+  const estimate = { name: "E minor", tonic: 4, mode: "minor", correlation: 0.8, margin: 0.2, confidence: "strong", alternatives: [] };
+  let reply: unknown = null;
+  class ReplyingWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: (() => void) | null = null;
+    postMessage() {
+      queueMicrotask(() => this.onmessage?.({ data: reply } as MessageEvent));
+    }
+    terminate() {}
+  }
+  beforeEach(() => vi.stubGlobal("Worker", ReplyingWorker));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the key from the key stem and records the stem", async () => {
+    reply = { estimate };
+    const result = await keyStep().run({ ...audio, keySource: { name: "guitar", audio: stem }, chordSource: null }, new AbortController().signal);
+    expect(result).toEqual({ key: { source: "guitar", estimate } });
+  });
+
+  it("reads nothing when there is no key stem", async () => {
+    expect(await keyStep().run({ ...audio, keySource: null, chordSource: null }, new AbortController().signal)).toEqual({});
+  });
+
+  it("reads the chords from the chord stem and records the stem", async () => {
+    reply = { chords: [{ time: 0, name: "Em", confidence: 0.9 }] };
+    const result = await chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal);
+    expect(result).toEqual({ chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
+  });
+
+  it("fails when the worker reports an error", async () => {
+    reply = { error: "boom" };
+    await expect(chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal)).rejects.toThrow("boom");
   });
 });

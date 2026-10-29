@@ -20,7 +20,7 @@ import { needsTempoDetection, readTempoSource, type TempoSource } from "@/song/p
 import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { useSongAnalysis } from "./use-song-analysis";
-import { METER_CERTAIN } from "@/song/analysis/song-analysis";
+import { METER_CERTAIN, songAudioId } from "@/song/analysis/song-analysis";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -244,7 +244,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
-  const { chords, analysing } = useChordAnalysis(session, stems, chordSource);
+  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems) : ""), [source, stems]);
+  const { chords, analysing } = useChordAnalysis(session, stems, chordSource, { songKey: key, audioId });
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
   useEffect(() => {
@@ -396,6 +397,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     stems,
     beatsPerBar: beats,
     chordChanges,
+    chordName: chordSource,
     playing: playing || library.playlistPlaying,
     onTempo: (found) => {
       if (!needsTempoDetection(getSetting(key, ":bpm"), tempoSource)) return;

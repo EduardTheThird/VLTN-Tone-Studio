@@ -11,7 +11,7 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
-const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [] };
+const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 function memory(initial: SongAnalysis | null = null) {
   let saved = initial;

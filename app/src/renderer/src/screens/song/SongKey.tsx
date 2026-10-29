@@ -2,12 +2,25 @@ import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
 import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
+import { isCurrent, songAudioId } from "@/song/analysis/song-analysis";
+import { storedAnalysis } from "./use-song-analysis";
 
 interface KeySettings {
   songKey: string;
   detectedKey: KeyEstimate | null;
   keyAudioSource: string;
 }
+/**
+ * The key the song analysis saved for this audio and stem. Null when nothing matches, so the key is estimated again. Reusing it means a
+ * song is not analysed twice: the analysis and the key panel both read the same stem.
+ */
+function savedKey(songKey: string, name: string, mix: PcmAudio | undefined, stems: Stems | null): KeyEstimate | null {
+  if (!mix) return null;
+  const saved = storedAnalysis(songKey).read();
+  if (!saved || !isCurrent(saved, songAudioId(mix, stems)) || saved.key?.source !== name) return null;
+  return saved.key.estimate;
+}
+
 /** The song's key readout and override. It reports the key the chord names are spelled by, so the panel's screens follow the same key. */
 export function SongKey({
   stems,
@@ -39,6 +52,12 @@ export function SongKey({
     setAnalysisSource(input?.name ?? "");
     setError("");
     if (!input) {
+      setBusy(false);
+      return;
+    }
+    const known = savedKey(storageKey, input.name, original, stems);
+    if (known) {
+      setEstimate(known);
       setBusy(false);
       return;
     }

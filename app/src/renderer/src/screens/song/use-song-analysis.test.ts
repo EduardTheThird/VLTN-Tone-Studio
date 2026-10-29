@@ -9,7 +9,11 @@ const fake = vi.hoisted(() => ({
     return { tempo: { bpm: 98, firstBeat: 0.4, steady: true }, meter: { beatsPerBar: 3, confidence: 0.9 } };
   }),
 }));
-vi.mock("@/song/analysis/steps", () => ({ tempoStep: () => ({ name: "tempo", run: fake.run }) }));
+vi.mock("@/song/analysis/steps", () => ({
+  tempoStep: () => ({ name: "tempo", run: fake.run }),
+  chordsStep: () => ({ name: "chords", run: async () => ({}) }),
+  keyStep: () => ({ name: "key", run: async () => ({}) }),
+}));
 
 import { useSongAnalysis, type SongAnalysisInput } from "./use-song-analysis";
 
@@ -20,6 +24,7 @@ const base = (over: Partial<SongAnalysisInput> = {}): SongAnalysisInput => ({
   stems: null,
   beatsPerBar: 4,
   chordChanges: [],
+  chordName: "",
   playing: false,
   onTempo: vi.fn(),
   onMeter: vi.fn(),

@@ -2,7 +2,9 @@
 // silence as later steps are added. Each step is a small job that returns what it found. This file runs them in order, keeps the results,
 // and stops when playback starts. It imports no React or screen code, so the same run can later work through saved songs headless (spec 72).
 
-import type { PcmAudio } from "../types";
+import type { Chord } from "../performance/chords";
+import type { KeyEstimate } from "../performance/key";
+import type { PcmAudio, Stems } from "../types";
 
 /** A meter estimate at or above this confidence is applied to the song. Below it, the meter is only suggested. */
 export const METER_CERTAIN = 0.6;
@@ -23,6 +25,18 @@ export interface MeterResult {
   confidence: number;
 }
 
+/** The key the song was estimated to be in, and the stem it was estimated from. */
+export interface KeyResult {
+  source: string;
+  estimate: KeyEstimate;
+}
+
+/** The chords read from one stem. The stem is recorded, so a different chord source is analysed again. */
+export interface ChordsResult {
+  source: string;
+  chords: Chord[];
+}
+
 /** What the analysis saved for one song. It is keyed on the audio it was run on, so a re-split runs it again. */
 export interface SongAnalysis {
   /** A fingerprint of the audio analysed (see `audioFingerprint`). */
@@ -30,8 +44,16 @@ export interface SongAnalysis {
   version: number;
   tempo?: TempoResult;
   meter?: MeterResult;
+  key?: KeyResult;
+  chords?: ChordsResult;
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
   failed?: string[];
+}
+
+/** A named piece of audio a step reads, such as the stem the chords come from. */
+export interface NamedAudio {
+  name: string;
+  audio: PcmAudio;
 }
 
 /** The audio a run analyses: the sources and the timing context the steps need. */
@@ -41,6 +63,10 @@ export interface AnalysisAudio {
   beatsPerBar: number;
   /** Chord change times, in seconds of the same audio. Empty when the song has no chords yet. */
   chordChanges: number[];
+  /** The stem the key is read from, or null when there is no audio with a signal. */
+  keySource: NamedAudio | null;
+  /** The stem the chords are read from, or null when no chord stem is chosen. */
+  chordSource: NamedAudio | null;
 }
 
 /** The fields a step may fill. The bookkeeping fields belong to the run. */
@@ -83,6 +109,11 @@ export type AnalysisOutcome =
   | { status: "complete"; analysis: SongAnalysis }
   | { status: "interrupted"; next: number; analysis: SongAnalysis }
   | { status: "cancelled"; analysis: SongAnalysis | null };
+
+/** The fingerprint of a song's mix and stems, the id its analysis is saved under. */
+export function songAudioId(mix: PcmAudio, stems: Stems | null): string {
+  return audioFingerprint(mix.sampleRate, { mix, ...stems });
+}
 
 /**
  * A short fingerprint of the audio: the sample rate and the length of each source, in name order. A re-split or an added track
@@ -140,6 +171,10 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   if (typeof record.audioId !== "string" || typeof record.version !== "number") return null;
   const tempo = record.tempo as Record<string, unknown> | undefined;
   const validTempo = !!tempo && typeof tempo.bpm === "number" && typeof tempo.firstBeat === "number" && typeof tempo.steady === "boolean";
+  const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
+  const validKey = typeof key?.source === "string" && typeof key.estimate?.name === "string";
+  const chords = record.chords as { source?: unknown; chords?: unknown } | undefined;
+  const validChords = typeof chords?.source === "string" && Array.isArray(chords.chords);
   const meter = record.meter as Record<string, unknown> | undefined;
   const validMeter = !!meter && (meter.beatsPerBar === 3 || meter.beatsPerBar === 4) && typeof meter.confidence === "number";
   const failed = Array.isArray(record.failed) && record.failed.every((name) => typeof name === "string") ? record.failed : undefined;
@@ -148,6 +183,8 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     version: record.version,
     ...(validTempo ? { tempo: { bpm: tempo.bpm as number, firstBeat: tempo.firstBeat as number, steady: tempo.steady as boolean } } : {}),
     ...(validMeter ? { meter: { beatsPerBar: meter.beatsPerBar as 3 | 4, confidence: meter.confidence as number } } : {}),
+    ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
+    ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
     ...(failed?.length ? { failed } : {}),
   };
 }
@@ -156,6 +193,8 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
 export function describeAnalysis(analysis: SongAnalysis): string {
   const found = analysis.tempo ? `Tempo ${analysis.tempo.bpm} BPM${analysis.tempo.steady ? "" : " (the tempo varies)"}` : "No steady tempo found";
   const meter = analysis.meter ? `. Meter ${analysis.meter.beatsPerBar}/4${analysis.meter.confidence < METER_CERTAIN ? " (not certain)" : ""}` : "";
+  const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
+  const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${failed}`;
+  return `${found}${meter}${key}${chords}${failed}`;
 }

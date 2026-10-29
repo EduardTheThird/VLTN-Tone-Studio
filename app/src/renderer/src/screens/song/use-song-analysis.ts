@@ -5,12 +5,13 @@
 import { useEffect, useRef, useState } from "react";
 import { beatSources } from "@/song/band/request";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
-import type { Stems, PcmAudio } from "@/song/types";
+import type { Stems, PcmAudio, StemName } from "@/song/types";
+import { keyAudio } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
 import {
   describeAnalysis,
-  audioFingerprint,
   parseAnalysis,
+  songAudioId,
   PLAYBACK_INTERRUPT,
   runSongAnalysis,
   type AnalysisAudio,
@@ -19,7 +20,7 @@ import {
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, tempoStep } from "@/song/analysis/steps";
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -37,6 +38,8 @@ export interface SongAnalysisInput {
   beatsPerBar: number;
   /** Chord change times from the chart, in seconds. */
   chordChanges: number[];
+  /** The stem the chords are read from. Empty when none is chosen. */
+  chordName: StemName | "";
   /** True during playback, and while a playlist plays. Nothing runs then. */
   playing: boolean;
   /** Called with the tempo a finished run found. The panel decides whether to apply it. */
@@ -71,12 +74,19 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
   const resume = useRef<Resume | null>(null);
 
   const start = (from: Resume) => {
-    const { mix, stems, beatsPerBar, chordChanges, songKey } = latest.current;
+    const { mix, stems, beatsPerBar, chordChanges, chordName, songKey } = latest.current;
     if (!mix) return;
     const run = new AbortController();
     controller.current = run;
-    const audio: AnalysisAudio = { sources: beatSources(stems, mix), sampleRate: mix.sampleRate, beatsPerBar, chordChanges };
-    const audioId = audioFingerprint(mix.sampleRate, { mix, ...stems });
+    const audio: AnalysisAudio = {
+      sources: beatSources(stems, mix),
+      sampleRate: mix.sampleRate,
+      beatsPerBar,
+      chordChanges,
+      keySource: keyAudio(stems, mix),
+      chordSource: chordName && stems?.[chordName] ? { name: chordName, audio: stems[chordName] } : null,
+    };
+    const audioId = songAudioId(mix, stems);
     const tempo = tempoStep((grid) => {
       if (!readStoredBand(songKey).grid) writeStoredBand(songKey, { beatGrid: grid });
     });
@@ -84,7 +94,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     void runSongAnalysis({
       audioId,
       audio,
-      steps: [tempo],
+      steps: [tempo, chordsStep(), keyStep()],
       settings: storedAnalysis(songKey),
       from: from.from,
       partial: from.partial,
