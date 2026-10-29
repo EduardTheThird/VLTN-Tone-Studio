@@ -25,7 +25,7 @@ import {
 import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import type { DetectedSection } from "@/song/analysis/sections";
-import type { BeatGrid } from "@/song/band/beat-grid";
+import type { BeatGrid, TempoHintOptions } from "@/song/band/beat-grid";
 
 /** The lyrics step for a song with no lyrics: fills the chart only while it is still empty, so a chart saved meanwhile is never replaced. */
 function analysisLyrics(songKey: string) {
@@ -99,6 +99,8 @@ export interface SongAnalysisControl {
   rerun(beatsPerBar?: number): void;
   /** Detects the tempo and meter again, replacing the saved ones. The rest of the saved analysis is kept. Ignored during playback. */
   detect(): void;
+  /** Finds the beat again from a tempo the performer typed: refined near it, or kept exactly when locked. Replaces the saved tempo and grid, as detect does. Ignored during playback. */
+  findBeat(hint: TempoHintOptions): void;
   /** Runs every step again, replacing the saved tempo and meter. Ignored during playback. */
   analyseAgain(): void;
   /** Replaces the notices, so an action can show what it changed. */
@@ -116,6 +118,8 @@ interface Resume {
   detect?: boolean;
   /** Runs the tempo step only, and keeps the rest of the saved analysis. */
   tempoOnly?: boolean;
+  /** A tempo the performer typed, which the tempo step tracks from. */
+  hint?: TempoHintOptions;
 }
 
 const notice = (value: Notice | null): Notice[] => (value ? [value] : []);
@@ -156,7 +160,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (!from.detect && readStoredBand(songKey).grid && !gridFromAnalysis(songKey)) return;
       writeStoredBand(songKey, { beatGrid: grid });
       setSetting(songKey, ":options", JSON.stringify({ ...readOptions(songKey, {}), beatGridSource: "analysis" }));
-    });
+    }, from.hint);
     // The sections step uses the grid this run tracked, or the one saved with the song when the tempo step did not run.
     const sections = sectionsStep(() => captured.grid ?? readStoredBand(songKey).grid ?? null);
     // The lyrics step is the slowest, so it runs last, and only for a song with no lyrics yet (it never replaces a chart).
@@ -182,7 +186,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       controller.current = null;
       if (outcome.status === "interrupted") {
         // A forced run stays forced, so a saved analysis of the old meter is not taken in its place.
-        const next: Resume = { from: outcome.next, partial: outcome.analysis, force: from.force, detect: from.detect, tempoOnly: from.tempoOnly };
+        const next: Resume = { from: outcome.next, partial: outcome.analysis, force: from.force, detect: from.detect, tempoOnly: from.tempoOnly, hint: from.hint };
         // Playback may have stopped while this step was still running. The effect below has already seen that, so restart here.
         if (latest.current.playing) resume.current = next;
         else start(next);
@@ -253,6 +257,9 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     },
     detect() {
       restart({ from: 0, force: true, detect: true, tempoOnly: true });
+    },
+    findBeat(hint) {
+      restart({ from: 0, force: true, detect: true, tempoOnly: true, hint });
     },
     analyseAgain() {
       restart({ from: 0, force: true, detect: true });

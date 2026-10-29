@@ -8,9 +8,14 @@ const fake = vi.hoisted(() => ({
     if (signal.aborted) throw new Error("aborted");
     return { tempo: { bpm: 98, firstBeat: 0.4, steady: true }, meter: { beatsPerBar: 3, confidence: 0.9 } };
   }),
+  // The tempo hint each tempo step was made with, in the order the runs started.
+  hints: [] as unknown[],
 }));
 vi.mock("@/song/analysis/steps", () => ({
-  tempoStep: () => ({ name: "tempo", run: fake.run }),
+  tempoStep: (_onGrid: unknown, hint: unknown) => {
+    fake.hints.push(hint);
+    return { name: "tempo", run: fake.run };
+  },
   chordsStep: () => ({ name: "chords", run: async () => ({}) }),
   keyStep: () => ({ name: "key", run: async () => ({}) }),
   loudnessStep: () => ({ name: "loudness", run: async () => ({}) }),
@@ -43,6 +48,7 @@ const base = (over: Partial<SongAnalysisInput> = {}): SongAnalysisInput => ({
 beforeEach(() => {
   localStorage.clear();
   fake.run.mockClear();
+  fake.hints.length = 0;
 });
 
 describe("useSongAnalysis", () => {
@@ -104,6 +110,25 @@ describe("useSongAnalysis", () => {
     expect(onTempo).toHaveBeenCalledTimes(1);
     expect(result.current.detecting).toBe(false);
     expect(fake.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("finds the beat from the typed tempo: the hint reaches the tempo step, and only the tempo runs", async () => {
+    const onTempo = vi.fn();
+    const onDetect = vi.fn(() => null);
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onTempo, onDetect }) });
+    await waitFor(() => expect(onTempo).toHaveBeenCalledTimes(1));
+    act(() => result.current.findBeat({ tempoHint: 98, lockTempo: true }));
+    await waitFor(() => expect(onDetect).toHaveBeenCalledTimes(1));
+    expect(fake.hints.at(-1)).toEqual({ tempoHint: 98, lockTempo: true });
+    expect(onTempo).toHaveBeenCalledTimes(1);
+    expect(fake.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not find the beat during playback", async () => {
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ playing: true }) });
+    act(() => result.current.findBeat({ tempoHint: 98 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fake.run).not.toHaveBeenCalled();
   });
 
   it("does not detect during playback", async () => {
