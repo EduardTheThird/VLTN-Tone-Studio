@@ -45,10 +45,10 @@ export interface SongAnalysisInput {
   chordName: StemName | "";
   /** True during playback, and while a playlist plays. Nothing runs then. */
   playing: boolean;
-  /** Called with the tempo a finished run found. The panel decides whether to apply it. */
-  onTempo(tempo: TempoResult): void;
-  /** Called with the meter a finished run found. The panel decides whether to apply it. */
-  onMeter(meter: MeterResult): void;
+  /** Called with the tempo a finished run found. The panel decides whether to apply it, and may return a notice about it. */
+  onTempo(tempo: TempoResult): Notice | null;
+  /** Called with the meter a finished run found. The panel decides whether to apply it, and may return a notice about it. */
+  onMeter(meter: MeterResult): Notice | null;
   /** Called with the loudness a finished run measured. The panel saves it when the song has none yet. */
   onLoudness(loudness: LoudnessResult): void;
   /** Called with the drums and bass check of a finished run. The panel uses it when the song has no check yet. */
@@ -57,11 +57,26 @@ export interface SongAnalysisInput {
   onSilence(silence: SilenceEnds): void;
 }
 
+/** A line the status shows after a run, with at most one button. Shown until the next run starts. */
+export interface Notice {
+  text: string;
+  action?: { label: string; run(): void };
+}
+
+/** Whether the saved grid came from the analysis, so the analysis may replace it when the meter changes. */
+export function gridFromAnalysis(songKey: string): boolean {
+  return readOptions<Record<string, unknown>>(songKey, {}).beatGridSource === "analysis";
+}
+
 export interface SongAnalysisControl {
   /** The step being run, or null when idle. */
   step: string | null;
   /** What the last finished run found, as one line. */
   message: string | null;
+  /** Notices from the last finished run, such as an undo for a tempo that was replaced. */
+  notices: Notice[];
+  /** Runs the analysis again from the start, with the meter given when it is known to have changed. Ignored during playback. */
+  rerun(beatsPerBar?: number): void;
   /** Stops the run and drops it. The song is analysed again when it is next opened. */
   cancel(): void;
 }
@@ -69,11 +84,16 @@ export interface SongAnalysisControl {
 interface Resume {
   from: number;
   partial?: SongAnalysis;
+  /** Runs even when the saved analysis matches. Set when the meter changed and the grid must be laid out again. */
+  force?: boolean;
 }
+
+const notice = (value: Notice | null): Notice[] => (value ? [value] : []);
 
 export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
   const [step, setStep] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
   // The latest input, read when a run starts or finishes, so a run never uses values from the render that started it.
   const latest = useRef(input);
   useEffect(() => {
@@ -82,8 +102,9 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
   const controller = useRef<AbortController | null>(null);
   const resume = useRef<Resume | null>(null);
 
-  const start = (from: Resume) => {
-    const { mix, stems, beatsPerBar, chordChanges, chordName, songKey } = latest.current;
+  const start = (from: Resume, override?: { beatsPerBar?: number }) => {
+    const { mix, stems, chordChanges, chordName, songKey } = latest.current;
+    const beatsPerBar = override?.beatsPerBar ?? latest.current.beatsPerBar;
     if (!mix) return;
     const run = new AbortController();
     controller.current = run;
@@ -99,10 +120,14 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     };
     const audioId = songAudioId(mix, stems);
     const tempo = tempoStep((grid) => {
-      if (!readStoredBand(songKey).grid) writeStoredBand(songKey, { beatGrid: grid });
+      // A performer's own grid is kept. The analysis's grid is replaced, so it always agrees with the meter it was laid out for.
+      if (readStoredBand(songKey).grid && !gridFromAnalysis(songKey)) return;
+      writeStoredBand(songKey, { beatGrid: grid });
+      setSetting(songKey, ":options", JSON.stringify({ ...readOptions(songKey, {}), beatGridSource: "analysis" }));
     });
     // The label fills in when the first step starts, so it never names a step that has not begun.
     setStep(null);
+    setNotices([]);
     void runSongAnalysis({
       audioId,
       audio,
@@ -110,6 +135,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       settings: storedAnalysis(songKey),
       from: from.from,
       partial: from.partial,
+      force: from.force,
       signal: run.signal,
       onStep: (_, name) => setStep(name),
     }).then((outcome) => {
@@ -117,7 +143,8 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       if (controller.current !== run) return;
       controller.current = null;
       if (outcome.status === "interrupted") {
-        const next = { from: outcome.next, partial: outcome.analysis };
+        // A forced run stays forced, so a saved analysis of the old meter is not taken in its place.
+        const next = { from: outcome.next, partial: outcome.analysis, force: from.force };
         // Playback may have stopped while this step was still running. The effect below has already seen that, so restart here.
         if (latest.current.playing) resume.current = next;
         else start(next);
@@ -126,8 +153,10 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       setStep(null);
       if (outcome.status !== "complete") return;
       setMessage(describeAnalysis(outcome.analysis));
-      if (outcome.analysis.tempo) latest.current.onTempo(outcome.analysis.tempo);
-      if (outcome.analysis.meter) latest.current.onMeter(outcome.analysis.meter);
+      const found: Notice[] = [];
+      if (outcome.analysis.tempo) found.push(...notice(latest.current.onTempo(outcome.analysis.tempo)));
+      if (outcome.analysis.meter) found.push(...notice(latest.current.onMeter(outcome.analysis.meter)));
+      setNotices(found);
       if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
       if (outcome.analysis.parts) latest.current.onParts(outcome.analysis.parts);
       if (outcome.analysis.silence) latest.current.onSilence(outcome.analysis.silence);
@@ -163,6 +192,14 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
   return {
     step,
     message,
+    notices,
+    rerun(beatsPerBar) {
+      // The run is restarted from the start, so the tempo and grid are laid out for the new meter. Nothing is restarted during playback.
+      if (latest.current.playing) return;
+      controller.current?.abort("cancel");
+      controller.current = null;
+      start({ from: 0, force: true }, { beatsPerBar });
+    },
     cancel() {
       resume.current = null;
       controller.current?.abort("cancel");

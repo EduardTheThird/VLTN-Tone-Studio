@@ -81,6 +81,26 @@ describe("useSongAnalysis", () => {
     expect(fake.run).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the notice a finished run gives, with its action until the next run starts", async () => {
+    const undo = vi.fn();
+    const onTempo = vi.fn(() => ({ text: "Tempo detected: 98 BPM (was 120).", action: { label: "Undo", run: undo } }));
+    const { result } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base({ onTempo }) });
+    await waitFor(() => expect(result.current.notices.map((n) => n.text)).toEqual(["Tempo detected: 98 BPM (was 120)."]));
+    act(() => result.current.notices[0].action?.run());
+    expect(undo).toHaveBeenCalledTimes(1);
+  });
+
+  it("reruns a finished song from the start, and does not rerun during playback", async () => {
+    const { result, rerender } = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base() });
+    await waitFor(() => expect(result.current.message).toBe("Tempo 98 BPM. Meter 3/4"));
+    act(() => result.current.rerun(3));
+    await waitFor(() => expect(fake.run).toHaveBeenCalledTimes(2));
+    rerender(base({ playing: true }));
+    act(() => result.current.rerun(4));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fake.run).toHaveBeenCalledTimes(2);
+  });
+
   it("is saved, so opening the song again runs nothing", async () => {
     const first = renderHook((props: SongAnalysisInput) => useSongAnalysis(props), { initialProps: base() });
     await waitFor(() => expect(first.result.current.message).toBe("Tempo 98 BPM. Meter 3/4"));

@@ -33,5 +33,8 @@ export function readStoredBand(key: string): StoredBand {
 }
 
 export function writeStoredBand(key: string, patch: BandPatch): void {
-  setSetting(key, ":options", JSON.stringify({ ...readOptions<Record<string, unknown>>(key, {}), ...patch }));
+  // A grid written from anywhere but the analysis belongs to the performer, so it is no longer the analysis's to replace. The analysis
+  // tags its own grid straight after it writes it.
+  const cleared = patch.beatGrid !== undefined ? { beatGridSource: undefined, ...patch } : patch;
+  setSetting(key, ":options", JSON.stringify({ ...readOptions<Record<string, unknown>>(key, {}), ...cleared }));
 }

@@ -7,6 +7,13 @@ const KEY = "vltn.performance.v1:stored-test:8:44100";
 afterEach(() => localStorage.clear());
 
 describe("stored band options", () => {
+  it("a grid written by the performer clears the analysis tag, so the analysis leaves it alone", () => {
+    const key = "stored-tag-test";
+    localStorage.setItem(key + ":options", JSON.stringify({ beatGridSource: "analysis" }));
+    writeStoredBand(key, { beatGrid: fixedBeatGrid(100, 0, 4, 10) });
+    expect(JSON.parse(localStorage.getItem(key + ":options") ?? "{}").beatGridSource).toBeUndefined();
+  });
+
   it("reads the defaults from a song with nothing saved", () => {
     expect(readStoredBand(KEY)).toEqual({ settings: DEFAULT_BAND_SETTINGS, grid: null, outOfDate: false, noticeDismissed: false });
   });

@@ -19,7 +19,7 @@ import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { needsTempoDetection, readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
 import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
-import { useSongAnalysis } from "./use-song-analysis";
+import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
 import { METER_CERTAIN, songAudioId } from "@/song/analysis/song-analysis";
 import { withLoudness } from "@/song/audio/loudness";
 import type { SilenceEnds } from "@/song/analysis/silence";
@@ -273,14 +273,20 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     if (value && !session.state.playing) changeTempo(value, "tap");
   };
   // A meter the performer picked is kept; only a meter that was never chosen is changed by the analysis.
-  const changeBeats = (value: number) => {
+  // A meter the performer picked is manual. The analysis's own choice is recorded as detected, so it can still be changed by it later.
+  const changeBeats = (value: number, source: "manual" | "detected" = "manual") => {
     setBeats(value);
-    setBeatsManual(true);
+    setBeatsManual(source === "manual");
     try {
-      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: "manual" }));
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: source }));
     } catch (e) {
       session.fail(e);
     }
+  };
+  // Changes the meter. A grid the analysis laid out for the old meter is laid out again, so its downbeat matches; a performer's grid is kept.
+  const applyMeter = (value: number) => {
+    changeBeats(value, "detected");
+    if (gridFromAnalysis(key)) analysis.rerun(value);
   };
   // Every change to the tempo records where it came from. The saved source is what stops the analysis overwriting a tempo the performer chose.
   const changeTempo = (value: number, source: TempoSource) => {
@@ -402,10 +408,24 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     chordChanges,
     chordName: chordSource,
     playing: playing || library.playlistPlaying,
-    onTempo: (found) => {
-      if (!needsTempoDetection(getSetting(key, ":bpm"), tempoSource)) return;
+    onTempo: (found): Notice | null => {
+      const saved = getSetting(key, ":bpm");
+      if (!needsTempoDetection(saved, tempoSource)) return null;
+      const previous = { bpm, firstBeat };
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
+      // Only a 120 saved by an earlier build is a guess worth undoing. An empty tempo had no value to go back to.
+      if (saved !== "120") return null;
+      return {
+        text: `Tempo detected: ${found.bpm} BPM (was ${previous.bpm}).`,
+        action: {
+          label: "Undo",
+          run: () => {
+            changeTempo(previous.bpm, "manual");
+            setFirstBeat(previous.firstBeat);
+          },
+        },
+      };
     },
     onSilence: (found) => setSilence({ songKey: key, ends: found }),
     onParts: (found) => {
@@ -419,14 +439,15 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       setLoudness(next);
       setSetting(key, ":options", withLoudness(getSetting(key, ":options"), next));
     },
-    onMeter: (found) => {
-      if (beatsManual || found.confidence < METER_CERTAIN) return;
-      setBeats(found.beatsPerBar);
-      try {
-        setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: "detected" }));
-      } catch (e) {
-        session.fail(e);
+    onMeter: (found): Notice | null => {
+      if (beatsManual || found.confidence < METER_CERTAIN) return null;
+      // 4 is the usual meter, so the analysis may set it. A 3 reads the same beats differently, so it is only offered.
+      if (found.beatsPerBar === 4) {
+        if (beats !== 4) applyMeter(4);
+        return null;
       }
+      if (beats === 3) return null;
+      return { text: "Sounds like 3/4.", action: { label: "Use it", run: () => applyMeter(3) } };
     },
   });
 
@@ -510,6 +531,16 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           Enter stage mode
         </Button>
         <MissingPartsNotice songKey={key} sections={sectionList} playing={playing || library.playlistPlaying} />
+        {analysis.notices.map((notice) => (
+          <p key={notice.text} className="flex flex-wrap items-center gap-2 text-xs" role="status">
+            <span>{notice.text}</span>
+            {notice.action ? (
+              <Button variant="outline" size="sm" disabled={playing || library.playlistPlaying} onClick={notice.action.run}>
+                {notice.action.label}
+              </Button>
+            ) : null}
+          </p>
+        ))}
         {analysis.step || analysis.message ? (
           <p className="flex flex-wrap items-center gap-2 text-xs" role="status">
             <span>{analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
@@ -531,7 +562,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             firstBeat,
             onFirstBeat: setFirstBeat,
             beats,
-            onBeats: changeBeats,
+            onBeats: (value) => changeBeats(value),
             volume,
             onVolume: setVolume,
             lead,
