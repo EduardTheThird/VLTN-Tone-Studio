@@ -2,6 +2,18 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.1] - 2026-10-29
+
+Fixes from a review of the editor's own code, and a safer restore.
+
+- **Restore compares first.** A restore backs up (or reads) the pedal, lists each slot as same, changed, different or empty, and by default writes only the changed slots. A backup's menu in the Library has *Compare with pedal* and *Pin backup*, and *Settings › Keep backups* can keep only recent backups (older ones move to the Trash).
+- **Deleted items go to the Trash.** Collections, presets, songs, PDF charts and capture versions are moved to the system Trash instead of being removed.
+- **Backups can't be left half-written.** A backup is built in a temporary folder and appears only when complete. Settings and other files are written so that a crash can't corrupt them.
+- **Unsaved edits are protected.** Writing to another slot is refused while the Rig has unsaved changes, and a "back up first" copy that may be older than the pedal says so.
+- **Safer downloads and sign-in.** The TONE3000 sign-in token is sent only to TONE3000; stalled downloads stop and can be cancelled; the image cache is capped.
+- **Tighter app security.** The main window runs sandboxed, device permissions go only to the app's own pages, and the app opens only its own folders and files you chose. Valeton Suite set in Settings needs to be chosen once more.
+- **macOS:** opening a preset from Finder while the window is closed brings the window back.
+
 ## [0.9.0] - 2026-10-28
 
 The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the live-performance work to installed builds: the song library, playlists and backups; the stems player with a metronome; the lyrics and chords reader with stage mode; timed MIDI cues over USB or Bluetooth MIDI, with a pedal command library and preflight checks; key, chord and lyrics analysis; and generated drums and bass.
