@@ -196,6 +196,20 @@ describe("harmonyForSong", () => {
   });
 });
 
+describe("detected chord names in the band", () => {
+  it("keep their shapes through the band's harmony: a power chord, a slash chord and a seventh", () => {
+    const detected: Chord[] = [
+      { time: 0, name: "A5", confidence: 1 },
+      { time: 2, name: "C/G", confidence: 1 },
+      { time: 4, name: "Cmaj7", confidence: 1 },
+    ];
+    const perBeat = harmonyForSong(grid(12), [], detected, 6);
+    expect(perBeat[0].chord).toMatchObject({ root: 9, quality: "power" });
+    expect(perBeat[4].chord).toMatchObject({ root: 0, bass: 7, quality: "major" });
+    expect(perBeat[8].chord).toMatchObject({ root: 0, seventh: "maj7" });
+  });
+});
+
 describe("chordChangeTimes", () => {
   it("returns the times of the beats where the chord changes", () => {
     const perBeat = beatsNamed(["C", "C", "C", "Am", "Am", "C", "C"]);

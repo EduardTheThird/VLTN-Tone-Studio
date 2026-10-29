@@ -98,7 +98,8 @@ export function useChordAnalysis(
     };
     // The beats of the song's saved grid, so the chords change on the beats the song analysis would use.
     const beats = songKey !== undefined ? readStoredBand(songKey).grid?.beats ?? null : null;
-    worker.postMessage({ harmony: harmonyAudio, bass, beats });
+    // The key the analysis found for the song sets the key prior, as the song analysis does.
+    worker.postMessage({ harmony: harmonyAudio, bass, beats, key: known?.key?.estimate.name ?? null });
     return () => worker.terminate();
   }, [session, harmonyName, harmonyAudio, bass, songKey, audioId, estimate]);
   return { chords, analysing };

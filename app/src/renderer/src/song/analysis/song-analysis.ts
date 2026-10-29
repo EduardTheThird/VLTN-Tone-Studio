@@ -20,9 +20,10 @@ export const METER_CERTAIN = 0.6;
 
 /**
  * Bump when an analysis improves, so songs analysed earlier are analysed again the next time they open. Version 2 adds sections: a saved
- * song of version 1 is analysed once more, which fills in its sections. What the performer set is kept (see `planWriteBack`).
+ * song of version 1 is analysed once more, which fills in its sections. Version 3 reads the chords from the harmony and the bass with
+ * harmonic templates, decoded over the song, on the beats (spec 81). What the performer set is kept (see `planWriteBack`).
  */
-export const ANALYSIS_VERSION = 2;
+export const ANALYSIS_VERSION = 3;
 
 /** The tempo the analysis found. `firstBeat` is the time of the first beat, in seconds, when the grid fits a straight line. */
 export interface TempoResult {
