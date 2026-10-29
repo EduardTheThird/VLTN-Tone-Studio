@@ -317,3 +317,35 @@ describe("interrupted backups", () => {
     expect(await readdir(join(root, "backups"))).toEqual(["gp5-2026-10-07", "gp5-2026-10-07-2"]);
   });
 });
+
+describe("pinning a backup", () => {
+  const day = new Date(2026, 9, 7, 14, 32);
+
+  it("pins and unpins a backup, and the listing shows it", async () => {
+    const info = await store.saveBackup([{ slot: 0, name: "GreatPedal", prst: fakePrst("GreatPedal") }], day);
+    expect(info.pinned).toBe(false);
+    expect((await store.setBackupPinned(info.id, true)).pinned).toBe(true);
+    expect((await store.listCollections())[0]).toMatchObject({ id: info.id, pinned: true });
+    expect((await store.setBackupPinned(info.id, false)).pinned).toBe(false);
+  });
+
+  it("keeps the rest of backup.json when pinning", async () => {
+    const info = await store.saveBackup([{ slot: 0, name: "GreatPedal", prst: fakePrst("GreatPedal") }], day);
+    await store.setBackupPinned(info.id, true);
+    const meta = JSON.parse(await readFile(join(root, "backups", "gp5-2026-10-07", "backup.json"), "utf8"));
+    expect(meta).toMatchObject({ device: "gp5", slots: 1, files: ["00-GreatPedal.prst"], pinned: true });
+  });
+
+  it("pins a hand-copied folder by writing backup.json with only the flag", async () => {
+    await mkdir(join(root, "backups", "gp5-hand"), { recursive: true });
+    await writeFile(join(root, "backups", "gp5-hand", "00-GreatPedal.prst"), fakePrst("GreatPedal"));
+    expect((await store.setBackupPinned("backups/gp5-hand", true)).pinned).toBe(true);
+  });
+
+  it("refuses library collections and missing backups", async () => {
+    const imported = await store.addPresets(IMPORTED_ID, [{ name: "Lead", prst: fakePrst("Lead") }]);
+    expect(imported).toHaveLength(1);
+    await expect(store.setBackupPinned(IMPORTED_ID, true)).rejects.toThrow(/Only backups/);
+    await expect(store.setBackupPinned("backups/gp5-2000-01-01", true)).rejects.toThrow(/no longer exists/);
+  });
+});

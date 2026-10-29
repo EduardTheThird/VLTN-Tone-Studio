@@ -25,6 +25,8 @@ export interface CollectionInfo {
   path: string | null;
   /** Backups only: the copy was cut short (backup.json lists presets that are missing). Restore refuses it. Always false otherwise. */
   incomplete: boolean;
+  /** Backups only: kept when old backups are pruned (Settings › Keep backups). Always false otherwise. */
+  pinned: boolean;
 }
 
 export interface LocalPreset {
@@ -91,6 +93,8 @@ export interface FilesApi {
   /** Add presets to a library collection; IMPORTED_ID / REPLACED_ID are created on demand. */
   addPresets(collectionId: string, items: NewPreset[]): Promise<LocalPreset[]>;
   removePreset(collectionId: string, presetId: string): Promise<void>;
+  /** Pins or unpins a backup. A pinned backup survives the retention setting's pruning. */
+  setBackupPinned(backupId: string, pinned: boolean): Promise<CollectionInfo>;
   /** Open dialog for .prst files (multi-select). Empty when cancelled. */
   pickPrstFiles(): Promise<PickedFile[]>;
   /** Folder picker; returns every .prst in the folder (e.g. a backup made elsewhere). Null when cancelled. */

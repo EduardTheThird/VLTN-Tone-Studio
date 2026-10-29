@@ -11,6 +11,7 @@ export const filesApi: FilesApi = {
   deleteCollection: (id) => invoke("files:deleteCollection", id),
   addPresets: (id, items) => invoke("files:addPresets", id, items),
   removePreset: (id, presetId) => invoke("files:removePreset", id, presetId),
+  setBackupPinned: (id, pinned) => invoke("files:setBackupPinned", id, pinned),
   pickPrstFiles: () => invoke("files:pickPrstFiles"),
   pickPrstFolder: () => invoke("files:pickPrstFolder"),
   readPaths: (paths) => invoke("files:readPaths", paths),

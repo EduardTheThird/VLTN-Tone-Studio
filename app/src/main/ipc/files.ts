@@ -34,6 +34,7 @@ export function registerFilesIpc(getWindow: () => BrowserWindow | null): void {
   handle("files:deleteCollection", (_e, id: string) => store.deleteCollection(id));
   handle("files:addPresets", (_e, id: string, items: NewPreset[]) => store.addPresets(id, items));
   handle("files:removePreset", (_e, id: string, presetId: string) => store.removePreset(id, presetId));
+  handle("files:setBackupPinned", (_e, id: string, pinned: boolean) => store.setBackupPinned(id, pinned === true));
 
   handle("files:pickPrstFiles", async () => {
     const res = await showOpenDialog(getWindow(), { title: "Import presets", properties: ["openFile", "multiSelections"], filters: PRST_FILTER });
