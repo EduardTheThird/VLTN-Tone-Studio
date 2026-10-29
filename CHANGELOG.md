@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.4] - 2026-10-29
+
+Lyrics for songs you already have.
+
+- **Redo lyrics from before 0.9.2.** The Library analysis skipped every song whose lyrics were made before 0.9.2, because it couldn't tell whether you had typed them, so a lyrics run could finish at once without doing anything. Tick **Include lyrics from before version 0.9.2** to transcribe them again with the model you choose. The old lyrics are kept, and **Restore the previous lyrics** on each song brings them back. Lyrics you have edited since are never replaced.
+- **The dialog says what will happen.** Before a run, it counts how many songs will get new lyrics and why the others are skipped, and it won't start a lyrics-only run that has nothing to do.
+- **Each song says what happened** to its lyrics (transcribed, skipped and why, or the error), and the model download shows its progress in the status bar.
+- **Transcribe again** on a song with lyrics from before 0.9.2 asks before replacing them.
+
 ## [0.9.3] - 2026-10-29
 
 Progress you can see, and a beat that follows your tempo.
