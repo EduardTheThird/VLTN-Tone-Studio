@@ -17,7 +17,7 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, tempoStep } from "./steps";
+import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
@@ -156,5 +156,46 @@ describe("tempoStep chord changes", () => {
     const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
     await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, soFar);
     expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [5] }));
+  });
+});
+
+describe("sectionsStep", () => {
+  const stem = { sampleRate: 44100, channels: [new Float32Array(4)] };
+  const found = [{ start: 0, end: 16, name: "Verse 1" }];
+  let posted: unknown[] = [];
+  class RecordingWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: (() => void) | null = null;
+    postMessage(input: unknown) {
+      posted.push(input);
+      queueMicrotask(() => this.onmessage?.({ data: { sections: found } } as MessageEvent));
+    }
+    terminate() {}
+  }
+  beforeEach(() => {
+    posted = [];
+    vi.stubGlobal("Worker", RecordingWorker);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the sections from the worker", async () => {
+    const result = await sectionsStep(() => null).run({ ...audio, mix: stem }, new AbortController().signal, nothingFound);
+    expect(result).toEqual({ sections: found });
+  });
+
+  it("lays the units on the bar lines of the grid, with the chord stem as the harmony", async () => {
+    const chords = { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] };
+    await sectionsStep(() => grid).run({ ...audio, mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] }, chordSource: { name: "other", audio: chords } }, new AbortController().signal, nothingFound);
+    const input = posted[0] as { harmony: unknown; spans: { start: number }[]; options: { snap: number } };
+    expect(input.harmony).toBe(chords);
+    expect(input.spans[0].start).toBe(0);
+    expect(input.options.snap).toBe(4);
+  });
+
+  it("falls back to two-second frames when there is no grid", async () => {
+    await sectionsStep(() => null).run({ ...audio, mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] } }, new AbortController().signal, nothingFound);
+    const input = posted[0] as { spans: { start: number }[]; options: { snap: number } };
+    expect(input.spans.map((span) => span.start)).toEqual([0, 2, 4, 6]);
+    expect(input.options.snap).toBe(1);
   });
 });

@@ -6,10 +6,11 @@ import type { BeatGrid } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
-import type { PcmAudio } from "../types";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
 import { silenceEnds } from "./silence";
+import { BAR_DETECT, TIME_DETECT, barUnitSpans, timeUnitSpans, type DetectedSection } from "./sections";
+import type { SectionsInput } from "./sections-measure";
 import type { AnalysisStep } from "./song-analysis";
 
 /**
@@ -51,10 +52,10 @@ export function chordChangeTimes(chords: readonly Chord[]): number[] {
 }
 
 /**
- * Runs a one-shot worker on `audio` and resolves with its reply. The worker is ended when it answers, fails, or the run is aborted, so a
+ * Runs a one-shot worker on `payload` and resolves with its reply. The worker is ended when it answers, fails, or the run is aborted, so a
  * song that is left or re-analysed does not keep a thread busy.
  */
-function runWorker<T>(url: URL, audio: PcmAudio, signal: AbortSignal): Promise<T> {
+function runWorker<T>(url: URL, payload: unknown, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const worker = new Worker(url, { type: "module" });
     const stop = () => {
@@ -73,7 +74,7 @@ function runWorker<T>(url: URL, audio: PcmAudio, signal: AbortSignal): Promise<T
       signal.removeEventListener("abort", stop);
       reject(new Error("The analysis could not finish."));
     };
-    worker.postMessage(audio);
+    worker.postMessage(payload);
   });
 }
 
@@ -133,6 +134,32 @@ export function chordsStep(): AnalysisStep {
       if (!audio.chordSource) return {};
       const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), audio.chordSource.audio, signal);
       return { chords: { source: audio.chordSource.name, chords } };
+    },
+  };
+}
+
+/**
+ * Suggests the song's sections on the bar lines of its beat grid, or on two-second frames when there is no grid. `gridOf` gives the grid the
+ * tempo step tracked: the grid is too large for the analysis record, so the caller holds it, as `tempoStep`'s `onGrid` does. The harmony
+ * is read from the chord stem, or from the mix when none is chosen. The vocals come from the vocals stem; without one, every unit counts
+ * as having vocals. The measuring and the detection run in the sections worker.
+ */
+export function sectionsStep(gridOf: () => BeatGrid | null): AnalysisStep {
+  return {
+    name: "sections",
+    async run(audio, signal) {
+      const duration = (audio.mix.channels[0]?.length ?? 0) / audio.mix.sampleRate;
+      const grid = gridOf();
+      const bars = grid ? barUnitSpans(grid.beats, grid.downbeat, grid.beatsPerBar, duration) : null;
+      const input: SectionsInput = {
+        mix: audio.mix,
+        harmony: audio.chordSource?.audio ?? audio.mix,
+        vocals: audio.stems?.vocals ?? null,
+        spans: bars ?? timeUnitSpans(duration),
+        options: bars ? BAR_DETECT : TIME_DETECT,
+      };
+      const { sections } = await runWorker<{ sections: DetectedSection[] }>(new URL("./sections-worker.ts", import.meta.url), input, signal);
+      return { sections };
     },
   };
 }

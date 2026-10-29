@@ -6,6 +6,7 @@ import type { MissingParts } from "../band/detect";
 import type { SilenceEnds } from "./silence";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
+import type { DetectedSection } from "./sections";
 import type { PcmAudio, Stems } from "../types";
 
 /** The song's integrated loudness and sample peak, as the loudness control measures them. */
@@ -59,6 +60,8 @@ export interface SongAnalysis {
   silence?: SilenceEnds;
   key?: KeyResult;
   chords?: ChordsResult;
+  /** Suggested sections, on bar lines where the music allows (or on time frames when the song has no beat grid). Empty when none were found. */
+  sections?: DetectedSection[];
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
   failed?: string[];
 }
@@ -203,6 +206,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   const validChords = typeof chords?.source === "string" && Array.isArray(chords.chords);
   const meter = record.meter as Record<string, unknown> | undefined;
   const validMeter = !!meter && (meter.beatsPerBar === 3 || meter.beatsPerBar === 4) && typeof meter.confidence === "number";
+  const sections = Array.isArray(record.sections) && record.sections.every(isSection) ? (record.sections as DetectedSection[]) : undefined;
   const failed = Array.isArray(record.failed) && record.failed.every((name) => typeof name === "string") ? record.failed : undefined;
   return {
     audioId: record.audioId,
@@ -214,8 +218,15 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
+    ...(sections ? { sections } : {}),
     ...(failed?.length ? { failed } : {}),
   };
+}
+
+/** A saved section: a name and two finite times. Anything else in the list makes the saved sections unreadable. */
+function isSection(value: unknown): value is DetectedSection {
+  const section = value as Partial<DetectedSection> | null;
+  return !!section && typeof section.name === "string" && typeof section.start === "number" && typeof section.end === "number" && Number.isFinite(section.start) && Number.isFinite(section.end);
 }
 
 /** One line for the status under the song: what was found, and what failed. */
@@ -227,6 +238,7 @@ export function describeAnalysis(analysis: SongAnalysis): string {
   const parts = absent.length ? `. Missing ${absent.join(" and ")}` : "";
   const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
   const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
+  const sections = analysis.sections ? `. ${analysis.sections.length} section${analysis.sections.length === 1 ? "" : "s"}` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${loudness}${parts}${key}${chords}${failed}`;
+  return `${found}${meter}${loudness}${parts}${key}${chords}${sections}${failed}`;
 }

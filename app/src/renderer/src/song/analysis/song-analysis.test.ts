@@ -189,3 +189,16 @@ describe("describeAnalysis", () => {
     );
   });
 });
+
+describe("sections in the saved analysis", () => {
+  const base = { audioId: "a", version: ANALYSIS_VERSION };
+  it("keeps valid sections and drops a list with a damaged entry", () => {
+    const sections = [{ name: "Verse 1", start: 0, end: 16 }];
+    expect(parseAnalysis({ ...base, sections })?.sections).toEqual(sections);
+    expect(parseAnalysis({ ...base, sections: [{ name: "Verse 1", start: 0 }] })?.sections).toBeUndefined();
+  });
+
+  it("says how many sections were found", () => {
+    expect(describeAnalysis({ ...base, sections: [{ name: "Intro", start: 0, end: 8 }, { name: "Verse 1", start: 8, end: 24 }] })).toContain(". 2 sections");
+  });
+});
