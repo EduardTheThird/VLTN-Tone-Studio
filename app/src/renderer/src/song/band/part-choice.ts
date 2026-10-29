@@ -35,6 +35,14 @@ export function defaultPartChoice(presence: PartPresence, hasGenerated: boolean)
   return "both";
 }
 
+/** The choice each part starts with when the song saved none, from what the split found and which generated tracks the song has. */
+export function defaultPartChoices(missing: Partial<Record<PartKind, PartPresence>> | null | undefined, keys: PartKeys): PartChoices {
+  return {
+    drums: defaultPartChoice(missing?.drums ?? "unknown", keys.drums?.generated !== undefined),
+    bass: defaultPartChoice(missing?.bass ?? "unknown", keys.bass?.generated !== undefined),
+  };
+}
+
 /**
  * The choices read from the song's saved `partChoice` option. Each part reads its own saved value, and a missing or invalid value takes
  * the fallback for that part, so an old or damaged entry never breaks the mix.

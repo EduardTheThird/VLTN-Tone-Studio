@@ -31,7 +31,9 @@ import { parseChart, type Cue } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
 import type { Section } from "@/song/performance/sections";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
+import { ORIGINAL_PARTS, partKeysOf, type PartChoices } from "@/song/band/part-choice";
 import { hasGeneratedParts, presenceLine, type PartKind } from "./band-status";
+import { PartChoiceRows } from "./PartChoiceRows";
 import { useBandPanel } from "./band-panel-state";
 import { BandSections, type BandSectionRow } from "./BandSections";
 import { BandGridSection } from "./BandGridSection";
@@ -55,6 +57,10 @@ export interface BandPanelProps {
   onMetronome(bpm: number, firstBeat: number): void;
   /** The song position now, in seconds. The preview starts here when no section row is selected. */
   getPosition(): number;
+  /** Which drums and bass play: the original, the generated track or both. */
+  partChoices: PartChoices;
+  /** Changes some parts' choice and updates the mix to match. Works while playing, since it only changes mute levels. */
+  onPartChoice(patch: Partial<PartChoices>): void;
 }
 
 const PREVIEW_BARS = 4;
@@ -117,7 +123,20 @@ export function BandPanel(props: BandPanelProps) {
   );
 }
 
-function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, firstBeat, onMetronome, getPosition }: BandPanelProps) {
+function BandBody({
+  songKey,
+  playing,
+  chart,
+  chords,
+  sections,
+  beats,
+  bpm,
+  firstBeat,
+  onMetronome,
+  getPosition,
+  partChoices,
+  onPartChoice,
+}: BandPanelProps) {
   const [stored] = useState(() => readStoredBand(songKey));
   const [settings, setSettings] = useState<BandSettings>(stored.settings);
   const [grid, setGrid] = useState<BeatGrid | null>(stored.grid);
@@ -155,6 +174,8 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   // With no song there is nothing to find a beat in or to render, so every action waits for one.
   const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
+  const partKeys = partKeysOf(tracks ?? {}, stems);
+  const partGenerated = { drums: partKeys.drums?.generated !== undefined, bass: partKeys.bass?.generated !== undefined };
   const style = findStyle(settings.style) ?? STYLES.rock;
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
@@ -291,6 +312,16 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
       const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass: result.bass }, { playing: playingNow.current, remove: turnedOff });
+      if (applied.length === 0) {
+        // A part that was just generated plays at once when it was on its original, so the user hears what they made. A part turned off
+        // with its generated track gone goes back to its original.
+        const patch: Partial<PartChoices> = {};
+        for (const kind of turnedOff) patch[kind] = "original";
+        const switched = (["drums", "bass"] as const).filter((kind) => using.parts[kind] && result[kind] && partChoices[kind] === "original");
+        for (const kind of switched) patch[kind] = "generated";
+        if (Object.keys(patch).length) onPartChoice(patch);
+        if (switched.length) notes.push(`Now playing the generated ${switched.join(" and ")}. Switch back under What plays.`);
+      }
       setNotices([...notes, ...applied]);
       if (applied.length === 0) {
         setOutOfDate(false);
@@ -363,7 +394,9 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
   const removeParts = () => {
     setConfirmRemove(false);
     try {
-      setNotices(useSong.getState().removeGeneratedParts({ playing: playingNow.current }));
+      const refused = useSong.getState().removeGeneratedParts({ playing: playingNow.current });
+      setNotices(refused);
+      if (refused.length === 0) onPartChoice(ORIGINAL_PARTS);
     } catch (error) {
       setNotices([error instanceof Error ? error.message : String(error)]);
     }
@@ -394,6 +427,8 @@ function BandBody({ songKey, playing, chart, chords, sections, beats, bpm, first
         <p>{generated ? "Generated drum and bass tracks are in the mixer." : "No generated parts yet."}</p>
         {outOfDate && <p className="text-led-warn">Parts out of date. Press Generate to apply the changes.</p>}
       </section>
+
+      {source !== null && <PartChoiceRows choices={partChoices} generated={partGenerated} disabled={busy} onChange={onPartChoice} />}
 
       <BandGridSection
         grid={grid}

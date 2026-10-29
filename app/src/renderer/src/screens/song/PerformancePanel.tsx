@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
-import { defaultMix } from "@/song/stems/mix";
+import { defaultMix, type Mix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
 import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf";
@@ -40,6 +40,7 @@ import { TrackImport } from "./TrackImport";
 import { SongLoudnessControl } from "./SongLoudnessControl";
 import { loudnessFromOptions, normalisingGain, type SongLoudness } from "@/song/audio/loudness";
 import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
+import { applyPartChoices, defaultPartChoices, partKeysOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
@@ -125,7 +126,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const source = useSong((s) => s.source),
     stems = useSong((s) => s.stems),
     tracks = useSong((s) => s.tracks) ?? NO_TRACKS,
-    setTrackInfo = useSong((s) => s.setTrackInfo);
+    setTrackInfo = useSong((s) => s.setTrackInfo),
+    missingParts = useSong((s) => s.missingParts);
   const key = performanceKey(source);
   const library = useSongLibrary();
   const queued = !!source?.libraryId && library.queue[library.position] === source.libraryId;
@@ -149,6 +151,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         sections: [] as unknown[],
         timecodeOffset: "",
         beatsSource: "" as "" | "detected" | "manual",
+        partChoice: undefined as PartChoices | undefined,
       }),
     [key],
   );
@@ -190,8 +193,24 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   };
   const [shapeVersion, setShapeVersion] = useState(0);
+  // The drums and bass choice: the original, the generated track or both. A song that saved none starts from the default for its parts,
+  // and its mix is set to match. A saved choice is already in the saved mix.
+  const [partChoice, setPartChoice] = useState<PartChoices>(() =>
+    readPartChoices(options.partChoice, defaultPartChoices(missingParts, partKeysOf(tracks, stems))),
+  );
+  const partChoiceNow = useRef(partChoice);
+  const withPartChoice = (base: Mix): Mix =>
+    options.partChoice === undefined ? applyPartChoices(base, partChoiceNow.current, partKeysOf(tracks, stems)) : base;
+  /** Changes the drums or bass choice and sets the mix to match. Only mute levels change, so this also works during playback. */
+  const choosePart = (patch: Partial<PartChoices>) => {
+    const next = { ...partChoiceNow.current, ...patch };
+    partChoiceNow.current = next;
+    setPartChoice(next);
+    const now = useSong.getState();
+    setMix((current) => applyPartChoices(current, next, partKeysOf(now.tracks ?? {}, now.stems)));
+  };
   // An imported track starts on the bus, volume and pan it saved; a choice the song made since then wins.
-  const [mix, setMix] = useState(() => ({ ...mixDefaults(tracks), ...options.mix }));
+  const [mix, setMix] = useState(() => withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
   const [trackBuses, setTrackBuses] = useState<TrackBuses>(() => ({ ...busDefaults(tracks), ...options.trackBuses }));
   useEffect(() => {
     setMix((current) => ({ ...mixDefaults(tracks), ...current }));
@@ -576,7 +595,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   }, [session, key, bpm, tempoSource]);
   useEffect(() => {
-    setMix({ ...mixDefaults(tracks), ...options.mix });
+    setMix(withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
   }, [player]);
   // A normalised song is raised or lowered as a whole: every track gets the same gain, so the balance stays as it was mixed.
   const [loudness, setLoudness] = useState<SongLoudness>(() => loudnessFromOptions(getSetting(key, ":options")));
@@ -602,6 +621,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           volume,
           mix,
           trackBuses,
+          partChoice,
           chordChoice,
           lyricsLanguage: readOptions(key, { lyricsLanguage: "auto" }).lyricsLanguage,
           metronomeMode: metronome,
@@ -614,7 +634,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, chordChoice, metronome, lead, sectionList]);
+  }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, partChoice, chordChoice, metronome, lead, sectionList]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -731,6 +751,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             setFirstBeat(first);
           }}
           getPosition={() => session.position}
+          partChoices={partChoice}
+          onPartChoice={choosePart}
         />
         <SectionEditor
           sections={sectionList}

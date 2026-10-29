@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Mix } from "@/song/stems/mix";
 import type { TrackInfo } from "@/song/tracks";
-import { applyPartChoices, defaultPartChoice, ORIGINAL_PARTS, partKeysOf, readPartChoices, type PartChoices, type PartKeys } from "./part-choice";
+import { applyPartChoices, defaultPartChoice, defaultPartChoices, ORIGINAL_PARTS, partKeysOf, readPartChoices, type PartChoices, type PartKeys } from "./part-choice";
 import { GENERATED_PART_NAMES } from "./generated-names";
 
 const BOTH: PartKeys = { drums: { original: "drums", generated: "track1" }, bass: { original: "bass", generated: "track2" } };
@@ -31,6 +31,18 @@ describe("defaultPartChoice", () => {
 
   it("keeps both for a part not checked yet, which is how such a song already plays", () => {
     expect(defaultPartChoice("unknown", true)).toBe("both");
+  });
+});
+
+describe("defaultPartChoices", () => {
+  it("works out each part on its own, from the split's result and the generated keys", () => {
+    const keys: PartKeys = { drums: { original: "drums", generated: "track1" }, bass: { original: "bass" } };
+    expect(defaultPartChoices({ drums: "absent", bass: "present" }, keys)).toEqual({ drums: "generated", bass: "original" });
+  });
+
+  it("starts an unchecked song with a generated track on both, and one with none on the original", () => {
+    expect(defaultPartChoices(null, { drums: { original: "drums", generated: "track1" } })).toEqual({ drums: "both", bass: "original" });
+    expect(defaultPartChoices(undefined, { drums: { original: "drums" } })).toEqual(ORIGINAL_PARTS);
   });
 });
 
