@@ -200,3 +200,31 @@ it("keeps the user's edits and says so when the saved playlist changes underneat
   expect(screen.getByText("3 entries", { exact: false })).toBeTruthy();
   expect(screen.getByText(/changed elsewhere/)).toBeTruthy();
 });
+
+it("adds songs to the end of a set, and saves them there", async () => {
+  const sets = [
+    { id: "22222222-2222-2222-2222-222222222222", name: "Set 1", start: 0 },
+    { id: "33333333-3333-3333-3333-333333333333", name: "Encore", start: 2 },
+  ];
+  renderPanel(playlist({ sets }));
+  fireEvent.click(screen.getAllByText("Add songs to this set…")[0]);
+  fireEvent.click(screen.getByLabelText("Add Song s4"));
+  fireEvent.click(screen.getByText("Add 1 song"));
+  await act(async () => {
+    fireEvent.click(screen.getByText("Save playlist"));
+  });
+  expect(savedPlaylists()[0].songs).toEqual(["s1", "s2", "s4", "s3", "s4"]);
+  expect(savedPlaylists()[0].sets?.map((set) => set.start)).toEqual([0, 3]);
+});
+
+it("fills an empty playlist from Add songs, and saves the songs", async () => {
+  renderPanel(playlist({ songs: [], sets: [] }));
+  expect(screen.getByText("No songs yet. Add songs to fill the playlist.")).toBeTruthy();
+  fireEvent.click(screen.getByText("Add songs…"));
+  fireEvent.click(screen.getByLabelText("Add Song s2"));
+  fireEvent.click(screen.getByText("Add 1 song"));
+  await act(async () => {
+    fireEvent.click(screen.getByText("Save playlist"));
+  });
+  expect(savedPlaylists()[0].songs).toEqual(["s2"]);
+});

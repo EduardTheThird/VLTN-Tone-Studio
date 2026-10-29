@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
-import type { PlaylistDraft } from "@/song/playlist-draft";
+import { insertSongs, type PlaylistDraft } from "@/song/playlist-draft";
 import { runningSeconds } from "@/song/performance/running-time";
 import { formatTime } from "@/song/stems/mix";
 import { addSet, blockSummaries, deleteSet, moveEntry, removeEntry, renameSet } from "@shared/playlist-sets";
 import type { LibrarySong, Playlist } from "@shared/song-library";
+import { AddSongsDialog } from "./AddSongsDialog";
 import { PlaylistPreflight } from "./PlaylistPreflight";
 import { EntryOverrideControls } from "./EntryOverrideControls";
 import { overridesFor, withOverride, type EntryOverride } from "@shared/entry-overrides";
@@ -35,6 +36,8 @@ export function SetEditor({
 }) {
   const library = useSongLibrary();
   const [hint, setHint] = useState("");
+  // Where the songs picked in the Add songs dialog go: before the entry at this index. Null while the dialog is closed.
+  const [addAt, setAddAt] = useState<number | null>(null);
   const byId = new Map(songs.map((song) => [song.id, song]));
   // The draft's lists, shaped as a playlist, so the blocks and entry edits read the same as for a saved one.
   const view: Playlist = { ...playlist, songs: draft.songs, sets: draft.sets, overrides: draft.overrides };
@@ -59,6 +62,11 @@ export function SetEditor({
     edit({ sets: result.sets });
   };
   const removeAt = (i: number) => edit(removeEntry(view, i));
+  const addSongs = (ids: string[]) => {
+    if (addAt === null || !ids.length) return;
+    onChange(insertSongs(draft, addAt, ids));
+    setHint(`Added ${ids.length} song${ids.length === 1 ? "" : "s"}. Save the playlist to keep them.`);
+  };
   const moveTo = (from: number, to: number) => edit(moveEntry(view, from, to));
   const off = busy || dirty;
   return (
@@ -77,7 +85,11 @@ export function SetEditor({
         <Button variant="outline" disabled={!playlist.songs.length || off} onClick={() => queueIds(playlist.songs, overrides)}>
           Queue all
         </Button>
+        <Button variant="outline" disabled={busy} onClick={() => setAddAt(draft.songs.length)}>
+          Add songs…
+        </Button>
       </div>
+      {!draft.songs.length && <p className="text-sm">No songs yet. Add songs to fill the playlist.</p>}
       {dirty && <p className="text-sm text-silkscreen-3">Save the playlist first to play it.</p>}
       <p className="text-sm">
         {draft.songs.length} entries · {formatTime(duration)} · Automatically advances during playback
@@ -104,6 +116,9 @@ export function SetEditor({
                   onClick={() => void library.playPlaylist(entries(block.start, block.end), 0, block.set!.id, overrides.slice(block.start, block.end))}
                 >
                   Play set
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={() => setAddAt(block.end)}>
+                  Add songs to this set…
                 </Button>
                 <Button variant="outline" disabled={busy} onClick={() => edit({ sets: deleteSet(draft.sets, block.set!.id) })}>
                   Remove set heading
@@ -159,6 +174,7 @@ export function SetEditor({
           </li>
         ))}
       </ol>
+      <AddSongsDialog open={addAt !== null} songs={songs} inPlaylist={new Set(draft.songs)} onOpenChange={(open) => !open && setAddAt(null)} onAdd={addSongs} />
       {hint && (
         <p role="status" className="text-sm">
           {hint}

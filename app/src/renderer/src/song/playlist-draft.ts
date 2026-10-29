@@ -34,3 +34,16 @@ export function isDirty(draft: PlaylistDraft, base: PlaylistDraft): boolean {
 export function changeOf(draft: PlaylistDraft): Pick<Playlist, "name" | "songs" | "sets" | "overrides"> {
   return { name: draft.name.trim(), songs: draft.songs, sets: draft.sets, overrides: draft.overrides };
 }
+
+/**
+ * Inserts songs before the entry at `at`, with no overrides. A set heading at `at` moves down with them, so the songs belong to the block
+ * before it: inserting at the end of a set adds to that set, and inserting at the end of the playlist adds to its last set.
+ */
+export function insertSongs(draft: PlaylistDraft, at: number, ids: string[]): PlaylistDraft {
+  const songs = [...draft.songs];
+  songs.splice(at, 0, ...ids);
+  const overrides = [...draft.overrides];
+  overrides.splice(at, 0, ...ids.map(() => null));
+  const sets = draft.sets.map((set) => (set.start >= at ? { ...set, start: set.start + ids.length } : set));
+  return { ...draft, songs, overrides, sets };
+}
