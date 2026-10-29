@@ -7,6 +7,7 @@ import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio } from "../types";
+import { measureLoudnessInWorker } from "../audio/loudness-client";
 import type { AnalysisStep } from "./song-analysis";
 
 /**
@@ -66,6 +67,20 @@ function runWorker<T>(url: URL, audio: PcmAudio, signal: AbortSignal): Promise<T
     };
     worker.postMessage(audio);
   });
+}
+
+/**
+ * Measures the song's loudness and sample peak, in the loudness worker. The worker cannot be stopped, so an aborted run finishes the
+ * measurement and drops it. Nothing is saved for a silent song, which has no level to normalise to.
+ */
+export function loudnessStep(): AnalysisStep {
+  return {
+    name: "loudness",
+    async run(audio) {
+      const { lufs, peakDb } = await measureLoudnessInWorker(audio.mix);
+      return Number.isFinite(lufs) ? { loudness: { lufs, peakDb } } : {};
+    },
+  };
 }
 
 /** Estimates the song's key from its key stem. Nothing is saved when the song has no stem with a signal. */

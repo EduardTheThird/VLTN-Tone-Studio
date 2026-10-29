@@ -21,6 +21,7 @@ import { chartChordTimes } from "@/song/band/request";
 import { parseChart } from "@/song/performance/chart";
 import { useSongAnalysis } from "./use-song-analysis";
 import { METER_CERTAIN, songAudioId } from "@/song/analysis/song-analysis";
+import { withLoudness } from "@/song/audio/loudness";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -403,6 +404,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       if (!needsTempoDetection(getSetting(key, ":bpm"), tempoSource)) return;
       changeTempo(found.bpm, "detected");
       setFirstBeat(found.firstBeat);
+    },
+    onLoudness: (found) => {
+      // A level the loudness control measured earlier is kept; the analysis only fills in a song that has none.
+      if (loudness.lufs !== null && loudness.peakDb !== null) return;
+      const next = { ...loudness, lufs: found.lufs, peakDb: found.peakDb };
+      setLoudness(next);
+      setSetting(key, ":options", withLoudness(getSetting(key, ":options"), next));
     },
     onMeter: (found) => {
       if (beatsManual || found.confidence < METER_CERTAIN) return;

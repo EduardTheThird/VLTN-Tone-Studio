@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
 
+const loudness = vi.hoisted(() => ({ measure: vi.fn() }));
+vi.mock("../audio/loudness-client", () => ({ measureLoudnessInWorker: loudness.measure }));
+
 const job = vi.hoisted(() => ({
   done: null as Promise<BeatGrid> | null,
   meter: Promise.resolve(null) as Promise<{ beatsPerBar: 3 | 4; confidence: number } | null>,
@@ -14,11 +17,11 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordsStep, keyStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, tempoStep } from "./steps";
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
-const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
+const audio = { mix: { sampleRate: 44100, channels: [] }, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -95,5 +98,18 @@ describe("keyStep and chordsStep", () => {
   it("fails when the worker reports an error", async () => {
     reply = { error: "boom" };
     await expect(chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal)).rejects.toThrow("boom");
+  });
+});
+
+describe("loudnessStep", () => {
+  it("measures the mix and records its level", async () => {
+    loudness.measure.mockResolvedValueOnce({ lufs: -9.8, peakDb: -0.4 });
+    expect(await loudnessStep().run(audio, new AbortController().signal)).toEqual({ loudness: { lufs: -9.8, peakDb: -0.4 } });
+    expect(loudness.measure).toHaveBeenCalledWith(audio.mix);
+  });
+
+  it("records nothing for a silent song", async () => {
+    loudness.measure.mockResolvedValueOnce({ lufs: -Infinity, peakDb: -Infinity });
+    expect(await loudnessStep().run(audio, new AbortController().signal)).toEqual({});
   });
 });

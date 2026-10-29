@@ -16,11 +16,12 @@ import {
   runSongAnalysis,
   type AnalysisAudio,
   type AnalysisSettings,
+  type LoudnessResult,
   type MeterResult,
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { chordsStep, keyStep, tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, loudnessStep, tempoStep } from "@/song/analysis/steps";
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -46,6 +47,8 @@ export interface SongAnalysisInput {
   onTempo(tempo: TempoResult): void;
   /** Called with the meter a finished run found. The panel decides whether to apply it. */
   onMeter(meter: MeterResult): void;
+  /** Called with the loudness a finished run measured. The panel saves it when the song has none yet. */
+  onLoudness(loudness: LoudnessResult): void;
 }
 
 export interface SongAnalysisControl {
@@ -79,6 +82,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     const run = new AbortController();
     controller.current = run;
     const audio: AnalysisAudio = {
+      mix,
       sources: beatSources(stems, mix),
       sampleRate: mix.sampleRate,
       beatsPerBar,
@@ -94,7 +98,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     void runSongAnalysis({
       audioId,
       audio,
-      steps: [tempo, chordsStep(), keyStep()],
+      steps: [loudnessStep(), tempo, chordsStep(), keyStep()],
       settings: storedAnalysis(songKey),
       from: from.from,
       partial: from.partial,
@@ -113,6 +117,7 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
       setMessage(describeAnalysis(outcome.analysis));
       if (outcome.analysis.tempo) latest.current.onTempo(outcome.analysis.tempo);
       if (outcome.analysis.meter) latest.current.onMeter(outcome.analysis.meter);
+      if (outcome.analysis.loudness) latest.current.onLoudness(outcome.analysis.loudness);
     });
   };
 

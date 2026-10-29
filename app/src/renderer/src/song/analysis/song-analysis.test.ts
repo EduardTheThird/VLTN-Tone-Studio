@@ -11,7 +11,7 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
-const audio = { sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
+const audio = { mix: { sampleRate: 44100, channels: [] }, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
 
 function memory(initial: SongAnalysis | null = null) {
   let saved = initial;
@@ -137,6 +137,11 @@ describe("parseAnalysis", () => {
     expect(parseAnalysis({ audioId: "x", version: 1, meter: { beatsPerBar: 5, confidence: 0.8 } })).toEqual({ audioId: "x", version: 1 });
   });
 
+  it("keeps a loudness level", () => {
+    const value = { audioId: "x", version: 1, loudness: { lufs: -9.8, peakDb: -0.4 } };
+    expect(parseAnalysis(value)).toEqual(value);
+  });
+
   it("drops a damaged tempo but keeps the record", () => {
     expect(parseAnalysis({ audioId: "x", version: 1, tempo: { bpm: "98" } })).toEqual({ audioId: "x", version: 1 });
   });
@@ -157,5 +162,8 @@ describe("describeAnalysis", () => {
       "Tempo 98 BPM. Meter 3/4",
     );
     expect(describeAnalysis({ audioId: "x", version: 1, meter: { beatsPerBar: 4, confidence: 0.2 } })).toBe("No steady tempo found. Meter 4/4 (not certain)");
+    expect(describeAnalysis({ audioId: "x", version: 1, loudness: { lufs: -9.84, peakDb: -1 }, failed: ["key"] })).toBe(
+      "No steady tempo found. Loudness -9.8 LUFS. Could not work out: key",
+    );
   });
 });

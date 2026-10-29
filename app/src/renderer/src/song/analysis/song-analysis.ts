@@ -6,6 +6,12 @@ import type { Chord } from "../performance/chords";
 import type { KeyEstimate } from "../performance/key";
 import type { PcmAudio, Stems } from "../types";
 
+/** The song's integrated loudness and sample peak, as the loudness control measures them. */
+export interface LoudnessResult {
+  lufs: number;
+  peakDb: number;
+}
+
 /** A meter estimate at or above this confidence is applied to the song. Below it, the meter is only suggested. */
 export const METER_CERTAIN = 0.6;
 
@@ -44,6 +50,7 @@ export interface SongAnalysis {
   version: number;
   tempo?: TempoResult;
   meter?: MeterResult;
+  loudness?: LoudnessResult;
   key?: KeyResult;
   chords?: ChordsResult;
   /** Names of the steps that failed. A failed step is not retried until the song is analysed again. */
@@ -58,6 +65,8 @@ export interface NamedAudio {
 
 /** The audio a run analyses: the sources and the timing context the steps need. */
 export interface AnalysisAudio {
+  /** The song's mix, measured for loudness. */
+  mix: PcmAudio;
   sources: readonly PcmAudio[];
   sampleRate: number;
   beatsPerBar: number;
@@ -171,6 +180,8 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   if (typeof record.audioId !== "string" || typeof record.version !== "number") return null;
   const tempo = record.tempo as Record<string, unknown> | undefined;
   const validTempo = !!tempo && typeof tempo.bpm === "number" && typeof tempo.firstBeat === "number" && typeof tempo.steady === "boolean";
+  const loudness = record.loudness as Record<string, unknown> | undefined;
+  const validLoudness = typeof loudness?.lufs === "number" && typeof loudness.peakDb === "number";
   const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
   const validKey = typeof key?.source === "string" && typeof key.estimate?.name === "string";
   const chords = record.chords as { source?: unknown; chords?: unknown } | undefined;
@@ -183,6 +194,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     version: record.version,
     ...(validTempo ? { tempo: { bpm: tempo.bpm as number, firstBeat: tempo.firstBeat as number, steady: tempo.steady as boolean } } : {}),
     ...(validMeter ? { meter: { beatsPerBar: meter.beatsPerBar as 3 | 4, confidence: meter.confidence as number } } : {}),
+    ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
     ...(failed?.length ? { failed } : {}),
@@ -193,8 +205,9 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
 export function describeAnalysis(analysis: SongAnalysis): string {
   const found = analysis.tempo ? `Tempo ${analysis.tempo.bpm} BPM${analysis.tempo.steady ? "" : " (the tempo varies)"}` : "No steady tempo found";
   const meter = analysis.meter ? `. Meter ${analysis.meter.beatsPerBar}/4${analysis.meter.confidence < METER_CERTAIN ? " (not certain)" : ""}` : "";
+  const loudness = analysis.loudness ? `. Loudness ${analysis.loudness.lufs.toFixed(1)} LUFS` : "";
   const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
   const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${key}${chords}${failed}`;
+  return `${found}${meter}${loudness}${key}${chords}${failed}`;
 }
