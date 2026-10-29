@@ -128,7 +128,7 @@ The lyrics follow the song's position, so a speed change, a section jump or a lo
 
 An import replaces the chart, so it is refused during playback, and when the chart has MIDI commands or triggers. Remove those in the editor first, so they are not dropped without you seeing it. Imported text has no timestamps, so it is read as untimed text: it has no MIDI cues and no timed lines until you add timestamps in the editor.
 
-**Automatic drafts.** After a split, Performance estimates chords from the guitar stem and, when the song has none, transcribes lyrics from the vocals with a local Whisper model. Choose **Lyrics language** first if you know it. The first run downloads the model; nothing is uploaded. Chord estimates cover major and minor triads only. Treat both as drafts and check them before you play, because dense mixes and backing vocals cause mistakes. Anything in your own chart takes priority over a draft.
+**Automatic drafts.** After a split, Performance estimates chords from the guitar, piano and other stems together (from the mix when the song is not split), and, when the song has none, transcribes lyrics from the vocals with a local Whisper model. Choose **Lyrics language** first if you know it. The first run downloads the model; nothing is uploaded. Chord estimates name major, minor, power (5), seventh, major seventh, minor seventh, sus2, sus4, diminished and augmented chords, with a slash bass (C/G) when the bass clearly plays another chord note. They change on the beats of the song and lean towards its key. Treat both as drafts and check them before you play, because dense mixes and backing vocals cause mistakes. Anything in your own chart takes priority over a draft.
 
 ## MIDI cues
 
@@ -384,7 +384,7 @@ The parts are normal tracks in the mixer, so you can mute, solo or set their vol
 
 **Limits.**
 
-- The chords come from the chart, or from chord detection when the chart has none. Detection knows only major and minor chords. If neither gives chords, the bass rests, and the panel says so.
+- The chords come from the chart, or from chord detection when the chart has none. Detection names the common chord types and slash basses (see [Lyrics and chords](#lyrics-and-chords)). If neither gives chords, the bass rests, and the panel says so.
 - A song with no click may need beat corrections before its parts line up. Check the first and last bars of each section.
 - Listen before a show. Preview a few sections, then check the whole song.
 
@@ -454,6 +454,6 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - Playlist joins are gapless only when the next song is ready in time. Otherwise there is a short gap, and a notice says so.
 - Audio is stretched or pitch-shifted only by [speed and pitch](#speed-and-pitch). The metronome is never stretched.
 - Audio outputs, speed and pitch, gapless joins and multitrack import are not yet tested on hardware.
-- Chord estimates cover major and minor triads, and key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. Accuracy on real songs has not been measured.
+- Chord estimates cover the common chord types only: no extended chords such as ninths or altered chords. Key estimates are ambiguous for modal music, relative keys and key changes. Lyrics from Whisper can be wrong. The project has not yet measured chord accuracy on real recordings.
 - Pedal profiles come from manuals and are tested at byte level. Only the GP-180 and TimeLine results above come from real hardware.
 - Bluetooth editor management and RTP-MIDI are not supported.
