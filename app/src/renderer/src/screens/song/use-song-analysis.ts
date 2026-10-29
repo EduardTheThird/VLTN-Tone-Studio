@@ -6,7 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
 import type { Stems, PcmAudio, StemName } from "@/song/types";
 import type { MissingParts } from "@/song/band/detect";
-import { readOptions, setSetting } from "@/song/performance/settings";
+import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
+import { loadLyricsOnAnalysis, lyricsOptions } from "@/song/performance/lyrics-options";
+import { lyricsMadeRecord, saveLyricsChart } from "@/song/performance/lyrics-chart";
 import { buildAnalysisAudio } from "@/song/analysis/analysis-audio";
 import {
   describeAnalysis,
@@ -20,10 +22,20 @@ import {
   type SongAnalysis,
   type TempoResult,
 } from "@/song/analysis/song-analysis";
-import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "@/song/analysis/steps";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import type { DetectedSection } from "@/song/analysis/sections";
 import type { BeatGrid } from "@/song/band/beat-grid";
+
+/** The lyrics step for a song with no lyrics: fills the chart only while it is still empty, so a chart saved meanwhile is never replaced. */
+function analysisLyrics(songKey: string) {
+  return lyricsStep({
+    options: lyricsOptions(songKey),
+    onText: (text) => {
+      if (!getSetting(songKey, ":lyrics").trim()) saveLyricsChart(songKey, { text, source: "transcribed", made: lyricsMadeRecord(lyricsOptions(songKey), new Date().toISOString()) });
+    },
+  });
+}
 
 /** The analysis saved in a song's options. */
 export function storedAnalysis(songKey: string): AnalysisSettings {
@@ -145,7 +157,9 @@ export function useSongAnalysis(input: SongAnalysisInput): SongAnalysisControl {
     });
     // The sections step uses the grid this run tracked, or the one saved with the song when the tempo step did not run.
     const sections = sectionsStep(() => captured.grid ?? readStoredBand(songKey).grid ?? null);
-    const steps = from.tempoOnly ? [tempo] : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections];
+    // The lyrics step is the slowest, so it runs last, and only for a song with no lyrics yet (it never replaces a chart).
+    const lyrics = loadLyricsOnAnalysis() && !getSetting(songKey, ":lyrics").trim() ? [analysisLyrics(songKey)] : [];
+    const steps = from.tempoOnly ? [tempo] : [loudnessStep(), silenceStep(), partsStep(), chordsStep(), tempo, keyStep(), sections, ...lyrics];
     // The label fills in when the first step starts, so it never names a step that has not begun.
     setStep(null);
     setNotices([]);

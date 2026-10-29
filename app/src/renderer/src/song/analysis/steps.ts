@@ -12,6 +12,8 @@ import { silenceEnds } from "./silence";
 import { BAR_DETECT, TIME_DETECT, barUnitSpans, timeUnitSpans, type DetectedSection } from "./sections";
 import type { SectionsInput } from "./sections-measure";
 import type { AnalysisStep } from "./song-analysis";
+import { transcribeLyrics } from "../performance/lyrics-run";
+import type { LyricsOptions } from "../performance/lyrics-options";
 
 /**
  * Tracks the beat of the song's audio, and reads the meter from the same beats. `onGrid` receives the whole grid, which the caller saves
@@ -160,6 +162,32 @@ export function sectionsStep(gridOf: () => BeatGrid | null): AnalysisStep {
       };
       const { sections } = await runWorker<{ sections: DetectedSection[] }>(new URL("./sections-worker.ts", import.meta.url), input, signal);
       return { sections };
+    },
+  };
+}
+
+export interface LyricsStepInput {
+  /** The model and quality to transcribe with, and the song's language. */
+  options: LyricsOptions;
+  /** The performer's own lines, to time instead of transcribing. Not set for a transcription. */
+  pasted?: string[];
+  /** Receives the chart text when the step found words. The caller decides whether to save it. */
+  onText(text: string): void;
+}
+
+/**
+ * Transcribes the vocals stem into lyrics, or times `pasted` lines. Runs last in the song pass, since it is the slowest step. Nothing is
+ * reported when the vocals have no words. A stop (playback or cancel) ends the transcriber at once and the run resumes or stops with it.
+ */
+export function lyricsStep(input: LyricsStepInput): AnalysisStep {
+  return {
+    name: "lyrics",
+    async run(audio, signal) {
+      const vocals = audio.stems?.vocals;
+      if (!vocals) return {};
+      const { text } = await transcribeLyrics({ audio: vocals, options: input.options, pasted: input.pasted, signal });
+      if (text) input.onText(text);
+      return {};
     },
   };
 }
