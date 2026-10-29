@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
+    // Node 25+ has its own global localStorage, which hides jsdom's and breaks every test that stores something.
+    execArgv: ["--no-experimental-webstorage"],
   },
 });
