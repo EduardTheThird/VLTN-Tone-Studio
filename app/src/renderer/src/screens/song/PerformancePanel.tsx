@@ -545,9 +545,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
     analysis.show([{ text: `Tempo set to ${value} BPM.`, actions: [{ label: "Undo", run: () => undoDetect(before) }] }]);
   };
-  const detectTempo = () => {
+  const detectTempo = (analyseAgain: boolean) => {
     detectBefore.current = snapshotTempo();
-    analysis.detect();
+    if (analyseAgain) analysis.analyseAgain();
+    else analysis.detect();
   };
 
   const saveChart = (value: string) => {
@@ -640,14 +641,18 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             ))}
           </p>
         ))}
-        {analysis.step || analysis.detecting || analysis.message ? (
+        {source || analysis.step || analysis.detecting || analysis.message ? (
           <p className="flex flex-wrap items-center gap-2 text-xs" role="status">
             <span>{analysis.detecting ? "Detecting…" : analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
             {analysis.step || analysis.detecting ? (
               <Button variant="outline" size="sm" onClick={analysis.cancel}>
                 Cancel
               </Button>
-            ) : null}
+            ) : (
+              <Button variant="outline" size="sm" disabled={!source || playing || library.playlistPlaying || !!library.busy} onClick={() => detectTempo(true)}>
+                Analyse again
+              </Button>
+            )}
           </p>
         ) : null}
         <PerformanceTransport
@@ -655,7 +660,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           stage={stage}
           bpm={bpm}
           onBpm={(value) => changeTempo(value, "manual")}
-          onDetect={detectTempo}
+          onDetect={() => detectTempo(false)}
           detectDisabled={!source || playing || library.playlistPlaying || !!library.busy || analysis.step !== null}
           detecting={analysis.detecting}
           metronome={{
