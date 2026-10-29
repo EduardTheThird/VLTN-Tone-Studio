@@ -46,6 +46,7 @@ describe("startBeatGrid", () => {
     const cancelled = startBeatGrid(request);
     cancelled.cancel();
     await expect(cancelled.meter).resolves.toBeNull();
+    await expect(cancelled.done).rejects.toThrow("Beat tracking was cancelled.");
   });
 
   it("posts one mono buffer, transferred rather than copied", () => {
