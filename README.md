@@ -161,7 +161,7 @@ Search presets, models, and every preset that uses a model, all from one box.
 
 ## Your pedal, looked after.
 
-Change the pedal's global settings, and the Global EQ on the GP-200 family. Back up every slot with one click, and restore any backup.<br>
+Change the pedal's global settings, and the Global EQ on the GP-200 family. Back up every slot with one click, and restore any backup. A restore compares each slot with the pedal first and writes only the slots that changed, unless you choose *Write all*. A backup's menu in the Library has *Compare with pedal* (read-only) and *Pin backup*. *Settings › Keep backups* can move older backups of each pedal to the Trash, and never moves pinned ones.<br>
 Diagnostics check each step of the connection: the USB device, the driver Windows gave it, the MIDI port, and whether Valeton Suite or the GP-200 editor holds the port.<br>
 A session log keeps every connection step, error and MIDI message, ready to attach to a bug report. A live MIDI monitor shows and decodes the messages as they go.
 
