@@ -2,6 +2,16 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.6] - 2026-10-29
+
+Every new song is analysed in one run, lyrics included.
+
+- **Choose it before you split.** The Stems tab has an **After the split** block under the split's model and quality: tempo and beat, key, chords, sections, loudness and silence, the drums and bass check, and **lyrics** with their model, quality and language. All are on by default and remembered.
+- **It starts by itself** the moment a split's stems land, or when you import audio or stems, without opening the Performance tab. It keeps going on other screens, pauses while music plays or a split runs, and saves to the right song even if you save it mid-run.
+- **Lyrics come with it.** New songs get lyrics in the same run, with the model you chose. Lyrics you typed, pasted or that are from before 0.9.2 are never replaced automatically. An imported track named vocals or vox counts as the vocals; audio that hasn't been split gets everything but lyrics, with a note to split it.
+- **Progress shows** in the status bar and under the split on the Stems tab: each step, the lyrics model download, and the transcription parts. **Analyse this song now** on the Stems tab runs the chosen steps again.
+- One set of rules fills in a song's details, for a new song and for the Library's bulk analysis alike, so they always agree, and values you set yourself are never overwritten.
+
 ## [0.9.5] - 2026-10-29
 
 Lyrics transcription works again.
