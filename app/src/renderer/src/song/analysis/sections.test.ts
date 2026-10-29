@@ -202,7 +202,10 @@ describe("applying detected sections", () => {
   });
 
   it("does not follow a detection for sections the performer made by hand", () => {
-    const byHand = [{ id: "a", name: "Verse 1", start: 0, end: 16, mode: "continue" as const }, { id: "b", name: "Chorus 1", start: 16, end: 32, mode: "continue" as const }];
+    const byHand = [
+      { id: "a", name: "Verse 1", start: 0, end: 16, mode: "continue" as const },
+      { id: "b", name: "Chorus 1", start: 16, end: 32, mode: "continue" as const },
+    ];
     expect(sectionsFollowDetection(byHand, detected)).toBe(false);
     expect(sectionsFollowDetection([], detected)).toBe(false);
   });

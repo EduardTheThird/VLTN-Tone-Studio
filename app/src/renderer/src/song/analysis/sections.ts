@@ -287,7 +287,8 @@ export function sectionsFollowDetection(current: readonly Section[], previous: r
     current.length === previous.length &&
     current.every((section, i) => {
       const was = previous[i];
-      return section.source === "detected" && section.mode === "continue" && section.color === undefined && section.name === was.name && section.start === was.start && section.end === was.end;
+      const untouched = section.mode === "continue" && section.color === undefined;
+      return section.source === "detected" && untouched && section.name === was.name && section.start === was.start && section.end === was.end;
     })
   );
 }

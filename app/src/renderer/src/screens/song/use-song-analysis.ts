@@ -102,7 +102,10 @@ export interface SongAnalysisControl {
   rerun(beatsPerBar?: number): void;
   /** Detects the tempo and meter again, replacing the saved ones. The rest of the saved analysis is kept. Ignored during playback. */
   detect(): void;
-  /** Finds the beat again from a tempo the performer typed: refined near it, or kept exactly when locked. Replaces the saved tempo and grid, as detect does. Ignored during playback. */
+  /**
+   * Finds the beat again from a tempo the performer typed: refined near it, or kept exactly when locked. Replaces the saved tempo and grid,
+   * as detect does. Ignored during playback.
+   */
   findBeat(hint: TempoHintOptions): void;
   /** Runs every step again, replacing the saved tempo and meter. Ignored during playback. */
   analyseAgain(): void;

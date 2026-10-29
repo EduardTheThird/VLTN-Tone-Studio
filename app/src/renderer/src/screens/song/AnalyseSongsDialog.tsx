@@ -43,6 +43,9 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
 
   const options = { onlyNeeded, replaceManual, choice, openSongId: openId, lyrics: { ...lyricsChoice, which, retime } };
   const { run } = selectSongs(songs, options);
+  const selectionText =
+    `${songs.length} song${songs.length === 1 ? "" : "s"} in the selection. ${run.length} will be analysed. ` +
+    "The open song is skipped. Each song is analysed without opening it.";
   const changed = job.outcomes.filter((o): o is Extract<BatchOutcome, { status: "analysed" }> => o.status === "analysed" && !!o.tempoChange);
 
   const start = () => {
@@ -60,9 +63,7 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
         <DialogHeader>
           <DialogTitle>Analyse saved songs</DialogTitle>
           <DialogDescription>
-            {running
-              ? "The analysis keeps going if you close this. Its progress shows in the status bar."
-              : `${songs.length} song${songs.length === 1 ? "" : "s"} in the selection. ${run.length} will be analysed. The open song is skipped. Each song is analysed without opening it.`}
+            {running ? "The analysis keeps going if you close this. Its progress shows in the status bar." : selectionText}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
