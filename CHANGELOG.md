@@ -2,6 +2,13 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.5] - 2026-10-29
+
+Lyrics transcription works again.
+
+- **Fixed: every lyrics transcription failed** with "window is not defined", for one song and from the Library alike, since 0.9.2. A new test now loads every background worker the way the app does, so this kind of break is caught before a release.
+- **Lyrics from vocals has its own section** on the Performance screen. The model (Fast, Better, Best) and quality are chosen above the button, as for the stem split, and the button names the model it will use. It used to be folded away under the chart editor.
+
 ## [0.9.4] - 2026-10-29
 
 Lyrics for songs you already have.
