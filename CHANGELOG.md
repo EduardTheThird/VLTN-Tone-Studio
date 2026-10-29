@@ -2,6 +2,17 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.2] - 2026-10-29
+
+Songs now analyse themselves, and the saved ones can be fixed in one go.
+
+- **Songs are analysed when they come in.** After a split or a stem import, the app finds the tempo, beat, time signature, key, chords, loudness, whether drums and bass are there, the silence at each end, and suggested sections, and saves them with the song. It fills in only what you haven't set, never runs during playback, and a 3/4 is only offered, not applied.
+- **No more 120 BPM by default.** Songs saved without a tempo used to be stored at 120. Their real tempo is now detected (with Undo), and **Detect** beside the BPM finds it again, with half and double.
+- **Analyse saved songs.** *Library › Analyse selected… / Analyse all songs…* analyses saved songs without opening them, keeps tempos you set by hand, waits while a song plays, and lists every tempo it changed.
+- **Original or generated drums and bass.** In the Band panel, *What plays* picks the original part, the generated one, or both, even when the song already has drums or bass. It switches during playback too, and a MIDI or remote binding can toggle it.
+- **Better lyrics.** Choose the model (Fast, Better or Best) and the quality, as for the stem split. Only the sung parts are transcribed, which removes most invented lines; graphics acceleration is used when available. Paste your own lyrics to have them timed instead. Saved songs can be transcribed again in bulk without touching lyrics you wrote or edited, and the previous lyrics can be restored.
+- **Playlists save when you say so.** Edits are a draft until **Save playlist** (or Cmd/Ctrl+S), with **Discard changes** and a prompt before leaving unsaved edits. Quick edits are no longer lost. Songs can be added from inside a playlist, Enter creates one, and the Library can make a playlist from the selected songs.
+
 ## [0.9.1] - 2026-10-29
 
 Fixes from a review of the editor's own code, and a safer restore.
