@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.3] - 2026-10-29
+
+Progress you can see, and a beat that follows your tempo.
+
+- **Analysis runs in the background.** *Analyse all songs* can now be closed with **Run in background**. The status bar shows the progress on every screen: songs done, the current song and step, a bar and the time left, and when it is waiting for playback to stop or loading a song. When it finishes, the summary is one click away. The dialog lists each song as it finishes, and the Library shows the same progress line.
+- **A stuck "playing" mark no longer stalls the analysis.** If a playlist is marked as playing when nothing plays, the analysis says so and offers **Run anyway**.
+- **Find the beat from your tempo.** After you type or tap a BPM, **Find the beat at N BPM** fine-tunes your number (within 4%) and lines the beat up with the recording. **Keep exactly N** keeps your number and only moves the beat. **Undo** puts everything back, and suggested sections follow the new beat. The Band panel's *Find the beat* can start from your tempo too.
+
 ## [0.9.2] - 2026-10-29
 
 Songs now analyse themselves, and the saved ones can be fixed in one go.
