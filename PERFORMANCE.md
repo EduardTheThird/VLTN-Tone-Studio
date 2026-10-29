@@ -27,7 +27,7 @@ Everything here works in the desktop app. The browser build can play a song and 
 ## Prepare a song
 
 1. Load the audio in **Stems** and split it if you want the stems.
-2. Set **Song BPM** to the recording's tempo while stopped. The metronome, count-in and tempo commands start from it, and [speed](#speed-and-pitch) scales that tempo during playback. The app does not detect it for you.
+2. Set **Song BPM** to the recording's tempo while stopped. The metronome, count-in and tempo commands start from it, and [speed](#speed-and-pitch) scales that tempo during playback. The app detects a tempo when a song is first analysed. **Detect** beside the BPM finds it again, and offers the half or the double when the beat was counted wrong.
 3. Add lyrics, chords and MIDI cues (below).
 4. Enter a title and artist and choose **Save song to library**. Use **Save song changes** after later edits.
 

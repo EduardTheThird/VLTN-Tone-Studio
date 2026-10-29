@@ -72,6 +72,14 @@ Each upcoming queue entry has the same two settings, which apply to that queue o
 
 A song is counted as played once it reaches its halfway point. Each play records the time and, when it was part of a set, the set. History shows the playlist and set next to a play made in a set, for example "Gig › Set 1". The count and the last-played time follow. The history keeps the most recent 500 plays. You can clear it, or make a playlist from the plays since a date. Removing a song removes its plays from the history.
 
+## Analysing saved songs
+
+The analysis finds a song's tempo and meter, key, chords, loudness, missing drums or bass, and silence at each end. Songs saved before it existed have no analysis, and often a wrong tempo of 120.
+
+- **One song.** On the Performance screen, **Detect** beside the BPM finds the tempo and meter again, even if you set them by hand. If the beat was counted as half or double the real tempo, **Use** the half or the double. **Undo** puts back the tempo, meter and beat grid from before. **Analyse again** runs every step again and replaces the tempo and meter; your key, trims, sections and chart are kept.
+- **Many songs.** Select songs and choose **Analyse selected…**, or choose **Analyse all songs…** for the whole library. Choose which steps to run. **Only songs that need it** skips songs whose analysis is current. **Replace tempos I set by hand** is off by default, so a tempo you set, tapped or took from a chart is kept.
+- The analysis runs without opening the songs, one at a time. A song open on the Performance screen is skipped. Nothing runs while a song or playlist plays, and a batch pauses when playback starts. **Stop** leaves the songs not yet reached as they were. The summary lists the tempos that changed, and each one can be opened to check it.
+
 ## Format versions
 
 This release saves the library as version 4, adding the details, folders, history, sets, smart playlists and PDF charts above. Earlier libraries open and are upgraded in memory, with no saved value changed; the upgrade is written on the next save. Once a library is version 4, apps built before this release refuse to open it, so keep a backup from before the upgrade if you may need to go back. Backups from earlier versions restore into this one; their songs start with no folder, a play count of zero and no history.
