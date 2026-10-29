@@ -6,15 +6,19 @@ import type { BackupSlot, ExportItem, NewPreset } from "@shared/host/files";
 import { isSafePresetFileName, sanitizeFileName, uniqueFileName } from "@shared/files-naming";
 import { handle, showOpenDialog, showSaveDialog } from "./handle";
 import { LibraryStore, readPrstPaths } from "./files-store";
+import { createTrash } from "./trash";
 import type { DeviceKey } from '@shared/devices';
 
 const PRST_FILTER = [{ name: "Valeton presets", extensions: ["prst"] }];
 
 /** Desktop implementation of FilesApi (src/shared/host/files.ts) over userData. */
 export function registerFilesIpc(getWindow: () => BrowserWindow | null): void {
-  const store = new LibraryStore(app.getPath("userData"));
+  const userData = app.getPath("userData");
+  // The OS Trash first; the library's own .trash folder only when the OS refuses. The writePreset default is kept (undefined).
+  const store = new LibraryStore(userData, undefined, createTrash(userData, (path) => shell.trashItem(path)));
   // Copies an earlier run left half-written; a backup taking place now is never this old.
   void store.sweepTempBackups().catch(() => {});
+  void store.sweepTrash().catch(() => {});
 
   const openFolder = async (path: string) => {
     await mkdir(path, { recursive: true });
