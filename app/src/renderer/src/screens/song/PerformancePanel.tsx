@@ -16,15 +16,10 @@ import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type 
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
-import { gridAtOctave, needsTempoDetection, readTempoSource, tempoOctaves, type TempoSource } from "@/song/performance/tempo-source";
-import { readStoredBand, writeStoredBand } from "@/song/band/stored";
-import type { BeatGrid } from "@/song/band/beat-grid";
-import { chartChordTimes } from "@/song/band/request";
-import { parseChart } from "@/song/performance/chart";
-import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
-import { METER_CERTAIN, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
-import { sectionsFollowDetection, sectionsFromDetected, sectionsToApply, type DetectedSection } from "@/song/analysis/sections";
-import { withLoudness } from "@/song/audio/loudness";
+import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
+import { useSongAnalysis } from "./use-song-analysis";
+import { parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
+import type { DetectedSection } from "@/song/analysis/sections";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
@@ -88,26 +83,6 @@ function readGlobalMetronome(): MetronomeMode {
 }
 
 const NO_TRACKS: Record<string, TrackInfo> = {};
-
-/** The tempo, meter and beat grid as they were before a Detect run, so its Undo can put them back. */
-interface DetectSnapshot {
-  /** The saved BPM text, so an undo writes back exactly what was saved, including an empty tempo. */
-  savedBpm: string;
-  bpm: number;
-  firstBeat: number;
-  tempoSource: TempoSource | null;
-  beats: number;
-  beatsSource: unknown;
-  grid: BeatGrid | null;
-  beatGridSource: unknown;
-}
-
-/** A find-the-beat run in progress: the tempo the performer typed, whether it was locked, and the sections before the run. */
-interface PendingFind {
-  hint: number;
-  lock: boolean;
-  sections: Section[];
-}
 
 /** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
 export function PerformancePanel({ shown = true }: { shown?: boolean }) {
@@ -175,7 +150,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
     [tempoSource, setTempoSource] = useState<TempoSource | null>(() => readTempoSource(options)),
     [beats, setBeats] = useState(options.beats),
-    [beatsManual, setBeatsManual] = useState(() => options.beatsSource === "manual"),
+    [, setBeatsManual] = useState(() => options.beatsSource === "manual"),
     [shift, setShift] = useState(options.shift),
     [capo, setCapo] = useState(() => clampCapo(options.capo));
 
@@ -334,10 +309,6 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   };
   // Changes the meter. A grid the analysis laid out for the old meter is laid out again, so its downbeat matches; a performer's grid is kept.
-  const applyMeter = (value: number) => {
-    changeBeats(value, "detected");
-    if (gridFromAnalysis(key)) analysis.rerun(value);
-  };
   // Every change to the tempo records where it came from. The saved source is what stops the analysis overwriting a tempo the performer chose.
   const changeTempo = (value: number, source: TempoSource) => {
     setBpm(value);
@@ -448,179 +419,30 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   useBandSyncControl(session);
   // The song analysis fills in what the performer has not set: the tempo here, and the rest as its steps are added. Nothing it finds
   // replaces a value that was chosen, which is why a tempo is applied only when no source is recorded for it.
-  const chordChanges = useMemo(() => chartChordTimes(parseChart(chart)), [chart]);
   const [silence, setSilence] = useState<{ songKey: string; ends: SilenceEnds } | null>(null);
-  const analysis = useSongAnalysis({
-    songKey: key,
-    mix: source?.audio ?? null,
-    stems,
-    beatsPerBar: beats,
-    chordChanges,
-    chordName: chordSource,
-    playing: playing || library.playlistPlaying,
-    onTempo: (found): Notice | null => {
-      const saved = getSetting(key, ":bpm");
-      if (!needsTempoDetection(saved, tempoSource)) return null;
-      const previous = { bpm, firstBeat };
-      changeTempo(found.bpm, "detected");
-      setFirstBeat(found.firstBeat);
-      // Only a 120 saved by an earlier build is a guess worth undoing. An empty tempo had no value to go back to.
-      if (saved !== "120") return null;
-      return {
-        text: `Tempo detected: ${found.bpm} BPM (was ${previous.bpm}).`,
-        actions: [
-          {
-            label: "Undo",
-            run: () => {
-              changeTempo(previous.bpm, "manual");
-              setFirstBeat(previous.firstBeat);
-            },
-          },
-        ],
-      };
-    },
-    onDetect: (found, meter): Notice => {
-      // The Detect or Analyse again button took a snapshot before its run, so Undo puts back what the run replaced.
-      const before = detectBefore.current ?? snapshotTempo();
-      const find = pendingFind.current;
-      pendingFind.current = null;
-      if (find) return foundBeat(found, find, before);
-      changeTempo(found.bpm, "detected");
-      setFirstBeat(found.firstBeat);
-      // The meter replaces a manual one only when the beats agree on it; a weak reading is left alone.
-      if (meter && meter.confidence >= METER_CERTAIN) {
-        if (meter.beatsPerBar !== beats) applyMeter(meter.beatsPerBar);
-        else changeBeats(meter.beatsPerBar, "detected");
-      }
-      return {
-        text: `Tempo detected: ${found.bpm} BPM.`,
-        actions: [
-          ...tempoOctaves(found.bpm).map((value) => ({ label: `Use ${value}`, run: () => useTempoOctave(found.bpm, value, before) })),
-          { label: "Undo", run: () => undoDetect(before) },
-        ],
-      };
-    },
-    onSilence: (found) => setSilence({ songKey: key, ends: found }),
-    onSections: (found, rerun) => {
-      setSuggested(found);
-      // A find-the-beat run lays the sections on the new grid, but only those the performer has not changed since detection.
-      setSectionList((current) => sectionsToApply(current, found) ?? (rerun && sectionsFollowDetection(current, suggested) ? sectionsFromDetected(found) : current));
-    },
-    onParts: (found) => {
-      // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
-      if (!useSong.getState().missingParts) useSong.setState({ missingParts: found });
-    },
-    onLoudness: (found) => {
-      // A level the loudness control measured earlier is kept; the analysis only fills in a song that has none.
-      if (loudness.lufs !== null && loudness.peakDb !== null) return;
-      const next = { ...loudness, lufs: found.lufs, peakDb: found.peakDb };
-      setLoudness(next);
-      setSetting(key, ":options", withLoudness(getSetting(key, ":options"), next));
-    },
-    onMeter: (found): Notice | null => {
-      if (beatsManual || found.confidence < METER_CERTAIN) return null;
-      // 4 is the usual meter, so the analysis may set it. A 3 reads the same beats differently, so it is only offered.
-      if (found.beatsPerBar === 4) {
-        if (beats !== 4) applyMeter(4);
-        return null;
-      }
-      if (beats === 3) return null;
-      return { text: "Sounds like 3/4.", actions: [{ label: "Use it", run: () => applyMeter(3) }] };
-    },
-  });
-
-  // The tempo, first beat, meter and beat grid as they are now, so a Detect run can be undone.
-  const snapshotTempo = (): DetectSnapshot => {
+  const analysis = useSongAnalysis();
+  // The song runner writes the analysis into the song's settings, outside this screen. The values shown here are read again after each write.
+  useEffect(() => {
     const options = readOptions<Record<string, unknown>>(key, {});
-    return {
-      savedBpm: getSetting(key, ":bpm"),
-      bpm,
-      firstBeat,
-      tempoSource,
-      beats,
-      beatsSource: options.beatsSource,
-      grid: readStoredBand(key).grid,
-      beatGridSource: options.beatGridSource,
-    };
-  };
-  const detectBefore = useRef<DetectSnapshot | null>(null);
-  const pendingFind = useRef<PendingFind | null>(null);
-  const restoreTempo = (before: DetectSnapshot) => {
-    setBpm(before.bpm);
-    setFirstBeat(before.firstBeat);
-    setTempoSource(before.tempoSource);
-    setBeats(before.beats);
-    setBeatsManual(before.beatsSource === "manual");
-    try {
-      setSetting(key, ":bpm", before.savedBpm);
-      writeStoredBand(key, { beatGrid: before.grid });
-      setSetting(
-        key,
-        ":options",
-        JSON.stringify({
-          ...readOptions(key, {}),
-          tempoSource: before.tempoSource ?? undefined,
-          firstBeat: before.firstBeat,
-          beatsSource: before.beatsSource,
-          beatGridSource: before.beatGridSource,
-        }),
-      );
-    } catch (e) {
-      session.fail(e);
-    }
-  };
-  const undoDetect = (before: DetectSnapshot) => {
-    restoreTempo(before);
-    analysis.show([]);
-  };
-  // Picks the half or double of the detected tempo. The grid is laid out at that tempo, so the Band panel and the click agree.
-  const useTempoOctave = (detected: number, value: number, before: DetectSnapshot) => {
-    const grid = readStoredBand(key).grid;
-    const laid: BeatGrid | null = grid ? gridAtOctave(grid, detected, value) : null;
-    changeTempo(value, "detected");
-    if (laid) setFirstBeat(laid.steady?.firstBeat ?? laid.beats[laid.downbeat] ?? firstBeat);
-    try {
-      if (laid) {
-        writeStoredBand(key, { beatGrid: laid });
-        setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatGridSource: "analysis" }));
-      }
-    } catch (e) {
-      session.fail(e);
-    }
-    analysis.show([{ text: `Tempo set to ${value} BPM.`, actions: [{ label: "Undo", run: () => undoDetect(before) }] }]);
-  };
+    const saved = parseAnalysis(options.analysis);
+    setBpm(readNumber(getSetting(key, ":bpm"), 120, 30, 300));
+    setTempoSource(readTempoSource(options));
+    setFirstBeat(typeof options.firstBeat === "number" && Number.isFinite(options.firstBeat) && options.firstBeat >= 0 ? options.firstBeat : 0);
+    setBeats(readOptions(key, { beats: 4 }).beats);
+    setBeatsManual(options.beatsSource === "manual");
+    setSectionList(parseSections(options.sections));
+    setSuggested(saved?.sections ?? []);
+    setLoudness(loudnessFromOptions(getSetting(key, ":options")));
+    setSilence(saved?.silence ? { songKey: key, ends: saved.silence } : null);
+  }, [analysis.revision, key]);
   const detectTempo = (analyseAgain: boolean) => {
-    detectBefore.current = snapshotTempo();
-    pendingFind.current = null;
     if (analyseAgain) analysis.analyseAgain();
     else analysis.detect();
   };
-  // Finds the beat again from the typed tempo. The sections as they are now are kept, so Undo can put back any the run re-laid.
-  const findBeat = (lock: boolean) => {
-    detectBefore.current = snapshotTempo();
-    pendingFind.current = { hint: bpm, lock, sections: sectionList };
-    analysis.findBeat({ tempoHint: bpm, lockTempo: lock });
-  };
+  // Finds the beat again from the typed tempo. The run keeps the typed tempo as the performer's own, and Undo is one of its notices.
+  const findBeat = (lock: boolean) => analysis.findBeat({ tempoHint: bpm, lockTempo: lock });
   // A tempo the performer set, by hand, by tapping or from the chart: the beat can be found again from it.
   const typedTempo = tempoSource === "manual" || tempoSource === "tap" || tempoSource === "chart";
-  // The notice for a find-the-beat run. The performer's tempo is kept as manual, so a later analysis does not replace it.
-  const foundBeat = (found: { bpm: number; firstBeat: number }, find: PendingFind, before: DetectSnapshot): Notice => {
-    changeTempo(found.bpm, "manual");
-    setFirstBeat(found.firstBeat);
-    const first = `First beat ${found.firstBeat.toFixed(2)} s.`;
-    return {
-      text: find.lock ? `Beat aligned at ${found.bpm} BPM. ${first}` : `Beat found at ${found.bpm} BPM (you set ${find.hint}). ${first}`,
-      actions: [
-        {
-          label: "Undo",
-          run: () => {
-            undoDetect(before);
-            setSectionList(find.sections);
-          },
-        },
-      ],
-    };
-  };
 
   const saveChart = (value: string) => {
     session.pause();
@@ -706,8 +528,14 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         {analysis.notices.map((notice) => (
           <p key={notice.text} className="flex flex-wrap items-center gap-2 text-xs" role="status">
             <span>{notice.text}</span>
-            {notice.actions?.map((action) => (
-              <Button key={action.label} variant="outline" size="sm" disabled={playing || library.playlistPlaying || analysis.step !== null} onClick={action.run}>
+            {notice.actions.map((action) => (
+              <Button
+                key={action.label}
+                variant="outline"
+                size="sm"
+                disabled={playing || library.playlistPlaying || analysis.step !== null}
+                onClick={() => analysis.press(action)}
+              >
                 {action.label}
               </Button>
             ))}
