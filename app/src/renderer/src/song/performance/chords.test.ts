@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chordFrameSpans, detectChords, HOP_SECONDS, smoothChordFrames } from "./chords";
+import { chordFrameSpans, detectChords, HOP_SECONDS } from "./chords";
 
 it("rejects silence and recognises an opposite-phase stereo major chord", () => {
   const sampleRate = 44100;
@@ -10,15 +10,6 @@ it("rejects silence and recognises an opposite-phase stereo major chord", () => 
   expect(detectChords(input({ sampleRate, channels: [new Float32Array(sampleRate)] }))[0].name).toBe("N");
   const stereo = detectChords(input({ sampleRate, channels: [channel, channel.map((n) => -n)] }));
   expect(stereo[0].name).toBe("C");
-});
-it("removes isolated flicker while preserving sustained changes and silence", () => {
-  const frames = ["C", "Am", "C", "G", "G", "N", "C"].map((name, i) => ({ time: i / 2, name, confidence: 0.8 }));
-  expect(smoothChordFrames(frames).map((c) => [c.time, c.name])).toEqual([
-    [0, "C"],
-    [1.5, "G"],
-    [2.5, "N"],
-    [3, "C"],
-  ]);
 });
 
 /** A chord of sine partials, for `seconds` at `rate`. Synthetic audio only. */

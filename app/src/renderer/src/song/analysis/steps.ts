@@ -133,8 +133,9 @@ export function keyStep(): AnalysisStep {
 export function chordsStep(gridOf: () => BeatGrid | null = () => null): AnalysisStep {
   return {
     name: "chords",
-    async run(audio, signal) {
-      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null };
+    async run(audio, signal, soFar) {
+      // The key the song analysis found (it runs before the chords) sets the key prior; without it the harmony estimates the key.
+      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null, key: soFar.key?.estimate.name ?? null };
       const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
       return { chords: { source: audio.harmony.name, chords } };
     },

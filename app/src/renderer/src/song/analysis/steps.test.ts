@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
+import type { SongAnalysis } from "./song-analysis";
 
 const loudness = vi.hoisted(() => ({ measure: vi.fn() }));
 vi.mock("../audio/loudness-client", () => ({ measureLoudnessInWorker: loudness.measure }));
@@ -121,7 +122,14 @@ describe("keyStep and chordsStep", () => {
   it("gives the chords the beats of the grid, so they change on the beats", async () => {
     reply = { chords: [] };
     await chordsStep(() => grid).run({ ...audio, keySource: null, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, nothingFound);
-    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: grid.beats });
+    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: grid.beats, key: null });
+  });
+
+  it("gives the chords the key the analysis found, to set the key prior", async () => {
+    reply = { chords: [] };
+    const found = { audioId: "", version: 0, key: { source: "other", estimate } } as unknown as SongAnalysis;
+    await chordsStep().run({ ...audio, keySource: null, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, found);
+    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: null, key: "E minor" });
   });
 
   it("fails when the worker reports an error", async () => {

@@ -23,8 +23,8 @@ function stepsFor(
     ["silence", silenceStep],
     ["parts", partsStep],
     ["tempo", () => tempoStep(onGrid)],
-    ["chords", () => chordsStep(gridOf)],
     ["key", keyStep],
+    ["chords", () => chordsStep(gridOf)],
     ["sections", () => sectionsStep(gridOf)],
   ];
   const steps = ordered.filter(([id]) => wanted.has(id)).map(([, make]) => make());
