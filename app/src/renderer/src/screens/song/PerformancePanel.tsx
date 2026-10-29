@@ -16,7 +16,10 @@ import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type 
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
-import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
+import { needsTempoDetection, readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
+import { chartChordTimes } from "@/song/band/request";
+import { parseChart } from "@/song/performance/chart";
+import { useSongAnalysis } from "./use-song-analysis";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -371,6 +374,22 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   useAudienceFeed(session, key, audienceModelValue);
   useBandSyncControl(session);
+  // The song analysis fills in what the performer has not set: the tempo here, and the rest as its steps are added. Nothing it finds
+  // replaces a value that was chosen, which is why a tempo is applied only when no source is recorded for it.
+  const chordChanges = useMemo(() => chartChordTimes(parseChart(chart)), [chart]);
+  const analysis = useSongAnalysis({
+    songKey: key,
+    mix: source?.audio ?? null,
+    stems,
+    beatsPerBar: beats,
+    chordChanges,
+    playing: playing || library.playlistPlaying,
+    onTempo: (found) => {
+      if (!needsTempoDetection(getSetting(key, ":bpm"), tempoSource)) return;
+      changeTempo(found.bpm, "detected");
+      setFirstBeat(found.firstBeat);
+    },
+  });
 
   const saveChart = (value: string) => {
     session.pause();
@@ -452,6 +471,16 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           Enter stage mode
         </Button>
         <MissingPartsNotice songKey={key} sections={sectionList} playing={playing || library.playlistPlaying} />
+        {analysis.step || analysis.message ? (
+          <p className="flex flex-wrap items-center gap-2 text-xs" role="status">
+            <span>{analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
+            {analysis.step ? (
+              <Button variant="outline" size="sm" onClick={analysis.cancel}>
+                Cancel
+              </Button>
+            ) : null}
+          </p>
+        ) : null}
         <PerformanceTransport
           session={session}
           stage={stage}
