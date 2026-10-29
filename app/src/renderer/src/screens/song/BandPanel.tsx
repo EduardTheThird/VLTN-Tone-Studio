@@ -114,7 +114,8 @@ export function BandPanel(props: BandPanelProps) {
         <DialogHeader>
           <DialogTitle>Band</DialogTitle>
           <DialogDescription>
-            Generate drum and bass parts that follow the song. Changing a setting does not regenerate anything until Generate.
+            Generate drum and bass parts that follow the song, then choose what plays for each part. Changing a setting does not regenerate
+            anything until Generate.
           </DialogDescription>
         </DialogHeader>
         {open && <BandBody {...props} />}
@@ -424,6 +425,7 @@ function BandBody({
       <section aria-label="Band status" className="flex flex-col gap-1 rounded-lg border border-seam px-3 py-2">
         <p>{partLine("drums")}</p>
         <p>{partLine("bass")}</p>
+        {(missing?.drums === "present" || missing?.bass === "present") && <p>You can still generate your own and switch between them under What plays.</p>}
         <p>{generated ? "Generated drum and bass tracks are in the mixer." : "No generated parts yet."}</p>
         {outOfDate && <p className="text-led-warn">Parts out of date. Press Generate to apply the changes.</p>}
       </section>

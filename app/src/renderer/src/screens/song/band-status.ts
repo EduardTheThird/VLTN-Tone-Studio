@@ -18,7 +18,7 @@ function sectionNames(ids: readonly string[], sections: readonly Section[]): str
 
 /** One line on what the split found for a part: present, absent, missing in some sections, or not checked. */
 export function presenceLine(kind: PartKind, presence: PartPresence, absentSections: readonly string[], sections: readonly Section[]): string {
-  if (presence === "present") return `${LABEL[kind]} found`;
+  if (presence === "present") return `${LABEL[kind]} found in the song`;
   if (presence === "absent") return `No ${kind} found`;
   if (presence === "partial") return `${LABEL[kind]} missing in ${sectionNames(absentSections, sections)}`;
   return `${LABEL[kind]} not checked (the song was not split)`;

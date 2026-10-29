@@ -540,4 +540,11 @@ describe("Band panel: what plays", () => {
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
     expect(props.onPartChoice).toHaveBeenCalledWith(ORIGINAL_PARTS);
   });
+
+  it("says a found part can still be replaced, and that the parts switch under What plays", () => {
+    useSong.setState({ missingParts: { drums: "present", bass: "absent", absentSections: { drums: [], bass: [] } } });
+    renderPanel();
+    expect(screen.getByText("Drums found in the song")).toBeTruthy();
+    expect(screen.getByText("You can still generate your own and switch between them under What plays.")).toBeTruthy();
+  });
 });
