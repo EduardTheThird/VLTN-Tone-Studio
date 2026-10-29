@@ -23,6 +23,11 @@ export interface KeyEstimate {
   margin: number;
   confidence: "tentative" | "strong";
   alternatives: string[];
+  /**
+   * A modal flavour of the key, when it is clear: Mixolydian (a major key with a major chord on the flat seventh) or Dorian (a minor key
+   * with a major chord on the fourth).
+   */
+  flavour?: "mixolydian" | "dorian";
 }
 // Krumhansl-Kessler tonal profiles; correlation approach documented at
 // https://music21.org/music21docs/moduleReference/moduleAnalysisDiscrete.html
@@ -43,6 +48,8 @@ const PROFILE_SETS = [profiles, TEMPERLEY];
 const NEAR_SCORE = 0.1;
 /** Relatives closer than this are decided by the chords at the anchors and the bass, not by the profiles. */
 const RELATIVE_MARGIN = 0.05;
+/** A modal chord must fill at least this share of the chord time, or the key is given without a flavour. */
+const FLAVOUR_SHARE = 0.15;
 export function keyAudio(stems: Stems | null, original?: PcmAudio): { name: string; audio: PcmAudio } | null {
   for (const name of ["guitar", "piano", "other", "bass", "vocals"] as const) {
     if (hasSignal(stems?.[name])) return { name, audio: stems![name]! };
@@ -173,6 +180,16 @@ function tonicSupport(evidence: KeyEvidence, candidate: KeyScore): number {
   return chords + (evidence.bass ? evidence.bass[candidate.tonic] : 0);
 }
 
+/** The flavour of a key, from the share of the chord time on the modal chord: bVII in a major key, IV in a minor key. */
+function flavourOf(evidence: KeyEvidence, key: KeyScore): KeyEstimate["flavour"] {
+  const total = evidence.runs.reduce((sum, run) => sum + run.seconds, 0);
+  if (!total) return undefined;
+  const share = (root: number) => evidence.runs.filter((run) => run.root === root && run.quality === "major").reduce((sum, run) => sum + run.seconds, 0) / total;
+  if (key.mode === "major" && share((key.tonic + 10) % 12) >= FLAVOUR_SHARE) return "mixolydian";
+  if (key.mode === "minor" && share((key.tonic + 5) % 12) >= FLAVOUR_SHARE) return "dorian";
+  return undefined;
+}
+
 /** Whether two keys are relatives: the same notes in the other mode, so a major key and the minor key on its sixth degree. */
 function areRelatives(a: KeyScore, b: KeyScore): boolean {
   if (a.mode === b.mode) return false;
@@ -200,6 +217,7 @@ export function detectKeyFrom(evidence: KeyEvidence): KeyEstimate | null {
   const relative = find((first.tonic + (first.mode === "major" ? 9 : 3)) % 12, first.mode === "major" ? "minor" : "major");
   const fifths = [find((first.tonic + 7) % 12, first.mode), find((first.tonic + 5) % 12, first.mode)].sort((a, b) => b.score - a.score);
   const alternatives = [relative, fifths[0]].filter((s) => first.score - s.score < NEAR_SCORE);
+  const flavour = flavourOf(evidence, first);
   return {
     name: first.name,
     tonic: first.tonic,
@@ -208,5 +226,6 @@ export function detectKeyFrom(evidence: KeyEvidence): KeyEstimate | null {
     margin: Math.abs(margin),
     confidence: first.score >= 0.75 && Math.abs(margin) >= 0.12 ? "strong" : "tentative",
     alternatives: alternatives.map((s) => s.name),
+    ...(flavour ? { flavour } : {}),
   };
 }

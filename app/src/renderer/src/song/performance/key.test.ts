@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, KEY_NAMES, type KeyEstimate } from "./key";
-import type { KeyEvidence } from "../analysis/key-evidence";
+import { evidenceIn, keyFramesOf, type KeyEvidence } from "../analysis/key-evidence";
 import type { PcmAudio } from "../types";
 const major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const minor = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -130,4 +130,66 @@ it("lists the relative key among the alternatives when it is near", () => {
   const estimate = detectKeyFrom(evidence(diatonicC));
   expect(estimate?.name).toBe("C major");
   expect(estimate?.alternatives).toContain("A minor");
+});
+
+/** Chords of two seconds each, as the chord detector names them, over the progression's audio. */
+function namedAudio(names: string[], notes: number[][]) {
+  return { audio: progression(notes), chords: names.map((name, i) => ({ time: i * 2, name, confidence: 1 })), duration: names.length * 2 };
+}
+
+it("finds G major from a I-V-vi-IV loop in G on audio", () => {
+  const song = namedAudio(
+    ["G", "D", "Em", "C"],
+    [
+      [55, 59, 62, 67],
+      [62, 66, 69],
+      [64, 67, 71],
+      [60, 64, 67],
+    ],
+  );
+  const frames = keyFramesOf(song.audio, null, song.chords, []);
+  expect(detectKeyFrom(evidenceIn(frames, 0, song.duration))?.name).toBe("G major");
+});
+
+it("reads G major with a Mixolydian flavour from G, F, C, G", () => {
+  const song = namedAudio(
+    ["G", "F", "C", "G"],
+    [
+      [55, 59, 62],
+      [53, 57, 60],
+      [48, 52, 55, 60],
+      [55, 59, 62],
+    ],
+  );
+  const estimate = detectKeyFrom(evidenceIn(keyFramesOf(song.audio, null, song.chords, []), 0, song.duration));
+  expect(estimate?.name).toBe("G major");
+  expect(estimate?.flavour).toBe("mixolydian");
+});
+
+it("does not add a flavour to a plain major progression", () => {
+  const song = namedAudio(
+    ["G", "D", "Em", "C"],
+    [
+      [55, 59, 62, 67],
+      [62, 66, 69],
+      [64, 67, 71],
+      [60, 64, 67],
+    ],
+  );
+  expect(detectKeyFrom(evidenceIn(keyFramesOf(song.audio, null, song.chords, []), 0, song.duration))?.flavour).toBeUndefined();
+});
+
+it("reads A minor with a Dorian flavour from Am, D, Am, D", () => {
+  const song = namedAudio(
+    ["Am", "D", "Am", "D"],
+    [
+      [57, 60, 64],
+      [62, 66, 69],
+      [57, 60, 64],
+      [62, 66, 69],
+    ],
+  );
+  const estimate = detectKeyFrom(evidenceIn(keyFramesOf(song.audio, null, song.chords, []), 0, song.duration));
+  expect(estimate?.name).toBe("A minor");
+  expect(estimate?.flavour).toBe("dorian");
 });
