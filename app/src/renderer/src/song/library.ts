@@ -125,12 +125,12 @@ interface LibraryState {
   clearHistory(): Promise<void>;
   /** Creates a playlist from the songs played since `since`, in play order. */
   playlistFromHistory(name: string, since: string): Promise<void>;
-  /** Changes a playlist's name, entries, sets or smart rules. */
-  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<void>;
+  /** Changes a playlist's name, entries, sets or smart rules. Resolves true once saved, and false when it failed; the error is then on `error`. */
+  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<boolean>;
   /** Adds a playlist to the end of the list. Writes queue, so this is never dropped while another playlist is saving. */
-  addPlaylist(playlist: Playlist): Promise<void>;
+  addPlaylist(playlist: Playlist): Promise<boolean>;
   /** Deletes a playlist. Its songs stay in the library. */
-  deletePlaylist(id: string): Promise<void>;
+  deletePlaylist(id: string): Promise<boolean>;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
   playPlaylist(queue: string[], position?: number, setId?: string, overrides?: (EntryOverride | null)[]): Promise<void>;
   advancePlaylist(): Promise<void>;
@@ -141,7 +141,7 @@ interface LibraryState {
   refresh(): Promise<void>;
   save(title: string, artist: string): Promise<void>;
   load(id: string, queue?: string[], position?: number, overrides?: (EntryOverride | null)[]): Promise<void>;
-  playlists(value: Playlist[]): Promise<void>;
+  playlists(value: Playlist[]): Promise<boolean>;
   remove(id: string): Promise<void>;
   /** Copies the saved track settings of the open song onto the saved songs that have the same imported tracks. */
   applyTrackSettings(): Promise<void>;
@@ -297,14 +297,20 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
    * Playlist writes wait in line, so a write that starts while another is still saving is not dropped. Each change is applied to the
    * playlists as they are when its turn comes, so two quick edits both land, in order. A failed write shows its error; later writes still run.
    */
-  let playlistWrites: Promise<void> = Promise.resolve();
-  const writePlaylists = (change: (playlists: Playlist[]) => Playlist[], notice = "Playlist saved.") => {
-    const write = playlistWrites.then(async () => {
-      await api().playlists(change(get().index.playlists));
-      set({ index: await api().index(), notice });
-    });
-    playlistWrites = write.catch((e) => set({ error: e instanceof Error ? e.message : String(e) }));
-    return playlistWrites;
+  let playlistWrites: Promise<boolean> = Promise.resolve(true);
+  const writePlaylists = (change: (playlists: Playlist[]) => Playlist[], notice = "Playlist saved."): Promise<boolean> => {
+    const write = playlistWrites
+      .then(async () => {
+        await api().playlists(change(get().index.playlists));
+        set({ index: await api().index(), notice });
+        return true;
+      })
+      .catch((e) => {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        return false;
+      });
+    playlistWrites = write;
+    return write;
   };
   const restore = async (mode: RestoreMode) => {
     const service = api();
@@ -650,7 +656,11 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         await api().playlists([...index.playlists, { id: crypto.randomUUID(), name: trimmed, songs, sets: [] }]);
         set({ index: await api().index(), notice: `Created ${trimmed} with ${songs.length} songs from the history.` });
       }),
-    updatePlaylist: (id, change) => writePlaylists((playlists) => playlists.map((p) => (p.id === id ? { ...p, ...change } : p))),
+    updatePlaylist: (id, change) =>
+      writePlaylists(
+        (playlists) => playlists.map((p) => (p.id === id ? { ...p, ...change } : p)),
+        `Saved ${change.name ?? get().index.playlists.find((p) => p.id === id)?.name ?? "the playlist"}.`,
+      ),
     addPlaylist: (playlist) => writePlaylists((playlists) => [...playlists, playlist]),
     deletePlaylist: (id) => writePlaylists((playlists) => playlists.filter((p) => p.id !== id)),
     rememberMidi: (midiSession) => set({ midiSession }),
