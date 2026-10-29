@@ -21,6 +21,8 @@ import { chartChordEvents, parseChordName, type ChordEvent, type ParsedChord } f
 import { fft } from "../tonematch/fft";
 import { detectChords, type Chord } from "./chords";
 import { defaultChordSource } from "./sources";
+import { bassOf, harmonyOf } from "../analysis/analysis-audio";
+import { parseBeatGrid } from "../band/beat-grid";
 import type { PcmAudio, StemName, Stems } from "../types";
 
 const LIBRARY = process.env.VLTN_CHORD_EVAL ?? "";
@@ -104,11 +106,13 @@ interface LibraryIndex {
   revisions: Record<string, string>;
 }
 
-/** One song as the eval sees it: the audio the app would analyse, its stems and the chart's chords. */
+/** One song as the eval sees it: the audio the app would analyse, its stems, its chord choice and saved beat grid, and the chart's chords. */
 interface EvalSong {
   title: string;
   mix: PcmAudio;
   stems: Stems;
+  chordChoice: StemName | "";
+  beats: number[] | null;
   truth: ChordEvent[];
   duration: number;
 }
@@ -116,7 +120,11 @@ interface EvalSong {
 /** The detectors the eval compares. The first is the frozen baseline; the last is the detector under test. */
 const DETECTORS: { name: string; run: (song: EvalSong) => Chord[] }[] = [
   { name: "baseline (spec 80)", run: (song) => legacyDetectChords(chordAudio(song)) },
-  { name: "current", run: (song) => detectChords({ harmony: chordAudio(song), bass: null, beats: null }) },
+  // The current detector gets the inputs the app gives it: the harmony and bass of the analysis, and the song's saved beat grid.
+  {
+    name: "current",
+    run: (song) => detectChords({ harmony: harmonyOf(song.stems, song.mix, song.chordChoice).audio, bass: bassOf(song.stems), beats: song.beats }),
+  },
 ];
 
 /** The audio the chord analysis reads when no chord stem is chosen: the first stem with a signal, else the mix. */
@@ -131,11 +139,24 @@ async function readTrack(root: string, revision: string, track: LibraryTrack): P
   return decodeFlac(bytes);
 }
 
+/** A song's saved options, or none when they are missing or damaged. */
+function parseOptions(text: string | undefined): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(text || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Reads one saved song's audio and chart. Null for a song the eval cannot use: no timed chords, no revision, or no readable mix. */
 async function loadSong(root: string, index: LibraryIndex, record: LibrarySongRecord): Promise<EvalSong | null> {
   const truth = chartChordEvents(parseChart(record.settings[""] ?? "")).sort((a, b) => a.time - b.time);
   const revision = index.revisions[record.id];
   if (!truth.length || !revision) return null;
+  const options = parseOptions(record.settings[":options"]);
+  const chordChoice = STEM_NAMES.includes(options.chordChoice as StemName) ? (options.chordChoice as StemName) : "";
+  const beats = parseBeatGrid(options.beatGrid)?.beats ?? null;
   const stems: Stems = {};
   let mix: PcmAudio | null = null;
   for (const track of record.audio) {
@@ -143,7 +164,7 @@ async function loadSong(root: string, index: LibraryIndex, record: LibrarySongRe
     else if (STEM_NAMES.includes(track.name as StemName)) stems[track.name as StemName] = (await readTrack(root, revision, track)) ?? undefined;
   }
   if (!mix) return null;
-  return { title: record.title, mix, stems, truth, duration: mix.channels[0].length / mix.sampleRate };
+  return { title: record.title, mix, stems, chordChoice, beats, truth, duration: mix.channels[0].length / mix.sampleRate };
 }
 
 type Quality = "major" | "minor" | "power" | "other";

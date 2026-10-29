@@ -17,7 +17,7 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
 
 const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
 
@@ -87,9 +87,11 @@ describe("keyStep and chordsStep", () => {
   const estimate = { name: "E minor", tonic: 4, mode: "minor", correlation: 0.8, margin: 0.2, confidence: "strong", alternatives: [] };
   let reply: unknown = null;
   class ReplyingWorker {
+    static posted: unknown = null;
     onmessage: ((event: MessageEvent) => void) | null = null;
     onerror: (() => void) | null = null;
-    postMessage() {
+    postMessage(message: unknown) {
+      ReplyingWorker.posted = message;
       queueMicrotask(() => this.onmessage?.({ data: reply } as MessageEvent));
     }
     terminate() {}
@@ -114,6 +116,12 @@ describe("keyStep and chordsStep", () => {
     const bass = { sampleRate: 44100, channels: [new Float32Array(4)] };
     const result = await chordsStep().run({ ...audio, keySource: null, harmony: { name: "other+piano", audio: stem }, bass }, new AbortController().signal, nothingFound);
     expect(result).toEqual({ chords: { source: "other+piano", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
+  });
+
+  it("gives the chords the beats of the grid, so they change on the beats", async () => {
+    reply = { chords: [] };
+    await chordsStep(() => grid).run({ ...audio, keySource: null, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, nothingFound);
+    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: grid.beats });
   });
 
   it("fails when the worker reports an error", async () => {
@@ -148,34 +156,18 @@ describe("partsStep", () => {
   });
 });
 
-describe("chordChangeTimes", () => {
-  it("gives the times the chord name changes", () => {
-    expect(
-      chordChangeTimes([
-        { time: 0, name: "Em", confidence: 1 },
-        { time: 1, name: "Em", confidence: 1 },
-        { time: 2, name: "C", confidence: 1 },
-        { time: 3, name: "G", confidence: 1 },
-      ]),
-    ).toEqual([2, 3]);
-    expect(chordChangeTimes([])).toEqual([]);
-  });
-});
-
 describe("tempoStep chord changes", () => {
-  it("uses the chord changes the analysis found when the chart has none", async () => {
+  it("uses the chart's chord changes only, since the chords are read after the tempo", async () => {
     job.done = Promise.resolve(grid);
     job.start.mockClear();
-    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
-    await tempoStep().run(audio, new AbortController().signal, soFar);
-    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [2] }));
+    await tempoStep().run({ ...audio, chordChanges: [] }, new AbortController().signal, nothingFound);
+    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [] }));
   });
 
   it("keeps the chart's chord changes when it has them", async () => {
     job.done = Promise.resolve(grid);
     job.start.mockClear();
-    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
-    await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, soFar);
+    await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, nothingFound);
     expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [5] }));
   });
 });

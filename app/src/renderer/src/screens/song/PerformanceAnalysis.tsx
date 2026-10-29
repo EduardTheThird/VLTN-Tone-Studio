@@ -9,6 +9,7 @@ import { useSession, type PerformanceSession } from "@/song/performance/session"
 import { STEM_NAMES, type PcmAudio, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
 import { storedAnalysis } from "./use-song-analysis";
+import { readStoredBand } from "@/song/band/stored";
 import { isCurrent, type NamedAudio } from "@/song/analysis/song-analysis";
 
 // The chart editor is loaded when this panel first renders it, so the CodeMirror code is kept out of the main bundle.
@@ -95,7 +96,9 @@ export function useChordAnalysis(
       session.fail(e.message);
       worker.terminate();
     };
-    worker.postMessage({ harmony: harmonyAudio, bass, beats: null });
+    // The beats of the song's saved grid, so the chords change on the beats the song analysis would use.
+    const beats = songKey !== undefined ? readStoredBand(songKey).grid?.beats ?? null : null;
+    worker.postMessage({ harmony: harmonyAudio, bass, beats });
     return () => worker.terminate();
   }, [session, harmonyName, harmonyAudio, bass, songKey, audioId, estimate]);
   return { chords, analysing };

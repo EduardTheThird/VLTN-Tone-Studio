@@ -264,7 +264,7 @@ function BandBody({
   const detectChords = async (audio: PcmAudio): Promise<Chord[] | null> => {
     setWork("Detecting chords…");
     const stems = useSong.getState().stems;
-    const detecting = startChordDetection({ harmony: harmonyOf(stems, audio).audio, bass: bassOf(stems), beats: null });
+    const detecting = startChordDetection({ harmony: harmonyOf(stems, audio).audio, bass: bassOf(stems), beats: grid?.beats ?? null });
     job.current = detecting;
     try {
       return await detecting.done;

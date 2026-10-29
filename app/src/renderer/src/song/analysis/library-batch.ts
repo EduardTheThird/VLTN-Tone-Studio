@@ -22,8 +22,8 @@ function stepsFor(
     ["loudness", loudnessStep],
     ["silence", silenceStep],
     ["parts", partsStep],
-    ["chords", chordsStep],
     ["tempo", () => tempoStep(onGrid)],
+    ["chords", () => chordsStep(gridOf)],
     ["key", keyStep],
     ["sections", () => sectionsStep(gridOf)],
   ];

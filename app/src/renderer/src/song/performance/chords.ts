@@ -1,5 +1,6 @@
-import { fft } from "../tonematch/fft";
+import { chromaFrames, type ChromaSpan } from "../analysis/chroma";
 import type { PcmAudio } from "../types";
+
 export interface Chord {
   time: number;
   name: string;
@@ -15,6 +16,10 @@ export interface ChordsInput {
   bass: PcmAudio | null;
   beats: number[] | null;
 }
+
+/** Without a beat grid, the chords are read on a fixed hop of this many seconds. */
+export const HOP_SECONDS = 0.25;
+
 /** A one-window blip between identical neighbours is usually leakage or an attack transient. */
 export function smoothChordFrames(frames: Chord[]): Chord[] {
   const stable = frames.map((frame, i) =>
@@ -24,53 +29,46 @@ export function smoothChordFrames(frames: Chord[]): Chord[] {
   );
   return stable.filter((frame, i) => i === 0 || frame.name !== stable[i - 1].name);
 }
-/** Windowed chroma template estimate. Major/minor only; never a transcription guarantee. */
-export function detectChords(input: ChordsInput): Chord[] {
-  const audio = input.harmony;
-  const n = 8192,
-    hop = Math.round(audio.sampleRate / 2);
+
+/**
+ * The spans the chords are read over: beat to beat when the song has a grid (with the time before the first beat as one span), else
+ * `HOP_SECONDS` steps. Each span's start is the time its chord is given.
+ */
+export function chordFrameSpans(beats: readonly number[] | null, duration: number): ChromaSpan[] {
+  if (beats && beats.length >= 2) {
+    const spans: ChromaSpan[] = [];
+    if (beats[0] > 0) spans.push({ start: 0, end: beats[0] });
+    beats.forEach((start, i) => spans.push({ start, end: i + 1 < beats.length ? beats[i + 1] : duration }));
+    return spans.filter((span) => span.end > span.start && span.start < duration);
+  }
+  const spans: ChromaSpan[] = [];
+  for (let start = 0; start < duration; start += HOP_SECONDS) spans.push({ start, end: Math.min(duration, start + HOP_SECONDS) });
+  return spans;
+}
+
+/** The major or minor triad whose share of the chroma is largest. N when no triad reaches half the chroma. */
+function triadOf(chroma: ArrayLike<number>): { name: string; confidence: number } {
   const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const result: Chord[] = [];
-  for (let start = 0; start < audio.channels[0].length; start += hop) {
-    const re = new Float64Array(n),
-      im = new Float64Array(n),
-      chroma = new Float64Array(12);
-    // Use the loudest channel: summing opposite-phase stereo cancels a perfectly audible guitar.
-    let channel = audio.channels[0],
-      loudest = -1;
-    for (const candidate of audio.channels) {
-      let energy = 0;
-      for (let i = start; i < Math.min(candidate.length, start + n); i++) energy += candidate[i] ** 2;
-      if (energy > loudest) {
-        loudest = energy;
-        channel = candidate;
+  let score = 0,
+    name = "N";
+  for (let root = 0; root < 12; root++)
+    for (const third of [4, 3]) {
+      const value = chroma[root] + chroma[(root + third) % 12] + chroma[(root + 7) % 12];
+      if (value > score) {
+        score = value;
+        name = notes[root] + (third === 3 ? "m" : "");
       }
     }
-    for (let i = 0; i < n; i++) {
-      re[i] = channel[start + i] ?? 0;
-      re[i] *= 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
-    }
-    fft(re, im);
-    for (let k = 1; k < n / 2; k++) {
-      const hz = (k * audio.sampleRate) / n;
-      if (hz < 65 || hz > 2000) continue;
-      const midi = Math.round(69 + 12 * Math.log2(hz / 440));
-      chroma[((midi % 12) + 12) % 12] += re[k] ** 2 + im[k] ** 2;
-    }
-    const total = chroma.reduce((a, b) => a + b, 0);
-    let score = 0,
-      name = "N";
-    if (total > 0.01)
-      for (let root = 0; root < 12; root++)
-        for (const third of [4, 3]) {
-          const value = (chroma[root] + chroma[(root + third) % 12] + chroma[(root + 7) % 12]) / total;
-          if (value > score) {
-            score = value;
-            name = notes[root] + (third === 3 ? "m" : "");
-          }
-        }
-    if (score < 0.55) name = "N";
-    result.push({ time: start / audio.sampleRate, name, confidence: score });
-  }
-  return smoothChordFrames(result);
+  return score < 0.55 ? { name: "N", confidence: score } : { name, confidence: score };
+}
+
+/** Estimates the chords of a song, one per span (see `chordFrameSpans`), from the harmony and, when there is one, the bass. */
+export function detectChords(input: ChordsInput): Chord[] {
+  const harmony = input.harmony;
+  const length = harmony.channels[0]?.length ?? 0;
+  const duration = length / harmony.sampleRate;
+  const spans = chordFrameSpans(input.beats, duration);
+  const { treble } = chromaFrames(harmony, spans, input.bass);
+  const frames = spans.map((span, i) => ({ time: span.start, ...triadOf(treble[i]) }));
+  return smoothChordFrames(frames);
 }

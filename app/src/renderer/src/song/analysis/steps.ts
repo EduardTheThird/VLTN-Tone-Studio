@@ -19,18 +19,17 @@ import type { LyricsOptions } from "../performance/lyrics-options";
  * Tracks the beat of the song's audio, and reads the meter from the same beats. `onGrid` receives the whole grid, which the caller saves
  * with the band settings, since the grid is too large for the analysis record. The tempo goes to the analysis; the grid is only passed on
  * when it is long enough to trust. `hint` is a tempo the performer typed: the tracker refines it, or keeps it when locked. Without it the
- * tracker picks the tempo itself.
+ * tracker picks the tempo itself. The tempo runs before the chords, so its chord changes come from the chart only.
  */
 export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOptions = {}): AnalysisStep {
   return {
     name: "tempo",
-    async run(audio, signal, soFar) {
-      // The chart's chord changes are used when it has them. Otherwise the chords the analysis found stand in for them.
+    async run(audio, signal) {
       const job = startBeatGrid({
         sources: audio.sources,
         sampleRate: audio.sampleRate,
         beatsPerBar: audio.beatsPerBar,
-        chordChanges: audio.chordChanges.length ? audio.chordChanges : chordChangeTimes(soFar.chords?.chords ?? []),
+        chordChanges: audio.chordChanges,
         tempoHint: hint.tempoHint,
         lockTempo: hint.lockTempo,
       });
@@ -49,11 +48,6 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOpti
       return meter ? { tempo, meter } : { tempo };
     },
   };
-}
-
-/** The times the chord name changes, in seconds. The first chord is not a change. */
-export function chordChangeTimes(chords: readonly Chord[]): number[] {
-  return chords.flatMap((chord, i) => (i > 0 && chord.name !== chords[i - 1].name ? [chord.time] : []));
 }
 
 /**
@@ -131,12 +125,16 @@ export function keyStep(): AnalysisStep {
   };
 }
 
-/** Reads the chords from the harmony (the chosen stem, else the harmony stems added together, else the mix), with the bass stem when there is one. */
-export function chordsStep(): AnalysisStep {
+/**
+ * Reads the chords from the harmony (the chosen stem, else the harmony stems added together, else the mix), with the bass stem when there
+ * is one. The chords change on the beats of the grid `gridOf` gives (the one the tempo step just tracked, or the saved one); without a
+ * grid they are read on a fixed hop.
+ */
+export function chordsStep(gridOf: () => BeatGrid | null = () => null): AnalysisStep {
   return {
     name: "chords",
     async run(audio, signal) {
-      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: null };
+      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null };
       const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
       return { chords: { source: audio.harmony.name, chords } };
     },

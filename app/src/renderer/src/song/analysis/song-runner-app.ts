@@ -98,14 +98,17 @@ function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
  */
 function appSteps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[] {
   const tempo = tempoStep((grid) => (captured.grid = grid), options.hint ?? {});
-  const sections = sectionsStep(() => captured.grid ?? readStoredBand(key).grid ?? null);
+  // The chords and the sections take the beat grid the tempo step tracked in this run, or else the one saved with the song.
+  const gridOf = () => captured.grid ?? readStoredBand(key).grid ?? null;
+  const chords = chordsStep(gridOf);
+  const sections = sectionsStep(gridOf);
   if (options.tempoOnly) return options.sections ? [tempo, sections] : [tempo];
   const wanted = loadAfterSplit().steps;
   const ordered: [AfterSplitStep, AnalysisStep[]][] = [
     ["loudness", [loudnessStep(), silenceStep()]],
     ["parts", [partsStep()]],
-    ["chords", [chordsStep()]],
     ["tempo", [tempo]],
+    ["chords", [chords]],
     ["key", [keyStep()]],
     ["sections", [sections]],
   ];
