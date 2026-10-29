@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PcmAudio, Stems } from "../types";
-import { bassOf, buildAnalysisAudio, harmonyOf } from "./analysis-audio";
+import { bassOf, buildAnalysisAudio, harmonyOf, sectionBoundsOf } from "./analysis-audio";
 
 const tone = (level = 0.5): PcmAudio => ({ sampleRate: 44100, channels: [new Float32Array(4410).fill(level)] });
 const silence = (): PcmAudio => ({ sampleRate: 44100, channels: [new Float32Array(4410)] });
@@ -11,7 +11,6 @@ describe("buildAnalysisAudio", () => {
     const mix = tone();
     const audio = buildAnalysisAudio({ ...input, mix, stems: null, chordName: "" });
     expect(audio.sources).toEqual([mix]);
-    expect(audio.keySource).toEqual({ name: "original mix", audio: mix });
     expect(audio.chordSource).toBeNull();
     expect(audio.stems).toBeNull();
     expect(audio.sampleRate).toBe(44100);
@@ -25,16 +24,10 @@ describe("buildAnalysisAudio", () => {
     expect(buildAnalysisAudio({ ...input, mix: tone(), stems, chordName: "" }).sources).toEqual([drums]);
   });
 
-  it("reads the key from the first stem with a signal, in the key order", () => {
-    const guitar = tone(0.2);
-    const stems: Stems = { bass: tone(0.4), guitar, vocals: tone(0.1) };
-    expect(buildAnalysisAudio({ ...input, mix: tone(), stems, chordName: "" }).keySource).toEqual({ name: "guitar", audio: guitar });
-  });
-
-  it("skips a silent stem when it reads the key", () => {
-    const bass = tone(0.4);
-    const stems: Stems = { guitar: silence(), bass };
-    expect(buildAnalysisAudio({ ...input, mix: tone(), stems, chordName: "" }).keySource).toEqual({ name: "bass", audio: bass });
+  it("keeps the song's own sections as bounds, so the key reads them", () => {
+    const audio = buildAnalysisAudio({ ...input, mix: tone(), stems: null, chordName: "", sections: [{ start: 0, end: 8 }] });
+    expect(audio.sections).toEqual([{ start: 0, end: 8 }]);
+    expect(sectionBoundsOf([{ id: "a", name: "Verse", start: 2, end: 9, mode: "loop" }, "nonsense"])).toEqual([{ start: 2, end: 9 }]);
   });
 
   it("reads the chords from the chosen stem", () => {

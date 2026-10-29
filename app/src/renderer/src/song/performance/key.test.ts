@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, KEY_NAMES, type KeyEstimate } from "./key";
+import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, keyOfSong, KEY_NAMES, type KeyEstimate } from "./key";
 import { evidenceIn, keyFramesOf, type KeyEvidence } from "../analysis/key-evidence";
 import type { PcmAudio } from "../types";
 const major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -30,12 +30,12 @@ it("does not assign a key to silence, flat chroma, a single pitch or invalid dat
   expect(keyFromChroma([1, ...Array(11).fill(0)])).toBeNull();
   expect(keyFromChroma([NaN, ...Array(11).fill(1)])).toBeNull();
 });
-function progression(chords: number[][]): PcmAudio {
+function progression(chords: number[][], tuning = 440): PcmAudio {
   const sampleRate = 22050,
     seconds = 2;
   const pcm = Float32Array.from({ length: chords.length * sampleRate * seconds }, (_, i) => {
     const notes = chords[Math.floor(i / (sampleRate * seconds))];
-    return notes.reduce((sum, midi) => sum + 0.12 * Math.sin((2 * Math.PI * 440 * 2 ** ((midi - 69) / 12) * i) / sampleRate), 0);
+    return notes.reduce((sum, midi) => sum + 0.12 * Math.sin((2 * Math.PI * tuning * 2 ** ((midi - 69) / 12) * i) / sampleRate), 0);
   });
   return { sampleRate, channels: [pcm, pcm.map((n) => -n)] };
 }
@@ -192,4 +192,30 @@ it("reads A minor with a Dorian flavour from Am, D, Am, D", () => {
   const estimate = detectKeyFrom(evidenceIn(keyFramesOf(song.audio, null, song.chords, []), 0, song.duration));
   expect(estimate?.name).toBe("A minor");
   expect(estimate?.flavour).toBe("dorian");
+});
+
+it("reads the key of a song tuned to A=432", () => {
+  const loop = [
+    [55, 59, 62, 67],
+    [62, 66, 69],
+    [64, 67, 71],
+    [60, 64, 67],
+  ];
+  const song = namedAudio(["G", "D", "Em", "C"], loop);
+  const tuned = { ...song.audio, channels: [progression(loop, 432).channels[0]] };
+  expect(keyOfSong({ harmony: tuned, bass: null, chords: song.chords, sections: [] })?.name).toBe("G major");
+});
+
+it("tells E minor from its relative G major by the first and last chords, on audio", () => {
+  const song = namedAudio(
+    ["Em", "C", "G", "D", "Em"],
+    [
+      [64, 67, 71],
+      [60, 64, 67],
+      [55, 59, 62, 67],
+      [62, 66, 69],
+      [64, 67, 71],
+    ],
+  );
+  expect(keyOfSong({ harmony: song.audio, bass: null, chords: song.chords, sections: [] })?.name).toBe("E minor");
 });

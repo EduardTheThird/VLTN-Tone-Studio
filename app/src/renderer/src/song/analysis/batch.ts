@@ -18,7 +18,7 @@ import {
 } from "../performance/lyrics-chart";
 import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
 import type { LyricsModelId } from "../performance/lyrics-models";
-import { buildAnalysisAudio } from "./analysis-audio";
+import { buildAnalysisAudio, sectionBoundsOf } from "./analysis-audio";
 import type { LyricsStepInput } from "./steps";
 import { planWriteBack, parseOptions, tempoMayChange, type BatchSong, type LyricsWrite, type WriteBack } from "./apply";
 
@@ -379,6 +379,7 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
     chordChanges: chartChordTimes(parseChart(song.settings[""] ?? "")),
     chordChoice: chosenChordStem(saved, stems),
     chordName: chordNameFor(saved, stems),
+    sections: sectionBoundsOf(saved.sections),
   });
   // The lyrics step is decided from the chart before the run, so a chart that the batch may not replace is never transcribed.
   const ids = stepsFor(song, options);

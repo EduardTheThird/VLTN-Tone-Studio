@@ -1,7 +1,7 @@
-import { fft } from "../tonematch/fft";
 import type { PcmAudio, Stems } from "../types";
 import { hasSignal } from "./sources";
-import { combinedProfile, type KeyEvidence } from "../analysis/key-evidence";
+import type { Chord } from "./chords";
+import { combinedProfile, evidenceIn, keyFramesOf, type KeyEvidence } from "../analysis/key-evidence";
 
 export const KEY_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 export const SONG_KEYS = KEY_NAMES.flatMap((root) => [`${root} major`, `${root} minor`]);
@@ -89,49 +89,29 @@ export function keyFromChroma(chroma: ArrayLike<number>): KeyEstimate | null {
     alternatives: scores.slice(1, 3).map((s) => s.name),
   };
 }
-/** Whole-song spectral estimate, bounded to 600 windows. No model download or audio upload. */
+/** The whole song's key from its harmony, bass, chords and section ends (see `keyOfSong`). */
+export interface KeyInput {
+  harmony: PcmAudio;
+  bass: PcmAudio | null;
+  chords: Chord[];
+  /** The song's sections, as bounds in seconds. Their ends are where a chord counts as an anchor. */
+  sections: readonly { start: number; end: number }[];
+}
+
+/** The key of a song from its harmony, bass, chords and section ends (spec 82). Null when the harmony has no clear key. */
+export function keyOfSong(input: KeyInput): KeyEstimate | null {
+  const frames = keyFramesOf(input.harmony, input.bass, input.chords, input.sections.map((section) => section.end));
+  return detectKeyFrom(evidenceIn(frames, 0, Infinity));
+}
+
+/**
+ * Whole-song estimate from the audio's own chroma, with no chords and no bass. No model download or audio upload. Without the chords and
+ * the bass to back it, a tentative key is not trusted: only a strong one is returned.
+ */
 export function detectKey(audio: PcmAudio): KeyEstimate | null {
   if (!hasSignal(audio) || !Number.isFinite(audio.sampleRate) || audio.sampleRate <= 0) return null;
-  const n = 16384,
-    length = audio.channels[0].length;
-  const windows = Math.min(600, Math.max(1, Math.ceil(length / (audio.sampleRate * 0.5))));
-  const chroma = new Float64Array(12);
-  for (let window = 0; window < windows; window++) {
-    const start = windows === 1 ? 0 : Math.floor((window * Math.max(0, length - n)) / (windows - 1));
-    let channel = audio.channels[0],
-      loudest = -1;
-    for (const candidate of audio.channels) {
-      let energy = 0;
-      for (let i = start; i < Math.min(length, start + n); i++) energy += candidate[i] ** 2;
-      if (energy > loudest) {
-        loudest = energy;
-        channel = candidate;
-      }
-    }
-    if (loudest / Math.min(n, length) < 1e-7) continue;
-    const re = new Float64Array(n),
-      im = new Float64Array(n),
-      frame = new Float64Array(12);
-    for (let i = 0; i < n; i++) re[i] = (channel[start + i] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)));
-    fft(re, im);
-    const power = (k: number) => re[k] ** 2 + im[k] ** 2;
-    for (let k = 2; k < n / 2 - 1; k++) {
-      const hz = (k * audio.sampleRate) / n;
-      if (hz < 55 || hz > 2000) continue;
-      const peak = power(k),
-        left = power(k - 1),
-        right = power(k + 1);
-      if (peak <= left || peak < right) continue;
-      const offset =
-        (0.5 * (Math.log(left + 1e-20) - Math.log(right + 1e-20))) / (Math.log(left + 1e-20) - 2 * Math.log(peak + 1e-20) + Math.log(right + 1e-20));
-      const midi = 69 + 12 * Math.log2(((k + Math.max(-0.5, Math.min(0.5, offset))) * audio.sampleRate) / n / 440);
-      if (Math.abs(midi - Math.round(midi)) > 0.35) continue;
-      frame[((Math.round(midi) % 12) + 12) % 12] += Math.sqrt(peak);
-    }
-    const total = frame.reduce((a, b) => a + b, 0);
-    if (total) for (let i = 0; i < 12; i++) chroma[i] += frame[i] / total;
-  }
-  return keyFromChroma(chroma);
+  const estimate = keyOfSong({ harmony: audio, bass: null, chords: [], sections: [] });
+  return estimate?.confidence === "strong" ? estimate : null;
 }
 
 interface KeyScore {

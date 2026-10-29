@@ -12,7 +12,7 @@ import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state
 import { LYRIC_LANGUAGES, loadLyricsChoice } from "../performance/lyrics-options";
 import { readStoredBand } from "../band/stored";
 import type { StemName } from "../types";
-import { buildAnalysisAudio } from "./analysis-audio";
+import { buildAnalysisAudio, sectionBoundsOf } from "./analysis-audio";
 import { parseAnalysis, songAudioId, type AnalysisStep } from "./song-analysis";
 import { lyricsSkipLabel, lyricsStepText } from "./batch";
 import { lyricsRunSkip } from "./lyrics-run";
@@ -55,6 +55,7 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
     chordChanges: chartChordTimes(parseChart(getSetting(key, ""))),
     chordChoice,
     chordName,
+    sections: sectionBoundsOf(options.sections),
   });
   // Lyrics read the vocals stem; an imported vocals track stands in for it when the song was not split.
   const audio = { ...built, stems: stemsWithVocals(built.stems, vocalsOf(stems, tracks)) };

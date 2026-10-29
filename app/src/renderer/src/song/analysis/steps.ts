@@ -5,7 +5,8 @@ import { startBeatGrid } from "../band/beat-grid-client";
 import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord, ChordsInput } from "../performance/chords";
-import type { KeyEstimate } from "../performance/key";
+import type { KeyEstimate, KeyInput } from "../performance/key";
+import { hasSignal } from "../performance/sources";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
 import { silenceEnds } from "./silence";
@@ -113,14 +114,18 @@ export function partsStep(): AnalysisStep {
   };
 }
 
-/** Estimates the song's key from its key stem. Nothing is saved when the song has no stem with a signal. */
+/**
+ * Estimates the song's key from its harmony and bass, with the chords the run found before it (the key runs after the chords) and the
+ * song's section ends. Nothing is saved when the harmony has no signal or no clear key is found.
+ */
 export function keyStep(): AnalysisStep {
   return {
     name: "key",
-    async run(audio, signal) {
-      if (!audio.keySource) return {};
-      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), audio.keySource.audio, signal);
-      return estimate ? { key: { source: audio.keySource.name, estimate } } : {};
+    async run(audio, signal, soFar) {
+      if (!hasSignal(audio.harmony.audio)) return {};
+      const input: KeyInput = { harmony: audio.harmony.audio, bass: audio.bass, chords: soFar.chords?.chords ?? [], sections: audio.sections };
+      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      return estimate ? { key: { source: audio.harmony.name, estimate } } : {};
     },
   };
 }

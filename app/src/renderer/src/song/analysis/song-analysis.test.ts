@@ -20,7 +20,7 @@ const audio = {
   sampleRate: 44100,
   beatsPerBar: 4,
   chordChanges: [],
-  keySource: null,
+  sections: [],
   harmony: NO_HARMONY, bass: null, chordSource: null,
 };
 

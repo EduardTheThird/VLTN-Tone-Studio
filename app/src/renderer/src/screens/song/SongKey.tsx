@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
-import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate } from "@/song/performance/key";
+import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate, type KeyInput } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
 import { isCurrent, songAudioId } from "@/song/analysis/song-analysis";
 import { storedAnalysis } from "./use-song-analysis";
@@ -80,7 +80,9 @@ export function SongKey({
           worker?.terminate();
         }
       };
-      worker.postMessage(input.audio);
+      // The panel reads one stem on its own: no bass, chords or sections, so the key is the harmony's alone.
+      const request: KeyInput = { harmony: input.audio, bass: null, chords: [], sections: [] };
+      worker.postMessage(request);
     } catch (e) {
       setBusy(false);
       setError(String(e));

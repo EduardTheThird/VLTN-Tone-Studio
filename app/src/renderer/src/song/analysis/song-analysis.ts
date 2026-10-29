@@ -87,8 +87,8 @@ export interface AnalysisAudio {
   beatsPerBar: number;
   /** Chord change times, in seconds of the same audio. Empty when the song has no chords yet. */
   chordChanges: number[];
-  /** The stem the key is read from, or null when there is no audio with a signal. */
-  keySource: NamedAudio | null;
+  /** The song's own sections as bounds in seconds, or none. Their ends are where a chord counts as an anchor for the key. */
+  sections: readonly { start: number; end: number }[];
   /** The audio the chords are read from: the performer's chord stem, else the harmony stems added together, else the mix. */
   harmony: NamedAudio;
   /** The bass stem, when it has a signal. The chords read the bass note from it. */

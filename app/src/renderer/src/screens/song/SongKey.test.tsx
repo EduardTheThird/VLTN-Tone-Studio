@@ -29,7 +29,7 @@ afterEach(() => {
 });
 it("analyses the preferred stem and shows its estimate, alternatives and display transposition", () => {
   render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" shift={2} />);
-  expect(workers[0].postMessage).toHaveBeenCalledWith(audio);
+  expect(workers[0].postMessage).toHaveBeenCalledWith({ harmony: audio, bass: null, chords: [], sections: [] });
   act(() => workers[0].done());
   expect(screen.getByText("Song key: C major")).toBeTruthy();
   expect(screen.getByText(/Estimated C major from guitar/)).toBeTruthy();

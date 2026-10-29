@@ -2,8 +2,8 @@
 // song analysed from the Library gets the same sources, key stem and chord stem as one analysed on the Performance screen.
 
 import { beatSources, sumAudio } from "../band/request";
+import { parseSections } from "../performance/sections";
 import { hasSignal } from "../performance/sources";
-import { keyAudio } from "../performance/key";
 import type { PcmAudio, StemName, Stems } from "../types";
 import type { AnalysisAudio, NamedAudio } from "./song-analysis";
 
@@ -17,6 +17,8 @@ export interface SongAudioInput {
   chordChoice?: StemName | "";
   /** The stem the sections read the harmony from. Empty when none is chosen. */
   chordName: StemName | "";
+  /** The song's own sections, as bounds in seconds (the performer's, saved with the song). */
+  sections?: { start: number; end: number }[];
 }
 
 /** The stems that carry the harmony without the bass or the drums. Their sum is the default harmony when the song is split. */
@@ -35,13 +37,18 @@ export function harmonyOf(stems: Stems | null, mix: PcmAudio, chordChoice: StemN
   return { name: "mix", audio: mix };
 }
 
+/** The bounds, in seconds, of the sections a saved song holds. Anything that is not a section is left out. */
+export function sectionBoundsOf(raw: unknown): { start: number; end: number }[] {
+  return parseSections(raw).map(({ start, end }) => ({ start, end }));
+}
+
 /** The bass stem when it has a signal, which the chords read for the bass note. Null otherwise. */
 export function bassOf(stems: Stems | null): PcmAudio | null {
   return hasSignal(stems?.bass) ? stems!.bass! : null;
 }
 
-/** The audio an analysis runs on: the beat sources, the key stem, the harmony and the bass for the chords, and the section chord stem. */
-export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordChoice = "", chordName }: SongAudioInput): AnalysisAudio {
+/** The audio an analysis runs on: the beat sources, the harmony and the bass for the chords and the key, and the section chord stem. */
+export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chordChoice = "", chordName, sections = [] }: SongAudioInput): AnalysisAudio {
   return {
     mix,
     stems,
@@ -49,7 +56,7 @@ export function buildAnalysisAudio({ mix, stems, beatsPerBar, chordChanges, chor
     sampleRate: mix.sampleRate,
     beatsPerBar,
     chordChanges,
-    keySource: keyAudio(stems, mix),
+    sections,
     harmony: harmonyOf(stems, mix, chordChoice),
     bass: bassOf(stems),
     chordSource: chordName && stems?.[chordName] ? { name: chordName, audio: stems[chordName] } : null,
