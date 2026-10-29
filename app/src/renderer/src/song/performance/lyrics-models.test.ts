@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LYRICS_MODEL_ID, downloadMegabytes, findLyricsModel, LYRICS_MODELS } from "./lyrics-models";
+import { DEFAULT_LYRICS_MODEL_ID, downloadMegabytes, findLyricsModel, LYRICS_MODELS, lyricsMinutes } from "./lyrics-models";
 
 describe("lyrics models", () => {
   it("has unique ids and a default that exists", () => {
@@ -24,5 +24,12 @@ describe("lyrics models", () => {
     const base = findLyricsModel("base")!;
     expect(downloadMegabytes(base, false)).toBe(77);
     expect(downloadMegabytes(base, true)).toBe(146);
+  });
+});
+
+describe("lyrics time estimate", () => {
+  it("grows with the model and the quality, and with the length of the song", () => {
+    expect(lyricsMinutes("turbo", "max", 4)).toBeGreaterThan(lyricsMinutes("small", "fast", 4));
+    expect(lyricsMinutes("base", "fast", 8)).toBeCloseTo(2 * lyricsMinutes("base", "fast", 4));
   });
 });

@@ -46,7 +46,7 @@ it("refuses to start while a song plays, and does not run the batch", () => {
 });
 
 it("runs the batch with the choices as they are, and shows the tempos it changed", async () => {
-  run.mockResolvedValue([{ id: "a", title: "Alpha", status: "analysed", tempoChange: { from: 120, to: 98 }, noBeat: false }]);
+  run.mockResolvedValue([{ id: "a", title: "Alpha", status: "analysed", tempoChange: { from: 120, to: 98 }, noBeat: false, lyrics: null }]);
   open([alpha, bravo]);
   fireEvent.click(screen.getByRole("button", { name: "Analyse 1 song" }));
   expect(run).toHaveBeenCalledWith(

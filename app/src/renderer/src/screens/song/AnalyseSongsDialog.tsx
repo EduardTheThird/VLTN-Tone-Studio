@@ -18,7 +18,10 @@ import {
   type BatchOutcome,
   type BatchProgress,
   type BatchSong,
+  type LyricsWhich,
 } from "@/song/analysis/batch";
+import { loadLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
+import { LyricsBatchSettings } from "./LyricsBatchSettings";
 
 const PLAYING_REFUSAL = "Stop playback before analysing songs. The analysis would run while the music plays.";
 
@@ -34,6 +37,9 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
   const [choice, setChoice] = useState<BatchChoice>(defaultChoice);
   const [onlyNeeded, setOnlyNeeded] = useState(true);
   const [replaceManual, setReplaceManual] = useState(false);
+  const [lyricsChoice, setLyricsChoice] = useState<LyricsChoice>(loadLyricsChoice);
+  const [which, setWhich] = useState<LyricsWhich>("empty");
+  const [retime, setRetime] = useState(true);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [outcomes, setOutcomes] = useState<BatchOutcome[] | null>(null);
@@ -49,7 +55,7 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
     setProblem(null);
   }, [open]);
 
-  const options = { onlyNeeded, replaceManual, choice, openSongId: openId };
+  const options = { onlyNeeded, replaceManual, choice, openSongId: openId, lyrics: { ...lyricsChoice, which, retime } };
   const { run } = selectSongs(songs, options);
   const changed = (outcomes ?? []).filter((o): o is Extract<BatchOutcome, { status: "analysed" }> => o.status === "analysed" && !!o.tempoChange);
 
@@ -99,6 +105,18 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
               <span>{step.label}</span>
             </label>
           ))}
+          {choice.lyrics && (
+            <LyricsBatchSettings
+              choice={lyricsChoice}
+              onChoice={setLyricsChoice}
+              which={which}
+              onWhich={setWhich}
+              retime={retime}
+              onRetime={setRetime}
+              disabled={running}
+              songs={run.length}
+            />
+          )}
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={onlyNeeded} disabled={running} onCheckedChange={(value) => setOnlyNeeded(value === true)} />
             <span>Only songs that need it</span>

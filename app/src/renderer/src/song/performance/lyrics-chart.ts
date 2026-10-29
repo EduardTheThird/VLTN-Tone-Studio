@@ -54,16 +54,29 @@ export function lrcTexts(lrc: string): string[] {
   return lines;
 }
 
+/**
+ * The options of a song after a new chart is saved: the chart's source, the model that made it, and the chart it replaces, kept once. `previous`
+ * is the chart being replaced, or null when there was none.
+ */
+export function withLyricsChart(
+  options: Record<string, unknown>,
+  previous: PreviousChart | null,
+  chart: { source: ChartSource; made?: LyricsMade },
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...options, chartSource: chart.source };
+  if (chart.made) next.lyricsMade = chart.made;
+  if (previous && previous.text.trim()) next.previousChart = previous;
+  return next;
+}
+
 /** Settings to write for a new chart: the text, and the options with its source, the model that made it, and the chart it replaces. */
 export function lyricsSaveValues(
   options: Record<string, unknown>,
   previousText: string,
   chart: { text: string; source: ChartSource; made?: LyricsMade },
 ): Record<string, string> {
-  const next: Record<string, unknown> = { ...options, chartSource: chart.source };
-  if (chart.made) next.lyricsMade = chart.made;
-  if (previousText.trim() && previousText !== chart.text) next.previousChart = { text: previousText, source: chartSourceOf(options) };
-  return { ":lyrics": chart.text, ":options": JSON.stringify(next) };
+  const replaced = previousText.trim() && previousText !== chart.text ? { text: previousText, source: chartSourceOf(options) } : null;
+  return { ":lyrics": chart.text, ":options": JSON.stringify(withLyricsChart(options, replaced, chart)) };
 }
 
 /** Saves a new lyrics chart on a song, keeping the chart it replaces. */

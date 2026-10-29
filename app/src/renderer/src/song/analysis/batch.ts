@@ -11,6 +11,9 @@ import { defaultChordSource } from "../performance/sources";
 import { needsTempoDetection, readTempoSource, type TempoSource } from "../performance/tempo-source";
 import { parseSections } from "../performance/sections";
 import { parseBeatGrid } from "../band/beat-grid";
+import { chartSourceOf, lrcTexts, lyricsMadeOf, lyricsMadeRecord, withLyricsChart, type ChartSource, type LyricsMade, type PreviousChart } from "../performance/lyrics-chart";
+import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
+import type { LyricsModelId } from "../performance/lyrics-models";
 import { buildAnalysisAudio } from "./analysis-audio";
 import { sectionsToApply } from "./sections";
 import {
@@ -25,7 +28,10 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
-/** The steps the Library dialog offers, in the order the dialog lists them. Lyrics join when spec 75 adds its step. */
+/**
+ * The steps the Library dialog offers, in the order the dialog lists them. Lyrics come last: transcription is the slowest step, and it runs
+ * after the others for each song. It is off by default, since it can take a long time and downloads a model the first time.
+ */
 export const BATCH_STEPS = [
   { id: "tempo", label: "Tempo and meter", defaultOn: true },
   { id: "key", label: "Key", defaultOn: true },
@@ -34,6 +40,7 @@ export const BATCH_STEPS = [
   { id: "parts", label: "Drums and bass", defaultOn: true },
   { id: "silence", label: "Silence", defaultOn: true },
   { id: "sections", label: "Sections", defaultOn: true },
+  { id: "lyrics", label: "Lyrics", defaultOn: false },
 ] as const;
 export type BatchStepId = (typeof BATCH_STEPS)[number]["id"];
 export type BatchChoice = Record<BatchStepId, boolean>;
@@ -50,6 +57,20 @@ export interface BatchSong {
   settings: Record<string, string>;
 }
 
+/** Which lyrics charts the lyrics step may replace. A performer's own chart (`user`) is never replaced in bulk. */
+export type LyricsWhich = "empty" | "transcribed" | "older";
+
+/** The lyrics step's settings for a batch: the model and quality, which songs, and whether aligned charts are timed again. */
+export interface LyricsBatchOptions {
+  model: LyricsModelId;
+  quality: LyricsQualityId;
+  which: LyricsWhich;
+  /** Re-times the `aligned` charts (the performer's own words) with the model chosen. Their text is kept. */
+  retime: boolean;
+}
+
+export const DEFAULT_LYRICS_BATCH: LyricsBatchOptions = { model: "small", quality: "fast", which: "empty", retime: true };
+
 export interface BatchOptions {
   /** Analyse only the songs whose saved analysis is missing, older, or has no tempo of its own. */
   onlyNeeded: boolean;
@@ -58,6 +79,37 @@ export interface BatchOptions {
   choice: BatchChoice;
   /** The song open on the Performance screen, skipped so its panel state is never changed behind its back. */
   openSongId: string | null;
+  /** The lyrics step's settings. Defaults apply when absent. */
+  lyrics?: LyricsBatchOptions;
+}
+
+/** What the lyrics step does to one song. `transcribe` makes a chart from the vocals; `retime` times the performer's own lines again. */
+export type LyricsAction = { kind: "transcribe" } | { kind: "retime"; lines: string[] };
+
+/**
+ * The lyrics step's action for a song, or null when it leaves the song's chart alone. An empty chart is filled only for `empty`. A
+ * transcribed chart is replaced for `transcribed`, or for `older` when it was made with another model. An aligned chart is timed again
+ * when `retime` is on. A `user` chart is never touched.
+ */
+export function lyricsAction(song: BatchSong, lyrics: LyricsBatchOptions): LyricsAction | null {
+  const options = parseOptions(song.settings[":options"]);
+  const text = song.settings[":lyrics"] ?? "";
+  if (!text.trim()) return lyrics.which === "empty" ? { kind: "transcribe" } : null;
+  const source: ChartSource = chartSourceOf(options);
+  if (source === "aligned") {
+    const lines = lrcTexts(text);
+    return lyrics.retime && lines.some(Boolean) ? { kind: "retime", lines } : null;
+  }
+  if (source === "transcribed") {
+    if (lyrics.which === "transcribed") return { kind: "transcribe" };
+    if (lyrics.which === "older" && (lyricsMadeOf(options)?.model ?? "") !== lyrics.model) return { kind: "transcribe" };
+  }
+  return null;
+}
+
+/** Whether any analysis step (not lyrics) is chosen. */
+function analysisChosen(choice: BatchChoice): boolean {
+  return BATCH_STEPS.some((step) => step.id !== "lyrics" && choice[step.id]);
 }
 
 /** The options of a saved song, read from its `:options` entry. A damaged entry reads as no options. */
@@ -90,8 +142,18 @@ export function tempoMayChange(song: BatchSong, replaceManual: boolean): boolean
  */
 export function selectSongs(songs: readonly BatchSong[], options: BatchOptions): { run: BatchSong[]; openSkipped: BatchSong[] } {
   const openSkipped = songs.filter((song) => song.id === options.openSongId);
-  const run = songs.filter((song) => song.id !== options.openSongId && (!options.onlyNeeded || needsAnalysis(song)));
+  const run = songs.filter((song) => song.id !== options.openSongId && wantsRun(song, options));
   return { run, openSkipped };
+}
+
+/**
+ * A song runs when the analysis is wanted for it (with `onlyNeeded`, only if it needs one), or when the lyrics step has something to do for
+ * it. With no lyrics step, the songs are chosen as before.
+ */
+function wantsRun(song: BatchSong, options: BatchOptions): boolean {
+  if (!options.choice.lyrics) return !options.onlyNeeded || needsAnalysis(song);
+  const analysis = analysisChosen(options.choice) && (!options.onlyNeeded || needsAnalysis(song));
+  return analysis || lyricsAction(song, options.lyrics ?? DEFAULT_LYRICS_BATCH) !== null;
 }
 
 /** The steps one song runs: the chosen ones, with tempo and meter dropped where the performer's tempo must be kept. */
@@ -111,11 +173,45 @@ export interface WriteBack {
  * under the same rules as the Performance screen: a grid the performer made is kept unless the performer asked to replace the tempo. A 3
  * is not applied, since the Performance screen only offers it. Loudness fills in only a song that has none.
  */
-export function planWriteBack(song: BatchSong, analysis: SongAnalysis, grid: BeatGrid | null, replaceManual: boolean): WriteBack {
+export function planWriteBack(
+  song: BatchSong,
+  analysis: SongAnalysis | null,
+  grid: BeatGrid | null,
+  replaceManual: boolean,
+  lyrics: LyricsWrite | null = null,
+): WriteBack {
   const options = parseOptions(song.settings[":options"]);
   const values: Record<string, string> = {};
+  const next: Record<string, unknown> = analysis ? { ...options, analysis } : { ...options };
+  const tempoChange = analysis ? applyAnalysis(song, analysis, grid, replaceManual, options, next, values) : null;
+  if (lyrics) {
+    const previousText = song.settings[":lyrics"] ?? "";
+    const replaced: PreviousChart | null = previousText.trim() && previousText !== lyrics.text ? { text: previousText, source: chartSourceOf(options) } : null;
+    values[":lyrics"] = lyrics.text;
+    Object.assign(next, withLyricsChart(next, replaced, { source: lyrics.source, made: lyrics.made }));
+  }
+  values[":options"] = JSON.stringify(next);
+  return { values, tempoChange };
+}
+
+/** A lyrics chart the lyrics step made for a song, with its source and the model that made it. */
+export interface LyricsWrite {
+  text: string;
+  source: ChartSource;
+  made: LyricsMade;
+}
+
+/** The analysis's part of a write-back: the tempo, the sections and the loudness, under the rules planWriteBack describes. */
+function applyAnalysis(
+  song: BatchSong,
+  analysis: SongAnalysis,
+  grid: BeatGrid | null,
+  replaceManual: boolean,
+  options: Record<string, unknown>,
+  next: Record<string, unknown>,
+  values: Record<string, string>,
+): WriteBack["tempoChange"] {
   let tempoChange: WriteBack["tempoChange"] = null;
-  const next: Record<string, unknown> = { ...options, analysis };
   // Detected sections fill in a song with none. A song's own sections, and the suggestion kept in the analysis, are left as they are.
   const sections = sectionsToApply(parseSections(options.sections), analysis.sections);
   if (sections) next.sections = sections;
@@ -139,13 +235,16 @@ export function planWriteBack(song: BatchSong, analysis: SongAnalysis, grid: Bea
     next.songLufs = analysis.loudness.lufs;
     next.songPeakDb = analysis.loudness.peakDb;
   }
-  values[":options"] = JSON.stringify(next);
-  return { values, tempoChange };
+  return tempoChange;
 }
 
 /** How one song came out of the batch. A cancelled song is not listed: it is left as it was. */
+/** What the lyrics step did for a song: a chart made from the vocals, the performer's words timed, nothing heard, or it failed. */
+export type LyricsOutcome = "made" | "timed" | "none" | "failed";
+
 export type BatchOutcome =
-  | { id: string; title: string; status: "analysed"; tempoChange: WriteBack["tempoChange"]; noBeat: boolean }
+  | { id: string; title: string; status: "analysed"; tempoChange: WriteBack["tempoChange"]; noBeat: boolean; lyrics: LyricsOutcome | null }
+  | { id: string; title: string; status: "lyrics"; lyrics: LyricsOutcome }
   | { id: string; title: string; status: "current" }
   | { id: string; title: string; status: "skipped"; reason: "open" }
   | { id: string; title: string; status: "failed"; reason: string };
@@ -169,10 +268,15 @@ export interface BatchDeps {
   /** Calls `listener` when playback starts or stops. Returns a function that stops the listening. */
   onPlayingChange(listener: (playing: boolean) => void): () => void;
   /**
-   * The analysis steps for the given ids, in the order they run. `onGrid` receives the beat grid the tempo step tracks, and `gridOf` gives
-   * the grid the sections step should use: the one just tracked, or the one saved with the song.
+   * The analysis steps for the given ids, in the order they run, then the lyrics step when `lyrics` is given. `onGrid` receives the beat grid
+   * the tempo step tracks, and `gridOf` gives the grid the sections step should use: the one just tracked, or the one saved with the song.
    */
-  steps(ids: readonly BatchStepId[], onGrid: (grid: BeatGrid) => void, gridOf: () => BeatGrid | null): AnalysisStep[];
+  steps(
+    ids: readonly BatchStepId[],
+    onGrid: (grid: BeatGrid) => void,
+    gridOf: () => BeatGrid | null,
+    lyrics: { options: LyricsOptions; pasted?: string[]; onText(text: string): void } | null,
+  ): AnalysisStep[];
   /** Writes the settings of a saved song through the library's settings writers. Not the song store. */
   write(id: string, values: Record<string, string>): void;
 }
@@ -247,21 +351,34 @@ async function analyseOne(
     chordChanges: chartChordTimes(parseChart(song.settings[""] ?? "")),
     chordName: chordNameFor(saved, stems),
   });
+  // The lyrics step is decided from the chart before the run, so a chart that the batch may not replace is never transcribed.
+  const ids = stepsFor(song, options);
+  const lyricsOn = ids.includes("lyrics");
+  const lyrics = options.lyrics ?? DEFAULT_LYRICS_BATCH;
+  const action = lyricsOn ? lyricsAction(song, lyrics) : null;
+  // With the analysis not needed (only songs that need it), the saved analysis is kept and only the lyrics step runs.
+  const analysisIds = ids.filter((id) => id !== "lyrics");
+  const runAnalysis = analysisIds.length > 0 && (!options.onlyNeeded || needsAnalysis(song));
+  if (!runAnalysis && !action) return { id: song.id, title: song.title, status: "current" };
+  const lyricsOptions: LyricsOptions = { model: lyrics.model, quality: lyrics.quality, language: languageOf(saved) };
   // The captures are held in objects: the steps and the store fill them in from callbacks, which TypeScript cannot follow.
-  const captured: { grid: BeatGrid | null; analysis: SongAnalysis | null } = { grid: null, analysis: null };
+  const captured: { grid: BeatGrid | null; analysis: SongAnalysis | null; lyrics: string | null } = { grid: null, analysis: null, lyrics: null };
   const base = {
     audioId: songAudioId(mix, stems),
     audio,
     steps: deps.steps(
-      stepsFor(song, options),
+      runAnalysis ? analysisIds : [],
       (found) => (captured.grid = found),
       () => captured.grid ?? parseBeatGrid(saved.beatGrid),
+      action ? { options: lyricsOptions, pasted: action.kind === "retime" ? action.lines : undefined, onText: (text) => (captured.lyrics = text) } : null,
     ),
     settings: {
       read: () => parseAnalysis(saved.analysis),
       write: (analysis: SongAnalysis) => (captured.analysis = analysis),
     },
-    force: !options.onlyNeeded,
+    // Lyrics-only songs keep their saved analysis, so the run starts from it and nothing is recomputed.
+    force: !options.onlyNeeded || !runAnalysis,
+    partial: runAnalysis ? undefined : (parseAnalysis(saved.analysis) ?? undefined),
     onStep: (_: number, name: string) => onStep(name),
   };
   // Playback interrupts the run between steps; the run resumes from the step it stopped at once playback stops. Cancelling stops the
@@ -289,12 +406,28 @@ async function analyseOne(
     signal.removeEventListener("abort", cancel);
   }
   if (signal.aborted || !outcome || outcome.status !== "complete") return null;
-  // A song whose analysis is current is not run again, so nothing is written for it.
-  if (!captured.analysis) return { id: song.id, title: song.title, status: "current" };
   if (deps.isOpen(song.id)) return { id: song.id, title: song.title, status: "skipped", reason: "open" };
-  const plan = planWriteBack(song, captured.analysis, captured.grid, options.replaceManual);
+  const lyricsFailed = outcome.analysis.failed?.includes("lyrics") ?? false;
+  const lyricsOutcome: LyricsOutcome | null = !action ? null : lyricsFailed ? "failed" : captured.lyrics === null ? "none" : action.kind === "retime" ? "timed" : "made";
+  // Only a run that really analysed the song writes its analysis. A current analysis is not run again, so it is not written again.
+  const analysis = runAnalysis ? captured.analysis : null;
+  const lyricsWrite: LyricsWrite | null =
+    action && captured.lyrics !== null
+      ? { text: captured.lyrics, source: action.kind === "retime" ? "aligned" : "transcribed", made: lyricsMadeRecord(lyricsOptions, new Date().toISOString()) }
+      : null;
+  if (!analysis && !lyricsWrite) {
+    if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? "none" };
+    return { id: song.id, title: song.title, status: "current" };
+  }
+  const plan = planWriteBack(song, analysis, captured.grid, options.replaceManual, lyricsWrite);
   deps.write(song.id, plan.values);
-  return { id: song.id, title: song.title, status: "analysed", tempoChange: plan.tempoChange, noBeat: !captured.analysis.tempo };
+  if (!runAnalysis) return { id: song.id, title: song.title, status: "lyrics", lyrics: lyricsOutcome ?? "none" };
+  return { id: song.id, title: song.title, status: "analysed", tempoChange: plan.tempoChange, noBeat: !!analysis && !analysis.tempo, lyrics: lyricsOutcome };
+}
+
+/** The language a song's lyrics are transcribed in, from its options. Unknown values read as automatic. */
+function languageOf(saved: Record<string, unknown>): LyricsLanguage {
+  return LYRIC_LANGUAGES.find((value) => value === saved.lyricsLanguage) ?? "auto";
 }
 
 /** The chord stem a song uses: its own choice when the stem is in the song, else the first stem with a signal. */
@@ -316,6 +449,15 @@ export function describeBatch(outcomes: readonly BatchOutcome[]): string {
   if (current) parts.push(`${current} already up to date.`);
   const open = outcomes.filter((o) => o.status === "skipped").length;
   if (open) parts.push(`${open} skipped (open).`);
+  const lyrics = outcomes.flatMap((o) => (o.status === "analysed" || o.status === "lyrics" ? [o.lyrics] : []));
+  const made = lyrics.filter((l) => l === "made").length;
+  const timed = lyrics.filter((l) => l === "timed").length;
+  if (made) parts.push(`Lyrics made for ${made} song${made === 1 ? "" : "s"}.`);
+  if (timed) parts.push(`Lyrics timed for ${timed} song${timed === 1 ? "" : "s"}.`);
+  const nothing = lyrics.filter((l) => l === "none").length;
+  if (nothing) parts.push(`${nothing} had no words heard.`);
+  const lyricsFailed = lyrics.filter((l) => l === "failed").length;
+  if (lyricsFailed) parts.push(`${lyricsFailed} lyrics could not be made.`);
   for (const f of outcomes) if (f.status === "failed") parts.push(`${f.title}: ${f.reason}`);
   return parts.join(" ");
 }

@@ -6,7 +6,7 @@ import { downloadMegabytes, LYRICS_MODELS, type LyricsModelId } from "@/song/per
 import { hasWebGpuAdapter, LYRICS_QUALITIES, type LyricsChoice, type LyricsQualityId } from "@/song/performance/lyrics-options";
 
 /** Whether the transcriber will run on WebGPU here, asked the same way the worker asks. */
-function useWebGpu(): boolean {
+export function useWebGpu(): boolean {
   const [webgpu, setWebgpu] = useState(false);
   useEffect(() => {
     let live = true;

@@ -55,3 +55,15 @@ export function findLyricsModel(id: unknown): LyricsModel | undefined {
 export function downloadMegabytes(model: LyricsModel, webgpu: boolean): number {
   return Math.round((webgpu ? model.bytes.webgpu : model.bytes.wasm) / 1e6);
 }
+
+/**
+ * A rough guess at transcription time: minutes of work per minute of song, by model. Not measured on hardware yet (see the hardware test
+ * plan), so the batch dialog shows it as an estimate only.
+ */
+const MINUTES_PER_SONG_MINUTE: Record<LyricsModelId, number> = { base: 0.3, small: 0.8, turbo: 2.5 };
+const QUALITY_FACTOR: Record<"fast" | "balanced" | "max", number> = { fast: 1, balanced: 1.5, max: 2 };
+
+/** The estimated minutes to transcribe a song of `songMinutes`, with `model` and `quality`. */
+export function lyricsMinutes(model: LyricsModelId, quality: "fast" | "balanced" | "max", songMinutes: number): number {
+  return songMinutes * MINUTES_PER_SONG_MINUTE[model] * QUALITY_FACTOR[quality];
+}

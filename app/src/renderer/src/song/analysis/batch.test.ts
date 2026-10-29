@@ -4,13 +4,16 @@ import type { PcmAudio, Stems } from "../types";
 import { ANALYSIS_VERSION, type AnalysisStep, type SongAnalysis } from "./song-analysis";
 import {
   BATCH_STEPS,
+  DEFAULT_LYRICS_BATCH,
   defaultChoice,
   describeBatch,
+  lyricsAction,
   needsAnalysis,
   planWriteBack,
   runAnalysisBatch,
   selectSongs,
   stepsFor,
+  type LyricsBatchOptions,
   tempoMayChange,
   type BatchDeps,
   type BatchOptions,
@@ -86,7 +89,7 @@ describe("stepsFor", () => {
 
   it("runs only the steps that are ticked", () => {
     const choice = { ...defaultChoice(), key: false, silence: false };
-    expect(stepsFor(song("h"), batchOptions({ choice }))).toEqual(BATCH_STEPS.map((s) => s.id).filter((id) => id !== "key" && id !== "silence"));
+    expect(stepsFor(song("h"), batchOptions({ choice }))).toEqual(BATCH_STEPS.map((s) => s.id).filter((id) => id !== "key" && id !== "silence" && id !== "lyrics"));
   });
 });
 
@@ -135,8 +138,8 @@ describe("planWriteBack", () => {
 describe("describeBatch", () => {
   it("names the songs analysed, the tempos changed, the songs with no beat and the open song", () => {
     const text = describeBatch([
-      { id: "a", title: "Alpha", status: "analysed", tempoChange: { from: 120, to: 98 }, noBeat: false },
-      { id: "b", title: "Bravo", status: "analysed", tempoChange: null, noBeat: true },
+      { id: "a", title: "Alpha", status: "analysed", tempoChange: { from: 120, to: 98 }, noBeat: false, lyrics: null },
+      { id: "b", title: "Bravo", status: "analysed", tempoChange: null, noBeat: true, lyrics: null },
       { id: "c", title: "Charlie", status: "skipped", reason: "open" },
     ]);
     expect(text).toBe("Analysed 2 songs. Tempo changed on 1 (Alpha: 120 → 98). 1 had no clear beat. 1 skipped (open).");
@@ -288,3 +291,105 @@ describe("sections in the batch", () => {
   });
 });
 
+
+describe("the lyrics step", () => {
+  const lyricsOn = { ...defaultChoice(), lyrics: true };
+  const lyricsWith = (over: Partial<LyricsBatchOptions> = {}): LyricsBatchOptions => ({ ...DEFAULT_LYRICS_BATCH, ...over });
+  const text = "[00:01.00] Hold on";
+
+  it("is off by default and runs last when ticked", () => {
+    expect(BATCH_STEPS.find((step) => step.id === "lyrics")).toMatchObject({ defaultOn: false });
+    expect(stepsFor(song("p"), batchOptions({ choice: lyricsOn })).at(-1)).toBe("lyrics");
+  });
+
+  it("fills only an empty chart with the default selection", () => {
+    expect(lyricsAction(song("q", { ":lyrics": "" }), lyricsWith())).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(song("r", { ":lyrics": text }, { chartSource: "transcribed" }), lyricsWith())).toBeNull();
+  });
+
+  it("never replaces a chart the performer wrote, whatever is selected", () => {
+    const user = song("s", { ":lyrics": text }, { chartSource: "user" });
+    for (const which of ["transcribed", "older"] as const) expect(lyricsAction(user, lyricsWith({ which }))).toBeNull();
+    expect(lyricsAction(song("t", { ":lyrics": text }), lyricsWith({ which: "transcribed" }))).toBeNull();
+  });
+
+  it("replaces a transcribed chart for the transcribed selection, or for an older model", () => {
+    const transcribed = song("u", { ":lyrics": text }, { chartSource: "transcribed", lyricsMade: { model: "base", quality: "fast", language: "auto", at: "x" } });
+    expect(lyricsAction(transcribed, lyricsWith({ which: "transcribed" }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(transcribed, lyricsWith({ which: "older", model: "small" }))).toEqual({ kind: "transcribe" });
+    expect(lyricsAction(transcribed, lyricsWith({ which: "older", model: "base" }))).toBeNull();
+  });
+
+  it("times an aligned chart again only when re-timing is on, and keeps its lines", () => {
+    const aligned = song("v", { ":lyrics": "[00:01.00] Hold on\n[00:03.00] \n[00:04.00] I'm coming" }, { chartSource: "aligned" });
+    expect(lyricsAction(aligned, lyricsWith({ retime: true }))).toEqual({ kind: "retime", lines: ["Hold on", "", "I'm coming"] });
+    expect(lyricsAction(aligned, lyricsWith({ retime: false }))).toBeNull();
+  });
+
+  it("selects songs for the lyrics step even when no analysis is ticked", () => {
+    const choice = { ...defaultChoice(), ...Object.fromEntries(BATCH_STEPS.map((s) => [s.id, false])), lyrics: true };
+    const { run } = selectSongs([song("w", { ":lyrics": "" }), song("x", { ":lyrics": text }, { chartSource: "user" })], batchOptions({ choice, onlyNeeded: true }));
+    expect(run.map((s) => s.id)).toEqual(["w"]);
+  });
+
+  it("writes a new chart with its source, the model that made it, and the chart it replaced", () => {
+    const old = song("y", { ":lyrics": "[00:00.00] Typed" }, { chartSource: "user" });
+    const plan = planWriteBack(old, null, null, false, { text, source: "transcribed", made: { model: "small", quality: "fast", language: "auto", at: "t" } });
+    expect(plan.values[":lyrics"]).toBe(text);
+    expect(plan.tempoChange).toBeNull();
+    expect(JSON.parse(plan.values[":options"])).toMatchObject({
+      chartSource: "transcribed",
+      lyricsMade: { model: "small" },
+      previousChart: { text: "[00:00.00] Typed", source: "user" },
+    });
+  });
+
+  it("describes the lyrics made, timed and missed", () => {
+    expect(
+      describeBatch([
+        { id: "a", title: "A", status: "lyrics", lyrics: "made" },
+        { id: "b", title: "B", status: "analysed", tempoChange: null, noBeat: false, lyrics: "timed" },
+        { id: "c", title: "C", status: "lyrics", lyrics: "none" },
+      ]),
+    ).toBe("Analysed 1 song. Lyrics made for 1 song. Lyrics timed for 1 song. 1 had no words heard.");
+  });
+
+  it("runs only the lyrics for a song whose analysis is current, and writes the chart without touching the analysis", async () => {
+    const current = song("z", { ":bpm": "98", ":lyrics": "" }, { analysis: { audioId: "x", version: ANALYSIS_VERSION }, tempoSource: "detected" });
+    const onText = vi.fn();
+    const { deps, writes } = fakeDeps({
+      steps: (ids, _grid, _gridOf, lyrics): AnalysisStep[] => {
+        expect(ids).toEqual([]);
+        return lyrics ? [{ name: "lyrics", run: async () => (lyrics.onText(text), {}) }] : [];
+      },
+    });
+    const outcomes = await runAnalysisBatch([current], batchOptions({ onlyNeeded: true, choice: lyricsOn }), deps, new AbortController().signal);
+    expect(outcomes).toEqual([{ id: "z", title: "Song z", status: "lyrics", lyrics: "made" }]);
+    expect(writes[0].values[":lyrics"]).toBe(text);
+    expect(writes[0].values[":bpm"]).toBeUndefined();
+    expect(onText).not.toHaveBeenCalled();
+  });
+
+  it("cancelling in the middle of the lyrics writes nothing for that song", async () => {
+    const outer = new AbortController();
+    const current = song("q", { ":bpm": "98", ":lyrics": "" }, { analysis: { audioId: "x", version: ANALYSIS_VERSION }, tempoSource: "detected" });
+    const { deps, writes } = fakeDeps({
+      steps: (_ids, _grid, _gridOf, lyrics): AnalysisStep[] =>
+        lyrics
+          ? [
+              {
+                name: "lyrics",
+                run: (_audio, signal) =>
+                  new Promise<never>((_, reject) => {
+                    signal.addEventListener("abort", () => reject(new Error("stopped")));
+                    outer.abort();
+                  }),
+              },
+            ]
+          : [],
+    });
+    const outcomes = await runAnalysisBatch([current], batchOptions({ onlyNeeded: true, choice: lyricsOn }), deps, outer.signal);
+    expect(outcomes).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+});

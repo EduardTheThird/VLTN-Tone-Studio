@@ -68,6 +68,7 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
       finish();
       return;
     }
+    if (task.abort.signal.aborted) return;
     const status = lines
       ? result.placed
         ? `Lyrics timed to the vocals. ${result.placed} line${result.placed === 1 ? "" : "s"} with no heard words sit between their neighbours.`
