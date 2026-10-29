@@ -25,7 +25,13 @@ const song = (id: string, over: Record<string, string> = {}, options: Record<str
   settings: { ":bpm": "120", ":options": JSON.stringify(options), ...over },
 });
 const analysed = (over: Partial<SongAnalysis> = {}): Record<string, unknown> => ({ analysis: { audioId: "x", version: ANALYSIS_VERSION, ...over } });
-const batchOptions = (over: Partial<BatchOptions> = {}): BatchOptions => ({ onlyNeeded: false, replaceManual: false, choice: defaultChoice(), openSongId: null, ...over });
+const batchOptions = (over: Partial<BatchOptions> = {}): BatchOptions => ({
+  onlyNeeded: false,
+  replaceManual: false,
+  choice: defaultChoice(),
+  openSongId: null,
+  ...over,
+});
 
 describe("needsAnalysis", () => {
   it("needs a song with no saved analysis, or an older one", () => {

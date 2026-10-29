@@ -27,6 +27,7 @@ import { withLoudness } from "@/song/audio/loudness";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
+import { setSongPlaying } from "@/song/performance/playing-state";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { useBluetooth } from "@/bluetooth/connection";
 import { SongKey } from "./SongKey";
@@ -254,6 +255,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
+  // The Library's batch analysis waits while a song plays, so it is told when this panel's session starts or stops.
+  useEffect(() => {
+    setSongPlaying(playing);
+  }, [playing]);
+  useEffect(() => () => setSongPlaying(false), []);
   const clock = useSession(session, (s) => s.clock);
   const speed = useSession(session, (s) => s.speed);
   const inputReady = useSession(session, (s) => s.inputId !== "");
