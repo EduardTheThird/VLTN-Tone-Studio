@@ -1,4 +1,5 @@
 import { chromaFrames, type ChromaSpan } from "../analysis/chroma";
+import { chordAt } from "../analysis/chord-templates";
 import type { PcmAudio } from "../types";
 
 export interface Chord {
@@ -46,29 +47,13 @@ export function chordFrameSpans(beats: readonly number[] | null, duration: numbe
   return spans;
 }
 
-/** The major or minor triad whose share of the chroma is largest. N when no triad reaches half the chroma. */
-function triadOf(chroma: ArrayLike<number>): { name: string; confidence: number } {
-  const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  let score = 0,
-    name = "N";
-  for (let root = 0; root < 12; root++)
-    for (const third of [4, 3]) {
-      const value = chroma[root] + chroma[(root + third) % 12] + chroma[(root + 7) % 12];
-      if (value > score) {
-        score = value;
-        name = notes[root] + (third === 3 ? "m" : "");
-      }
-    }
-  return score < 0.55 ? { name: "N", confidence: score } : { name, confidence: score };
-}
-
 /** Estimates the chords of a song, one per span (see `chordFrameSpans`), from the harmony and, when there is one, the bass. */
 export function detectChords(input: ChordsInput): Chord[] {
   const harmony = input.harmony;
   const length = harmony.channels[0]?.length ?? 0;
   const duration = length / harmony.sampleRate;
   const spans = chordFrameSpans(input.beats, duration);
-  const { treble } = chromaFrames(harmony, spans, input.bass);
-  const frames = spans.map((span, i) => ({ time: span.start, ...triadOf(treble[i]) }));
+  const { treble, bass } = chromaFrames(harmony, spans, input.bass);
+  const frames = spans.map((span, i) => ({ time: span.start, ...chordAt(treble[i], bass ? bass[i] : null) }));
   return smoothChordFrames(frames);
 }
