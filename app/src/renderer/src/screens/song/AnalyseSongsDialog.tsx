@@ -1,29 +1,17 @@
-// Analyses saved songs from the Library without opening them (spec 72). The dialog picks the steps and the songs, refuses to start while a
-// song plays, shows the progress, and then the summary, with a line for each song whose tempo changed.
+// Analyses saved songs from the Library without opening them (spec 72). The dialog picks the steps and the songs, and starts the run as a
+// job (spec 77). The job keeps going when the dialog is closed, so the dialog shows the live run, or its summary, whenever it is opened.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
-import { isSongPlaying } from "@/song/performance/playing-state";
-import { runLibraryAnalysis } from "@/song/analysis/library-batch";
-import {
-  BATCH_STEPS,
-  defaultChoice,
-  describeBatch,
-  selectSongs,
-  type BatchChoice,
-  type BatchOutcome,
-  type BatchProgress,
-  type BatchSong,
-  type LyricsWhich,
-} from "@/song/analysis/batch";
+import { isRunning, useAnalysisJob } from "@/song/analysis/analysis-job";
+import { BATCH_STEPS, defaultChoice, selectSongs, type BatchChoice, type BatchOutcome, type BatchSong, type LyricsWhich } from "@/song/analysis/batch";
 import { loadLyricsChoice, type LyricsChoice } from "@/song/performance/lyrics-options";
 import { LyricsBatchSettings } from "./LyricsBatchSettings";
-
-const PLAYING_REFUSAL = "Stop playback before analysing songs. The analysis would run while the music plays.";
+import { AnalysisJobProgress } from "./AnalysisJobProgress";
 
 export interface AnalyseSongsDialogProps {
   open: boolean;
@@ -34,53 +22,31 @@ export interface AnalyseSongsDialogProps {
 
 export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDialogProps) {
   const openId = useSong((s) => s.source?.libraryId ?? null);
+  const job = useAnalysisJob();
+  const running = isRunning(job.phase);
+  const ended = !running && job.phase !== "idle";
   const [choice, setChoice] = useState<BatchChoice>(defaultChoice);
   const [onlyNeeded, setOnlyNeeded] = useState(true);
   const [replaceManual, setReplaceManual] = useState(false);
   const [lyricsChoice, setLyricsChoice] = useState<LyricsChoice>(loadLyricsChoice);
   const [which, setWhich] = useState<LyricsWhich>("empty");
   const [retime, setRetime] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<BatchProgress | null>(null);
-  const [outcomes, setOutcomes] = useState<BatchOutcome[] | null>(null);
-  const [stopped, setStopped] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const cancel = useRef<AbortController | null>(null);
-
-  // A new opening starts from a clean dialog, so an old summary is not shown for the new selection.
+  // The elapsed time and the time left are shown while a run goes on, so the clock ticks once a second only while it is open and running.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!open) return;
-    setOutcomes(null);
-    setStopped(false);
-    setProblem(null);
-  }, [open]);
+    if (!running || !open) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running, open]);
 
   const options = { onlyNeeded, replaceManual, choice, openSongId: openId, lyrics: { ...lyricsChoice, which, retime } };
   const { run } = selectSongs(songs, options);
-  const changed = (outcomes ?? []).filter((o): o is Extract<BatchOutcome, { status: "analysed" }> => o.status === "analysed" && !!o.tempoChange);
+  const changed = job.outcomes.filter((o): o is Extract<BatchOutcome, { status: "analysed" }> => o.status === "analysed" && !!o.tempoChange);
 
-  const start = async () => {
-    if (isSongPlaying() || useSongLibrary.getState().playlistPlaying) {
-      setProblem(PLAYING_REFUSAL);
-      return;
-    }
-    const controller = new AbortController();
-    cancel.current = controller;
-    setProblem(null);
-    setOutcomes(null);
-    setStopped(false);
-    setRunning(true);
-    try {
-      const result = await runLibraryAnalysis(songs, options, controller.signal, { onProgress: setProgress });
-      setOutcomes(result);
-      setStopped(controller.signal.aborted);
-    } catch (e) {
-      setProblem(e instanceof Error ? e.message : "The analysis could not finish.");
-    } finally {
-      cancel.current = null;
-      setRunning(false);
-      setProgress(null);
-    }
+  const start = () => {
+    setProblem(useAnalysisJob.getState().start(songs, options));
   };
 
   const openSong = (id: string) => {
@@ -89,13 +55,14 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
   };
 
   return (
-    <Dialog open={open} onOpenChange={(value) => !running && onOpenChange(value)}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Analyse saved songs</DialogTitle>
           <DialogDescription>
-            {songs.length} song{songs.length === 1 ? "" : "s"} in the selection. {run.length} will be analysed. The open song is skipped. Each song is analysed
-            without opening it.
+            {running
+              ? "The analysis keeps going if you close this. Its progress shows in the status bar."
+              : `${songs.length} song${songs.length === 1 ? "" : "s"} in the selection. ${run.length} will be analysed. The open song is skipped. Each song is analysed without opening it.`}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -126,21 +93,21 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
             <span>Replace tempos I set by hand</span>
           </label>
         </div>
-        {running && progress && (
-          <p role="status" className="text-sm">
-            Analysing {progress.index + 1} of {progress.total}: {progress.title}
-            {progress.step ? ` (${progress.step})` : ""}…
-          </p>
-        )}
+        {running && <AnalysisJobProgress job={job} now={now} />}
         {problem && (
           <p role="status" className="text-sm text-red-400">
             {problem}
           </p>
         )}
-        {outcomes && (
+        {ended && (
           <div className="space-y-2 text-sm">
-            <p role="status">{describeBatch(outcomes)}</p>
-            {stopped && <p>Stopped. The songs not reached were left as they were.</p>}
+            {job.error ? (
+              <p role="alert" className="text-red-400">
+                {job.error}
+              </p>
+            ) : (
+              <p role="status">{job.summary}</p>
+            )}
             {changed.map((o) => (
               <p key={o.id} className="flex flex-wrap items-center gap-2">
                 <span>
@@ -155,17 +122,30 @@ export function AnalyseSongsDialog({ open, onOpenChange, songs }: AnalyseSongsDi
         )}
         <DialogFooter>
           {running ? (
-            <Button variant="outline" onClick={() => cancel.current?.abort("cancel")}>
-              Stop
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Run in background
+              </Button>
+              <Button variant="outline" onClick={() => job.stop()}>
+                Stop
+              </Button>
+            </>
           ) : (
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (ended) useAnalysisJob.getState().dismiss();
+                  onOpenChange(false);
+                }}
+              >
+                {ended ? "Done" : "Close"}
+              </Button>
+              <Button disabled={run.length === 0} onClick={start}>
+                Analyse {run.length} song{run.length === 1 ? "" : "s"}
+              </Button>
+            </>
           )}
-          <Button disabled={running || run.length === 0} onClick={() => void start()}>
-            Analyse {run.length} song{run.length === 1 ? "" : "s"}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

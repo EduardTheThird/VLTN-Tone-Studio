@@ -105,7 +105,11 @@ export const useAnalysisJob = create<AnalysisJobState>((set, get) => ({
     set({ ...IDLE, phase: "preparing", total: run.length, startedAt: Date.now() });
     void runLibraryAnalysis(songs, options, current.signal, {
       onProgress: (progress) =>
-        set({ phase: "analysing", waitingFor: null, current: { title: progress.title, step: progress.step, stepIndex: progress.stepIndex, steps: progress.steps } }),
+        set({
+          phase: "analysing",
+          waitingFor: null,
+          current: { title: progress.title, step: progress.step, stepIndex: progress.stepIndex, steps: progress.steps },
+        }),
       onWaiting: (waiting) => set(waiting ? { phase: "waiting", waitingFor: isSongPlaying() ? "song" : "playlist" } : { phase: "analysing", waitingFor: null }),
       onLoading: (title) => set({ phase: "loading", current: { title, step: null, stepIndex: 0, steps: 0 } }),
       onSongDone: (outcome) => set((state) => ({ outcomes: [...state.outcomes, outcome], done: state.done + 1, current: null })),
@@ -116,7 +120,13 @@ export const useAnalysisJob = create<AnalysisJobState>((set, get) => ({
         set({ phase: stopped ? "stopped" : "finished", outcomes, summary, current: null, waitingFor: null, endedAt: Date.now() });
       })
       .catch((e: unknown) => {
-        set({ phase: "failed", error: e instanceof Error ? e.message : "The analysis could not finish.", current: null, waitingFor: null, endedAt: Date.now() });
+        set({
+          phase: "failed",
+          error: e instanceof Error ? e.message : "The analysis could not finish.",
+          current: null,
+          waitingFor: null,
+          endedAt: Date.now(),
+        });
       })
       .finally(() => {
         if (controller === current) controller = null;
