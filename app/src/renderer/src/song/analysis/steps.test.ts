@@ -18,7 +18,7 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, sectionKeysStep, sectionsStep, tempoStep } from "./steps";
 
 const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
 
@@ -138,6 +138,16 @@ describe("keyStep and chordsStep", () => {
     const found = { audioId: "", version: 0, key: { source: "other", estimate } } as unknown as SongAnalysis;
     await chordsStep().run({ ...audio, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, found);
     expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: null, key: "E minor" });
+  });
+
+  it("reads the section keys with the song's key and sections, and nothing without them", async () => {
+    const keySections = [{ sectionId: "1", key: { ...estimate, name: "A major" } }];
+    reply = { estimate: null, keySections };
+    const sectioned = { ...audio, harmony: { name: "other", audio: sounding }, bass: null };
+    const found = { audioId: "", version: 0, key: { source: "other", estimate }, sections: [{ name: "Last", start: 8, end: 16 }] } as unknown as SongAnalysis;
+    expect(await sectionKeysStep().run(sectioned, new AbortController().signal, found)).toEqual({ keySections });
+    expect(ReplyingWorker.posted).toMatchObject({ songKey: "E minor", sections: [{ start: 8, end: 16 }] });
+    expect(await sectionKeysStep().run(sectioned, new AbortController().signal, nothingFound)).toEqual({});
   });
 
   it("fails when the worker reports an error", async () => {

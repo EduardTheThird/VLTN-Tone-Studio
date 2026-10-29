@@ -1,7 +1,7 @@
-import { keyOfSong, type KeyInput } from "./key";
+import { readKey, type KeyInput } from "./key";
 self.onmessage = (event: MessageEvent<KeyInput>) => {
   try {
-    self.postMessage({ estimate: keyOfSong(event.data) });
+    self.postMessage(readKey(event.data));
   } catch (error) {
     self.postMessage({ error: String(error) });
   }

@@ -19,7 +19,7 @@ import { lyricsRunSkip } from "./lyrics-run";
 import { stemsWithVocals, vocalsOf } from "./vocals";
 import { createSongRunner, isSplitting, watchSongStore, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
 import { loadAfterSplit, type AfterSplitStep } from "./after-split";
-import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionKeysStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 
 /** A song is playing, or a playlist is. Nothing the runner does starts over the music. */
 const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
@@ -111,7 +111,7 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
     ["tempo", [tempo]],
     ["chords", [chords]],
     ["key", [keyStep()]],
-    ["sections", [sections]],
+    ["sections", [sections, ...(wanted.key ? [sectionKeysStep()] : [])]],
   ];
   const steps = ordered.filter(([id]) => wanted[id]).flatMap(([, made]) => made);
   const lyrics = wanted.lyrics ? lyricsFor(key, captured) : null;

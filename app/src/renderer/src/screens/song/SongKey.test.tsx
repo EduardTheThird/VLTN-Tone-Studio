@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SongKey } from "./SongKey";
 import { performanceKey, readSettings, writeSettings } from "@/song/performance/settings";
+import { ANALYSIS_VERSION, songAudioId } from "@/song/analysis/song-analysis";
 const workers: FakeWorker[] = [];
 class FakeWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -72,4 +73,16 @@ it("keeps the saved estimate while the same source is reanalysed or the worker f
   act(() => workers[0].onerror?.());
   expect(screen.getByText("Song key: C major")).toBeTruthy();
   expect(screen.getByRole("alert")).toBeTruthy();
+});
+
+it("lists the sections in another key from the saved analysis of this audio", () => {
+  const analysis = {
+    audioId: songAudioId(audio, { guitar: audio }),
+    version: ANALYSIS_VERSION,
+    sections: [{ name: "Last chorus", start: 8, end: 16 }],
+    keySections: [{ sectionId: "0", key: { name: "A major", tonic: 9, mode: "major", correlation: 0.8, margin: 0.2, confidence: "strong", alternatives: [] } }],
+  };
+  localStorage.setItem("song:options", JSON.stringify({ analysis }));
+  render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" />);
+  expect(screen.getByText(/Section keys: Last chorus: A major/)).toBeTruthy();
 });

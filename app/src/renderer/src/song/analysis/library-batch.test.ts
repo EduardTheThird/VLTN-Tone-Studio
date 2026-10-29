@@ -44,7 +44,7 @@ it("reports a song as open only when it is the one on the Performance screen", (
   useSong.setState({ source: null });
 });
 
-it("runs the steps tempo, chords, key, sections, in that order whatever order they are asked for", () => {
+it("runs the steps tempo, chords, key, sections, then the section keys, in that order whatever order they are asked for", () => {
   const names = stepsFor(["sections", "key", "chords", "parts", "tempo", "silence", "loudness"], () => {}, () => null, null).map((step) => step.name);
-  expect(names).toEqual(["loudness", "silence", "parts", "tempo", "chords", "key", "sections"]);
+  expect(names).toEqual(["loudness", "silence", "parts", "tempo", "chords", "key", "sections", "sectionKeys"]);
 });

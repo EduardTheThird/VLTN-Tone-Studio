@@ -89,19 +89,48 @@ export function keyFromChroma(chroma: ArrayLike<number>): KeyEstimate | null {
     alternatives: scores.slice(1, 3).map((s) => s.name),
   };
 }
-/** The whole song's key from its harmony, bass, chords and section ends (see `keyOfSong`). */
+/** The whole song's key from its harmony, bass, chords and sections (see `readKey`). */
 export interface KeyInput {
   harmony: PcmAudio;
   bass: PcmAudio | null;
   chords: Chord[];
-  /** The song's sections, as bounds in seconds. Their ends are where a chord counts as an anchor. */
+  /** The song's sections, as bounds in seconds. Their ends are where a chord counts as an anchor, and each one's key is read. */
   sections: readonly { start: number; end: number }[];
+  /** The song's key name, such as "G major". When given, each section's key is read and reported where it differs from this one. */
+  songKey?: string;
+}
+
+/** A section whose key differs from the song's, with a strong reading. `sectionId` is the section's index in the song's sections. */
+export interface KeySection {
+  sectionId: string;
+  key: KeyEstimate;
+}
+
+export interface KeyReading {
+  estimate: KeyEstimate | null;
+  keySections: KeySection[];
+}
+
+/**
+ * The song's key and, when `songKey` is given, the sections that are in another key (spec 82). The frames are read once. A section is
+ * read over its own frames, with the chords that fall in it; only a strong reading that differs from the song's key is reported.
+ */
+export function readKey(input: KeyInput): KeyReading {
+  const frames = keyFramesOf(input.harmony, input.bass, input.chords, input.sections.map((section) => section.end));
+  const estimate = detectKeyFrom(evidenceIn(frames, 0, Infinity));
+  const keySections: KeySection[] = [];
+  if (input.songKey) {
+    input.sections.forEach((section, index) => {
+      const key = detectKeyFrom(evidenceIn(frames, section.start, section.end));
+      if (key?.confidence === "strong" && key.name !== input.songKey) keySections.push({ sectionId: String(index), key });
+    });
+  }
+  return { estimate, keySections };
 }
 
 /** The key of a song from its harmony, bass, chords and section ends (spec 82). Null when the harmony has no clear key. */
 export function keyOfSong(input: KeyInput): KeyEstimate | null {
-  const frames = keyFramesOf(input.harmony, input.bass, input.chords, input.sections.map((section) => section.end));
-  return detectKeyFrom(evidenceIn(frames, 0, Infinity));
+  return readKey(input).estimate;
 }
 
 /**

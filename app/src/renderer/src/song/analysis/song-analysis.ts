@@ -5,7 +5,7 @@
 import type { MissingParts } from "../band/detect";
 import type { SilenceEnds } from "./silence";
 import type { Chord } from "../performance/chords";
-import type { KeyEstimate } from "../performance/key";
+import type { KeyEstimate, KeySection } from "../performance/key";
 import type { DetectedSection } from "./sections";
 import type { PcmAudio, Stems } from "../types";
 
@@ -63,6 +63,8 @@ export interface SongAnalysis {
   /** The silence before the first sound and after the last. Offered as a trim; never applied. */
   silence?: SilenceEnds;
   key?: KeyResult;
+  /** Sections whose key differs from the song's, with a strong reading. Only set when the song has sections and a key. */
+  keySections?: KeySection[];
   chords?: ChordsResult;
   /** Suggested sections, on bar lines where the music allows (or on time frames when the song has no beat grid). Empty when none were found. */
   sections?: DetectedSection[];
@@ -212,6 +214,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   const validLoudness = typeof loudness?.lufs === "number" && typeof loudness.peakDb === "number";
   const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
   const validKey = typeof key?.source === "string" && typeof key.estimate?.name === "string";
+  const keySections = Array.isArray(record.keySections) && record.keySections.every(isKeySection) ? (record.keySections as KeySection[]) : undefined;
   const chords = record.chords as { source?: unknown; chords?: unknown } | undefined;
   const validChords = typeof chords?.source === "string" && Array.isArray(chords.chords);
   const meter = record.meter as Record<string, unknown> | undefined;
@@ -227,10 +230,17 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     ...(validSilence ? { silence: { start: silence!.start as number, end: silence!.end as number } } : {}),
     ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
+    ...(keySections ? { keySections } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
     ...(sections ? { sections } : {}),
     ...(failed?.length ? { failed } : {}),
   };
+}
+
+/** A saved section key: an id and a key with a name. Anything else in the list makes the saved section keys unreadable. */
+function isKeySection(value: unknown): value is KeySection {
+  const section = value as Partial<KeySection> | null;
+  return !!section && typeof section.sectionId === "string" && typeof section.key?.name === "string";
 }
 
 /** A saved section: a name and two finite times. Anything else in the list makes the saved sections unreadable. */
@@ -256,6 +266,7 @@ export function describeAnalysis(analysis: SongAnalysis): string {
   const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
   const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
   const sections = analysis.sections ? `. ${analysis.sections.length} section${analysis.sections.length === 1 ? "" : "s"}` : "";
+  const sectionKeys = analysis.keySections?.length ? `. ${analysis.keySections.length} section key${analysis.keySections.length === 1 ? "" : "s"}` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${loudness}${parts}${key}${chords}${sections}${failed}`;
+  return `${found}${meter}${loudness}${parts}${key}${sectionKeys}${chords}${sections}${failed}`;
 }

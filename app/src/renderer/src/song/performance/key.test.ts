@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, keyOfSong, KEY_NAMES, type KeyEstimate } from "./key";
+import { detectKey, detectKeyFrom, effectiveSongKey, keyAudio, keyFromChroma, keyOfSong, KEY_NAMES, readKey, type KeyEstimate } from "./key";
 import { evidenceIn, keyFramesOf, type KeyEvidence } from "../analysis/key-evidence";
 import type { PcmAudio } from "../types";
 const major = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -218,4 +218,29 @@ it("tells E minor from its relative G major by the first and last chords, on aud
     ],
   );
   expect(keyOfSong({ harmony: song.audio, bass: null, chords: song.chords, sections: [] })?.name).toBe("E minor");
+});
+
+it("reports only the section in another key, a whole tone up, when the song's key is given", () => {
+  // A verse in G (eight seconds), then a last section in A (I, IV, vi, V).
+  const verse = [
+    [55, 59, 62, 67],
+    [62, 66, 69],
+    [64, 67, 71],
+    [60, 64, 67],
+  ];
+  const last = [
+    [57, 61, 64],
+    [62, 66, 69],
+    [54, 57, 61],
+    [52, 56, 59],
+  ];
+  const song = namedAudio(["G", "D", "Em", "C", "A", "D", "F#m", "E"], [...verse, ...last]);
+  const sections = [
+    { start: 0, end: 8 },
+    { start: 8, end: 16 },
+  ];
+  const reading = readKey({ harmony: song.audio, bass: null, chords: song.chords, sections, songKey: "G major" });
+  expect(reading.keySections.map((entry) => [entry.sectionId, entry.key.name])).toEqual([["1", "A major"]]);
+  // With no song key to compare with, no section is reported.
+  expect(readKey({ harmony: song.audio, bass: null, chords: song.chords, sections }).keySections).toEqual([]);
 });

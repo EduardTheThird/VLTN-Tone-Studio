@@ -5,7 +5,7 @@ import { startBeatGrid } from "../band/beat-grid-client";
 import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord, ChordsInput } from "../performance/chords";
-import type { KeyEstimate, KeyInput } from "../performance/key";
+import type { KeyEstimate, KeyInput, KeySection } from "../performance/key";
 import { hasSignal } from "../performance/sources";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
@@ -126,6 +126,30 @@ export function keyStep(): AnalysisStep {
       const input: KeyInput = { harmony: audio.harmony.audio, bass: audio.bass, chords: soFar.chords?.chords ?? [], sections: audio.sections };
       const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
       return estimate ? { key: { source: audio.harmony.name, estimate } } : {};
+    },
+  };
+}
+
+/**
+ * Reads the key of each section that the song's sections name, after the sections step has found them. Only where the song has a key and
+ * the sections are known; a section reported is in another key from the song's. Nothing is saved otherwise.
+ */
+export function sectionKeysStep(): AnalysisStep {
+  return {
+    name: "sectionKeys",
+    async run(audio, signal, soFar) {
+      const songKey = soFar.key?.estimate.name;
+      const sections = soFar.sections ?? [];
+      if (!songKey || !sections.length || !hasSignal(audio.harmony.audio)) return {};
+      const input: KeyInput = {
+        harmony: audio.harmony.audio,
+        bass: audio.bass,
+        chords: soFar.chords?.chords ?? [],
+        sections: sections.map(({ start, end }) => ({ start, end })),
+        songKey,
+      };
+      const { keySections } = await runWorker<{ keySections: KeySection[] }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      return { keySections };
     },
   };
 }
