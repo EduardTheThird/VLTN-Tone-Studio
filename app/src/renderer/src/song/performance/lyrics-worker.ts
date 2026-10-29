@@ -34,9 +34,9 @@ self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: nu
       try {
         const heard: TimedWord[] = [];
         for (let i = 0; i < pieces.length; i++) {
-          self.postMessage({
-            status: pieces.length > 1 ? `Transcribing vocals locally, part ${i + 1} of ${pieces.length}…` : "Transcribing vocals locally… This may take several minutes.",
-          });
+          const partStatus = `Transcribing vocals locally, part ${i + 1} of ${pieces.length}…`;
+          const status = pieces.length > 1 ? partStatus : "Transcribing vocals locally… This may take several minutes.";
+          self.postMessage({ status });
           const output = await transcribe(pieces[i], {
             return_timestamps: "word",
             chunk_length_s: 30,

@@ -229,7 +229,14 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
 /** A saved section: a name and two finite times. Anything else in the list makes the saved sections unreadable. */
 function isSection(value: unknown): value is DetectedSection {
   const section = value as Partial<DetectedSection> | null;
-  return !!section && typeof section.name === "string" && typeof section.start === "number" && typeof section.end === "number" && Number.isFinite(section.start) && Number.isFinite(section.end);
+  return (
+    !!section &&
+    typeof section.name === "string" &&
+    typeof section.start === "number" &&
+    typeof section.end === "number" &&
+    Number.isFinite(section.start) &&
+    Number.isFinite(section.end)
+  );
 }
 
 /** One line for the status under the song: what was found, and what failed. */

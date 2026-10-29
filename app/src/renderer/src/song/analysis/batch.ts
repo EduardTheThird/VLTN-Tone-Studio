@@ -11,7 +11,16 @@ import { defaultChordSource } from "../performance/sources";
 import { needsTempoDetection, readTempoSource, type TempoSource } from "../performance/tempo-source";
 import { parseSections } from "../performance/sections";
 import { parseBeatGrid } from "../band/beat-grid";
-import { chartSourceOf, lrcTexts, lyricsMadeOf, lyricsMadeRecord, withLyricsChart, type ChartSource, type LyricsMade, type PreviousChart } from "../performance/lyrics-chart";
+import {
+  chartSourceOf,
+  lrcTexts,
+  lyricsMadeOf,
+  lyricsMadeRecord,
+  withLyricsChart,
+  type ChartSource,
+  type LyricsMade,
+  type PreviousChart,
+} from "../performance/lyrics-chart";
 import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
 import type { LyricsModelId } from "../performance/lyrics-models";
 import { buildAnalysisAudio } from "./analysis-audio";

@@ -22,7 +22,16 @@ import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, section
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
 const nothingFound = { audioId: "", version: 0 };
-const audio = { mix: { sampleRate: 44100, channels: [] }, stems: null, sources: [], sampleRate: 44100, beatsPerBar: 4, chordChanges: [], keySource: null, chordSource: null };
+const audio = {
+  mix: { sampleRate: 44100, channels: [] },
+  stems: null,
+  sources: [],
+  sampleRate: 44100,
+  beatsPerBar: 4,
+  chordChanges: [],
+  keySource: null,
+  chordSource: null,
+};
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -98,7 +107,8 @@ describe("keyStep and chordsStep", () => {
 
   it("fails when the worker reports an error", async () => {
     reply = { error: "boom" };
-    await expect(chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal, nothingFound)).rejects.toThrow("boom");
+    const failing = { ...audio, keySource: null, chordSource: { name: "other", audio: stem } };
+    await expect(chordsStep().run(failing, new AbortController().signal, nothingFound)).rejects.toThrow("boom");
   });
 });
 
@@ -185,7 +195,12 @@ describe("sectionsStep", () => {
 
   it("lays the units on the bar lines of the grid, with the chord stem as the harmony", async () => {
     const chords = { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] };
-    await sectionsStep(() => grid).run({ ...audio, mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] }, chordSource: { name: "other", audio: chords } }, new AbortController().signal, nothingFound);
+    const withChords = {
+      ...audio,
+      mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] },
+      chordSource: { name: "other", audio: chords },
+    };
+    await sectionsStep(() => grid).run(withChords, new AbortController().signal, nothingFound);
     const input = posted[0] as { harmony: unknown; spans: { start: number }[]; options: { snap: number } };
     expect(input.harmony).toBe(chords);
     expect(input.spans[0].start).toBe(0);

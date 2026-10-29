@@ -46,7 +46,17 @@ it("offers the detected sections in place of the performer's own, and Undo puts 
 
 it("does not offer the replace when the song's sections are all detected, or nothing was suggested", () => {
   const detected: Section[] = [{ id: "d", name: "Intro", start: 0, end: 8, mode: "continue", source: "detected" }];
-  const { unmount } = render(<SectionEditor sections={detected} onSections={vi.fn()} suggested={[{ name: "Intro", start: 0, end: 8 }]} duration={60} bpm={0} firstBeat={0} channels={null} />);
+  const { unmount } = render(
+    <SectionEditor
+      sections={detected}
+      onSections={vi.fn()}
+      suggested={[{ name: "Intro", start: 0, end: 8 }]}
+      duration={60}
+      bpm={0}
+      firstBeat={0}
+      channels={null}
+    />,
+  );
   expect(screen.queryByText("Replace with detected sections")).toBeNull();
   unmount();
   render(<SectionEditor sections={sections} onSections={vi.fn()} duration={60} bpm={0} firstBeat={0} channels={null} />);

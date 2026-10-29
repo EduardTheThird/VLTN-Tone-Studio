@@ -32,7 +32,9 @@ function analysisLyrics(songKey: string) {
   return lyricsStep({
     options: lyricsOptions(songKey),
     onText: (text) => {
-      if (!getSetting(songKey, ":lyrics").trim()) saveLyricsChart(songKey, { text, source: "transcribed", made: lyricsMadeRecord(lyricsOptions(songKey), new Date().toISOString()) });
+      if (getSetting(songKey, ":lyrics").trim()) return;
+      const made = lyricsMadeRecord(lyricsOptions(songKey), new Date().toISOString());
+      saveLyricsChart(songKey, { text, source: "transcribed", made });
     },
   });
 }
