@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.7] - 2026-10-29
+
+Better chords and key.
+
+- **Chords follow the beat and stop flickering.** Chords now change only on beats, and the whole song's chord sequence is chosen at once, so one stray moment no longer flips a chord. The song's tuning is detected first, so a band tuned slightly off concert pitch still gets the right names.
+- **More chord types.** Power chords (A5) are recognised instead of being forced into major or minor, along with 7, maj7, m7, sus2, sus4, dim, aug and slash chords (C/G) read from the bass stem. Harmony is read from the guitar, piano and other stems together.
+- **A better key.** The key uses the detected chords, the first and last chords, the ends of sections and the bass, not just a pitch profile, so a song in E minor is no longer mistaken for G major as often. Clear Mixolydian or Dorian songs say so ("G major (Mixolydian)"), and a section in another key, such as a last chorus up a tone, is listed under the song's key.
+- **Saved songs pick it up.** Each saved song gets the new chords and key the next time it is opened or analysed from the Library. Chords and keys you entered yourself are never changed.
+
 ## [0.9.6] - 2026-10-29
 
 Every new song is analysed in one run, lyrics included.
