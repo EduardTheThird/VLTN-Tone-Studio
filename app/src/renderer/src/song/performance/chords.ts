@@ -1,65 +1,87 @@
-import { fft } from "../tonematch/fft";
+import { chromaFrames, type ChromaSpan } from "../analysis/chroma";
+import { CHORD_STATES, chordNameOf, chordScores } from "../analysis/chord-templates";
+import { decodeChords, diatonicStates } from "../analysis/chord-hmm";
 import type { PcmAudio } from "../types";
+import { keyFromChroma } from "./key";
+
 export interface Chord {
   time: number;
   name: string;
   confidence: number;
 }
-/** A one-window blip between identical neighbours is usually leakage or an attack transient. */
-export function smoothChordFrames(frames: Chord[]): Chord[] {
-  const stable = frames.map((frame, i) =>
-    i > 0 && i + 1 < frames.length && frame.name !== "N" && frames[i - 1].name === frames[i + 1].name && frames[i - 1].name !== "N"
-      ? { ...frame, name: frames[i - 1].name, confidence: Math.min(frames[i - 1].confidence, frames[i + 1].confidence) }
-      : frame,
-  );
-  return stable.filter((frame, i) => i === 0 || frame.name !== stable[i - 1].name);
+
+/**
+ * What the chord detector reads. `harmony` carries the chords (guitar, piano and the other stems, or the mix); `bass` is the bass stem
+ * when it has a signal; `beats` are the beat times of the song's grid, when one is known, and the chords then change only on beats.
+ * `key` is the song's key name (such as "A minor") when one is known; without it the key is estimated from the harmony.
+ */
+export interface ChordsInput {
+  harmony: PcmAudio;
+  bass: PcmAudio | null;
+  beats: number[] | null;
+  key?: string | null;
 }
-/** Windowed chroma template estimate. Major/minor only; never a transcription guarantee. */
-export function detectChords(audio: PcmAudio): Chord[] {
-  const n = 8192,
-    hop = Math.round(audio.sampleRate / 2);
-  const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const result: Chord[] = [];
-  for (let start = 0; start < audio.channels[0].length; start += hop) {
-    const re = new Float64Array(n),
-      im = new Float64Array(n),
-      chroma = new Float64Array(12);
-    // Use the loudest channel: summing opposite-phase stereo cancels a perfectly audible guitar.
-    let channel = audio.channels[0],
-      loudest = -1;
-    for (const candidate of audio.channels) {
-      let energy = 0;
-      for (let i = start; i < Math.min(candidate.length, start + n); i++) energy += candidate[i] ** 2;
-      if (energy > loudest) {
-        loudest = energy;
-        channel = candidate;
-      }
-    }
-    for (let i = 0; i < n; i++) {
-      re[i] = channel[start + i] ?? 0;
-      re[i] *= 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
-    }
-    fft(re, im);
-    for (let k = 1; k < n / 2; k++) {
-      const hz = (k * audio.sampleRate) / n;
-      if (hz < 65 || hz > 2000) continue;
-      const midi = Math.round(69 + 12 * Math.log2(hz / 440));
-      chroma[((midi % 12) + 12) % 12] += re[k] ** 2 + im[k] ** 2;
-    }
-    const total = chroma.reduce((a, b) => a + b, 0);
-    let score = 0,
-      name = "N";
-    if (total > 0.01)
-      for (let root = 0; root < 12; root++)
-        for (const third of [4, 3]) {
-          const value = (chroma[root] + chroma[(root + third) % 12] + chroma[(root + 7) % 12]) / total;
-          if (value > score) {
-            score = value;
-            name = notes[root] + (third === 3 ? "m" : "");
-          }
-        }
-    if (score < 0.55) name = "N";
-    result.push({ time: start / audio.sampleRate, name, confidence: score });
+
+/** Without a beat grid, the chords are read on a fixed hop of this many seconds. */
+export const HOP_SECONDS = 0.25;
+
+/**
+ * The spans the chords are read over: beat to beat when the song has a grid (with the time before the first beat as one span), else
+ * `HOP_SECONDS` steps. Each span's start is the time its chord is given.
+ */
+export function chordFrameSpans(beats: readonly number[] | null, duration: number): ChromaSpan[] {
+  if (beats && beats.length >= 2) {
+    const spans: ChromaSpan[] = [];
+    if (beats[0] > 0) spans.push({ start: 0, end: beats[0] });
+    beats.forEach((start, i) => spans.push({ start, end: i + 1 < beats.length ? beats[i + 1] : duration }));
+    return spans.filter((span) => span.end > span.start && span.start < duration);
   }
-  return smoothChordFrames(result);
+  const spans: ChromaSpan[] = [];
+  for (let start = 0; start < duration; start += HOP_SECONDS) spans.push({ start, end: Math.min(duration, start + HOP_SECONDS) });
+  return spans;
+}
+
+/**
+ * The chords of a song: one state per span (see `chordFrameSpans`), decoded over the whole song so a chord holds across noisy spans and
+ * changes where the music changes. The key prior uses the given key, or else the key the harmony estimates when that estimate is strong.
+ * Runs of one chord are merged, and each chord is timed at the start of its first span.
+ */
+export function detectChords(input: ChordsInput): Chord[] {
+  const harmony = input.harmony;
+  const duration = (harmony.channels[0]?.length ?? 0) / harmony.sampleRate;
+  const spans = chordFrameSpans(input.beats, duration);
+  if (!spans.length) return [];
+  const { treble, bass } = chromaFrames(harmony, spans, input.bass);
+  const scores = spans.map((_, i) => chordScores(treble[i], bass ? bass[i] : null));
+  const key = input.key ?? estimatedKey(treble);
+  const { path, posterior } = decodeChords(scores, diatonicStates(key));
+  return runsOf(spans, path, posterior, bass);
+}
+
+/** The key the song's harmony points to, when the estimate is strong. Null otherwise, so the key prior is left out. */
+function estimatedKey(treble: readonly Float32Array[]): string | null {
+  const mean = new Float64Array(12);
+  for (const chroma of treble) for (let i = 0; i < 12; i++) mean[i] += chroma[i];
+  const estimate = keyFromChroma(mean);
+  return estimate?.confidence === "strong" ? estimate.name : null;
+}
+
+/** Merges the spans that share a state into chords. A chord is timed at its first span, and its confidence is the mean of its spans. */
+function runsOf(spans: readonly ChromaSpan[], path: readonly number[], posterior: readonly number[], bass: readonly Float32Array[] | null): Chord[] {
+  const chords: Chord[] = [];
+  for (let start = 0; start < path.length; ) {
+    let end = start;
+    while (end + 1 < path.length && path[end + 1] === path[start]) end++;
+    const run = end - start + 1;
+    // The slash bass is read from the mean bass chroma of the run, so one stray bass note does not rename the chord.
+    let meanBass: Float64Array | null = null;
+    if (bass) {
+      meanBass = new Float64Array(12);
+      for (let t = start; t <= end; t++) for (let i = 0; i < 12; i++) meanBass[i] += bass[t][i] / run;
+    }
+    const confidence = posterior.slice(start, end + 1).reduce((a, b) => a + b, 0) / run;
+    chords.push({ time: spans[start].start, name: chordNameOf(CHORD_STATES[path[start]], meanBass), confidence });
+    start = end + 1;
+  }
+  return chords;
 }

@@ -8,7 +8,7 @@ import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf
 import { chordDisplayTranspose, clampCapo, effectiveBpm, keySpelling } from "@/song/performance/speed";
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
-import { defaultChordSource } from "@/song/performance/sources";
+import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
 import { PerformanceSession, carriedInto, leftPerformance, useSession, type Timing } from "@/song/performance/session";
 import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
 import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
@@ -202,8 +202,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     setTrackBuses((current) => ({ ...busDefaults(tracks), ...current }));
   }, [tracks]);
   const [chordChoice, setChordChoice] = useState<StemName | "">(options.chordChoice);
-  const automaticSource = useMemo(() => defaultChordSource(stems), [stems]);
-  const chordSource = chordChoice && stems?.[chordChoice] ? chordChoice : automaticSource;
+  // The audio the chords are read from, and the bass, as the song analysis reads them, so the screen shows what a run would find.
+  const harmony = useMemo(() => (source ? harmonyOf(stems, source.audio, chordChoice) : null), [source, stems, chordChoice]);
+  const automaticSource = useMemo(() => (source ? harmonyOf(stems, source.audio).name : ""), [source, stems]);
+  const bass = useMemo(() => bassOf(stems), [stems]);
   // The song's MIDI file is saved with its options, so it is read back here when the song is shown.
   const [midiFile, setMidiFile] = useState<MidiFileOption | null>(() => midiFileFromOptions(options));
   const parsed = useMemo(() => {
@@ -272,7 +274,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
   const audioId = useMemo(() => (source ? songAudioId(source.audio, stems) : ""), [source, stems]);
-  const { chords, analysing } = useChordAnalysis(session, stems, chordSource, { songKey: key, audioId });
+  const { chords, analysing } = useChordAnalysis(session, harmony, bass, { songKey: key, audioId }, !!stems);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
   useEffect(() => {
@@ -687,7 +689,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           chordChoice={chordChoice}
           onChordChoice={setChordChoice}
           automaticSource={automaticSource}
-          chordSource={chordSource}
+          chordSource={harmony?.name ?? ""}
           onSelectChord={setSelectedChord}
         />
         <ChordVoicings chord={selectedChord} onClose={() => setSelectedChord(null)} />

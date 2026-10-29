@@ -4,8 +4,9 @@
 import { startBeatGrid } from "../band/beat-grid-client";
 import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
-import type { Chord } from "../performance/chords";
-import type { KeyEstimate } from "../performance/key";
+import type { Chord, ChordsInput } from "../performance/chords";
+import type { KeyEstimate, KeyInput, KeySection } from "../performance/key";
+import { hasSignal } from "../performance/sources";
 import { measureLoudnessInWorker } from "../audio/loudness-client";
 import { detectMissingParts } from "../band/detect";
 import { silenceEnds } from "./silence";
@@ -19,18 +20,17 @@ import type { LyricsOptions } from "../performance/lyrics-options";
  * Tracks the beat of the song's audio, and reads the meter from the same beats. `onGrid` receives the whole grid, which the caller saves
  * with the band settings, since the grid is too large for the analysis record. The tempo goes to the analysis; the grid is only passed on
  * when it is long enough to trust. `hint` is a tempo the performer typed: the tracker refines it, or keeps it when locked. Without it the
- * tracker picks the tempo itself.
+ * tracker picks the tempo itself. The tempo runs before the chords, so its chord changes come from the chart only.
  */
 export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOptions = {}): AnalysisStep {
   return {
     name: "tempo",
-    async run(audio, signal, soFar) {
-      // The chart's chord changes are used when it has them. Otherwise the chords the analysis found stand in for them.
+    async run(audio, signal) {
       const job = startBeatGrid({
         sources: audio.sources,
         sampleRate: audio.sampleRate,
         beatsPerBar: audio.beatsPerBar,
-        chordChanges: audio.chordChanges.length ? audio.chordChanges : chordChangeTimes(soFar.chords?.chords ?? []),
+        chordChanges: audio.chordChanges,
         tempoHint: hint.tempoHint,
         lockTempo: hint.lockTempo,
       });
@@ -49,11 +49,6 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOpti
       return meter ? { tempo, meter } : { tempo };
     },
   };
-}
-
-/** The times the chord name changes, in seconds. The first chord is not a change. */
-export function chordChangeTimes(chords: readonly Chord[]): number[] {
-  return chords.flatMap((chord, i) => (i > 0 && chord.name !== chords[i - 1].name ? [chord.time] : []));
 }
 
 /**
@@ -119,26 +114,60 @@ export function partsStep(): AnalysisStep {
   };
 }
 
-/** Estimates the song's key from its key stem. Nothing is saved when the song has no stem with a signal. */
+/**
+ * Estimates the song's key from its harmony and bass, with the chords the run found before it (the key runs after the chords) and the
+ * song's section ends. Nothing is saved when the harmony has no signal or no clear key is found.
+ */
 export function keyStep(): AnalysisStep {
   return {
     name: "key",
-    async run(audio, signal) {
-      if (!audio.keySource) return {};
-      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), audio.keySource.audio, signal);
-      return estimate ? { key: { source: audio.keySource.name, estimate } } : {};
+    async run(audio, signal, soFar) {
+      if (!hasSignal(audio.harmony.audio)) return {};
+      const input: KeyInput = { harmony: audio.harmony.audio, bass: audio.bass, chords: soFar.chords?.chords ?? [], sections: audio.sections };
+      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      return estimate ? { key: { source: audio.harmony.name, estimate } } : {};
     },
   };
 }
 
-/** Reads the chords from the chord stem. Nothing is saved when no chord stem is chosen. */
-export function chordsStep(): AnalysisStep {
+/**
+ * Reads the key of each section that the song's sections name, after the sections step has found them. Only where the song has a key and
+ * the sections are known; a section reported is in another key from the song's. Nothing is saved otherwise.
+ */
+export function sectionKeysStep(): AnalysisStep {
+  return {
+    name: "sectionKeys",
+    async run(audio, signal, soFar) {
+      const songKey = soFar.key?.estimate.name;
+      const sections = soFar.sections ?? [];
+      if (!songKey || !sections.length || !hasSignal(audio.harmony.audio)) return {};
+      const input: KeyInput = {
+        harmony: audio.harmony.audio,
+        bass: audio.bass,
+        chords: soFar.chords?.chords ?? [],
+        sections: sections.map(({ start, end }) => ({ start, end })),
+        songKey,
+      };
+      const { keySections } = await runWorker<{ keySections: KeySection[] }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      return { keySections };
+    },
+  };
+}
+
+/**
+ * Reads the chords from the harmony (the chosen stem, else the harmony stems added together, else the mix), with the bass stem when there
+ * is one. The chords change on the beats of the grid `gridOf` gives (the one the tempo step just tracked, or the saved one); without a
+ * grid they are read on a fixed hop.
+ */
+export function chordsStep(gridOf: () => BeatGrid | null = () => null): AnalysisStep {
   return {
     name: "chords",
-    async run(audio, signal) {
-      if (!audio.chordSource) return {};
-      const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), audio.chordSource.audio, signal);
-      return { chords: { source: audio.chordSource.name, chords } };
+    async run(audio, signal, soFar) {
+      // The key runs after the chords, so the key prior is normally the harmony's own estimate. A run that resumes with a key already found
+      // passes it on here instead.
+      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null, key: soFar.key?.estimate.name ?? null };
+      const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
+      return { chords: { source: audio.harmony.name, chords } };
     },
   };
 }

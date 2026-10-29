@@ -6,10 +6,11 @@ import type { Chord } from "@/song/performance/chords";
 import { useActiveIndex } from "@/song/performance/playback-clock";
 import { CAPO_MAX, keySpelling } from "@/song/performance/speed";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
-import { STEM_NAMES, type StemName, type Stems } from "@/song/types";
+import { STEM_NAMES, type PcmAudio, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
 import { storedAnalysis } from "./use-song-analysis";
-import { isCurrent } from "@/song/analysis/song-analysis";
+import { readStoredBand } from "@/song/band/stored";
+import { isCurrent, type NamedAudio } from "@/song/analysis/song-analysis";
 
 // The chart editor is loaded when this panel first renders it, so the CodeMirror code is kept out of the main bundle.
 const ChartCodeEditor = lazy(() => import("./ChartCodeEditor"));
@@ -52,24 +53,35 @@ function ChartLines({ cues, shift, flats, onChord }: { cues: Cue[]; shift: numbe
 }
 
 /**
- * Estimates chords from a stem in a worker. Errors go to the session. The chords the song analysis saved for this audio and stem are
- * used as they are, so a song is not analysed twice. `saved` names the song and the audio it was analysed under.
+ * Estimates chords in a worker, from the harmony and bass the song analysis reads (see `harmonyOf`). Errors go to the session. The chords
+ * the song analysis saved for this audio and harmony are used as they are, so a song is not analysed twice. `saved` names the song and
+ * the audio it was analysed under. `estimate` is false for a song that was not split: its saved chords still show, but no live estimate
+ * starts, as before.
  */
-export function useChordAnalysis(session: PerformanceSession, stems: Stems | null, chordSource: StemName | "", saved?: { songKey: string; audioId: string }) {
+export function useChordAnalysis(
+  session: PerformanceSession,
+  harmony: NamedAudio | null,
+  bass: PcmAudio | null,
+  saved?: { songKey: string; audioId: string },
+  estimate = true,
+) {
   const [chords, setChords] = useState<Chord[]>([]),
     [analysing, setAnalysing] = useState(false);
   const songKey = saved?.songKey,
     audioId = saved?.audioId;
+  // The effect follows the harmony's name and audio, not the object: a caller that builds a new object on each render must not restart it.
+  const harmonyName = harmony?.name,
+    harmonyAudio = harmony?.audio;
   useEffect(() => {
     setChords([]);
     setAnalysing(false);
-    const audio = chordSource ? stems?.[chordSource] : undefined;
-    if (!audio) return;
+    if (harmonyName === undefined || !harmonyAudio) return;
     const known = songKey !== undefined && audioId !== undefined ? storedAnalysis(songKey).read() : null;
-    if (known && audioId !== undefined && isCurrent(known, audioId) && known.chords?.source === chordSource) {
+    if (known && audioId !== undefined && isCurrent(known, audioId) && known.chords?.source === harmonyName) {
       setChords(known.chords.chords);
       return;
     }
+    if (!estimate) return;
     const worker = new Worker(new URL("../../song/performance/chords-worker.ts", import.meta.url), { type: "module" });
     setAnalysing(true);
     setChords([]);
@@ -84,9 +96,12 @@ export function useChordAnalysis(session: PerformanceSession, stems: Stems | nul
       session.fail(e.message);
       worker.terminate();
     };
-    worker.postMessage(audio);
+    // The beats of the song's saved grid, so the chords change on the beats the song analysis would use.
+    const beats = songKey !== undefined ? readStoredBand(songKey).grid?.beats ?? null : null;
+    // The key the analysis found for the song sets the key prior, as the song analysis does.
+    worker.postMessage({ harmony: harmonyAudio, bass, beats, key: known?.key?.estimate.name ?? null });
     return () => worker.terminate();
-  }, [session, stems, chordSource, songKey, audioId]);
+  }, [session, harmonyName, harmonyAudio, bass, songKey, audioId, estimate]);
   return { chords, analysing };
 }
 
@@ -127,8 +142,8 @@ export function PerformanceAnalysis({
   analysing: boolean;
   chordChoice: StemName | "";
   onChordChoice: (value: StemName | "") => void;
-  automaticSource: StemName | "";
-  chordSource: StemName | "";
+  automaticSource: string;
+  chordSource: string;
   onSelectChord: (name: string) => void;
 }) {
   // Lyric lines are the chart's own cues: the triggers and the MIDI file's messages have no lyrics to show.
@@ -240,7 +255,7 @@ export function PerformanceAnalysis({
             {analysing
               ? "Analysing harmonic stem…"
               : stems
-                ? `Estimated major/minor chords from ${chordSource || "no usable stem"}. Review by ear; N means uncertain or silence.`
+                ? `Estimated chords from ${chordSource}. Review by ear; N means uncertain or silence.`
                 : "Split the song in Stems to estimate its chords automatically."}
           </p>
           {!!chords.length && (

@@ -18,7 +18,7 @@ import {
 } from "../performance/lyrics-chart";
 import { LYRIC_LANGUAGES, type LyricsLanguage, type LyricsOptions, type LyricsQualityId } from "../performance/lyrics-options";
 import type { LyricsModelId } from "../performance/lyrics-models";
-import { buildAnalysisAudio } from "./analysis-audio";
+import { buildAnalysisAudio, sectionBoundsOf } from "./analysis-audio";
 import type { LyricsStepInput } from "./steps";
 import { planWriteBack, parseOptions, tempoMayChange, type BatchSong, type LyricsWrite, type WriteBack } from "./apply";
 
@@ -35,13 +35,14 @@ import {
 } from "./song-analysis";
 
 /**
- * The steps the Library dialog offers, in the order the dialog lists them. Lyrics come last: transcription is the slowest step, and it runs
- * after the others for each song. It is off by default, since it can take a long time and downloads a model the first time.
+ * The steps the Library dialog offers, in the order the dialog lists them and the analysis runs them (the key comes after the chords).
+ * Lyrics come last: transcription is the slowest step, and it runs after the others for each song. It is off by default, since it can
+ * take a long time and downloads a model the first time.
  */
 export const BATCH_STEPS = [
   { id: "tempo", label: "Tempo and meter", defaultOn: true },
-  { id: "key", label: "Key", defaultOn: true },
   { id: "chords", label: "Chords", defaultOn: true },
+  { id: "key", label: "Key", defaultOn: true },
   { id: "loudness", label: "Loudness", defaultOn: true },
   { id: "parts", label: "Drums and bass", defaultOn: true },
   { id: "silence", label: "Silence", defaultOn: true },
@@ -376,7 +377,9 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
     stems,
     beatsPerBar: typeof saved.beats === "number" ? saved.beats : 4,
     chordChanges: chartChordTimes(parseChart(song.settings[""] ?? "")),
+    chordChoice: chosenChordStem(saved, stems),
     chordName: chordNameFor(saved, stems),
+    sections: sectionBoundsOf(saved.sections),
   });
   // The lyrics step is decided from the chart before the run, so a chart that the batch may not replace is never transcribed.
   const ids = stepsFor(song, options);
@@ -489,11 +492,15 @@ function languageOf(saved: Record<string, unknown>): LyricsLanguage {
   return LYRIC_LANGUAGES.find((value) => value === saved.lyricsLanguage) ?? "auto";
 }
 
+/** The chord stem the performer chose for a song, when the stem is in the song. Empty otherwise. */
+function chosenChordStem(options: Record<string, unknown>, stems: Stems): StemName | "" {
+  const chosen = options.chordChoice;
+  return typeof chosen === "string" && chosen && stems[chosen as StemName] ? (chosen as StemName) : "";
+}
+
 /** The chord stem a song uses: its own choice when the stem is in the song, else the first stem with a signal. */
 function chordNameFor(options: Record<string, unknown>, stems: Stems): StemName | "" {
-  const chosen = options.chordChoice;
-  if (typeof chosen === "string" && chosen && stems[chosen as StemName]) return chosen as StemName;
-  return defaultChordSource(stems);
+  return chosenChordStem(options, stems) || defaultChordSource(stems);
 }
 
 /** One line for the summary: what the batch changed, and what it could not do. */

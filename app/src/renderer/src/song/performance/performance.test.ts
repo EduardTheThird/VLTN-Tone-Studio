@@ -38,10 +38,10 @@ describe("performance charts", () => {
 describe("harmonic chord estimates", () => {
   it("marks silence unknown and estimates a synthetic C major triad", () => {
     const sampleRate = 44100;
-    expect(detectChords({ sampleRate, channels: [new Float32Array(sampleRate)] })[0].name).toBe("N");
+    expect(detectChords({ harmony: { sampleRate, channels: [new Float32Array(sampleRate)] }, bass: null, beats: null })[0].name).toBe("N");
     const audio = new Float32Array(sampleRate);
     for (let i = 0; i < audio.length; i++) for (const hz of [261.6256, 329.6276, 391.9954]) audio[i] += 0.2 * Math.sin((2 * Math.PI * hz * i) / sampleRate);
-    expect(detectChords({ sampleRate, channels: [audio] })[0].name).toBe("C");
+    expect(detectChords({ harmony: { sampleRate, channels: [audio] }, bass: null, beats: null })[0].name).toBe("C");
   });
 });
 

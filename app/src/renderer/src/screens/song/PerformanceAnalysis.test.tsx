@@ -34,7 +34,7 @@ describe("useChordAnalysis", () => {
       "analysis-test:options",
       JSON.stringify({ analysis: { audioId: "id-1", version: ANALYSIS_VERSION, chords: { source: "other", chords } } }),
     );
-    const { result } = renderHook(() => useChordAnalysis(session, stems, "other", { songKey: "analysis-test", audioId: "id-1" }));
+    const { result } = renderHook(() => useChordAnalysis(session, { name: "other", audio: stems.other! }, null, { songKey: "analysis-test", audioId: "id-1" }));
     expect(result.current.chords).toEqual(chords);
     expect(constructed.count).toBe(0);
   });
@@ -45,7 +45,7 @@ describe("useChordAnalysis", () => {
       "analysis-test:options",
       JSON.stringify({ analysis: { audioId: "id-1", version: ANALYSIS_VERSION, chords: { source: "vocals", chords: [] } } }),
     );
-    renderHook(() => useChordAnalysis(session, stems, "other", { songKey: "analysis-test", audioId: "id-1" }));
+    renderHook(() => useChordAnalysis(session, { name: "other", audio: stems.other! }, null, { songKey: "analysis-test", audioId: "id-1" }));
     await waitFor(() => expect(constructed.count).toBe(1));
   });
 });

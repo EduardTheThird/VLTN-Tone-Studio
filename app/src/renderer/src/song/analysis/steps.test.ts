@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
+import type { SongAnalysis } from "./song-analysis";
 
 const loudness = vi.hoisted(() => ({ measure: vi.fn() }));
 vi.mock("../audio/loudness-client", () => ({ measureLoudnessInWorker: loudness.measure }));
@@ -17,7 +18,9 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordChangeTimes, chordsStep, keyStep, loudnessStep, partsStep, sectionsStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, partsStep, sectionKeysStep, sectionsStep, tempoStep } from "./steps";
+
+const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
 
 const beats = Array.from({ length: 16 }, (_, i) => 0.5 + i * 0.6);
 const grid: BeatGrid = { beatsPerBar: 4, beats, downbeat: 0, bpm: 100, steady: { bpm: 100, firstBeat: 0.5 } };
@@ -29,8 +32,8 @@ const audio = {
   sampleRate: 44100,
   beatsPerBar: 4,
   chordChanges: [],
-  keySource: null,
-  chordSource: null,
+  sections: [],
+  harmony: NO_HARMONY, bass: null, chordSource: null,
 };
 
 afterEach(() => {
@@ -82,12 +85,15 @@ describe("tempoStep", () => {
 
 describe("keyStep and chordsStep", () => {
   const stem = { sampleRate: 44100, channels: [new Float32Array(4)] };
+  const sounding = { sampleRate: 44100, channels: [new Float32Array(44100).fill(0.1)] };
   const estimate = { name: "E minor", tonic: 4, mode: "minor", correlation: 0.8, margin: 0.2, confidence: "strong", alternatives: [] };
   let reply: unknown = null;
   class ReplyingWorker {
+    static posted: unknown = null;
     onmessage: ((event: MessageEvent) => void) | null = null;
     onerror: (() => void) | null = null;
-    postMessage() {
+    postMessage(message: unknown) {
+      ReplyingWorker.posted = message;
       queueMicrotask(() => this.onmessage?.({ data: reply } as MessageEvent));
     }
     terminate() {}
@@ -95,25 +101,58 @@ describe("keyStep and chordsStep", () => {
   beforeEach(() => vi.stubGlobal("Worker", ReplyingWorker));
   afterEach(() => vi.unstubAllGlobals());
 
-  it("reads the key from the key stem and records the stem", async () => {
+  it("reads the key from the harmony and the bass, with the chords found before it", async () => {
     reply = { estimate };
-    const result = await keyStep().run({ ...audio, keySource: { name: "guitar", audio: stem }, chordSource: null }, new AbortController().signal, nothingFound);
-    expect(result).toEqual({ key: { source: "guitar", estimate } });
+    const bass = { sampleRate: 44100, channels: [new Float32Array(44100).fill(0.1)] };
+    const chords = [{ time: 0, name: "Em", confidence: 0.9 }];
+    const found = { audioId: "", version: 0, chords: { source: "other", chords } } as unknown as SongAnalysis;
+    const result = await keyStep().run({ ...audio, harmony: { name: "other", audio: sounding }, bass }, new AbortController().signal, found);
+    expect(result).toEqual({ key: { source: "other", estimate } });
+    expect(ReplyingWorker.posted).toEqual({ harmony: sounding, bass, chords, sections: [] });
   });
 
-  it("reads nothing when there is no key stem", async () => {
-    expect(await keyStep().run({ ...audio, keySource: null, chordSource: null }, new AbortController().signal, nothingFound)).toEqual({});
+  it("reads nothing when the harmony has no signal", async () => {
+    expect(await keyStep().run({ ...audio, harmony: NO_HARMONY }, new AbortController().signal, nothingFound)).toEqual({});
   });
 
-  it("reads the chords from the chord stem and records the stem", async () => {
+  it("saves nothing when the worker finds no clear key", async () => {
+    reply = { estimate: null };
+    expect(await keyStep().run({ ...audio, harmony: { name: "other", audio: sounding } }, new AbortController().signal, nothingFound)).toEqual({});
+  });
+
+  it("reads the chords from the harmony and records its name", async () => {
     reply = { chords: [{ time: 0, name: "Em", confidence: 0.9 }] };
-    const result = await chordsStep().run({ ...audio, keySource: null, chordSource: { name: "other", audio: stem } }, new AbortController().signal, nothingFound);
-    expect(result).toEqual({ chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
+    const bass = { sampleRate: 44100, channels: [new Float32Array(4)] };
+    const result = await chordsStep().run({ ...audio, harmony: { name: "other+piano", audio: stem }, bass }, new AbortController().signal, nothingFound);
+    expect(result).toEqual({ chords: { source: "other+piano", chords: [{ time: 0, name: "Em", confidence: 0.9 }] } });
+  });
+
+  it("gives the chords the beats of the grid, so they change on the beats", async () => {
+    reply = { chords: [] };
+    await chordsStep(() => grid).run({ ...audio, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, nothingFound);
+    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: grid.beats, key: null });
+  });
+
+  it("gives the chords the key the analysis found, to set the key prior", async () => {
+    reply = { chords: [] };
+    const found = { audioId: "", version: 0, key: { source: "other", estimate } } as unknown as SongAnalysis;
+    await chordsStep().run({ ...audio, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, found);
+    expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: null, key: "E minor" });
+  });
+
+  it("reads the section keys with the song's key and sections, and nothing without them", async () => {
+    const keySections = [{ sectionId: "1", key: { ...estimate, name: "A major" } }];
+    reply = { estimate: null, keySections };
+    const sectioned = { ...audio, harmony: { name: "other", audio: sounding }, bass: null };
+    const found = { audioId: "", version: 0, key: { source: "other", estimate }, sections: [{ name: "Last", start: 8, end: 16 }] } as unknown as SongAnalysis;
+    expect(await sectionKeysStep().run(sectioned, new AbortController().signal, found)).toEqual({ keySections });
+    expect(ReplyingWorker.posted).toMatchObject({ songKey: "E minor", sections: [{ start: 8, end: 16 }] });
+    expect(await sectionKeysStep().run(sectioned, new AbortController().signal, nothingFound)).toEqual({});
   });
 
   it("fails when the worker reports an error", async () => {
     reply = { error: "boom" };
-    const failing = { ...audio, keySource: null, chordSource: { name: "other", audio: stem } };
+    const failing = { ...audio, harmony: { name: "other", audio: stem }, bass: null };
     await expect(chordsStep().run(failing, new AbortController().signal, nothingFound)).rejects.toThrow("boom");
   });
 });
@@ -143,34 +182,18 @@ describe("partsStep", () => {
   });
 });
 
-describe("chordChangeTimes", () => {
-  it("gives the times the chord name changes", () => {
-    expect(
-      chordChangeTimes([
-        { time: 0, name: "Em", confidence: 1 },
-        { time: 1, name: "Em", confidence: 1 },
-        { time: 2, name: "C", confidence: 1 },
-        { time: 3, name: "G", confidence: 1 },
-      ]),
-    ).toEqual([2, 3]);
-    expect(chordChangeTimes([])).toEqual([]);
-  });
-});
-
 describe("tempoStep chord changes", () => {
-  it("uses the chord changes the analysis found when the chart has none", async () => {
+  it("uses the chart's chord changes only, since the chords are read after the tempo", async () => {
     job.done = Promise.resolve(grid);
     job.start.mockClear();
-    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
-    await tempoStep().run(audio, new AbortController().signal, soFar);
-    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [2] }));
+    await tempoStep().run({ ...audio, chordChanges: [] }, new AbortController().signal, nothingFound);
+    expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [] }));
   });
 
   it("keeps the chart's chord changes when it has them", async () => {
     job.done = Promise.resolve(grid);
     job.start.mockClear();
-    const soFar = { audioId: "x", version: 1, chords: { source: "other", chords: [{ time: 0, name: "Em", confidence: 1 }, { time: 2, name: "C", confidence: 1 }] } };
-    await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, soFar);
+    await tempoStep().run({ ...audio, chordChanges: [5] }, new AbortController().signal, nothingFound);
     expect(job.start).toHaveBeenLastCalledWith(expect.objectContaining({ chordChanges: [5] }));
   });
 });
@@ -204,7 +227,7 @@ describe("sectionsStep", () => {
     const withChords = {
       ...audio,
       mix: { sampleRate: 44100, channels: [new Float32Array(44100 * 8)] },
-      chordSource: { name: "other", audio: chords },
+      harmony: NO_HARMONY, bass: null, chordSource: { name: "other", audio: chords },
     };
     await sectionsStep(() => grid).run(withChords, new AbortController().signal, nothingFound);
     const input = posted[0] as { harmony: unknown; spans: { start: number }[]; options: { snap: number } };

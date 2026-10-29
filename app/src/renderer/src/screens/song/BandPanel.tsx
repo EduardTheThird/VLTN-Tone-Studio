@@ -21,7 +21,8 @@ import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
 import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
-import { bandRequest, beatSources, chartChordTimes, chordSource, followFor, followSourcesIn, previewMix } from "@/song/band/request";
+import { bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, previewMix } from "@/song/band/request";
+import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
 import { followStatus } from "@/song/band/feel";
 import { startChordDetection } from "@/song/band/chord-detect-client";
 import { findStyle, STYLES, type StyleId } from "@/song/band/styles";
@@ -262,7 +263,8 @@ function BandBody({
    */
   const detectChords = async (audio: PcmAudio): Promise<Chord[] | null> => {
     setWork("Detecting chords…");
-    const detecting = startChordDetection(chordSource(useSong.getState().stems, audio));
+    const stems = useSong.getState().stems;
+    const detecting = startChordDetection({ harmony: harmonyOf(stems, audio).audio, bass: bassOf(stems), beats: grid?.beats ?? null });
     job.current = detecting;
     try {
       return await detecting.done;

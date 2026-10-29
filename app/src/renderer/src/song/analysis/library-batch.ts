@@ -5,29 +5,30 @@ import { useSong } from "../store";
 import { loadSongAudio, useSongLibrary } from "../library";
 import { flushSettings, LIBRARY_PREFIX, setSetting } from "../performance/settings";
 import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state";
-import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep, type LyricsStepInput } from "./steps";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionKeysStep, sectionsStep, silenceStep, tempoStep, type LyricsStepInput } from "./steps";
 import { runAnalysisBatch, type BatchCallbacks, type BatchDeps, type BatchOptions, type BatchOutcome, type BatchSong, type BatchStepId } from "./batch";
 import type { AnalysisStep } from "./song-analysis";
 import type { BeatGrid } from "../band/beat-grid";
 
 /** The steps in the order the analysis runs them. The tempo step gives the beat grid to the batch, which saves it with the song. */
-function stepsFor(
+export function stepsFor(
   ids: readonly BatchStepId[],
   onGrid: (grid: BeatGrid) => void,
   gridOf: () => BeatGrid | null,
   lyrics: LyricsStepInput | null,
 ): AnalysisStep[] {
   const wanted = new Set<BatchStepId>(ids);
-  const ordered: [BatchStepId, () => AnalysisStep][] = [
-    ["loudness", loudnessStep],
-    ["silence", silenceStep],
-    ["parts", partsStep],
-    ["chords", chordsStep],
-    ["tempo", () => tempoStep(onGrid)],
-    ["key", keyStep],
-    ["sections", () => sectionsStep(gridOf)],
+  // The sections of each key are read after the sections, so the key's section step follows the sections step.
+  const ordered: [BatchStepId, () => AnalysisStep[]][] = [
+    ["loudness", () => [loudnessStep()]],
+    ["silence", () => [silenceStep()]],
+    ["parts", () => [partsStep()]],
+    ["tempo", () => [tempoStep(onGrid)]],
+    ["chords", () => [chordsStep(gridOf)]],
+    ["key", () => [keyStep()]],
+    ["sections", () => [sectionsStep(gridOf), ...(wanted.has("key") ? [sectionKeysStep()] : [])]],
   ];
-  const steps = ordered.filter(([id]) => wanted.has(id)).map(([, make]) => make());
+  const steps = ordered.filter(([id]) => wanted.has(id)).flatMap(([, make]) => make());
   return lyrics ? [...steps, lyricsStep(lyrics)] : steps;
 }
 

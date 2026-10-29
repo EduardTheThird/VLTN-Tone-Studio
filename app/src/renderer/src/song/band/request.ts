@@ -23,9 +23,6 @@ export function beatSources(stems: Stems | null, mix: PcmAudio): PcmAudio[] {
   return pitched.length ? pitched : [mix];
 }
 
-/** The stems that carry harmony and no bass or drums: the chords are read from these when the song is split. */
-const HARMONY_STEMS = ["other", "guitar", "piano"];
-
 /** Adds the audio sources together, sample for sample, padding the shorter ones with silence. */
 export function sumAudio(sources: readonly PcmAudio[]): PcmAudio {
   const channels = Math.max(...sources.map((source) => source.channels.length));
@@ -37,15 +34,6 @@ export function sumAudio(sources: readonly PcmAudio[]): PcmAudio {
     });
   }
   return { sampleRate: sources[0].sampleRate, channels: out };
-}
-
-/**
- * The audio the chord detector reads: the other, guitar and piano stems when the song is split and has any of them, otherwise the song's
- * own mix. Those stems carry the harmony without the bass or the drums.
- */
-export function chordSource(stems: Stems | null, mix: PcmAudio): PcmAudio {
-  const harmony = HARMONY_STEMS.map((name) => stems?.[name]).filter((audio): audio is PcmAudio => audio !== undefined);
-  return harmony.length ? sumAudio(harmony) : mix;
 }
 
 /** The chord change times the chart gives, in song seconds. Used to pick the bar phase when the beat is found. */

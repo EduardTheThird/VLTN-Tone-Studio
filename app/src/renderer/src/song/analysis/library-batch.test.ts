@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { libraryBatchDeps } from "./library-batch";
+import { libraryBatchDeps, stepsFor } from "./library-batch";
 import { clearSettingsCache, getSetting, LIBRARY_PREFIX } from "../performance/settings";
 import { setSongPlaying } from "../performance/playing-state";
 import { useSongLibrary } from "../library";
@@ -42,4 +42,9 @@ it("reports a song as open only when it is the one on the Performance screen", (
   expect(libraryBatchDeps.isOpen("abc")).toBe(true);
   expect(libraryBatchDeps.isOpen("def")).toBe(false);
   useSong.setState({ source: null });
+});
+
+it("runs the steps tempo, chords, key, sections, then the section keys, in that order whatever order they are asked for", () => {
+  const names = stepsFor(["sections", "key", "chords", "parts", "tempo", "silence", "loudness"], () => {}, () => null, null).map((step) => step.name);
+  expect(names).toEqual(["loudness", "silence", "parts", "tempo", "chords", "key", "sections", "sectionKeys"]);
 });

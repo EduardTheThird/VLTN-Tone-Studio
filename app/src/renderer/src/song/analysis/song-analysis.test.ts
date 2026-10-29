@@ -11,6 +11,8 @@ import {
   type SongAnalysis,
 } from "./song-analysis";
 
+const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
+
 const audio = {
   mix: { sampleRate: 44100, channels: [] },
   stems: null,
@@ -18,8 +20,8 @@ const audio = {
   sampleRate: 44100,
   beatsPerBar: 4,
   chordChanges: [],
-  keySource: null,
-  chordSource: null,
+  sections: [],
+  harmony: NO_HARMONY, bass: null, chordSource: null,
 };
 
 function memory(initial: SongAnalysis | null = null) {
@@ -224,5 +226,21 @@ describe("sections in the saved analysis", () => {
 
   it("says how many sections were found", () => {
     expect(describeAnalysis({ ...base, sections: [{ name: "Intro", start: 0, end: 8 }, { name: "Verse 1", start: 8, end: 24 }] })).toContain(". 2 sections");
+  });
+});
+
+describe("section keys in the saved analysis", () => {
+  const base = { audioId: "a", version: ANALYSIS_VERSION };
+  const estimate = { name: "A major", tonic: 9, mode: "major" as const, correlation: 0.8, margin: 0.2, confidence: "strong" as const, alternatives: [] };
+
+  it("keeps valid section keys and drops a list with a damaged entry", () => {
+    const keySections = [{ sectionId: "1", key: estimate }];
+    expect(parseAnalysis({ ...base, keySections })?.keySections).toEqual(keySections);
+    expect(parseAnalysis({ ...base, keySections: [{ sectionId: 1, key: estimate }] })?.keySections).toBeUndefined();
+  });
+
+  it("says how many section keys there are, and only when there are some", () => {
+    expect(describeAnalysis({ ...base, keySections: [{ sectionId: "1", key: estimate }] })).toContain(". 1 section key");
+    expect(describeAnalysis({ ...base, keySections: [] })).not.toContain("section key");
   });
 });

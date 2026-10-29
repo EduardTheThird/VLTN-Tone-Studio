@@ -5,7 +5,7 @@ import type { PcmAudio } from "../types";
 import { DEFAULT_BAND_SETTINGS } from "./arrangement";
 import type { BandResult } from "./band-job";
 import { fixedBeatGrid } from "./beat-grid";
-import { bandRequest, beatSources, chordSource, previewMix, sumAudio } from "./request";
+import { bandRequest, beatSources, previewMix, sumAudio } from "./request";
 
 const audio = (values: number[], rate = 44100): PcmAudio => ({ sampleRate: rate, channels: [Float32Array.from(values)] });
 
@@ -58,21 +58,6 @@ describe("previewMix", () => {
     const mixed = previewMix(song, 0, result);
     expect(mixed.sampleRate).toBe(22050);
     expect(Array.from(mixed.channels[0])).toEqual([0.25, 0, 0]);
-  });
-});
-
-describe("chordSource", () => {
-  const mix = audio([0.5, 0.5]);
-  it("sums the other, guitar and piano stems when the song is split and has any of them", () => {
-    const other = audio([0.1, 0.1]),
-      piano = audio([0.2]);
-    expect(chordSource({ other, piano, bass: audio([0.9, 0.9]), drums: audio([0.9, 0.9]) }, mix).channels[0].slice(0, 2)).toEqual(
-      Float32Array.from([0.3, 0.1]),
-    );
-  });
-  it("otherwise reads the song's mix", () => {
-    expect(chordSource(null, mix)).toBe(mix);
-    expect(chordSource({ bass: audio([0.9]) }, mix)).toBe(mix);
   });
 });
 

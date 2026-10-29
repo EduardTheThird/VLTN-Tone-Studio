@@ -12,14 +12,14 @@ import { isSongPlaying, onSongPlayingChange } from "../performance/playing-state
 import { LYRIC_LANGUAGES, loadLyricsChoice } from "../performance/lyrics-options";
 import { readStoredBand } from "../band/stored";
 import type { StemName } from "../types";
-import { buildAnalysisAudio } from "./analysis-audio";
+import { buildAnalysisAudio, sectionBoundsOf } from "./analysis-audio";
 import { parseAnalysis, songAudioId, type AnalysisStep } from "./song-analysis";
 import { lyricsSkipLabel, lyricsStepText } from "./batch";
 import { lyricsRunSkip } from "./lyrics-run";
 import { stemsWithVocals, vocalsOf } from "./vocals";
 import { createSongRunner, isSplitting, watchSongStore, type CapturedRun, type RunOptions, type RunTarget, type SavedSong } from "./song-runner";
 import { loadAfterSplit, type AfterSplitStep } from "./after-split";
-import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionsStep, silenceStep, tempoStep } from "./steps";
+import { chordsStep, keyStep, loudnessStep, lyricsStep, partsStep, sectionKeysStep, sectionsStep, silenceStep, tempoStep } from "./steps";
 
 /** A song is playing, or a playlist is. Nothing the runner does starts over the music. */
 const playingNow = () => isSongPlaying() || useSongLibrary.getState().playlistPlaying;
@@ -48,7 +48,15 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
   const meter = beatsPerBar ?? (typeof options.beats === "number" ? options.beats : 4);
   const chordChoice = typeof options.chordChoice === "string" ? (options.chordChoice as StemName) : "";
   const chordName: StemName | "" = chordChoice && stems?.[chordChoice] ? chordChoice : defaultChordSource(stems);
-  const built = buildAnalysisAudio({ mix: source.audio, stems, beatsPerBar: meter, chordChanges: chartChordTimes(parseChart(getSetting(key, ""))), chordName });
+  const built = buildAnalysisAudio({
+    mix: source.audio,
+    stems,
+    beatsPerBar: meter,
+    chordChanges: chartChordTimes(parseChart(getSetting(key, ""))),
+    chordChoice,
+    chordName,
+    sections: sectionBoundsOf(options.sections),
+  });
   // Lyrics read the vocals stem; an imported vocals track stands in for it when the song was not split.
   const audio = { ...built, stems: stemsWithVocals(built.stems, vocalsOf(stems, tracks)) };
   return { key, title: source.name, audioId: songAudioId(source.audio, stems), audio };
@@ -91,16 +99,19 @@ function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
  */
 function appSteps(key: string, options: RunOptions, captured: CapturedRun): AnalysisStep[] {
   const tempo = tempoStep((grid) => (captured.grid = grid), options.hint ?? {});
-  const sections = sectionsStep(() => captured.grid ?? readStoredBand(key).grid ?? null);
+  // The chords and the sections take the beat grid the tempo step tracked in this run, or else the one saved with the song.
+  const gridOf = () => captured.grid ?? readStoredBand(key).grid ?? null;
+  const chords = chordsStep(gridOf);
+  const sections = sectionsStep(gridOf);
   if (options.tempoOnly) return options.sections ? [tempo, sections] : [tempo];
   const wanted = loadAfterSplit().steps;
   const ordered: [AfterSplitStep, AnalysisStep[]][] = [
     ["loudness", [loudnessStep(), silenceStep()]],
     ["parts", [partsStep()]],
-    ["chords", [chordsStep()]],
     ["tempo", [tempo]],
+    ["chords", [chords]],
     ["key", [keyStep()]],
-    ["sections", [sections]],
+    ["sections", [sections, ...(wanted.key ? [sectionKeysStep()] : [])]],
   ];
   const steps = ordered.filter(([id]) => wanted[id]).flatMap(([, made]) => made);
   const lyrics = wanted.lyrics ? lyricsFor(key, captured) : null;

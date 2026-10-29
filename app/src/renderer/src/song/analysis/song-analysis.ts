@@ -5,7 +5,7 @@
 import type { MissingParts } from "../band/detect";
 import type { SilenceEnds } from "./silence";
 import type { Chord } from "../performance/chords";
-import type { KeyEstimate } from "../performance/key";
+import type { KeyEstimate, KeySection } from "../performance/key";
 import type { DetectedSection } from "./sections";
 import type { PcmAudio, Stems } from "../types";
 
@@ -20,9 +20,10 @@ export const METER_CERTAIN = 0.6;
 
 /**
  * Bump when an analysis improves, so songs analysed earlier are analysed again the next time they open. Version 2 adds sections: a saved
- * song of version 1 is analysed once more, which fills in its sections. What the performer set is kept (see `planWriteBack`).
+ * song of version 1 is analysed once more, which fills in its sections. Version 3 reads the chords from the harmony and the bass with
+ * harmonic templates, decoded over the song, on the beats (spec 81). What the performer set is kept (see `planWriteBack`).
  */
-export const ANALYSIS_VERSION = 2;
+export const ANALYSIS_VERSION = 3;
 
 /** The tempo the analysis found. `firstBeat` is the time of the first beat, in seconds, when the grid fits a straight line. */
 export interface TempoResult {
@@ -62,6 +63,8 @@ export interface SongAnalysis {
   /** The silence before the first sound and after the last. Offered as a trim; never applied. */
   silence?: SilenceEnds;
   key?: KeyResult;
+  /** Sections whose key differs from the song's, with a strong reading. Only set when the song has sections and a key. */
+  keySections?: KeySection[];
   chords?: ChordsResult;
   /** Suggested sections, on bar lines where the music allows (or on time frames when the song has no beat grid). Empty when none were found. */
   sections?: DetectedSection[];
@@ -86,9 +89,13 @@ export interface AnalysisAudio {
   beatsPerBar: number;
   /** Chord change times, in seconds of the same audio. Empty when the song has no chords yet. */
   chordChanges: number[];
-  /** The stem the key is read from, or null when there is no audio with a signal. */
-  keySource: NamedAudio | null;
-  /** The stem the chords are read from, or null when no chord stem is chosen. */
+  /** The song's own sections as bounds in seconds, or none. Their ends are where a chord counts as an anchor for the key. */
+  sections: readonly { start: number; end: number }[];
+  /** The audio the chords are read from: the performer's chord stem, else the harmony stems added together, else the mix. */
+  harmony: NamedAudio;
+  /** The bass stem, when it has a signal. The chords read the bass note from it. */
+  bass: PcmAudio | null;
+  /** The stem the sections read the harmony from, or null when no chord stem is chosen. */
   chordSource: NamedAudio | null;
 }
 
@@ -207,6 +214,7 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
   const validLoudness = typeof loudness?.lufs === "number" && typeof loudness.peakDb === "number";
   const key = record.key as { source?: unknown; estimate?: { name?: unknown } } | undefined;
   const validKey = typeof key?.source === "string" && typeof key.estimate?.name === "string";
+  const keySections = Array.isArray(record.keySections) && record.keySections.every(isKeySection) ? (record.keySections as KeySection[]) : undefined;
   const chords = record.chords as { source?: unknown; chords?: unknown } | undefined;
   const validChords = typeof chords?.source === "string" && Array.isArray(chords.chords);
   const meter = record.meter as Record<string, unknown> | undefined;
@@ -222,10 +230,17 @@ export function parseAnalysis(value: unknown): SongAnalysis | null {
     ...(validSilence ? { silence: { start: silence!.start as number, end: silence!.end as number } } : {}),
     ...(validLoudness ? { loudness: { lufs: loudness!.lufs as number, peakDb: loudness!.peakDb as number } } : {}),
     ...(validKey ? { key: { source: key!.source as string, estimate: key!.estimate as KeyEstimate } } : {}),
+    ...(keySections ? { keySections } : {}),
     ...(validChords ? { chords: { source: chords!.source as string, chords: chords!.chords as Chord[] } } : {}),
     ...(sections ? { sections } : {}),
     ...(failed?.length ? { failed } : {}),
   };
+}
+
+/** A saved section key: an id and a key with a name. Anything else in the list makes the saved section keys unreadable. */
+function isKeySection(value: unknown): value is KeySection {
+  const section = value as Partial<KeySection> | null;
+  return !!section && typeof section.sectionId === "string" && typeof section.key?.name === "string";
 }
 
 /** A saved section: a name and two finite times. Anything else in the list makes the saved sections unreadable. */
@@ -251,6 +266,7 @@ export function describeAnalysis(analysis: SongAnalysis): string {
   const key = analysis.key ? `. Key ${analysis.key.estimate.name}` : "";
   const chords = analysis.chords ? `. ${analysis.chords.chords.length} chords` : "";
   const sections = analysis.sections ? `. ${analysis.sections.length} section${analysis.sections.length === 1 ? "" : "s"}` : "";
+  const sectionKeys = analysis.keySections?.length ? `. ${analysis.keySections.length} section key${analysis.keySections.length === 1 ? "" : "s"}` : "";
   const failed = analysis.failed?.length ? `. Could not work out: ${analysis.failed.join(", ")}` : "";
-  return `${found}${meter}${loudness}${parts}${key}${chords}${sections}${failed}`;
+  return `${found}${meter}${loudness}${parts}${key}${sectionKeys}${chords}${sections}${failed}`;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
-import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate } from "@/song/performance/key";
+import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate, type KeyInput } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
 import { isCurrent, songAudioId } from "@/song/analysis/song-analysis";
 import { storedAnalysis } from "./use-song-analysis";
@@ -20,6 +20,19 @@ function savedKey(songKey: string, name: string, mix: PcmAudio | undefined, stem
   if (!saved || !isCurrent(saved, songAudioId(mix, stems)) || saved.key?.source !== name) return null;
   return saved.key.estimate;
 }
+
+/**
+ * The keys of the sections that differ from the song's, as the song analysis saved them for this audio, with the section's name. Empty when
+ * nothing matches, so nothing is shown for a song that was not analysed.
+ */
+function sectionKeyLines(songKey: string, mix: PcmAudio | undefined, stems: Stems | null): string[] {
+  if (!mix) return [];
+  const saved = storedAnalysis(songKey).read();
+  if (!saved || !isCurrent(saved, songAudioId(mix, stems))) return [];
+  return (saved.keySections ?? []).map(({ sectionId, key }) => `${saved.sections?.[Number(sectionId)]?.name ?? "Section"}: ${key.name}`);
+}
+
+const FLAVOUR_NAMES = { mixolydian: "Mixolydian", dorian: "Dorian" } as const;
 
 /** The song's key readout and override. It reports the key the chord names are spelled by, so the panel's screens follow the same key. */
 export function SongKey({
@@ -80,7 +93,9 @@ export function SongKey({
           worker?.terminate();
         }
       };
-      worker.postMessage(input.audio);
+      // The panel reads one stem on its own: no bass, chords or sections, so the key is the harmony's alone.
+      const request: KeyInput = { harmony: input.audio, bass: null, chords: [], sections: [] };
+      worker.postMessage(request);
     } catch (e) {
       setBusy(false);
       setError(String(e));
@@ -102,14 +117,17 @@ export function SongKey({
       setError("Could not save the song key.");
     }
   }, [storageKey, override, estimate, analysisSource]);
+  const sectionLines = useMemo(() => sectionKeyLines(storageKey, original, stems), [storageKey, original, stems]);
   const spellingKey = effectiveSongKey(override, libraryKey, estimate);
   useEffect(() => onSpellingKey?.(spellingKey), [spellingKey, onSpellingKey]);
   const name = override || estimate?.name;
+  // A modal flavour is named after the key, such as "G major (Mixolydian)". The key itself, and the transposition, stay the major or minor key.
+  const flavour = !override && estimate?.flavour ? ` (${FLAVOUR_NAMES[estimate.flavour]})` : "";
   const root = name ? KEY_NAMES.indexOf(name.split(" ")[0]) : -1;
   const displayed = root < 0 ? "" : `${KEY_NAMES[(((root + shift) % 12) + 12) % 12]} ${name!.split(" ")[1]}`;
   return (
     <section aria-label="Song key" className="flex flex-wrap items-center gap-3 rounded-lg border border-seam px-3 py-2 text-sm">
-      <strong>Song key: {name || (busy ? "Analysing…" : "Unknown")}</strong>
+      <strong>Song key: {name ? `${name}${flavour}` : busy ? "Analysing…" : "Unknown"}</strong>
       <label>
         Key override{" "}
         <select
@@ -141,6 +159,7 @@ export function SongKey({
               ? `No reliable major/minor key found in ${analysisSource}.`
               : "Open audio or split the song to analyse its key."}
       </span>
+      {sectionLines.length > 0 && <p className="w-full text-sm">Section keys: {sectionLines.join(" · ")}</p>}
       <p className="w-full text-xs text-silkscreen-3">
         Guitar is preferred, then piano, other, bass, vocals or the original mix. This estimates the recording’s overall major/minor key; relative keys, modes
         and key changes can be ambiguous. A manual choice is saved with the song. Key and chord transposition do not change audio or MIDI.
