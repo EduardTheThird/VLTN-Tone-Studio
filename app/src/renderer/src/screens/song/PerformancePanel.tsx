@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSong } from "@/song/store";
-import { defaultMix } from "@/song/stems/mix";
+import { defaultMix, type Mix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
 import { midiFileFromOptions, type MidiFileOption } from "@/song/performance/smf";
@@ -16,8 +16,19 @@ import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type 
 import { type StemName } from "@/song/types";
 import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
+import { gridAtOctave, needsTempoDetection, readTempoSource, tempoOctaves, type TempoSource } from "@/song/performance/tempo-source";
+import { readStoredBand, writeStoredBand } from "@/song/band/stored";
+import type { BeatGrid } from "@/song/band/beat-grid";
+import { chartChordTimes } from "@/song/band/request";
+import { parseChart } from "@/song/performance/chart";
+import { gridFromAnalysis, useSongAnalysis, type Notice } from "./use-song-analysis";
+import { METER_CERTAIN, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
+import { sectionsToApply, type DetectedSection } from "@/song/analysis/sections";
+import { withLoudness } from "@/song/audio/loudness";
+import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
 import { useSongLibrary } from "@/song/library";
+import { setSongPlaying } from "@/song/performance/playing-state";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { useBluetooth } from "@/bluetooth/connection";
 import { SongKey } from "./SongKey";
@@ -30,6 +41,7 @@ import { TrackImport } from "./TrackImport";
 import { SongLoudnessControl } from "./SongLoudnessControl";
 import { loudnessFromOptions, normalisingGain, type SongLoudness } from "@/song/audio/loudness";
 import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
+import { applyPartChoices, defaultPartChoices, partKeysOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
@@ -77,6 +89,19 @@ function readGlobalMetronome(): MetronomeMode {
 
 const NO_TRACKS: Record<string, TrackInfo> = {};
 
+/** The tempo, meter and beat grid as they were before a Detect run, so its Undo can put them back. */
+interface DetectSnapshot {
+  /** The saved BPM text, so an undo writes back exactly what was saved, including an empty tempo. */
+  savedBpm: string;
+  bpm: number;
+  firstBeat: number;
+  tempoSource: TempoSource | null;
+  beats: number;
+  beatsSource: unknown;
+  grid: BeatGrid | null;
+  beatGridSource: unknown;
+}
+
 /** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
 export function PerformancePanel({ shown = true }: { shown?: boolean }) {
   const source = useSong((s) => s.source);
@@ -102,7 +127,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const source = useSong((s) => s.source),
     stems = useSong((s) => s.stems),
     tracks = useSong((s) => s.tracks) ?? NO_TRACKS,
-    setTrackInfo = useSong((s) => s.setTrackInfo);
+    setTrackInfo = useSong((s) => s.setTrackInfo),
+    missingParts = useSong((s) => s.missingParts);
   const key = performanceKey(source);
   const library = useSongLibrary();
   const queued = !!source?.libraryId && library.queue[library.position] === source.libraryId;
@@ -125,18 +151,24 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         startDelay: "",
         sections: [] as unknown[],
         timecodeOffset: "",
+        beatsSource: "" as "" | "detected" | "manual",
+        partChoice: undefined as PartChoices | undefined,
       }),
     [key],
   );
   // Sections are part of the song; their live changes are not saved (see sections.ts).
   const [sectionList, setSectionList] = useState<Section[]>(() => parseSections(options.sections));
+  // The sections the song analysis suggested most recently. They are applied only to a song with no sections; otherwise the editor offers them.
+  const [suggested, setSuggested] = useState<DetectedSection[]>(() => parseAnalysis(readOptions<Record<string, unknown>>(key, {}).analysis)?.sections ?? []);
   const [selectedChord, setSelectedChord] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState("");
   const [chart, setChart] = useState(() => getSetting(key, ""));
   // A saved song with a PDF shows the PDF unless the performer chose the text chart for it.
   const [chartView, setChartView] = useState<ChartView>(() => (getSetting(key, ":chart") === "text" ? "text" : "pdf"));
   const [bpm, setBpm] = useState(() => readNumber(getSetting(key, ":bpm"), 120, 30, 300)),
+    [tempoSource, setTempoSource] = useState<TempoSource | null>(() => readTempoSource(options)),
     [beats, setBeats] = useState(options.beats),
+    [beatsManual, setBeatsManual] = useState(() => options.beatsSource === "manual"),
     [shift, setShift] = useState(options.shift),
     [capo, setCapo] = useState(() => clampCapo(options.capo));
 
@@ -164,8 +196,24 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   };
   const [shapeVersion, setShapeVersion] = useState(0);
+  // The drums and bass choice: the original, the generated track or both. A song that saved none starts from the default for its parts,
+  // and its mix is set to match. A saved choice is already in the saved mix.
+  const [partChoice, setPartChoice] = useState<PartChoices>(() =>
+    readPartChoices(options.partChoice, defaultPartChoices(missingParts, partKeysOf(tracks, stems))),
+  );
+  const partChoiceNow = useRef(partChoice);
+  const withPartChoice = (base: Mix): Mix =>
+    options.partChoice === undefined ? applyPartChoices(base, partChoiceNow.current, partKeysOf(tracks, stems)) : base;
+  /** Changes the drums or bass choice and sets the mix to match. Only mute levels change, so this also works during playback. */
+  const choosePart = (patch: Partial<PartChoices>) => {
+    const next = { ...partChoiceNow.current, ...patch };
+    partChoiceNow.current = next;
+    setPartChoice(next);
+    const now = useSong.getState();
+    setMix((current) => applyPartChoices(current, next, partKeysOf(now.tracks ?? {}, now.stems)));
+  };
   // An imported track starts on the bus, volume and pan it saved; a choice the song made since then wins.
-  const [mix, setMix] = useState(() => ({ ...mixDefaults(tracks), ...options.mix }));
+  const [mix, setMix] = useState(() => withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
   const [trackBuses, setTrackBuses] = useState<TrackBuses>(() => ({ ...busDefaults(tracks), ...options.trackBuses }));
   useEffect(() => {
     setMix((current) => ({ ...mixDefaults(tracks), ...current }));
@@ -229,6 +277,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
+  // The Library's batch analysis waits while a song plays, so it is told when this panel's session starts or stops.
+  useEffect(() => {
+    setSongPlaying(playing);
+  }, [playing]);
+  useEffect(() => () => setSongPlaying(false), []);
   const clock = useSession(session, (s) => s.clock);
   const speed = useSession(session, (s) => s.speed);
   const inputReady = useSession(session, (s) => s.inputId !== "");
@@ -236,7 +289,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
-  const { chords, analysing } = useChordAnalysis(session, stems, chordSource);
+  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems) : ""), [source, stems]);
+  const { chords, analysing } = useChordAnalysis(session, stems, chordSource, { songKey: key, audioId });
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
   useEffect(() => {
@@ -259,7 +313,33 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const tap = () => {
     tapsRef.current = recordTap(tapsRef.current, performance.now());
     const value = tapBpm(tapsRef.current);
-    if (value && !session.state.playing) setBpm(value);
+    if (value && !session.state.playing) changeTempo(value, "tap");
+  };
+  // A meter the performer picked is kept; only a meter that was never chosen is changed by the analysis.
+  // A meter the performer picked is manual. The analysis's own choice is recorded as detected, so it can still be changed by it later.
+  const changeBeats = (value: number, source: "manual" | "detected" = "manual") => {
+    setBeats(value);
+    setBeatsManual(source === "manual");
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatsSource: source }));
+    } catch (e) {
+      session.fail(e);
+    }
+  };
+  // Changes the meter. A grid the analysis laid out for the old meter is laid out again, so its downbeat matches; a performer's grid is kept.
+  const applyMeter = (value: number) => {
+    changeBeats(value, "detected");
+    if (gridFromAnalysis(key)) analysis.rerun(value);
+  };
+  // Every change to the tempo records where it came from. The saved source is what stops the analysis overwriting a tempo the performer chose.
+  const changeTempo = (value: number, source: TempoSource) => {
+    setBpm(value);
+    setTempoSource(source);
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), tempoSource: source }));
+    } catch (e) {
+      session.fail(e);
+    }
   };
   // Key presses run their bindings (the T key taps the tempo by default). Typing in a field never does: the session checks that.
   useEffect(() => {
@@ -290,7 +370,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
 
   // The view actions of the remote bindings. The session is handed them again whenever the screen changes.
   useEffect(() => {
-    session.setView(buildViewHost({ stage, setStage, metronome, setMetronome, mix, setMix, tracks, tap }));
+    session.setView(buildViewHost({ stage, setStage, metronome, setMetronome, mix, setMix, tracks, partChoices: partChoice, choosePart, tap }));
   });
 
   /** Writes the live loop and release choices into the sections' stored modes, which are saved with the song. */
@@ -301,7 +381,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
    * title or artist is not changed, since the library does not hold them. The import is refused during playback, so this runs when stopped.
    */
   const applyImportedMetadata = (metadata: ChartMetadata) => {
-    if (metadata.tempo !== undefined) setBpm(metadata.tempo);
+    if (metadata.tempo !== undefined) changeTempo(metadata.tempo, "chart");
     if (metadata.capo !== undefined) setCapo(clampCapo(metadata.capo));
     const id = source?.libraryId;
     const patch = { ...(metadata.key ? { key: metadata.key } : {}), ...(metadata.year !== undefined ? { year: metadata.year } : {}) };
@@ -359,6 +439,149 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   useAudienceFeed(session, key, audienceModelValue);
   useBandSyncControl(session);
+  // The song analysis fills in what the performer has not set: the tempo here, and the rest as its steps are added. Nothing it finds
+  // replaces a value that was chosen, which is why a tempo is applied only when no source is recorded for it.
+  const chordChanges = useMemo(() => chartChordTimes(parseChart(chart)), [chart]);
+  const [silence, setSilence] = useState<{ songKey: string; ends: SilenceEnds } | null>(null);
+  const analysis = useSongAnalysis({
+    songKey: key,
+    mix: source?.audio ?? null,
+    stems,
+    beatsPerBar: beats,
+    chordChanges,
+    chordName: chordSource,
+    playing: playing || library.playlistPlaying,
+    onTempo: (found): Notice | null => {
+      const saved = getSetting(key, ":bpm");
+      if (!needsTempoDetection(saved, tempoSource)) return null;
+      const previous = { bpm, firstBeat };
+      changeTempo(found.bpm, "detected");
+      setFirstBeat(found.firstBeat);
+      // Only a 120 saved by an earlier build is a guess worth undoing. An empty tempo had no value to go back to.
+      if (saved !== "120") return null;
+      return {
+        text: `Tempo detected: ${found.bpm} BPM (was ${previous.bpm}).`,
+        actions: [
+          {
+            label: "Undo",
+            run: () => {
+              changeTempo(previous.bpm, "manual");
+              setFirstBeat(previous.firstBeat);
+            },
+          },
+        ],
+      };
+    },
+    onDetect: (found, meter): Notice => {
+      // The Detect or Analyse again button took a snapshot before its run, so Undo puts back what the run replaced.
+      const before = detectBefore.current ?? snapshotTempo();
+      changeTempo(found.bpm, "detected");
+      setFirstBeat(found.firstBeat);
+      // The meter replaces a manual one only when the beats agree on it; a weak reading is left alone.
+      if (meter && meter.confidence >= METER_CERTAIN) {
+        if (meter.beatsPerBar !== beats) applyMeter(meter.beatsPerBar);
+        else changeBeats(meter.beatsPerBar, "detected");
+      }
+      return {
+        text: `Tempo detected: ${found.bpm} BPM.`,
+        actions: [
+          ...tempoOctaves(found.bpm).map((value) => ({ label: `Use ${value}`, run: () => useTempoOctave(found.bpm, value, before) })),
+          { label: "Undo", run: () => undoDetect(before) },
+        ],
+      };
+    },
+    onSilence: (found) => setSilence({ songKey: key, ends: found }),
+    onSections: (found) => {
+      setSuggested(found);
+      setSectionList((current) => sectionsToApply(current, found) ?? current);
+    },
+    onParts: (found) => {
+      // The store checks the parts when a split finishes. A song that was analysed before has its check saved, so it is shown without a re-check.
+      if (!useSong.getState().missingParts) useSong.setState({ missingParts: found });
+    },
+    onLoudness: (found) => {
+      // A level the loudness control measured earlier is kept; the analysis only fills in a song that has none.
+      if (loudness.lufs !== null && loudness.peakDb !== null) return;
+      const next = { ...loudness, lufs: found.lufs, peakDb: found.peakDb };
+      setLoudness(next);
+      setSetting(key, ":options", withLoudness(getSetting(key, ":options"), next));
+    },
+    onMeter: (found): Notice | null => {
+      if (beatsManual || found.confidence < METER_CERTAIN) return null;
+      // 4 is the usual meter, so the analysis may set it. A 3 reads the same beats differently, so it is only offered.
+      if (found.beatsPerBar === 4) {
+        if (beats !== 4) applyMeter(4);
+        return null;
+      }
+      if (beats === 3) return null;
+      return { text: "Sounds like 3/4.", actions: [{ label: "Use it", run: () => applyMeter(3) }] };
+    },
+  });
+
+  // The tempo, first beat, meter and beat grid as they are now, so a Detect run can be undone.
+  const snapshotTempo = (): DetectSnapshot => {
+    const options = readOptions<Record<string, unknown>>(key, {});
+    return {
+      savedBpm: getSetting(key, ":bpm"),
+      bpm,
+      firstBeat,
+      tempoSource,
+      beats,
+      beatsSource: options.beatsSource,
+      grid: readStoredBand(key).grid,
+      beatGridSource: options.beatGridSource,
+    };
+  };
+  const detectBefore = useRef<DetectSnapshot | null>(null);
+  const restoreTempo = (before: DetectSnapshot) => {
+    setBpm(before.bpm);
+    setFirstBeat(before.firstBeat);
+    setTempoSource(before.tempoSource);
+    setBeats(before.beats);
+    setBeatsManual(before.beatsSource === "manual");
+    try {
+      setSetting(key, ":bpm", before.savedBpm);
+      writeStoredBand(key, { beatGrid: before.grid });
+      setSetting(
+        key,
+        ":options",
+        JSON.stringify({
+          ...readOptions(key, {}),
+          tempoSource: before.tempoSource ?? undefined,
+          firstBeat: before.firstBeat,
+          beatsSource: before.beatsSource,
+          beatGridSource: before.beatGridSource,
+        }),
+      );
+    } catch (e) {
+      session.fail(e);
+    }
+  };
+  const undoDetect = (before: DetectSnapshot) => {
+    restoreTempo(before);
+    analysis.show([]);
+  };
+  // Picks the half or double of the detected tempo. The grid is laid out at that tempo, so the Band panel and the click agree.
+  const useTempoOctave = (detected: number, value: number, before: DetectSnapshot) => {
+    const grid = readStoredBand(key).grid;
+    const laid: BeatGrid | null = grid ? gridAtOctave(grid, detected, value) : null;
+    changeTempo(value, "detected");
+    if (laid) setFirstBeat(laid.steady?.firstBeat ?? laid.beats[laid.downbeat] ?? firstBeat);
+    try {
+      if (laid) {
+        writeStoredBand(key, { beatGrid: laid });
+        setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), beatGridSource: "analysis" }));
+      }
+    } catch (e) {
+      session.fail(e);
+    }
+    analysis.show([{ text: `Tempo set to ${value} BPM.`, actions: [{ label: "Undo", run: () => undoDetect(before) }] }]);
+  };
+  const detectTempo = (analyseAgain: boolean) => {
+    detectBefore.current = snapshotTempo();
+    if (analyseAgain) analysis.analyseAgain();
+    else analysis.detect();
+  };
 
   const saveChart = (value: string) => {
     session.pause();
@@ -369,15 +592,17 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       session.fail(e);
     }
   };
+  // Nothing is saved until the performer or an analysis chooses a tempo. Writing on mount would save the 120 default as if it were chosen.
   useEffect(() => {
+    if (!tempoSource) return;
     try {
       setSetting(key, ":bpm", String(bpm));
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, bpm]);
+  }, [session, key, bpm, tempoSource]);
   useEffect(() => {
-    setMix({ ...mixDefaults(tracks), ...options.mix });
+    setMix(withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
   }, [player]);
   // A normalised song is raised or lowered as a whole: every track gets the same gain, so the balance stays as it was mixed.
   const [loudness, setLoudness] = useState<SongLoudness>(() => loudnessFromOptions(getSetting(key, ":options")));
@@ -403,6 +628,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           volume,
           mix,
           trackBuses,
+          partChoice,
           chordChoice,
           lyricsLanguage: readOptions(key, { lyricsLanguage: "auto" }).lyricsLanguage,
           metronomeMode: metronome,
@@ -415,7 +641,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     } catch (e) {
       session.fail(e);
     }
-  }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, chordChoice, metronome, lead, sectionList]);
+  }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, partChoice, chordChoice, metronome, lead, sectionList]);
   useEffect(() => {
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat });
   }, [player, metronome, bpm, beats, volume, firstBeat]);
@@ -438,18 +664,45 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           Enter stage mode
         </Button>
         <MissingPartsNotice songKey={key} sections={sectionList} playing={playing || library.playlistPlaying} />
+        {analysis.notices.map((notice) => (
+          <p key={notice.text} className="flex flex-wrap items-center gap-2 text-xs" role="status">
+            <span>{notice.text}</span>
+            {notice.actions?.map((action) => (
+              <Button key={action.label} variant="outline" size="sm" disabled={playing || library.playlistPlaying || analysis.step !== null} onClick={action.run}>
+                {action.label}
+              </Button>
+            ))}
+          </p>
+        ))}
+        {source || analysis.step || analysis.detecting || analysis.message ? (
+          <p className="flex flex-wrap items-center gap-2 text-xs" role="status">
+            <span>{analysis.detecting ? "Detecting…" : analysis.step ? `Analysing the song: ${analysis.step}…` : analysis.message}</span>
+            {analysis.step || analysis.detecting ? (
+              <Button variant="outline" size="sm" onClick={analysis.cancel}>
+                Cancel
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled={!source || playing || library.playlistPlaying || !!library.busy} onClick={() => detectTempo(true)}>
+                Analyse again
+              </Button>
+            )}
+          </p>
+        ) : null}
         <PerformanceTransport
           session={session}
           stage={stage}
           bpm={bpm}
-          onBpm={setBpm}
+          onBpm={(value) => changeTempo(value, "manual")}
+          onDetect={() => detectTempo(false)}
+          detectDisabled={!source || playing || library.playlistPlaying || !!library.busy || analysis.step !== null}
+          detecting={analysis.detecting}
           metronome={{
             metronome,
             onMetronome: setMetronome,
             firstBeat,
             onFirstBeat: setFirstBeat,
             beats,
-            onBeats: setBeats,
+            onBeats: (value) => changeBeats(value),
             volume,
             onVolume: setVolume,
             lead,
@@ -461,7 +714,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         />
         <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
         <SpeedControls session={session} bpm={bpm} />
-        <SongShapeControls key={key} songKey={key} audio={source?.audio ?? null} onChange={() => setShapeVersion((v) => v + 1)} />
+        <SongShapeControls
+          key={key}
+          songKey={key}
+          audio={source?.audio ?? null}
+          silence={silence?.songKey === key ? silence.ends : null}
+          onChange={() => setShapeVersion((v) => v + 1)}
+        />
         <SessionMidiHealth session={session} />
         <SongKey
           stems={stems}
@@ -495,14 +754,17 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           bpm={bpm}
           firstBeat={firstBeat}
           onMetronome={(tempo, first) => {
-            setBpm(tempo);
+            changeTempo(tempo, "detected");
             setFirstBeat(first);
           }}
           getPosition={() => session.position}
+          partChoices={partChoice}
+          onPartChoice={choosePart}
         />
         <SectionEditor
           sections={sectionList}
           onSections={setSectionList}
+          suggested={suggested}
           duration={player?.duration ?? 0}
           bpm={bpm}
           firstBeat={firstBeat}

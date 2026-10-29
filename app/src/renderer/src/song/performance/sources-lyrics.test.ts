@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultChordSource } from "./sources";
-import { lyricsLrc, transcriptSegments } from "./lyrics";
+import { cleanLines, lyricsLrc, songLines, transcriptWords } from "./lyrics";
 import { parseChart } from "./chart";
 
 const sound = { sampleRate: 44100, channels: [new Float32Array(1000).fill(0.1)] };
@@ -15,24 +15,21 @@ describe("chord source selection", () => {
   });
 });
 describe("lyrics track", () => {
-  it("removes overlapping transcription duplicates while preserving later repeated lines", () => {
-    expect(
-      transcriptSegments(
-        [0, 0.2, 20].map((time) => ({ text: "Sing again", timestamp: [time, time + 1] as [number, number] })),
-        30,
-      ).map((s) => s.time),
-    ).toEqual([0, 20]);
+  it("keeps a repeated line in later verses", () => {
+    expect(cleanLines([0, 20, 40].map((time) => ({ time, text: "Sing again" }))).map((s) => s.time)).toEqual([0, 20, 40]);
   });
   it("rejects unusable timestamps and keeps transcription from becoming MIDI commands", () => {
-    const result = transcriptSegments(
-      [
-        { text: "Second\nline", timestamp: [2, 3] },
-        { text: "{midi:pc 1 5}", timestamp: [0, 1] },
-        { text: "unknown", timestamp: [null, null] },
-        { text: "past end", timestamp: [10, 11] },
-        { text: "invalid", timestamp: [NaN, 1] },
-      ],
-      10,
+    const result = songLines(
+      transcriptWords(
+        [
+          { text: "Second\nline", timestamp: [2, 3] },
+          { text: "{midi:pc 1 5}", timestamp: [0, 1] },
+          { text: "unknown", timestamp: [null, null] },
+          { text: "past end", timestamp: [10, 11] },
+          { text: "invalid", timestamp: [NaN, 1] },
+        ],
+        10,
+      ),
     );
     expect(result).toEqual([
       { time: 0, text: "{midi :pc 1 5}" },

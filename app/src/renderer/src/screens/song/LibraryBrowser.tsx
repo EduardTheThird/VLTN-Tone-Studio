@@ -9,6 +9,8 @@ import { overridesFor } from "@shared/entry-overrides";
 import type { LibraryFolder, LibrarySong } from "@shared/song-library";
 import { FilterBuilder } from "./FilterBuilder";
 import { SongDetails, parseKeywords } from "./SongDetails";
+import { AnalyseSongsDialog } from "./AnalyseSongsDialog";
+import type { BatchSong } from "@/song/analysis/batch";
 
 const field = "rounded border border-seam bg-transparent p-2";
 const EMPTY_FILTER: SmartRules = { match: "all", rules: [], sort: "title" };
@@ -26,6 +28,10 @@ export function LibraryBrowser() {
   const [folderName, setFolderName] = useState("");
   const [batch, setBatch] = useState({ playlist: "", colour: "#3b82f6", keywords: "", folder: "" });
   const [message, setMessage] = useState("");
+  // The name for a playlist made from the selected songs. Null while the name is not being asked for.
+  const [newPlaylist, setNewPlaylist] = useState<string | null>(null);
+  // Which songs the analysis dialog works on: the selection, or the whole library. Null while the dialog is closed.
+  const [analysing, setAnalysing] = useState<"selected" | "all" | null>(null);
   const songs = library.index.songs;
   const folders = library.index.folders;
   const result = useMemo(() => browseSongs(songs, folders, view), [songs, folders, view]);
@@ -59,6 +65,14 @@ export function LibraryBrowser() {
   const runBatch = async (change: () => Promise<void>) => {
     setMessage("");
     await change();
+  };
+  /** Makes a playlist of the selected songs. The Playlists panel opens it once it is saved. */
+  const createFromSelected = async () => {
+    const name = newPlaylist?.trim();
+    if (!name) return;
+    setMessage("");
+    const saved = await library.addPlaylist({ id: crypto.randomUUID(), name, songs: picked, sets: [], overrides: picked.map(() => null) });
+    if (saved) setNewPlaylist(null);
   };
   const deleteSelected = async () => {
     setConfirm("");
@@ -136,6 +150,9 @@ export function LibraryBrowser() {
       <p className="text-sm text-silkscreen-3">
         {result.songs.length} shown{view.folderId ? ` in ${chosen?.name ?? "this folder"}` : ""}
       </p>
+      <Button variant="outline" disabled={library.busy || !songs.length} onClick={() => setAnalysing("all")}>
+        Analyse all songs…
+      </Button>
       {result.letters.length > 0 && (
         <nav aria-label="Jump to letter" className="flex flex-wrap gap-1 text-sm">
           {result.letters.map(({ letter, index }) => (
@@ -210,6 +227,30 @@ export function LibraryBrowser() {
             >
               Add to playlist
             </Button>
+            {newPlaylist === null ? (
+              <Button variant="outline" disabled={library.busy} onClick={() => setNewPlaylist("")}>
+                New playlist from selected…
+              </Button>
+            ) : (
+              <>
+                <input
+                  aria-label="Name for the new playlist"
+                  placeholder="New playlist name"
+                  className={field}
+                  value={newPlaylist}
+                  onChange={(e) => setNewPlaylist(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newPlaylist.trim()) void createFromSelected();
+                  }}
+                />
+                <Button disabled={!newPlaylist.trim() || library.busy} onClick={() => void createFromSelected()}>
+                  Create playlist
+                </Button>
+                <Button variant="outline" onClick={() => setNewPlaylist(null)}>
+                  Cancel
+                </Button>
+              </>
+            )}
             <input aria-label="Colour for selected" type="color" value={batch.colour} onChange={(e) => setBatch({ ...batch, colour: e.target.value })} />
             <Button variant="outline" disabled={library.busy} onClick={() => void library.organiseSongs(picked, { color: batch.colour })}>
               Set colour
@@ -247,6 +288,9 @@ export function LibraryBrowser() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" disabled={library.busy} onClick={() => setAnalysing("selected")}>
+              Analyse selected…
+            </Button>
             <Button variant="outline" onClick={() => setSelected(new Set())}>
               Clear selection
             </Button>
@@ -268,8 +312,17 @@ export function LibraryBrowser() {
           </div>
         </section>
       )}
+      <AnalyseSongsDialog
+        open={analysing !== null}
+        onOpenChange={(open) => !open && setAnalysing(null)}
+        songs={batchSongs(analysing === "all" ? songs : songs.filter((song) => selected.has(song.id)))}
+      />
     </section>
   );
+}
+
+function batchSongs(list: readonly LibrarySong[]): BatchSong[] {
+  return list.map((song) => ({ id: song.id, title: song.title, settings: song.settings }));
 }
 
 function SongRow(props: {

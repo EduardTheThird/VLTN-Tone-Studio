@@ -832,6 +832,22 @@ it("taps the tempo with T and sets the BPM from the taps", () => {
   now.mockRestore();
 });
 
+it("does not save the default 120 BPM just by opening the song", () => {
+  localStorage.clear();
+  render(<PerformancePanel />);
+  expect([...Object.keys(localStorage)].filter((k) => k.endsWith(":bpm"))).toEqual([]);
+});
+
+it("saves a tempo the performer types, with its source", () => {
+  localStorage.clear();
+  render(<PerformancePanel />);
+  fireEvent.change(screen.getByLabelText("BPM"), { target: { value: "98" } });
+  const bpmKey = Object.keys(localStorage).find((k) => k.endsWith(":bpm"));
+  expect(bpmKey && localStorage.getItem(bpmKey)).toBe("98");
+  const optionsKey = Object.keys(localStorage).find((k) => k.endsWith(":options"));
+  expect(JSON.parse((optionsKey && localStorage.getItem(optionsKey)) || "{}")).toMatchObject({ tempoSource: "manual" });
+});
+
 it("shows the global lead-in defaults, and a song without its own count-in leaves the control on Default", () => {
   localStorage.clear();
   localStorage.setItem("vltn.performance.leadin.v1:options", JSON.stringify({ countInBars: 2, preRollBeats: 4, startDelay: 1 }));

@@ -88,6 +88,8 @@ interface LibraryState {
   busy: boolean;
   error: string;
   notice: string;
+  /** The playlist the Playlists panel should open next, set when a playlist is created. Null once the panel has opened it. */
+  focusPlaylistId: string | null;
   transfer: string;
   exportBackup(): Promise<void>;
   /** The backup waiting for the user to choose how to restore it, when some of its songs are already in the library. */
@@ -125,8 +127,14 @@ interface LibraryState {
   clearHistory(): Promise<void>;
   /** Creates a playlist from the songs played since `since`, in play order. */
   playlistFromHistory(name: string, since: string): Promise<void>;
-  /** Changes a playlist's name, entries, sets or smart rules. */
-  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<void>;
+  /** Changes a playlist's name, entries, sets or smart rules. Resolves true once saved, and false when it failed; the error is then on `error`. */
+  updatePlaylist(id: string, change: Partial<Pick<Playlist, "name" | "songs" | "sets" | "smart" | "overrides">>): Promise<boolean>;
+  /** Adds a playlist to the end of the list, and asks the Playlists panel to open it. Writes queue, so this is never dropped. */
+  addPlaylist(playlist: Playlist): Promise<boolean>;
+  /** Sets which playlist the Playlists panel opens, or clears it with null. */
+  focusPlaylist(id: string | null): void;
+  /** Deletes a playlist. Its songs stay in the library. */
+  deletePlaylist(id: string): Promise<boolean>;
   midiSession: { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null;
   playPlaylist(queue: string[], position?: number, setId?: string, overrides?: (EntryOverride | null)[]): Promise<void>;
   advancePlaylist(): Promise<void>;
@@ -137,7 +145,7 @@ interface LibraryState {
   refresh(): Promise<void>;
   save(title: string, artist: string): Promise<void>;
   load(id: string, queue?: string[], position?: number, overrides?: (EntryOverride | null)[]): Promise<void>;
-  playlists(value: Playlist[]): Promise<void>;
+  playlists(value: Playlist[]): Promise<boolean>;
   remove(id: string): Promise<void>;
   /** Copies the saved track settings of the open song onto the saved songs that have the same imported tracks. */
   applyTrackSettings(): Promise<void>;
@@ -246,6 +254,14 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
     skipped,
   };
 }
+/**
+ * Loads a saved song's mix and stems for an analysis, without opening the song. The open song, its panel and the song store are not
+ * changed, and nothing is played. The caller holds one song's audio at a time, and drops it before it loads the next.
+ */
+export async function loadSongAudio(id: string): Promise<{ source: PcmAudio; stems: Stems }> {
+  const loaded = await fetchSong(await api().index(), id);
+  return { source: loaded.source.audio, stems: loaded.stems };
+}
 /** Reads the index after moving any settings an earlier version left in localStorage into the library. */
 async function readIndex(): Promise<SongLibrary> {
   const index = await api().index();
@@ -280,6 +296,25 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     } finally {
       set({ busy: false });
     }
+  };
+  /**
+   * Playlist writes wait in line, so a write that starts while another is still saving is not dropped. Each change is applied to the
+   * playlists as they are when its turn comes, so two quick edits both land, in order. A failed write shows its error; later writes still run.
+   */
+  let playlistWrites: Promise<boolean> = Promise.resolve(true);
+  const writePlaylists = (change: (playlists: Playlist[]) => Playlist[], notice = "Playlist saved."): Promise<boolean> => {
+    const write = playlistWrites
+      .then(async () => {
+        await api().playlists(change(get().index.playlists));
+        set({ index: await api().index(), notice });
+        return true;
+      })
+      .catch((e) => {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        return false;
+      });
+    playlistWrites = write;
+    return write;
   };
   const restore = async (mode: RestoreMode) => {
     const service = api();
@@ -440,6 +475,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     busy: false,
     error: "",
     notice: "",
+    focusPlaylistId: null,
     transfer: "",
     queue: [],
     queueOverrides: [],
@@ -626,11 +662,17 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         set({ index: await api().index(), notice: `Created ${trimmed} with ${songs.length} songs from the history.` });
       }),
     updatePlaylist: (id, change) =>
-      run(async () => {
-        const playlists = get().index.playlists.map((p) => (p.id === id ? { ...p, ...change } : p));
-        await api().playlists(playlists);
-        set({ index: await api().index() });
+      writePlaylists(
+        (playlists) => playlists.map((p) => (p.id === id ? { ...p, ...change } : p)),
+        `Saved ${change.name ?? get().index.playlists.find((p) => p.id === id)?.name ?? "the playlist"}.`,
+      ),
+    addPlaylist: (playlist) =>
+      writePlaylists((playlists) => [...playlists, playlist], `Created ${playlist.name}.`).then((ok) => {
+        if (ok) set({ focusPlaylistId: playlist.id });
+        return ok;
       }),
+    focusPlaylist: (focusPlaylistId) => set({ focusPlaylistId }),
+    deletePlaylist: (id) => writePlaylists((playlists) => playlists.filter((p) => p.id !== id)),
     rememberMidi: (midiSession) => set({ midiSession }),
     pausePlaylist: () => {
       loadGeneration++;
@@ -729,11 +771,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         set({ index: await api().index(), notice: `Saved ${song.title}, including audio, stems and performance settings.` });
       }),
     load: (id, queue = [id], position = 0, overrides) => run(() => load(id, queue, position, false, overrides, false)),
-    playlists: (playlists) =>
-      run(async () => {
-        await api().playlists(playlists);
-        set({ index: await api().index(), notice: "Playlist saved." });
-      }),
+    playlists: (playlists) => writePlaylists(() => playlists),
     applyTrackSettings: () =>
       run(async () => {
         const id = useSong.getState().source?.libraryId;

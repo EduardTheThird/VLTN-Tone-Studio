@@ -6,6 +6,7 @@ import { fixedBeatGrid } from "@/song/band/beat-grid";
 import { parseSmf } from "@/song/performance/smf";
 import type { Section } from "@/song/performance/sections";
 import { useBandPanel } from "./band-panel-state";
+import { ORIGINAL_PARTS } from "@/song/band/part-choice";
 
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
@@ -79,6 +80,8 @@ function renderPanel(overrides: Partial<Parameters<typeof BandPanel>[0]> = {}) {
     firstBeat: 0,
     onMetronome: vi.fn(),
     getPosition: () => 0,
+    partChoices: ORIGINAL_PARTS,
+    onPartChoice: vi.fn(),
     ...overrides,
   };
   return { ...render(<BandPanel {...props} />), props };
@@ -466,5 +469,82 @@ describe("Band panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     expect(screen.getByText("Turn on drums or bass first.")).toBeTruthy();
     expect(mocks.startBandRender).not.toHaveBeenCalled();
+  });
+});
+
+describe("Band panel: what plays", () => {
+  const GENERATED_DRUMS = { kind: "user" as const, name: "Drums (generated)", bus: "main" as const, transpose: false };
+  const pcm = () => ({ sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] });
+
+  it("offers Generated and Both only for a part that has a generated track", () => {
+    renderPanel();
+    const drums = screen.getByRole("group", { name: "Drums" });
+    expect(within(drums).getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe("true");
+    expect((within(drums).getByRole("button", { name: "Generated" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(drums).getByRole("button", { name: "Both" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(drums).getByText("Generate the drums first.")).toBeTruthy();
+  });
+
+  it("reports a choice for the part that was picked", () => {
+    useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
+    const { props } = renderPanel();
+    const drums = screen.getByRole("group", { name: "Drums" });
+    fireEvent.click(within(drums).getByRole("button", { name: "Both" }));
+    expect(props.onPartChoice).toHaveBeenCalledWith({ drums: "both" });
+  });
+
+  it("keeps the rows usable during playback, while the Band actions stay disabled", () => {
+    useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
+    const { props } = renderPanel({ playing: true });
+    const drums = screen.getByRole("group", { name: "Drums" });
+    const generated = within(drums).getByRole("button", { name: "Generated" }) as HTMLButtonElement;
+    expect(generated.disabled).toBe(false);
+    fireEvent.click(generated);
+    expect(props.onPartChoice).toHaveBeenCalledWith({ drums: "generated" });
+    expect((screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("switches a part that was on its original to its generated track after Generate, and says so", async () => {
+    stored({ beatGrid: grid, bandOutOfDate: true });
+    useSong.setState({ stems: { drums: pcm(), bass: pcm() } as never });
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums: pcm(), bass: pcm(), notes: { drums: [], bass: [] } }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    const { props } = renderPanel({ chart: "[Am] [G]", sections: SECTIONS, partChoices: ORIGINAL_PARTS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(props.onPartChoice).toHaveBeenCalledWith({ drums: "generated", bass: "generated" }));
+    expect(screen.getByText("Now playing the generated drums and bass. Switch back under What plays.")).toBeTruthy();
+  });
+
+  it("keeps a Both choice when Generate runs again", async () => {
+    stored({ beatGrid: grid, bandOutOfDate: true });
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums: pcm(), bass: null, notes: { drums: [], bass: [] } }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    const { props } = renderPanel({ chart: "[Am] [G]", sections: SECTIONS, partChoices: { drums: "both", bass: "original" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalled());
+    await waitFor(() => expect(savedOptions().bandOutOfDate).toBe(false));
+    expect(props.onPartChoice).not.toHaveBeenCalledWith(expect.objectContaining({ drums: "generated" }));
+  });
+
+  it("resets both parts to their originals once the generated parts are removed", () => {
+    useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
+    stored({ beatGrid: grid });
+    const { props } = renderPanel({ partChoices: { drums: "generated", bass: "original" } });
+    fireEvent.click(screen.getByRole("button", { name: "Remove generated parts" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
+    expect(props.onPartChoice).toHaveBeenCalledWith(ORIGINAL_PARTS);
+  });
+
+  it("says a found part can still be replaced, and that the parts switch under What plays", () => {
+    useSong.setState({ missingParts: { drums: "present", bass: "absent", absentSections: { drums: [], bass: [] } } });
+    renderPanel();
+    expect(screen.getByText("Drums found in the song")).toBeTruthy();
+    expect(screen.getByText("You can still generate your own and switch between them under What plays.")).toBeTruthy();
   });
 });

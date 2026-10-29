@@ -302,7 +302,37 @@ export function copyTrackSettings(from: LibrarySong, to: LibrarySong): LibrarySo
     for (const key of COPIED_SETTINGS) if (source[key] !== undefined) Object.assign(next, { [key]: source[key] });
     return next;
   });
-  return { ...to, audio };
+  return { ...to, audio, settings: settingsWithPartChoice(from, to, names) };
+}
+
+/** The mixer names of the generated drum and bass tracks. The same names as GENERATED_PART_NAMES in the renderer's band code. */
+const GENERATED_TRACK_NAMES = ["Drums (generated)", "Bass (generated)"];
+
+/** A song's saved options, read as an object. A damaged entry counts as empty, as the renderer reads it. */
+function optionsOf(song: LibrarySong): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(song.settings[":options"] || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // Treated as empty.
+  }
+  return {};
+}
+
+/**
+ * The settings of `to` with the drums and bass choice (see part-choice.ts) taken from `from`. The choice is copied only when both songs
+ * have a generated part, which is when their track names match. Otherwise `to`'s choice is removed, so it never points at parts it lacks.
+ */
+function settingsWithPartChoice(from: LibrarySong, to: LibrarySong, shared: string[]): Record<string, string> {
+  const choice = optionsOf(from).partChoice;
+  const options = optionsOf(to);
+  if (shared.some((name) => GENERATED_TRACK_NAMES.includes(name)) && choice !== undefined) {
+    return { ...to.settings, ":options": JSON.stringify({ ...options, partChoice: choice }) };
+  }
+  if (!("partChoice" in options)) return to.settings;
+  const kept = { ...options };
+  delete kept.partChoice;
+  return { ...to.settings, ":options": JSON.stringify(kept) };
 }
 
 /** The files that make up one track and the size each must have. */

@@ -8,6 +8,8 @@ import { CAPO_MAX, keySpelling } from "@/song/performance/speed";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { STEM_NAMES, type StemName, type Stems } from "@/song/types";
 import { LyricsTrack } from "./LyricsTrack";
+import { storedAnalysis } from "./use-song-analysis";
+import { isCurrent } from "@/song/analysis/song-analysis";
 
 // The chart editor is loaded when this panel first renders it, so the CodeMirror code is kept out of the main bundle.
 const ChartCodeEditor = lazy(() => import("./ChartCodeEditor"));
@@ -49,15 +51,25 @@ function ChartLines({ cues, shift, flats, onChord }: { cues: Cue[]; shift: numbe
   ));
 }
 
-/** Estimates chords from a stem in a worker. Errors go to the session. */
-export function useChordAnalysis(session: PerformanceSession, stems: Stems | null, chordSource: StemName | "") {
+/**
+ * Estimates chords from a stem in a worker. Errors go to the session. The chords the song analysis saved for this audio and stem are
+ * used as they are, so a song is not analysed twice. `saved` names the song and the audio it was analysed under.
+ */
+export function useChordAnalysis(session: PerformanceSession, stems: Stems | null, chordSource: StemName | "", saved?: { songKey: string; audioId: string }) {
   const [chords, setChords] = useState<Chord[]>([]),
     [analysing, setAnalysing] = useState(false);
+  const songKey = saved?.songKey,
+    audioId = saved?.audioId;
   useEffect(() => {
     setChords([]);
     setAnalysing(false);
     const audio = chordSource ? stems?.[chordSource] : undefined;
     if (!audio) return;
+    const known = songKey !== undefined && audioId !== undefined ? storedAnalysis(songKey).read() : null;
+    if (known && audioId !== undefined && isCurrent(known, audioId) && known.chords?.source === chordSource) {
+      setChords(known.chords.chords);
+      return;
+    }
     const worker = new Worker(new URL("../../song/performance/chords-worker.ts", import.meta.url), { type: "module" });
     setAnalysing(true);
     setChords([]);
@@ -74,7 +86,7 @@ export function useChordAnalysis(session: PerformanceSession, stems: Stems | nul
     };
     worker.postMessage(audio);
     return () => worker.terminate();
-  }, [session, stems, chordSource]);
+  }, [session, stems, chordSource, songKey, audioId]);
   return { chords, analysing };
 }
 

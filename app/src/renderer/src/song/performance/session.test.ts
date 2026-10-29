@@ -1244,6 +1244,7 @@ describe("remote actions", () => {
       toggleStage: vi.fn(),
       muteGroup: vi.fn(),
       toggleClick: vi.fn(),
+      togglePart: vi.fn(),
       tap: vi.fn(),
     };
     session.setView(view);

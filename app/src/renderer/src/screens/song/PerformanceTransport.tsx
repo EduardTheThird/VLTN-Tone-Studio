@@ -84,6 +84,9 @@ export function PerformanceTransport({
   stage,
   bpm,
   onBpm,
+  onDetect,
+  detectDisabled = false,
+  detecting = false,
   onTap,
   metronome,
 }: {
@@ -91,6 +94,10 @@ export function PerformanceTransport({
   stage: boolean;
   bpm: number;
   onBpm: (value: number) => void;
+  /** Detects the tempo again from the audio. Not shown when not given. */
+  onDetect?: () => void;
+  detectDisabled?: boolean;
+  detecting?: boolean;
   onTap: () => void;
   metronome: MetronomeSettings;
 }) {
@@ -196,6 +203,11 @@ export function PerformanceTransport({
             Song BPM{" "}
             <BpmField bpm={bpm} disabled={playing} onBpm={onBpm} />
           </label>
+          {onDetect && (
+            <Button variant="outline" disabled={detectDisabled} title="Detect the tempo from the audio" onClick={onDetect}>
+              {detecting ? "Detecting…" : "Detect"}
+            </Button>
+          )}
           <Button variant="outline" disabled={playing} title="Tap the tempo (T). Sets the song BPM while stopped." onClick={onTap}>
             Tap tempo
           </Button>

@@ -38,6 +38,17 @@ describe("startBeatGrid", () => {
     expect(worker.terminated).toBe(true);
   });
 
+  it("resolves the meter the worker estimated, or null when the job is cancelled", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const job = startBeatGrid(request);
+    FakeWorker.last!.onmessage!({ data: { grid, meter: { beatsPerBar: 3, confidence: 0.8 } } } as MessageEvent);
+    await expect(job.meter).resolves.toEqual({ beatsPerBar: 3, confidence: 0.8 });
+    const cancelled = startBeatGrid(request);
+    cancelled.cancel();
+    await expect(cancelled.meter).resolves.toBeNull();
+    await expect(cancelled.done).rejects.toThrow("Beat tracking was cancelled.");
+  });
+
   it("posts one mono buffer, transferred rather than copied", () => {
     vi.stubGlobal("Worker", FakeWorker);
     startBeatGrid({ ...request, sources: [stem, stem] });

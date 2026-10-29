@@ -4,7 +4,7 @@ In the desktop app, open **Song → Songs & playlists**.
 
 1. **Import audio**, then prepare stems and the Performance chart/lyrics as needed.
 2. Enter the song title and artist and choose **Save song to library**. Use **Save song changes** after subsequent edits or a new split.
-3. Create a playlist and add songs from the library. Entries can repeat. Use the up/down buttons to set the order. Playlist edits save immediately; removing an entry does not remove the song.
+3. Create a playlist (press Enter in its name, or choose **Create playlist**) and add songs with **Add songs…**, either to the end or to the end of a set. Entries can repeat. Use the up/down buttons to set the order. Edits to a playlist are kept as a draft until you choose **Save playlist** (or press Cmd/Ctrl+S); **Discard changes** restores the saved list. Play, Load and Queue use the saved playlist, so save first. Switching to another playlist with unsaved edits asks whether to save them. Removing an entry does not remove the song.
 4. Choose **Play playlist** to perform the whole set, or **Play from here** on an entry to start partway through. Performance loads and starts each next song automatically, then stops after the last entry. It shows the current position, next title, **Previous song / Next song**, and **Stop playlist**. Pause/resume controls the set; skipping while paused loads the destination paused. **Load set paused** remains available for preparation. The queue uses a snapshot of the selected playlist order.
 
 Songs restore their saved BPM, MIDI Clock preference, chart, lyrics and mix. The global metronome follows each song. Audio loads between songs, so this is automatic sequential playback rather than gapless playback. Stop can cancel a pending next-song load; loading errors stop the set and show a message. Leaving Performance pauses the playlist.
@@ -52,11 +52,11 @@ Each saved song has details you set in **Song → Songs & playlists**: its key, 
 - **Search and sort.** Search matches the title, artist, notes and keywords, and every word you type must match. Sort by title, artist, date added, last played, play count, BPM, year or key. A list of more than 20 songs shows an A to Z index.
 - **Folders.** Folders nest to any depth. A song is in one folder or in the library root. Only an empty folder can be deleted.
 - **Filters.** Choose **Filter the list** and add rules on title, artist, notes, key, keyword, colour, folder, BPM, year, play count, length, date added or last played. A song must match all the rules, or any of them, as you choose. A rule that is incomplete, or cannot run, shows no songs and says why. Recent filters are remembered on this computer only.
-- **Batch edit.** Select songs to add them to a playlist, set their colour, replace their keywords, move them to a folder, or delete them. Deleting asks first, and removes the songs from every playlist.
+- **Batch edit.** Select songs to add them to a playlist, make a new playlist from them with **New playlist from selected…**, set their colour, replace their keywords, move them to a folder, or delete them. Deleting asks first, and removes the songs from every playlist.
 
 ## Playlist sets and smart playlists
 
-A regular playlist can be split into headed sets, such as "Set 1" and "Encore". Each set shows its song count and running time, and the playlist shows its total. **Play set** plays only that set and stops at its end. A set heading moves with the songs around it; removing the only song of a set removes its heading. A song's running time is its trimmed length at its saved speed, so a set's total is the time it will actually take to play.
+A regular playlist can be split into headed sets, such as "Set 1" and "Encore". Each set shows its song count and running time, and the playlist shows its total. **Add songs to this set…** adds songs at the end of that set. **Play set** plays only that set and stops at its end. A set heading moves with the songs around it; removing the only song of a set removes its heading. A song's running time is its trimmed length at its saved speed, so a set's total is the time it will actually take to play.
 
 Each entry of a regular playlist also has two settings, shown beside it: **Song's own end** (or **Play the next song**, **Stop the playlist**, **Loop the song**) and **Starts by itself**. They override the song's own end setting and whether it starts when it becomes the playing song, for this playlist only. A stop entry ends the set there, a loop entry repeats its song until Next is pressed, and an entry that does not start by itself loads and waits for Play. The entry that is playing keeps its settings for as long as it plays.
 
@@ -71,6 +71,14 @@ Each upcoming queue entry has the same two settings, which apply to that queue o
 ## History
 
 A song is counted as played once it reaches its halfway point. Each play records the time and, when it was part of a set, the set. History shows the playlist and set next to a play made in a set, for example "Gig › Set 1". The count and the last-played time follow. The history keeps the most recent 500 plays. You can clear it, or make a playlist from the plays since a date. Removing a song removes its plays from the history.
+
+## Analysing saved songs
+
+The analysis finds a song's tempo and meter, key, chords, loudness, missing drums or bass, silence at each end, and suggested sections (intro, verse, chorus and so on) on the bar lines. A song that has no sections takes the suggested ones. A song that already has its own keeps them, and the section editor offers **Replace with detected sections**, with **Undo**. Songs saved before it existed have no analysis, and often a wrong tempo of 120.
+
+- **One song.** On the Performance screen, **Detect** beside the BPM finds the tempo and meter again, even if you set them by hand. If the beat was counted as half or double the real tempo, **Use** the half or the double. **Undo** puts back the tempo, meter and beat grid from before. **Analyse again** runs every step again and replaces the tempo and meter; your key, trims, sections and chart are kept.
+- **Many songs.** Select songs and choose **Analyse selected…**, or choose **Analyse all songs…** for the whole library. Choose which steps to run. **Only songs that need it** skips songs whose analysis is current. **Replace tempos I set by hand** is off by default, so a tempo you set, tapped or took from a chart is kept.
+- The analysis runs without opening the songs, one at a time. A song open on the Performance screen is skipped. Nothing runs while a song or playlist plays, and a batch pauses when playback starts. **Stop** leaves the songs not yet reached as they were. The summary lists the tempos that changed, and each one can be opened to check it.
 
 ## Format versions
 

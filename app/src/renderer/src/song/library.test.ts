@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
-import { useSongLibrary } from "./library";
+import { loadSongAudio, useSongLibrary } from "./library";
 import { clearSettingsCache, flushSettings, getSetting, performanceKey, setSetting } from "./performance/settings";
 import { useNav } from "@/state/nav";
 
@@ -60,6 +60,19 @@ beforeEach(() => {
   useSong.setState({ source: null, stems: null, status: { kind: "idle" } });
   useSongLibrary.setState({ index: emptyLibrary(), busy: false, error: "", notice: "", queue: [], position: -1, playlistPlaying: false, midiSession: null });
 });
+it("loads a saved song's audio for an analysis without opening it or changing the open song", async () => {
+  const loaded = await loadSongAudio(saved.id);
+  expect(loaded.source.channels[0]).toEqual(audio.channels[0]);
+  expect(Object.keys(loaded.stems)).toEqual(["guitar"]);
+  expect(useSong.getState().source).toBeNull();
+  expect(useSong.getState().stems).toBeNull();
+  expect(useNav.getState().param).not.toBe("performance");
+});
+
+it("refuses to load audio for a song that is not in the library", async () => {
+  await expect(loadSongAudio("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow("Song is missing from the library.");
+});
+
 it("loads saved source/stems and preserves queue positions for repeated entries", async () => {
   await useSongLibrary.getState().load(saved.id, [saved.id, saved.id], 1);
   expect(useSong.getState().source?.audio.channels[0]).toEqual(audio.channels[0]);
@@ -705,5 +718,56 @@ describe("warning when the next song cannot be loaded in the background", () => 
     await vi.waitFor(() => expect(useSongLibrary.getState().error).toContain("Second song"));
     expect(useSongLibrary.getState().removeFromQueue(1)).toBeNull();
     expect(useSongLibrary.getState()).toMatchObject({ error: "", queue: [saved.id], playlistPlaying: true });
+  });
+});
+
+describe("playlist writes", () => {
+  const first = { id: "p1", name: "Set", songs: [] as string[], sets: [] };
+  let stored: typeof first[] = [];
+  beforeEach(() => {
+    stored = [first];
+    api.index.mockImplementation(async () => ({ ...emptyLibrary(), songs: [saved], playlists: stored }));
+    api.playlists.mockImplementation(async (next: typeof first[]) => {
+      stored = next;
+    });
+    useSongLibrary.setState({ index: { ...emptyLibrary(), songs: [saved], playlists: [first] }, busy: false, error: "" });
+  });
+
+  it("lands two edits made back to back, in order, the second on top of the first", async () => {
+    let release!: () => void;
+    api.playlists.mockImplementationOnce(async (next: typeof first[]) => {
+      await new Promise<void>((done) => (release = done));
+      stored = next;
+    });
+    const a = useSongLibrary.getState().updatePlaylist("p1", { songs: [saved.id] });
+    const b = useSongLibrary.getState().updatePlaylist("p1", { name: "Renamed" });
+    await vi.waitFor(() => expect(api.playlists).toHaveBeenCalledTimes(1));
+    release();
+    await Promise.all([a, b]);
+    expect(api.playlists).toHaveBeenCalledTimes(2);
+    expect(stored[0]).toMatchObject({ name: "Renamed", songs: [saved.id] });
+  });
+
+  it("does not drop a write while the library is busy with another action", async () => {
+    useSongLibrary.setState({ busy: true });
+    await useSongLibrary.getState().updatePlaylist("p1", { name: "Kept" });
+    expect(api.playlists).toHaveBeenCalledTimes(1);
+    expect(stored[0].name).toBe("Kept");
+  });
+
+  it("shows a failed write as an error and still runs the writes queued after it", async () => {
+    api.playlists.mockRejectedValueOnce(new Error("Disk full"));
+    await useSongLibrary.getState().updatePlaylist("p1", { name: "A" });
+    await useSongLibrary.getState().updatePlaylist("p1", { name: "B" });
+    expect(useSongLibrary.getState().error).toBe("Disk full");
+    expect(api.playlists).toHaveBeenLastCalledWith([expect.objectContaining({ name: "B" })]);
+  });
+
+  it("adds and deletes playlists from the latest list, so neither overwrites the other", async () => {
+    await Promise.all([
+      useSongLibrary.getState().addPlaylist({ id: "p2", name: "Two", songs: [], sets: [] }),
+      useSongLibrary.getState().deletePlaylist("p1"),
+    ]);
+    expect(stored.map((p) => p.id)).toEqual(["p2"]);
   });
 });
