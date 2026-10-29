@@ -4,7 +4,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## Unreleased
 
+### Fixed
+- **Lyrics transcription works again.** Since 0.9.2 every transcription, for one song or from the Library, failed with "window is not defined", because the lyrics worker loaded the song settings. A test now loads every worker without a page, so this can't come back unnoticed.
+
 ### Added
+- **Lyrics from vocals is its own section** on the Performance screen, with the model and quality choice above the button. It used to be folded away under the chart editor.
 - **Analysis in the background.** A saved-song analysis keeps going when you close its dialog or leave the Song screen. The status bar shows the song, the step, a bar and the time left on every screen, and the Library shows the same line. **Run in background** closes the dialog; reopening it shows the run, and the summary stays until **Done**. A run that waits for a playlist can be released with **Run anyway** when no song plays. See [Saved songs](SONG-LIBRARY.md#analysing-saved-songs).
 - **Find the beat again from the tempo you set.** When a song's tempo was set by hand, tapped or taken from the chart, **Find the beat at N BPM** on the Performance screen finds the beat from that number, and **Keep exactly N** keeps the tempo as typed. **Undo** puts back the tempo, the grid and the sections. The Band panel's **Find the beat** starts from it too, with **Use my tempo**. See [Performance](PERFORMANCE.md).
 - **Playlist editing with Save.** A playlist's edits are a draft until **Save playlist** (or Cmd/Ctrl+S), with **Discard changes** and a prompt before leaving unsaved edits. **Add songs…** adds songs inside a playlist, or to the end of a set. Pressing Enter creates a playlist, and **New playlist from selected…** makes one from the songs ticked in the Library. Playlist changes are never dropped while another one is saving. See [Saved songs](SONG-LIBRARY.md#saved-songs-and-live-playlists).

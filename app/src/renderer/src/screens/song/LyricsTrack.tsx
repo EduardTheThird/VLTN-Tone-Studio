@@ -9,16 +9,17 @@ import {
   loadLyricsChoice,
   loadLyricsOnAnalysis,
   LYRIC_LANGUAGES,
-  lyricsOptions,
   saveLyricsChoice,
   saveLyricsOnAnalysis,
   type LyricsChoice,
   type LyricsLanguage,
 } from "@/song/performance/lyrics-options";
+import { lyricsOptions } from "@/song/performance/lyrics-song-options";
 import { getSetting, readOptions, setSetting } from "@/song/performance/settings";
 import { host } from "@/host";
 import { useActiveIndex } from "@/song/performance/playback-clock";
 import { LyricsModelPicker } from "./LyricsModelPicker";
+import { findLyricsModel } from "@/song/performance/lyrics-models";
 
 /** What the chart's source means to the performer, shown under its title. */
 const SOURCE_NOTE = {
@@ -55,6 +56,8 @@ export function LyricsTrack({
   const options = readOptions<Record<string, unknown>>(storageKey, {});
   const source = chartSourceOf(options);
   const previous = previousChartOf(options);
+  // The button names the model, so the choice above it is never a surprise.
+  const modelLabel = findLyricsModel(choice.model)?.label ?? "Better";
   const lines = useMemo(
     () =>
       text
@@ -129,6 +132,17 @@ export function LyricsTrack({
           </Button>
         </div>
       )}
+      <section aria-label="Lyrics model" className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold">Lyrics model</h3>
+        <LyricsModelPicker
+          choice={choice}
+          disabled={busy}
+          onChange={(next) => {
+            setChoice(next);
+            saveLyricsChoice(next);
+          }}
+        />
+      </section>
       <div className="flex flex-wrap items-center gap-3">
         <label>
           Lyrics language{" "}
@@ -162,7 +176,7 @@ export function LyricsTrack({
             else transcribe();
           }}
         >
-          {text ? "Transcribe again" : "Generate lyrics from vocals"}
+          {`${text ? "Transcribe again" : "Generate lyrics from vocals"} (${modelLabel})`}
         </Button>
         {text && source === "aligned" && (
           <Button variant="outline" disabled={!available || busy} onClick={() => transcribe(lrcTexts(text).join("\n"))}>
@@ -209,14 +223,6 @@ export function LyricsTrack({
         />
         <span>Transcribe lyrics when analysing (for songs with no lyrics)</span>
       </label>
-      <LyricsModelPicker
-        choice={choice}
-        disabled={busy}
-        onChange={(next) => {
-          setChoice(next);
-          saveLyricsChoice(next);
-        }}
-      />
       <details>
         <summary>Paste lyrics and time them</summary>
         <p className="text-sm text-silkscreen-3">

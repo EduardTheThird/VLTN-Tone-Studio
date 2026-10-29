@@ -185,9 +185,13 @@ export function PerformanceAnalysis({
           Export chart
         </Button>
       </div>
-      <details>
-        <summary className="cursor-pointer font-semibold">Separate lyrics and chart editors</summary>
+      {/* Lyrics from the vocals, with the model choice, are on show rather than folded away, as the stem split's choices are. */}
+      <section aria-label="Lyrics from vocals" className="flex flex-col gap-2 rounded border border-seam p-3">
+        <h3 className="font-semibold">Lyrics from vocals</h3>
         <LyricsTrack audio={stems?.vocals} storageKey={storageKey} onTextChange={onLyrics} follow={false} />
+      </section>
+      <details>
+        <summary className="cursor-pointer font-semibold">Chart editor</summary>
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
             <Suspense

@@ -54,7 +54,7 @@ afterEach(() => {
 it("persists timed transcription separately from charts and follows playback", async () => {
   localStorage.setItem("song", "[00:00] [C] {midi:pc 1 0}");
   render(<LyricsTrack audio={audio} storageKey="song" />);
-  fireEvent.click(screen.getByText("Generate lyrics from vocals"));
+  fireEvent.click(screen.getByText("Generate lyrics from vocals (Better)"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   await act(async () =>
     FakeWorker.current.onmessage?.({
@@ -76,7 +76,7 @@ it("persists timed transcription separately from charts and follows playback", a
 it("cancels work and ignores late results without replacing saved lyrics", async () => {
   localStorage.setItem("song:lyrics", "[00:00.00] Existing");
   render(<LyricsTrack audio={audio} storageKey="song" />);
-  fireEvent.click(screen.getByText("Transcribe again"));
+  fireEvent.click(screen.getByText("Transcribe again (Better)"));
   fireEvent.click(screen.getByText("Replace lyrics"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   fireEvent.click(screen.getByText("Cancel transcription"));
@@ -90,7 +90,7 @@ it("passes an explicit language to the local worker and retains other song optio
   localStorage.setItem("song:options", JSON.stringify({ shift: 3 }));
   render(<LyricsTrack audio={audio} storageKey="song" />);
   fireEvent.change(screen.getByLabelText("Lyrics language"), { target: { value: "afrikaans" } });
-  fireEvent.click(screen.getByText("Transcribe again"));
+  fireEvent.click(screen.getByText("Transcribe again (Better)"));
   fireEvent.click(screen.getByText("Replace lyrics"));
   await waitFor(() => expect(FakeWorker.current?.postMessage).toHaveBeenCalled());
   expect(FakeWorker.current.postMessage.mock.calls[0][0].options.language).toBe("afrikaans");
@@ -100,7 +100,7 @@ it("passes an explicit language to the local worker and retains other song optio
 it("asks before replacing lyrics from before 0.9.2, and keeps them when the performer says so", async () => {
   localStorage.setItem("song:lyrics", "[00:00.00] Made earlier");
   render(<LyricsTrack audio={audio} storageKey="song" />);
-  fireEvent.click(screen.getByText("Transcribe again"));
+  fireEvent.click(screen.getByText("Transcribe again (Better)"));
   expect(screen.getByText("Replace these lyrics? You can restore them afterwards.")).toBeTruthy();
   fireEvent.click(screen.getByText("Keep them"));
   expect(screen.queryByText("Replace these lyrics? You can restore them afterwards.")).toBeNull();
