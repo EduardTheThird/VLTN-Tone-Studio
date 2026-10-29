@@ -251,3 +251,16 @@ it("does not create a playlist from Enter when the name is empty", async () => {
   });
   expect(api.playlists).not.toHaveBeenCalled();
 });
+
+it("shows a smart playlist's rules, name and delete button when it is selected", () => {
+  renderPanel({ id: "66666666-6666-6666-6666-666666666666", name: "Rules", songs: [], smart: { match: "all", rules: [], sort: "title" } });
+  expect((screen.getByLabelText("Playlist name") as HTMLInputElement).value).toBe("Rules");
+  expect(screen.getByText("Save rules")).toBeTruthy();
+  expect(screen.getByText("Delete playlist…")).toBeTruthy();
+});
+
+it("still shows Save playlist for a static playlist", () => {
+  renderPanel(playlist());
+  expect(screen.getByText("Save playlist")).toBeTruthy();
+  expect(screen.getByText("Delete playlist…")).toBeTruthy();
+});

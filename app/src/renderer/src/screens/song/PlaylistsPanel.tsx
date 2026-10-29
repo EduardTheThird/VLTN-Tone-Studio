@@ -136,7 +136,7 @@ export function PlaylistsPanel() {
           </option>
         ))}
       </select>
-      {playlist && draft && (
+      {playlist && (
         <>
           <div className="flex flex-wrap gap-2">
             {playlist.smart ? (
@@ -152,13 +152,15 @@ export function PlaylistsPanel() {
                 }}
               />
             ) : (
-              <input
-                aria-label="Playlist name"
-                value={draft.name}
-                className={field}
-                disabled={library.busy}
-                onChange={(e) => edit({ ...draft, name: e.target.value })}
-              />
+              draft && (
+                <input
+                  aria-label="Playlist name"
+                  value={draft.name}
+                  className={field}
+                  disabled={library.busy}
+                  onChange={(e) => edit({ ...draft, name: e.target.value })}
+                />
+              )
             )}
             <Button variant="outline" disabled={library.busy} onClick={() => setConfirm("playlist:" + playlist.id)}>
               Delete playlist…
@@ -186,24 +188,26 @@ export function PlaylistsPanel() {
           {playlist.smart ? (
             <SmartPlaylistEditor key={playlist.id} playlist={playlist} />
           ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button disabled={!dirty || library.busy} onClick={() => void save()}>
-                  Save playlist
-                </Button>
-                <Button variant="outline" disabled={!dirty} onClick={() => setEdits(null)}>
-                  Discard changes
-                </Button>
-                <span className="text-sm">{dirty ? "Unsaved changes" : "Saved"}</span>
-              </div>
-              {changedElsewhere && <p className="text-sm">This playlist was changed elsewhere. Save to keep your version, or Discard to load the new one.</p>}
-              {problem && (
-                <p role="alert" className="text-sm text-red-400">
-                  {problem}
-                </p>
-              )}
-              <SetEditor key={playlist.id} playlist={playlist} songs={songs} draft={draft} dirty={dirty} onChange={edit} />
-            </>
+            draft && (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button disabled={!dirty || library.busy} onClick={() => void save()}>
+                    Save playlist
+                  </Button>
+                  <Button variant="outline" disabled={!dirty} onClick={() => setEdits(null)}>
+                    Discard changes
+                  </Button>
+                  <span className="text-sm">{dirty ? "Unsaved changes" : "Saved"}</span>
+                </div>
+                {changedElsewhere && <p className="text-sm">This playlist was changed elsewhere. Save to keep your version, or Discard to load the new one.</p>}
+                {problem && (
+                  <p role="alert" className="text-sm text-red-400">
+                    {problem}
+                  </p>
+                )}
+                <SetEditor key={playlist.id} playlist={playlist} songs={songs} draft={draft} dirty={dirty} onChange={edit} />
+              </>
+            )
           )}
         </>
       )}
