@@ -7,7 +7,7 @@ import { keepWordsWithin, lyricsLrc, songLines } from "./lyrics";
 import { alignLyrics, type TimedWord } from "./lyrics-align";
 import { highPass, normalisePeak } from "./lyrics-input";
 import type { LyricsOptions } from "./lyrics-options";
-import { singingRegions, transcriptionWindows } from "./vocal-activity";
+import { ownedSpans, singingRegions, transcriptionWindows, type Region } from "./vocal-activity";
 
 export const LYRICS_RATE = 16000;
 
@@ -56,6 +56,7 @@ export async function mono16k(audio: PcmAudio): Promise<Float32Array> {
 function transcribe(
   pieces: Float32Array[],
   starts: number[],
+  spans: Region[],
   options: LyricsOptions,
   signal: AbortSignal | undefined,
   onStatus: ((status: string) => void) | undefined,
@@ -86,7 +87,10 @@ function transcribe(
       done();
       reject(new Error(e.message || "Lyrics worker could not start. Retry transcription."));
     };
-    worker.postMessage({ pieces, starts, options }, pieces.map((piece) => piece.buffer));
+    worker.postMessage(
+      { pieces, starts, spans, options },
+      pieces.map((piece) => piece.buffer),
+    );
   });
 }
 
@@ -107,6 +111,7 @@ export async function transcribeLyrics(request: LyricsRequest): Promise<LyricsRe
   const words = await transcribe(
     pieces,
     windows.map((w) => w.start),
+    ownedSpans(windows),
     request.options,
     request.signal,
     request.onStatus,

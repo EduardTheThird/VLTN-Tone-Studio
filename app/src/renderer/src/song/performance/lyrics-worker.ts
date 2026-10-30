@@ -1,12 +1,14 @@
-import { transcriptWords } from "./lyrics";
+import { windowWords } from "./lyrics";
 import { fallbackRuntime, findLyricsQuality, hasWebGpuAdapter, runtimeFor, wasmThreads, type LyricsOptions, type LyricsRuntime } from "./lyrics-options";
 import { findLyricsModel } from "./lyrics-models";
 import type { TimedWord } from "./lyrics-align";
+import type { Region } from "./vocal-activity";
 
-// `pieces` are the singing windows (16 kHz mono) and `starts` their song times in seconds. The worker returns every
-// word with a song time; the lines are built on the main thread, where the cleaning rules live.
-self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: number[]; options: LyricsOptions }>) => {
-  const { pieces, starts, options } = event.data;
+// `pieces` are the singing windows (16 kHz mono), `starts` their song times in seconds, and `spans` the song time each window
+// is responsible for (windows overlap, so each word is kept by one of them). The worker returns every word with a song time;
+// the lines are built on the main thread, where the cleaning rules live.
+self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: number[]; spans: Region[]; options: LyricsOptions }>) => {
+  const { pieces, starts, spans, options } = event.data;
   try {
     // Load inside the handler so module/asset failures reach the UI instead of
     // terminating worker startup with an opaque error event.
@@ -47,9 +49,8 @@ self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: nu
           });
           const result = Array.isArray(output) ? output[0] : output;
           const duration = pieces[i].length / 16000;
-          const offset = starts[i];
-          // Times from a window are relative to it; move them back to song time.
-          heard.push(...transcriptWords(result.chunks ?? [], duration).map((w) => ({ ...w, start: w.start + offset, end: w.end + offset })));
+          // Times from a window are relative to it; windowWords moves them to song time and keeps the words it owns.
+          heard.push(...windowWords(result.chunks ?? [], duration, starts[i], spans[i]));
         }
         return heard;
       } finally {

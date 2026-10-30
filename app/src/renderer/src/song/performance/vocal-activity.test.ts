@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropShortRuns, frameLevels, hangover, singingRegions, transcriptionWindows, voicedFrames, voicedRegions } from "./vocal-activity";
+import { dropShortRuns, frameLevels, hangover, ownedSpans, singingRegions, transcriptionWindows, voicedFrames, voicedRegions } from "./vocal-activity";
 
 const RATE = 16000;
 
@@ -17,9 +17,14 @@ describe("frameLevels", () => {
 });
 
 describe("voicedFrames", () => {
-  it("needs a frame to clear the floor and sit within the range of the loudest frame", () => {
+  it("needs a frame to clear the floor and sit within the range of the stem's loud level", () => {
     expect(voicedFrames([-60, -20, -30, -50])).toEqual([false, true, true, false]);
     expect(voicedFrames([-10, -40])).toEqual([true, false]);
+  });
+
+  it("is not set by one loud transient: quiet singing around it is still voiced", () => {
+    const verse = Array(99).fill(-35);
+    expect(voicedFrames([...verse, -1]).every(Boolean)).toBe(true);
   });
 });
 
@@ -91,11 +96,27 @@ describe("transcriptionWindows", () => {
     ]);
   });
 
-  it("splits a region longer than 30 s and never runs past the song", () => {
+  it("splits a region longer than 30 s with a 2 s overlap, and never runs past the song", () => {
     expect(transcriptionWindows([{ start: 0, end: 40 }], 40)).toEqual([
       { start: 0, end: 30 },
-      { start: 30, end: 40 },
+      { start: 28, end: 40 },
     ]);
     expect(transcriptionWindows([{ start: 9, end: 10 }], 10)).toEqual([{ start: 8.7, end: 10 }]);
+  });
+});
+
+describe("ownedSpans", () => {
+  it("splits each overlap at its midpoint, so every time belongs to exactly one window", () => {
+    expect(
+      ownedSpans([
+        { start: 0, end: 30 },
+        { start: 28, end: 40 },
+        { start: 38, end: 50 },
+      ]),
+    ).toEqual([
+      { start: -Infinity, end: 29 },
+      { start: 29, end: 39 },
+      { start: 39, end: Infinity },
+    ]);
   });
 });

@@ -11,6 +11,8 @@ type Chunk = { text: string; timestamp: [number | null, number | null] };
 export const LINE_GAP_SECONDS = 0.6;
 /** Lines are cut at this many words, even with no gap. */
 export const MAX_LINE_WORDS = 12;
+/** A word's missing start or end is taken from its neighbours, or assumed to last this long. */
+export const REPAIRED_WORD_SECONDS = 0.4;
 /** A line that repeats more than this many times within REPEAT_WINDOW_SECONDS is a loop, not the song. */
 export const MAX_REPEATS = 3;
 export const REPEAT_WINDOW_SECONDS = 10;
@@ -32,15 +34,47 @@ export function cleanText(text: string): string {
     .trim();
 }
 
-/** Word chunks from a word-timestamp run, in song time. Chunks without a usable start or end are dropped. */
+function knownTime(time: number | null): number | undefined {
+  return typeof time === "number" && Number.isFinite(time) ? time : undefined;
+}
+
+/**
+ * Word chunks from a word-timestamp run, in song time (relative to the window). A word with a missing start takes the end of
+ * the word before it, or runs back from its own end. A word with a missing end takes the next word's start, or lasts
+ * REPAIRED_WORD_SECONDS. Words that start outside the window are dropped.
+ */
 export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
-  return chunks.flatMap((chunk) => {
-    const [start, end] = chunk.timestamp;
-    const text = cleanText(chunk.text);
-    return start !== null && end !== null && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start < duration && text
-      ? [{ text, start, end: Math.min(end, duration) }]
-      : [];
+  const heard = chunks
+    .map((chunk) => ({ text: cleanText(chunk.text), start: knownTime(chunk.timestamp[0]), end: knownTime(chunk.timestamp[1]) }))
+    .filter((word) => word.text);
+  const nextStart: (number | undefined)[] = new Array(heard.length);
+  let later: number | undefined;
+  for (let i = heard.length - 1; i >= 0; i--) {
+    nextStart[i] = later;
+    if (heard[i].start !== undefined) later = heard[i].start;
+  }
+  const words: TimedWord[] = [];
+  let previousEnd: number | undefined;
+  heard.forEach((word, i) => {
+    const following = nextStart[i];
+    const start = word.start ?? previousEnd ?? (word.end !== undefined ? Math.max(0, word.end - REPAIRED_WORD_SECONDS) : following);
+    if (start === undefined || !(start >= 0 && start < duration)) return;
+    const end = word.end ?? Math.max(start, Math.min(following ?? Infinity, start + REPAIRED_WORD_SECONDS));
+    const clamped = Math.max(start, Math.min(end, duration));
+    words.push({ text: word.text, start, end: clamped });
+    previousEnd = clamped;
   });
+  return words;
+}
+
+/**
+ * The words one transcription window heard, in song time. `offset` is the window's song start, and only the words that start
+ * inside `span` are kept, so a word in the overlap with a neighbour is kept once.
+ */
+export function windowWords(chunks: Chunk[], duration: number, offset: number, span: Region): TimedWord[] {
+  return transcriptWords(chunks, duration)
+    .map((word) => ({ text: word.text, start: word.start + offset, end: word.end + offset }))
+    .filter((word) => word.start >= span.start && word.start < span.end);
 }
 
 /** Words that start inside a singing region (padded, since the transcriber's word starts can land just before one). */
