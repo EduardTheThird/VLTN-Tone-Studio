@@ -116,6 +116,12 @@ export function diagnosticOf(pass: Pass, parts: number): LyricsDiagnostic {
 /** The message for an empty result: how many parts were run, where, and whether the words were heard or dropped. */
 export function noSingingMessage(diagnostic: LyricsDiagnostic): string {
   const where = diagnostic.runtime === "wasm" ? "CPU" : "graphics acceleration";
-  const dropped = diagnostic.rawWords > 0 && diagnostic.keptWords === 0 ? ` The transcriber returned ${diagnostic.rawWords} words, but none were kept.` : "";
-  return `No singing found in the vocals (${diagnostic.parts} parts, ${diagnostic.keptWords} words heard on the ${where}). Import or type lyrics, or retry transcription.${dropped}`;
+  const dropped =
+    diagnostic.rawWords > 0 && diagnostic.keptWords === 0
+      ? ` The transcriber returned ${diagnostic.rawWords} words, but none were kept.`
+      : "";
+  return (
+    `No singing found in the vocals (${diagnostic.parts} parts, ${diagnostic.keptWords} words heard on the ${where}). ` +
+    `Import or type lyrics, or retry transcription.${dropped}`
+  );
 }
