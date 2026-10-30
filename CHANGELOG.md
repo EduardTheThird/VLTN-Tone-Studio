@@ -2,6 +2,16 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.8] - 2026-10-30
+
+Analysis and lyrics work in the installed app.
+
+- **Chords, key and sections are found again.** In every installed build since the song analysis arrived, three of its background workers were blocked, so each song said "Could not work out: chords, key, sections". Run **Analyse again**, or analyse your songs from the Library, to fill them in.
+- **Lyrics catch the opening verse.** The vocals check measured against the loudest moment of the song, so a quiet first verse was skipped. Lines now end at phrase boundaries, never share a time, and music markers (♪) are left out. Pasted lyrics are timed from the words that match best.
+- **Lyrics on Macs whose graphics acceleration hears nothing.** The app tries again on the processor, remembers that for this computer and version, and goes straight to the processor next time.
+- **Band panel and mixer.** The panel fits the window on long songs and keeps the chord names after Generate. Generated parts no longer reset a song's analysis. **What plays** shows the part that really plays, and the mixer marks the tracks it switches off.
+- **Song screen.** The header shows the song's title and artist, and the key and queue readouts are clearer.
+
 ## [0.9.7] - 2026-10-29
 
 Better chords and key.
