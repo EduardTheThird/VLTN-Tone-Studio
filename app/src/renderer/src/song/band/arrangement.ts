@@ -27,6 +27,36 @@ export interface HumaniseSettings {
   feel: HumaniseChoice;
 }
 
+/** Where a bass tone's capture or cab IR comes from: a TONE3000 download, or a file on this computer. */
+export const BASS_TONE_SOURCES = ["tone3000", "file"] as const;
+export type BassToneSource = (typeof BASS_TONE_SOURCES)[number];
+
+/** Input drive and output level of the bass tone, in dB. */
+export const BASS_TONE_INPUT_DB: readonly [number, number] = [-12, 12];
+export const BASS_TONE_OUTPUT_DB: readonly [number, number] = [-24, 12];
+
+/**
+ * A capture or cab IR the bass tone uses. A TONE3000 file is named by its tone and model, so it can be downloaded again; a file from
+ * this computer is named by its absolute path.
+ */
+export interface BassToneFile {
+  source: BassToneSource;
+  /** The TONE3000 tone the file was downloaded from. */
+  toneId?: number;
+  /** The model of that tone to download. */
+  modelId?: number;
+  /** Absolute path of a local file. */
+  path?: string;
+  /** The name the Band panel shows. */
+  name: string;
+}
+
+/**
+ * The bass tone. "clean" is the generated DI sample as it is. "nam" plays it through a capture, then a cab IR, and mixes the result with the
+ * dry sample by `blend` (0 dry, 1 all amp).
+ */
+export type BassTone = { kind: "clean" } | { kind: "nam"; capture: BassToneFile; ir: BassToneFile | null; inputDb: number; outputDb: number; blend: number };
+
 /** The key the overrides of a song without sections are kept under. Section ids are UUIDs, so this cannot clash with one. */
 export const WHOLE_SONG_ID = "song";
 
@@ -70,6 +100,8 @@ export interface BandSettings {
   followSource: FollowSource;
   /** Humanising of the generated drums and bass (humanise.ts). */
   humanise: HumaniseSettings;
+  /** The bass tone the generated bass is rendered through (bass-tone.ts). Only Generate uses it. */
+  bassTone: BassTone;
   /** Each generation uses this seed, so a song regenerates the same way. "Try another" picks a new one. */
   seed: number;
   /** Per-section changes, keyed by section id. Only style, energy, fill and play can be overridden. */
@@ -91,6 +123,7 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   followPlaying: true,
   followSource: "auto",
   humanise: { amount: 0.5, feel: "style" },
+  bassTone: { kind: "clean" },
   seed: 1,
   sections: {},
 };
@@ -187,6 +220,57 @@ function isSectionOverride(value: unknown): value is Partial<SectionPlan> {
   );
 }
 
+const MAX_PATH = 4096;
+const MAX_NAME = 200;
+const isPositiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const isInDbRange = (value: unknown, [min, max]: readonly [number, number]): value is number => isInRange(value, min, max);
+
+/** A capture or IR file, if every field it needs is valid. A TONE3000 file needs its tone and model; a local file needs its path. */
+function parseBassToneFile(value: unknown): BassToneFile | null {
+  if (!isRecord(value) || typeof value.name !== "string" || value.name.trim() === "" || value.name.length > MAX_NAME) return null;
+  if (value.source === "tone3000") {
+    if (!isPositiveId(value.toneId) || !isPositiveId(value.modelId)) return null;
+    return { source: "tone3000", toneId: value.toneId, modelId: value.modelId, name: value.name };
+  }
+  if (value.source === "file") {
+    if (typeof value.path !== "string" || value.path === "" || value.path.length > MAX_PATH) return null;
+    return { source: "file", path: value.path, name: value.name };
+  }
+  return null;
+}
+
+/** True when the value is a complete, valid bass tone. A missing cab IR means none; a cab IR that is there but invalid fails the check. */
+function isBassTone(value: unknown): value is BassTone {
+  if (!isRecord(value)) return false;
+  if (value.kind === "clean") return true;
+  return (
+    value.kind === "nam" &&
+    parseBassToneFile(value.capture) !== null &&
+    (value.ir === undefined || value.ir === null || parseBassToneFile(value.ir) !== null) &&
+    isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) &&
+    isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) &&
+    isUnit(value.blend)
+  );
+}
+
+/**
+ * Reads a saved bass tone. Anything that is not a valid capture gives the clean bass. A cab IR that is invalid is dropped, and the gains
+ * and blend fall back to their defaults one at a time.
+ */
+export function parseBassTone(value: unknown): BassTone {
+  if (!isRecord(value) || value.kind !== "nam") return { kind: "clean" };
+  const capture = parseBassToneFile(value.capture);
+  if (!capture) return { kind: "clean" };
+  return {
+    kind: "nam",
+    capture,
+    ir: parseBassToneFile(value.ir),
+    inputDb: isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) ? value.inputDb : 0,
+    outputDb: isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) ? value.outputDb : 0,
+    blend: isUnit(value.blend) ? value.blend : 1,
+  };
+}
+
 /** True when the value is a complete, valid set of band settings. Use parseBandSettings for saved data that may be partial or old. */
 export function isBandSettings(value: unknown): value is BandSettings {
   return (
@@ -205,6 +289,7 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isBool(value.followPlaying) &&
     isFollowSource(value.followSource) &&
     isHumanise(value.humanise) &&
+    isBassTone(value.bassTone) &&
     isSeed(value.seed) &&
     isRecord(value.sections) &&
     Object.values(value.sections).every(isSectionOverride)
@@ -263,6 +348,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     followPlaying: isBool(source.followPlaying) ? source.followPlaying : defaults.followPlaying,
     followSource: isFollowSource(source.followSource) ? source.followSource : defaults.followSource,
     humanise: parseHumanise(source.humanise),
+    bassTone: parseBassTone(source.bassTone),
     seed: isSeed(source.seed) ? source.seed : defaults.seed,
     sections,
   };
