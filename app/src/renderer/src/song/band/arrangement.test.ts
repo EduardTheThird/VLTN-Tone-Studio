@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Section } from "../performance/sections";
-import { DEFAULT_BAND_SETTINGS, energyForName, isBandSettings, parseBandSettings, planSections, WHOLE_SONG_ID, type BandSettings } from "./arrangement";
+import {
+  DEFAULT_BAND_SETTINGS,
+  energyForName,
+  isBandSettings,
+  parseBandSettings,
+  parseBassTone,
+  planSections,
+  WHOLE_SONG_ID,
+  type BandSettings,
+  type BassTone,
+} from "./arrangement";
 
 function section(id: string, name: string, start: number, end: number): Section {
   return { id, name, start, end, mode: "continue" };
@@ -212,5 +222,87 @@ describe("humanise settings", () => {
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 2, feel: "style" } })).toBe(false);
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 0, feel: "swing" } })).toBe(false);
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, humanise: { amount: 1, feel: "laid-back" } })).toBe(true);
+  });
+});
+
+describe("bass tone settings", () => {
+  const capture = { source: "tone3000", toneId: 42, modelId: 7, name: "Bass amp" } as const;
+  const ir = { source: "tone3000", toneId: 43, modelId: 8, name: "4x10 cab" } as const;
+  const nam: BassTone = { kind: "nam", capture, ir, inputDb: 3, outputDb: -2, blend: 0.75 };
+
+  it("is clean by default, so the generated bass plays as it always did", () => {
+    expect(DEFAULT_BAND_SETTINGS.bassTone).toEqual({ kind: "clean" });
+    expect(parseBandSettings(undefined).bassTone).toEqual({ kind: "clean" });
+  });
+
+  it("keeps a valid TONE3000 capture with its cab IR, and a local file", () => {
+    expect(parseBassTone(nam)).toEqual(nam);
+    const local: BassTone = {
+      kind: "nam",
+      capture: { source: "file", path: "/Users/me/bass.nam", name: "bass" },
+      ir: null,
+      inputDb: 0,
+      outputDb: 0,
+      blend: 1,
+    };
+    expect(parseBassTone(local)).toEqual(local);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, bassTone: local })).toBe(true);
+  });
+
+  it("gives clean for garbage, for a kind it does not know, and for a capture that is incomplete", () => {
+    for (const value of [null, "nam", 3, { kind: "amp" }, { kind: "nam" }, { kind: "nam", capture: { source: "tone3000", name: "x" } }]) {
+      expect(parseBassTone(value)).toEqual({ kind: "clean" });
+    }
+    const noPath = { kind: "nam", capture: { source: "file", name: "bass" }, ir: null, inputDb: 0, outputDb: 0, blend: 1 };
+    expect(parseBassTone(noPath)).toEqual({ kind: "clean" });
+  });
+
+  it("drops a cab IR it cannot read, and keeps the capture", () => {
+    const parsed = parseBassTone({ ...nam, ir: { source: "tone3000", name: "cab" } });
+    expect(parsed).toEqual({ ...nam, ir: null });
+  });
+
+  it("falls back to the defaults for a gain or blend that is out of range, one field at a time", () => {
+    const parsed = parseBassTone({ ...nam, inputDb: 40, outputDb: -2, blend: 1.5 });
+    expect(parsed).toEqual({ ...nam, inputDb: 0, outputDb: -2, blend: 1 });
+    expect(parseBassTone({ ...nam, outputDb: Number.NaN })).toMatchObject({ kind: "nam", outputDb: 0 });
+  });
+
+  it("makes a settings object with a bad bass tone fail the full check", () => {
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, bassTone: { kind: "nam", capture: { source: "tone3000", name: "x" } } })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, bassTone: nam })).toBe(true);
+  });
+
+  it("keeps a saved bass tone through parseBandSettings, and an older song without one gets clean", () => {
+    expect(parseBandSettings({ ...DEFAULT_BAND_SETTINGS, bassTone: nam }).bassTone).toEqual(nam);
+    const { bassTone: _dropped, ...older } = DEFAULT_BAND_SETTINGS;
+    expect(parseBandSettings(older).bassTone).toEqual({ kind: "clean" });
+  });
+});
+
+describe("rendered parts and first notes", () => {
+  const rendered = { drums: { name: "drums.wav", importedAt: "2026-10-30T10:00:00.000Z" } };
+
+  it("are empty by default, and a saved rendered part and first note are kept", () => {
+    expect(DEFAULT_BAND_SETTINGS.rendered).toEqual({});
+    expect(DEFAULT_BAND_SETTINGS.firstNote).toEqual({});
+    const parsed = parseBandSettings({ ...DEFAULT_BAND_SETTINGS, rendered, firstNote: { drums: 0.5, bass: 1.25 } });
+    expect(parsed.rendered).toEqual(rendered);
+    expect(parsed.firstNote).toEqual({ drums: 0.5, bass: 1.25 });
+  });
+
+  it("drops a damaged rendered entry and a bad first note, and keeps the rest", () => {
+    const parsed = parseBandSettings({
+      rendered: { drums: { name: "", importedAt: "x" }, bass: { name: "bass.wav", importedAt: "2026-10-30" }, cymbals: { name: "c", importedAt: "x" } },
+      firstNote: { drums: -1, bass: "soon" },
+    });
+    expect(parsed.rendered).toEqual({ bass: { name: "bass.wav", importedAt: "2026-10-30" } });
+    expect(parsed.firstNote).toEqual({});
+  });
+
+  it("makes a settings object with a damaged rendered entry fail the full check", () => {
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, rendered: { drums: { name: 3, importedAt: "x" } } })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, firstNote: { drums: -2 } })).toBe(false);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, rendered, firstNote: { drums: 0 } })).toBe(true);
   });
 });

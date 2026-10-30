@@ -7,7 +7,7 @@ import { basename, extname, join } from "node:path";
 import { HostError } from "@shared/ipc";
 import type { AccountState, FlowRequest, FlowResult, SendRequest, SlotLink, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, ToneSearchParams, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
 import { assertWav, NamCheckError, prepareNam } from "@shared/nam";
-import { handle, sendTo } from "./handle";
+import { handle, sendTo, showOpenDialog } from "./handle";
 import { normalizeSearch, postToken, T3kClient, withoutForeignAuthorization } from "../tone3000/api";
 import { isImageResponse, readImageBody, throttledTrim } from "../tone3000/image-cache";
 import { TokenManager, type TokenSet, type TokenStore } from "../tone3000/tokens";
@@ -404,6 +404,17 @@ export function registerTonesIpc(getWindow: () => BrowserWindow | null): void {
     if (size === undefined) throw new HostError("not-found", `${basename(path)} isn't there anymore`);
     if (size > MAX_LOCAL_NAM) throw new HostError("invalid", `${basename(path)} is too large to be a NAM capture`);
     return readFile(path, "utf8");
+  });
+  // The Band panel's bass tone asks for a capture or a cab IR on disk. The renderer gets the path back and reads the file when it generates.
+  handle("tones:chooseLocalFile", async (_e, kind: unknown) => {
+    if (kind !== "nam" && kind !== "ir") throw new HostError("invalid", "Choose a NAM capture or a cab IR");
+    const res = await showOpenDialog(getWindow(), {
+      title: kind === "nam" ? "Choose a bass capture" : "Choose a cab IR",
+      properties: ["openFile"],
+      filters: [kind === "nam" ? { name: "NAM capture", extensions: ["nam"] } : { name: "WAV audio", extensions: ["wav"] }],
+    });
+    const path = res.canceled ? undefined : res.filePaths[0];
+    return path ? { path, name: basename(path).replace(/\.(nam|wav)$/i, "") } : null;
   });
   handle("tones:readIr", (_e, toneId: number) => readIr(toneId));
   handle("tones:readNam", (_e, toneId: unknown, modelId: unknown) => readNam(toneId, modelId));

@@ -6,7 +6,10 @@ import { fixedBeatGrid } from "@/song/band/beat-grid";
 import { parseSmf } from "@/song/performance/smf";
 import type { Section } from "@/song/performance/sections";
 import { useBandPanel } from "./band-panel-state";
-import { ORIGINAL_PARTS } from "@/song/band/part-choice";
+import { ORIGINAL_PARTS, type PartChoices } from "@/song/band/part-choice";
+import type { TrackInfo } from "@/song/tracks";
+import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
+import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
 
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
@@ -14,10 +17,25 @@ const mocks = vi.hoisted(() => ({
   renderPreview: vi.fn(),
   startChordDetection: vi.fn(),
   saveFiles: vi.fn(async (_files: unknown, _title: string) => null as string | null),
+  tones: {
+    readNam: vi.fn(async (_toneId: number, _modelId: number): Promise<string> => {
+      throw new Error("Bass amp isn't there anymore");
+    }),
+    readIr: vi.fn(),
+    readLocalNam: vi.fn(),
+    readLocalIr: vi.fn(),
+  },
+  chain: vi.fn(async (_model: string, input: Float32Array): Promise<Float32Array> => new Float32Array(input.length)),
+  decodeAudioFile: vi.fn(async (): Promise<PcmAudio> => ({ sampleRate: 44100, channels: [new Float32Array(44100 * 8), new Float32Array(44100 * 8)] })),
   store: null as unknown as { getState(): unknown; setState(patch: unknown): void },
 }));
 
-vi.mock("@/host", () => ({ host: { song: { saveFiles: mocks.saveFiles } } }));
+vi.mock("@/host", () => ({ host: { song: { saveFiles: mocks.saveFiles }, tones: mocks.tones }, isElectron: true }));
+// The NAM engine needs an AudioWorklet, so a bass tone's chain is a stub. The capture text passes through prepareNam as itself.
+vi.mock("@/song/band/bass-chain", () => ({ renderBassChain: mocks.chain }));
+vi.mock("@shared/nam", () => ({ prepareNam: (text: string) => ({ json: text, check: {} }) }));
+// A rendered file is decoded by the import's decoder; the test gives the decoded audio.
+vi.mock("@/song/decode", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/song/decode")>()), decodeAudioFile: mocks.decodeAudioFile }));
 
 vi.mock("@/song/store", async () => {
   const { create } = await import("zustand");
@@ -44,7 +62,7 @@ vi.mock("@/song/band/band-client", async (importOriginal) => ({
 
 // Imported after the mocks, so they see the mocked store.
 const { useSong } = await import("@/song/store");
-const { BandPanel } = await import("./BandPanel");
+const { BandPanel, BandPanelButton } = await import("./BandPanel");
 
 const KEY = "vltn.performance.v1:band-panel-test:8:44100";
 const SECONDS = 8;
@@ -118,6 +136,8 @@ beforeEach(() => {
   mocks.saveFiles.mockClear();
   mocks.startBandRender.mockReset();
   mocks.renderPreview.mockReset();
+  mocks.chain.mockClear();
+  mocks.tones.readNam.mockClear();
   // By default the detector finds nothing, so the bass rests unless a test gives it chords.
   mocks.startChordDetection.mockReset();
   mocks.startChordDetection.mockReturnValue({ done: Promise.resolve([]), cancel: vi.fn() });
@@ -319,6 +339,39 @@ describe("Band panel", () => {
     expect(request.plans.map((plan: { sectionId: string }) => plan.sectionId)).toEqual(["verse", "chorus"]);
     await waitFor(() => expect(savedOptions().bandOutOfDate).toBe(false));
     expect(screen.queryByText(/Parts out of date/)).toBeNull();
+  });
+
+  it("keeps the clean bass and says why when the bass tone's capture is not on this computer", async () => {
+    const bassTone = { kind: "nam", capture: { source: "tone3000", toneId: 42, modelId: 7, name: "Bass amp" }, ir: null, inputDb: 0, outputDb: 0, blend: 1 };
+    stored({ beatGrid: grid, bandOutOfDate: true, band: { ...DEFAULT_BAND_SETTINGS, bassTone } });
+    const drums = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    const bass = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ drums, bass, notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums, bass }, { playing: false, remove: [] }));
+    expect(mocks.tones.readNam).toHaveBeenCalledWith(42, 7);
+    expect(mocks.chain).not.toHaveBeenCalled();
+    expect(screen.getByText(/The bass plays clean, because Bass amp couldn't be loaded/)).toBeTruthy();
+  });
+
+  it("renders the bass through the capture at Generate, shows the Bass tone step, and saves the toned bass", async () => {
+    const bassTone = { kind: "nam", capture: { source: "tone3000", toneId: 42, modelId: 7, name: "Bass amp" }, ir: null, inputDb: 0, outputDb: 0, blend: 1 };
+    stored({ beatGrid: grid, bandOutOfDate: true, band: { ...DEFAULT_BAND_SETTINGS, bassTone } });
+    mocks.tones.readNam.mockResolvedValueOnce("capture-text");
+    const drums = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    const bass = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS).fill(0.5)] };
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ drums, bass, notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    let finishChain: (audio: Float32Array) => void = () => {};
+    mocks.chain.mockImplementationOnce(() => new Promise<Float32Array>((resolve) => (finishChain = resolve)));
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("Bass tone…")).toBeTruthy();
+    expect(mocks.chain.mock.calls[0][0]).toBe("capture-text");
+    finishChain(new Float32Array(44100 * SECONDS).fill(0.25));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1));
+    const [saved] = (useSong.getState().applyGeneratedParts as unknown as { mock: { calls: [[{ bass: PcmAudio }]] } }).mock.calls[0];
+    expect(saved.bass.channels[0][20000]).toBeCloseTo(0.25, 2);
   });
 
   it("asks before removing the generated parts, and removes them only on confirm", async () => {
@@ -616,5 +669,215 @@ describe("Band panel layout", () => {
     const dialog = screen.getByRole("dialog");
     const fixedWide = [...dialog.querySelectorAll<HTMLElement>("*")].filter((el) => /(^|\s)w-\[\d{4,}/.test(el.className) || el.style.width);
     expect(fixedWide).toEqual([]);
+  });
+});
+
+describe("Band entry point", () => {
+  const CHOICES: PartChoices = ORIGINAL_PARTS;
+  const STEM: PcmAudio = { sampleRate: 44100, channels: [new Float32Array(1)] };
+  const ORIGINAL_STEMS = { drums: STEM, bass: STEM };
+  const GENERATED_TRACKS = {
+    "gen-drums": { kind: "user" as const, name: GENERATED_PART_NAMES.drums },
+    "gen-bass": { kind: "user" as const, name: GENERATED_PART_NAMES.bass },
+  } as Record<string, TrackInfo>;
+
+  function renderEntry(choices: PartChoices = CHOICES) {
+    return render(<BandPanelButton sections={[]} partChoices={choices} />);
+  }
+
+  it("names the action and says what it does, without a generated part yet", () => {
+    renderEntry();
+    expect(screen.getByRole("button", { name: "Generate drums & bass…" })).toBeTruthy();
+    expect(screen.getByText("Make drum and bass parts that follow this song, and choose what plays.")).toBeTruthy();
+    expect(screen.queryByText(/Generated:/)).toBeNull();
+  });
+
+  it("shows the generated parts and what plays once the song has them", () => {
+    useSong.setState({ stems: ORIGINAL_STEMS, tracks: GENERATED_TRACKS, missingParts: null });
+    renderEntry({ drums: "generated", bass: "original" });
+    expect(screen.getByRole("button", { name: "Drums & bass…" })).toBeTruthy();
+    expect(screen.getByText("Generated: drums, bass. Playing generated drums, original bass.")).toBeTruthy();
+  });
+
+  it("names a part the split did not find", () => {
+    useSong.setState({
+      stems: { bass: STEM },
+      tracks: {},
+      missingParts: { drums: "absent", bass: "present", absentSections: { drums: [], bass: [] } },
+    });
+    renderEntry();
+    expect(screen.getByText("No drums found.")).toBeTruthy();
+    expect(screen.queryByText(/No bass found/)).toBeNull();
+  });
+
+  it("opens the Band panel when pressed", () => {
+    renderEntry();
+    expect(useBandPanel.getState().open).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Generate drums & bass…" }));
+    expect(useBandPanel.getState().open).toBe(true);
+  });
+});
+
+/** Stereo audio of `seconds`, silent but for 60 ms tone bursts at each of `times`: a rendered part with its hits where the test puts them. */
+function hitsAudio(seconds: number, times: number[]): PcmAudio {
+  const frames = Math.round(seconds * 44100);
+  const channel = new Float32Array(frames);
+  for (const time of times) {
+    const start = Math.round(time * 44100);
+    for (let i = 0; i < Math.round(0.06 * 44100) && start + i < frames; i++) {
+      channel[start + i] = 0.8 * Math.sin((2 * Math.PI * 220 * i) / 44100) * Math.exp(-i / (0.02 * 44100));
+    }
+  }
+  return { sampleRate: 44100, channels: [channel, channel.slice()] };
+}
+
+/** The hidden file input of a row, found by its button: the row's button opens it. */
+function fileInputOf(kind: "drums" | "bass"): HTMLInputElement {
+  const row = screen.getByRole("button", { name: `Use my rendered ${kind}…` }).parentElement!;
+  return row.querySelector<HTMLInputElement>('input[type="file"]')!;
+}
+
+function pickFile(kind: "drums" | "bass", name = `${kind}.wav`) {
+  fireEvent.change(fileInputOf(kind), { target: { files: [new File(["x"], name, { type: "audio/wav" })] } });
+}
+
+describe("rendered parts", () => {
+  const SILENT_NOTES = { drums: [], bass: [] };
+  const silent = () => ({ sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] });
+
+  it("uses a rendered file that is in line with the first note, keeps What plays, and records the file", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, firstNote: { drums: 0.5 } } });
+    mocks.decodeAudioFile.mockResolvedValueOnce(hitsAudio(SECONDS, [0.5, 1, 1.5]));
+    const choices = { drums: "generated" as const, bass: "original" as const };
+    renderPanel({ chart: "[Am] [G]", partChoices: choices });
+    pickFile("drums", "drums.wav");
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1));
+    const [parts, options] = (useSong.getState().applyGeneratedParts as unknown as { mock: { calls: [[{ drums: PcmAudio }, unknown]] } }).mock.calls[0];
+    expect(Object.keys(parts)).toEqual(["drums"]);
+    expect(parts.drums.channels[0].length).toBe(44100 * SECONDS);
+    expect(options).toEqual({ playing: false });
+    expect(savedOptions().band.rendered.drums).toMatchObject({ name: "drums.wav" });
+    expect(screen.getByText("Using your rendered drums: drums.wav")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Line up with the first note/ })).toBeNull();
+  });
+
+  it("offers to line up a file whose first hit is 300 ms late, and moves it only when the performer chooses", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, firstNote: { drums: 0.5 } } });
+    mocks.decodeAudioFile.mockResolvedValueOnce(hitsAudio(SECONDS, [0.8, 1.3]));
+    renderPanel({ chart: "[Am] [G]" });
+    pickFile("drums");
+    // The hit is at about 0.80 s, so it is about 300 ms after the note.
+    expect(await screen.findByText(/The first hit is 30\d ms after the first note\./)).toBeTruthy();
+    expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Line up with the first note \(moves it 30\d ms earlier\)/ }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1));
+    const [parts] = (useSong.getState().applyGeneratedParts as unknown as { mock: { calls: [[{ drums: PcmAudio }]] } }).mock.calls[0];
+    // The first hit was at 0.8 s; moved 300 ms earlier, it is at 0.5 s.
+    const first = parts.drums.channels[0].findIndex((v) => Math.abs(v) > 0.05);
+    expect(Math.abs(first / 44100 - 0.5)).toBeLessThan(0.02);
+  });
+
+  it("uses the file as it is when the performer declines the line-up", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, firstNote: { drums: 0.5 } } });
+    mocks.decodeAudioFile.mockResolvedValueOnce(hitsAudio(SECONDS, [0.8]));
+    renderPanel({ chart: "[Am] [G]" });
+    pickFile("drums");
+    fireEvent.click(await screen.findByRole("button", { name: "Use as it is" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1));
+    const [parts] = (useSong.getState().applyGeneratedParts as unknown as { mock: { calls: [[{ drums: PcmAudio }]] } }).mock.calls[0];
+    expect(Math.abs(parts.drums.channels[0].findIndex((v) => Math.abs(v) > 0.05) / 44100 - 0.8)).toBeLessThan(0.02);
+  });
+
+  it("refuses a file more than 5 s away from the song's length, and applies nothing", async () => {
+    stored({ beatGrid: grid });
+    mocks.decodeAudioFile.mockResolvedValueOnce(hitsAudio(SECONDS + 6, [0.5]));
+    renderPanel({ chart: "[Am] [G]" });
+    pickFile("bass", "bass.wav");
+    expect(await screen.findByText(/bass\.wav is 6\.0 s away from the song's length \(over 5 s\), so it was not used\./)).toBeTruthy();
+    expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
+  });
+
+  it("is disabled while playing, and says why", () => {
+    renderPanel({ chart: "[Am] [G]", playing: true });
+    expect((screen.getByRole("button", { name: "Use my rendered drums…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Use my rendered bass…" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("asks before Generate replaces a rendered drum, and does not generate until the performer agrees", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, rendered: { drums: { name: "drums.wav", importedAt: "2026-10-30T10:00:00.000Z" } } } });
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums: silent(), bass: silent(), notes: SILENT_NOTES }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("Replace your rendered drums with new generated drums?")).toBeTruthy();
+    expect(mocks.startBandRender).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep my rendered part" }));
+    expect(mocks.startBandRender).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Replace" }));
+    await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(savedOptions().band.rendered.drums).toBeUndefined());
+  });
+
+  it("Back to generated renders that part alone, leaves the other part's track, and forgets the rendered file", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, rendered: { drums: { name: "drums.wav", importedAt: "2026-10-30T10:00:00.000Z" } } } });
+    const drums = silent();
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({ drums, notes: { drums: [{ time: 0.25, pitch: 36, velocity: 100, duration: 0.1 }], bass: [] } }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Back to generated" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1));
+    const request = mocks.startBandRender.mock.calls[0][0];
+    expect(request.parts).toEqual({ drums: true, bass: false });
+    const [parts, options] = (
+      useSong.getState().applyGeneratedParts as unknown as { mock: { calls: [[{ drums?: PcmAudio; bass?: PcmAudio }, { remove: string[] }]] } }
+    ).mock.calls[0];
+    expect(parts.drums).toBe(drums);
+    expect(parts.bass).toBeUndefined();
+    expect(options.remove).toEqual([]);
+    await waitFor(() => expect(savedOptions().band.rendered.drums).toBeUndefined());
+    expect(savedOptions().band.firstNote.drums).toBe(0.25);
+  });
+
+  it("records each generated part's first note, for the line-up", async () => {
+    stored({ beatGrid: grid });
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({
+        drums: silent(),
+        bass: silent(),
+        notes: {
+          drums: [
+            { time: 0.7, pitch: 36, velocity: 100, duration: 0.1 },
+            { time: 1.2, pitch: 38, velocity: 90, duration: 0.1 },
+          ],
+          bass: [{ time: 0.9, pitch: 40, velocity: 90, duration: 0.4 }],
+        },
+      }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(savedOptions().band.firstNote).toEqual({ drums: 0.7, bass: 0.9 }));
+  });
+
+  it("removing the generated parts takes the rendered record with them", async () => {
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, rendered: { bass: { name: "bass.wav", importedAt: "2026-10-30T10:00:00.000Z" } } } });
+    useSong.setState({ tracks: { track0: { kind: "user", name: "Bass (generated)" } } as never });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Remove generated parts" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(savedOptions().band.rendered).toEqual({}));
+  });
+
+  it("says to render with your own instruments, next to Export MIDI", () => {
+    renderPanel({ chart: "[Am] [G]" });
+    expect(screen.getByText("Render it with your own instruments, then use it here.")).toBeTruthy();
   });
 });

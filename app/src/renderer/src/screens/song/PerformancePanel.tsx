@@ -606,7 +606,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         />
         <TrackImport playing={playing || library.playlistPlaying} />
         <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
-        <BandPanelButton />
+        <BandPanelButton sections={sectionList} partChoices={partChoice} />
         <PerformanceMix
           session={session}
           stems={stems}
