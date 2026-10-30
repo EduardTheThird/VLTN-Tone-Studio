@@ -390,7 +390,14 @@ export function ToneGrid({ kind, onOpen = openSheet }: { kind: TonesTab; onOpen?
           className="-m-0.5 grid min-h-0 auto-rows-max grid-cols-[repeat(auto-fill,minmax(176px,1fr))] content-start gap-3 overflow-auto p-0.5"
         >
           {tones.map((t, i) => (
-            <ToneCard key={t.id} tone={t} record={records[t.id]} tabIndex={i === Math.min(focusIndex, tones.length - 1) ? 0 : -1} onFocus={() => setFocusIndex(i)} onOpen={() => onOpen(t.id, t)} />
+            <ToneCard
+              key={t.id}
+              tone={t}
+              record={records[t.id]}
+              tabIndex={i === Math.min(focusIndex, tones.length - 1) ? 0 : -1}
+              onFocus={() => setFocusIndex(i)}
+              onOpen={() => onOpen(t.id, t)}
+            />
           ))}
           {list?.loaded && tones.length === 0 && (list?.tones.length ?? 0) === 0 && (
             <div className="col-span-full flex items-center gap-3 py-2 text-[13px] text-silkscreen-2">
