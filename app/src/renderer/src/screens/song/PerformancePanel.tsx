@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useSong } from "@/song/store";
+import { generatedTrackKeys, useSong } from "@/song/store";
 import { defaultMix, type Mix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
@@ -273,7 +273,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
-  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems) : ""), [source, stems]);
+  // Generated parts do not change the audio the chords were analysed under (see songAudioId), so the saved chords stay after Generate.
+  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems, generatedTrackKeys(key, tracks)) : ""), [source, stems, tracks, key]);
   const { chords, analysing } = useChordAnalysis(session, harmony, bass, { songKey: key, audioId }, !!stems);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);

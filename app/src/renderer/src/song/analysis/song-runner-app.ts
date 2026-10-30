@@ -1,7 +1,7 @@
 // The app's song runner (spec 80): the open song from the song store and its saved settings, playback from the playing state, the playlist
 // and the Library's batch, and the steps the open song's run takes. The runner itself (song-runner.ts) imports none of these.
 
-import { useSong } from "../store";
+import { generatedTrackKeys, useSong } from "../store";
 import { useSongLibrary } from "../library";
 import { isRunning, useAnalysisJob } from "./analysis-job";
 import { chartChordTimes } from "../band/request";
@@ -59,7 +59,7 @@ function openTarget(beatsPerBar?: number): RunTarget | null {
   });
   // Lyrics read the vocals stem; an imported vocals track stands in for it when the song was not split.
   const audio = { ...built, stems: stemsWithVocals(built.stems, vocalsOf(stems, tracks)) };
-  return { key, title: source.name, audioId: songAudioId(source.audio, stems), audio };
+  return { key, title: source.name, audioId: songAudioId(source.audio, stems, generatedTrackKeys(key, tracks)), audio };
 }
 
 /**
@@ -77,7 +77,7 @@ function lyricsFor(key: string, captured: CapturedRun): AnalysisStep | null {
   const options = readOptions<Record<string, unknown>>(key, {});
   const saved = parseAnalysis(options.analysis);
   // A chart the run made for different audio belongs to the audio before a re-split; with no saved analysis it is kept.
-  const audioChanged = !!saved && saved.audioId !== songAudioId(source.audio, stems);
+  const audioChanged = !!saved && saved.audioId !== songAudioId(source.audio, stems, generatedTrackKeys(key, tracks));
   const skip = lyricsRunSkip(getSetting(key, ":lyrics"), options, audioChanged);
   if (skip) {
     captured.note = `Lyrics left as they are (${lyricsSkipLabel(skip)}).`;
@@ -122,8 +122,8 @@ function appSteps(key: string, options: RunOptions, captured: CapturedRun): Anal
 export const songRunner = createSongRunner({
   target: (beatsPerBar) => openTarget(beatsPerBar),
   audioId: () => {
-    const { source, stems } = useSong.getState();
-    return source ? songAudioId(source.audio, stems) : null;
+    const { source, stems, tracks } = useSong.getState();
+    return source ? songAudioId(source.audio, stems, generatedTrackKeys(performanceKey(source), tracks)) : null;
   },
   read: (key): SavedSong => ({
     bpm: getSetting(key, ":bpm"),
