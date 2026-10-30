@@ -3,6 +3,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { BASS_MODES, BASS_RANGES, HUMANISE_CHOICES, type BandSettings, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { STYLE_IDS, STYLES, type Style, type StyleId } from "@/song/band/styles";
+import { BassTonePicker } from "./BassTonePicker";
 
 const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
   roots: "Roots",
@@ -184,6 +185,7 @@ export function BandSettingsForm({ settings, style, followSources, onChange, onS
           </SelectContent>
         </Select>
       </label>
+      <BassTonePicker tone={settings.bassTone} onChange={(bassTone) => onChange({ bassTone })} />
     </section>
   );
 }
