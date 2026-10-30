@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.9] - 2026-10-30
+
+Your own sounds for the generated drums and bass.
+
+- **A real bass tone.** In the Band panel, **Bass tone** plays the generated bass through a bass amp or DI capture and a cab IR. Pick them from TONE3000 or from your own `.nam` and `.wav` files, and set the drive, the level and how much of the clean bass to blend in. The tone is rendered when you press Generate, so playback is unchanged.
+- **Your own rendered parts.** Export the parts as MIDI, render them with your own instruments, then choose **Use my rendered drums…** or **Use my rendered bass…**. If the file starts late, the app offers to line it up with the first note and says by how much. The part switches with **What plays** like a generated one, and **Back to generated** brings the generated part back.
+- **Easier to find.** **Generate drums & bass…** is now a clear button above the mixer, with what was found and what plays, and it's in the command palette (⌘K).
+
 ## [0.9.8] - 2026-10-30
 
 Analysis and lyrics work in the installed app.
