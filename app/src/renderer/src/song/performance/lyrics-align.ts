@@ -95,30 +95,56 @@ export function alignWords(sung: readonly string[], heard: readonly string[]): (
   return matches;
 }
 
+/** A line's matched start may be at most this far after the next matched line's start. Later than that, the match is not trusted. */
+export const NEXT_LINE_SLACK_SECONDS = 8;
+
 /**
- * Times `lines` (from pastedLines) against the transcript's words. A line's time is its first aligned word's start.
- * A line with no aligned word is placed between its timed neighbours, in proportion to its word count, and flagged
+ * Times `lines` (from pastedLines) against the transcript's words. A line's start comes from its matched words, earliest first:
+ * the first matched word's start, stepped back over the words before it in the line by the average length of the matched heard
+ * words. That candidate is trusted only when it is not before the previous line's time and not more than NEXT_LINE_SLACK_SECONDS
+ * after the next matched line's start. Otherwise the next matched word of the line is tried.
+ * A line with no trusted start is placed between its timed neighbours, in proportion to its word count, and flagged
  * `estimated`. Blank lines become section breaks: "" lines, timed at the next line, and dropped at the end.
  */
 export function alignLyrics(lines: readonly string[], heard: readonly TimedWord[], duration: number): AlignedLine[] {
-  const sung: { line: number; norm: string }[] = [];
+  const sung: { line: number; norm: string; position: number }[] = [];
   lines.forEach((line, index) => {
+    let position = 0;
     for (const word of line.split(/\s+/)) {
       const norm = normaliseWord(word);
-      if (norm) sung.push({ line: index, norm });
+      if (norm) sung.push({ line: index, norm, position: position++ });
     }
   });
-  const hearing = heard.map((word) => ({ start: word.start, norm: normaliseWord(word.text) })).filter((word) => word.norm);
+  const hearing = heard.map((word) => ({ start: word.start, end: word.end, norm: normaliseWord(word.text) })).filter((word) => word.norm);
   const matches = alignWords(
     sung.map((word) => word.norm),
     hearing.map((word) => word.norm),
   );
-  const timed: (number | undefined)[] = lines.map(() => undefined);
+  const matched = matches.filter((h): h is number => h !== null).map((h) => hearing[h]);
+  const wordSeconds = matched.length ? matched.reduce((sum, word) => sum + (word.end - word.start), 0) / matched.length : 0;
+  const candidates: number[][] = lines.map(() => []);
   const wordCounts = lines.map(() => 0);
   sung.forEach((word, k) => {
     wordCounts[word.line]++;
     const h = matches[k];
-    if (h !== null && timed[word.line] === undefined) timed[word.line] = hearing[h].start;
+    if (h !== null) candidates[word.line].push(Math.max(0, hearing[h].start - word.position * wordSeconds));
+  });
+  // The first candidate of the nearest later line that has one: the start a line must not run far past.
+  const nextFirst: (number | undefined)[] = new Array(lines.length);
+  let later: number | undefined;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    nextFirst[index] = later;
+    if (candidates[index].length) later = candidates[index][0];
+  }
+  const timed: (number | undefined)[] = lines.map(() => undefined);
+  let previous = -Infinity;
+  lines.forEach((_, index) => {
+    const latest = (nextFirst[index] ?? Infinity) + NEXT_LINE_SLACK_SECONDS;
+    const trusted = candidates[index].find((start) => start >= previous && start <= latest);
+    if (trusted !== undefined) {
+      timed[index] = trusted;
+      previous = trusted;
+    }
   });
   const sungLines = lines.flatMap((line, index) => (line ? [index] : []));
   const times = new Map<number, { time: number; estimated: boolean }>();

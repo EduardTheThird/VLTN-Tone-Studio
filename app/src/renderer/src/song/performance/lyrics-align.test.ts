@@ -94,6 +94,38 @@ describe("alignLyrics", () => {
     ]);
   });
 
+  it("starts a line from its earliest matched word when the first word was misheard", () => {
+    const words = [{ text: " xylophone", start: 1, end: 1.4 }, ...heard("there good", 1.5)];
+    const out = alignLyrics(["hello there good"], words, 10);
+    expect(out[0].estimated).toBe(false);
+    expect(out[0].time).toBeCloseTo(1.1);
+  });
+
+  it("times a line whose only match is its last word, stepping back over the words before it", () => {
+    const out = alignLyrics(["one two three four"], heard("mumble mumble mumble four", 1), 10);
+    expect(out[0].estimated).toBe(false);
+    expect(out[0].time).toBeCloseTo(1.3);
+  });
+
+  it("does not trust a line start that falls before the previous line, and places that line between its neighbours", () => {
+    const words = [
+      { text: " a", start: 1, end: 1.4 },
+      { text: " i", start: 2, end: 2.4 },
+    ];
+    const out = alignLyrics(["a", "e f g h i"], words, 10);
+    expect(out[0]).toEqual({ time: 1, text: "a", estimated: false });
+    expect(out[1].estimated).toBe(true);
+    expect(out[1].time).toBeGreaterThan(1);
+    expect(out[1].time).toBeLessThan(10);
+  });
+
+  it("keeps every line's time at or after the one before it across the song", () => {
+    const words = [...heard("one two three", 2), ...heard("four five", 6), ...heard("six", 9)];
+    const out = alignLyrics(["one two", "three four", "five six", "seven"], words, 12);
+    for (let i = 1; i < out.length; i++) expect(out[i].time).toBeGreaterThanOrEqual(out[i - 1].time);
+    expect(out[3].estimated).toBe(true);
+  });
+
   it("times lines with no sung words at all evenly across the vocals", () => {
     const out = alignLyrics(["♪ ♪", "♪"], [], 8);
     expect(out.every((line) => line.estimated)).toBe(true);
