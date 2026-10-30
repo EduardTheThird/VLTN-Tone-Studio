@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { cleanLines, cleanText, keepWordsWithin, lyricsLrc, MAX_LINE_WORDS, songLines, transcriptWords, windowWords } from "./lyrics";
+import {
+  cleanLines,
+  cleanText,
+  isDangling,
+  keepWordsWithin,
+  LONGEST_LINE_WORDS,
+  lyricsLrc,
+  MAX_LINE_WORDS,
+  songLines,
+  stripMarkers,
+  transcriptWords,
+  windowWords,
+} from "./lyrics";
 import type { TimedWord } from "./lyrics-align";
 import { ownedSpans, transcriptionWindows, type Region } from "./vocal-activity";
 
@@ -112,8 +124,8 @@ function run(text: string, start: number): TimedWord[] {
 
 describe("songLines", () => {
   it("starts a new line at a vocal gap and takes each line's first word as its time", () => {
-    const words = [...run("hold on", 2), ...run("im coming", 6)];
-    expect(lyricsLrc(songLines(words))).toBe("[00:02.00] hold on\n[00:06.00] im coming");
+    const words = [...run("hold still", 2), ...run("im coming", 6)];
+    expect(lyricsLrc(songLines(words))).toBe("[00:02.00] hold still\n[00:06.00] im coming");
   });
 
   it("cuts a line at the maximum word count even without a gap", () => {
@@ -128,8 +140,8 @@ describe("songLines", () => {
   });
 
   it("starts a new line after six words at a short gap, so phrases sung without pauses come apart", () => {
-    const words = Array.from({ length: 8 }, (_, i) => ({ text: `w${i}`, start: i * 0.6, end: i * 0.6 + 0.3 }));
-    expect(lyricsLrc(songLines(words))).toBe("[00:00.00] w0 w1 w2 w3 w4 w5\n[00:03.60] w6 w7");
+    const words = Array.from({ length: 9 }, (_, i) => ({ text: `w${i}`, start: i * 0.6, end: i * 0.6 + 0.3 }));
+    expect(lyricsLrc(songLines(words))).toBe("[00:00.00] w0 w1 w2 w3 w4 w5\n[00:03.60] w6 w7 w8");
   });
 
   it("never gives two lines the same time, even when the transcriber starts a burst of words together", () => {
@@ -169,5 +181,88 @@ describe("keepWordsWithin", () => {
       { text: "c", start: 8, end: 8.1 },
     ];
     expect(keepWordsWithin(words, [{ start: 0.8, end: 5 }]).map((w) => w.text)).toEqual(["a", "b"]);
+  });
+});
+
+/**
+ * The CPU pass's first lines for "Burn", as the packaged build wrote them. Each line's words are spaced 0.4 s from the line's
+ * time, since only the line times are known. "okay" follows "I'll be" at a short gap, as the phrase runs on.
+ */
+const BURN_LINES: [string, string][] = [
+  ["00:12.80", "Wondering why so choking on darkness around your neck, baby"],
+  ["00:18.68", "You'll never be perfect Your"],
+  ["00:27.62", "are now filling up with smoke,"],
+  ["00:30.90", "baby You should start living till I regret"],
+  ["00:39.35", "When I see the sun less inside burning You cannot"],
+  ["00:47.67", "ever give it up It may need sparks of anger"],
+  ["00:54.89", "in your eyes shining You cannot always light it up"],
+  ["01:05.30", "Fire burns around me, let it burn everyday I'll be"],
+  ["01:13.10", "okay"],
+  ["01:18.10", "♪ As much as I'm one out of there ♪"],
+];
+
+function burnWords(): TimedWord[] {
+  const words: TimedWord[] = [];
+  let previousEnd = 0;
+  for (const [time, text] of BURN_LINES) {
+    const [minutes, seconds] = time.split(":");
+    let at = Number(minutes) * 60 + Number(seconds);
+    if (text === "okay") at = previousEnd + 0.5;
+    text.split(" ").forEach((word, k) => {
+      const start = at + k * 0.4;
+      words.push({ text: word, start, end: start + 0.3 });
+      previousEnd = start + 0.3;
+    });
+  }
+  return words;
+}
+
+describe("songLines on the Burn lines", () => {
+  const lines = songLines(burnWords());
+
+  it("ends no line on a dangling word, and no line carries a music marker", () => {
+    for (const line of lines) expect(isDangling(line.text.split(" ").pop()!)).toBe(false);
+    expect(lines.some((line) => line.text.includes("♪"))).toBe(false);
+  });
+
+  it("joins 'okay' to the line before it, and keeps every line within the longest", () => {
+    const okay = lines.find((line) => line.text.endsWith("okay"))!;
+    expect(okay.text).toBe("Fire burns around me, let it burn everyday I'll be okay");
+    expect(lines.every((line) => line.text.split(" ").length <= LONGEST_LINE_WORDS)).toBe(true);
+  });
+
+  it("produces these lines from the packaged build's CPU pass", () => {
+    expect(lyricsLrc(lines)).toBe(
+      [
+        "[00:12.80] Wondering why so choking on darkness around your neck, baby",
+        "[00:18.68] You'll never be perfect Your are now filling up with smoke,",
+        "[00:30.90] baby You should start living till I regret",
+        "[00:39.35] When I see the sun less inside burning You cannot ever",
+        "[00:48.07] give it up It may need sparks of anger",
+        "[00:54.89] in your eyes shining You cannot always light it up",
+        "[01:05.30] Fire burns around me, let it burn everyday I'll be okay",
+        "[01:18.50] As much as I'm one out of there",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("stripMarkers", () => {
+  it("removes note symbols and music markers, and keeps the sung words", () => {
+    expect(stripMarkers("♪ As much as ♪")).toBe("As much as");
+    expect(stripMarkers("[Music]")).toBe("");
+    expect(stripMarkers("(instrumental)")).toBe("");
+    expect(stripMarkers("♫")).toBe("");
+    expect(stripMarkers("[Applause] yeah")).toBe("yeah");
+  });
+
+  it("drops a line that is only markers", () => {
+    expect(
+      songLines([
+        { text: "[Music]", start: 0, end: 1 },
+        { text: "♪", start: 1.1, end: 1.2 },
+        { text: "hi", start: 5, end: 5.3 },
+      ]),
+    ).toEqual([{ time: 5, text: "hi" }]);
   });
 });

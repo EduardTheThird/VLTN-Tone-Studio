@@ -29,10 +29,8 @@ describe("lyrics track", () => {
         10,
       ),
     );
-    expect(result).toEqual([
-      { time: 0, text: "{midi :pc 1 5}" },
-      { time: 2, text: "Second line" },
-    ]);
+    // The one-word line at a 1 s gap joins the line after it: the markers are neutralised, not sent.
+    expect(result).toEqual([{ time: 0, text: "{midi :pc 1 5} Second line" }]);
     expect(parseChart(lyricsLrc(result)).every((c) => c.messages.length === 0)).toBe(true);
   });
   it("exports timestamps across minute boundaries without invalid seconds", () => {

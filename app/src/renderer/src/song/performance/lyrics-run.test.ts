@@ -68,12 +68,12 @@ describe("transcribeLyrics", () => {
       data: {
         words: [
           { text: "hold", start: 1, end: 1.4 },
-          { text: "on", start: 1.5, end: 1.8 },
+          { text: "still", start: 1.5, end: 1.8 },
           { text: "im", start: 4, end: 4.2 },
         ],
       },
     });
-    expect(await result).toEqual({ text: "[00:01.00] hold on\n[00:04.00] im", placed: 0 });
+    expect(await result).toEqual({ text: "[00:01.00] hold still\n[00:04.00] im", placed: 0 });
     expect(FakeWorker.current.terminate).toHaveBeenCalled();
   });
 
