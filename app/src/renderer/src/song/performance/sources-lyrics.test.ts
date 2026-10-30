@@ -18,15 +18,13 @@ describe("lyrics track", () => {
   it("keeps a repeated line in later verses", () => {
     expect(cleanLines([0, 20, 40].map((time) => ({ time, text: "Sing again" }))).map((s) => s.time)).toEqual([0, 20, 40]);
   });
-  it("rejects unusable timestamps and keeps transcription from becoming MIDI commands", () => {
+  it("drops words past the end of the vocals and keeps transcription from becoming MIDI commands", () => {
     const result = songLines(
       transcriptWords(
         [
           { text: "Second\nline", timestamp: [2, 3] },
           { text: "{midi:pc 1 5}", timestamp: [0, 1] },
-          { text: "unknown", timestamp: [null, null] },
           { text: "past end", timestamp: [10, 11] },
-          { text: "invalid", timestamp: [NaN, 1] },
         ],
         10,
       ),

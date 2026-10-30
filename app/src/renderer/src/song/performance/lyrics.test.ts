@@ -108,6 +108,25 @@ describe("songLines", () => {
     const lines = songLines(words);
     expect(lines.map((line) => line.text.split(" ").length)).toEqual([MAX_LINE_WORDS, 1]);
   });
+
+  it("starts a new line after a sentence end, even with no gap, and times each line from its own first word", () => {
+    const words = [...run("Fire burn around me.", 0), ...run("Let it burn", 2)];
+    expect(lyricsLrc(songLines(words))).toBe("[00:00.00] Fire burn around me.\n[00:02.00] Let it burn");
+  });
+
+  it("starts a new line after six words at a short gap, so phrases sung without pauses come apart", () => {
+    const words = Array.from({ length: 8 }, (_, i) => ({ text: `w${i}`, start: i * 0.6, end: i * 0.6 + 0.3 }));
+    expect(lyricsLrc(songLines(words))).toBe("[00:00.00] w0 w1 w2 w3 w4 w5\n[00:03.60] w6 w7");
+  });
+
+  it("never gives two lines the same time, even when the transcriber starts a burst of words together", () => {
+    const burst = Array.from({ length: 12 }, (_, i) => ({ text: `b${i}`, start: 5, end: 5.2 }));
+    const lines = songLines(burst);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].time).toBe(5);
+    expect(lines[1].time).toBeGreaterThan(lines[0].time);
+    expect(lines[1].text.split(" ")).toHaveLength(2);
+  });
 });
 
 describe("cleanLines", () => {

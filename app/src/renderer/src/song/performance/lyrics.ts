@@ -7,10 +7,15 @@ export interface LyricSegment {
 }
 type Chunk = { text: string; timestamp: [number | null, number | null] };
 
-/** A gap this long between words starts a new line. */
+/** A gap this long between words always starts a new line. */
 export const LINE_GAP_SECONDS = 0.6;
+/** Once a line has SOFT_LINE_WORDS words, a gap of this length also starts a new line: sung phrases run on with short gaps. */
+export const SOFT_LINE_GAP_SECONDS = 0.25;
+export const SOFT_LINE_WORDS = 6;
 /** Lines are cut at this many words, even with no gap. */
-export const MAX_LINE_WORDS = 12;
+export const MAX_LINE_WORDS = 10;
+/** Words are never started closer together than this, so no two lines can share a time. */
+export const MIN_WORD_STEP_SECONDS = 0.01;
 /** A word's missing start or end is taken from its neighbours, or assumed to last this long. */
 export const REPAIRED_WORD_SECONDS = 0.4;
 /** A line that repeats more than this many times within REPEAT_WINDOW_SECONDS is a loop, not the song. */
@@ -82,20 +87,51 @@ export function keepWordsWithin(words: readonly TimedWord[], regions: readonly R
   return words.filter((word) => regions.some((region) => word.start >= region.start - pad && word.start <= region.end + pad));
 }
 
-/** Words grouped into lines at gaps and at MAX_LINE_WORDS, then cleaned. Each line takes its first word's time. */
+/** A word that ends a sentence. Its line ends with it. */
+function endsSentence(text: string): boolean {
+  return /[.!?]["'”’)\]]*$/.test(text);
+}
+
+/** Whether `word` starts a new line after `last`, the last word of the line so far. */
+function startsLine(line: readonly TimedWord[], last: TimedWord, word: TimedWord): boolean {
+  const gap = word.start - last.end;
+  return gap > LINE_GAP_SECONDS || (line.length >= SOFT_LINE_WORDS && gap > SOFT_LINE_GAP_SECONDS) || line.length >= MAX_LINE_WORDS || endsSentence(last.text);
+}
+
+/**
+ * Words grouped into lines, then cleaned. A line breaks at a long gap, after a sentence end, after SOFT_LINE_WORDS words at a
+ * short gap, and at MAX_LINE_WORDS. Word starts are pushed on by MIN_WORD_STEP_SECONDS where they would not increase, so each
+ * line's time is its own first word's start and no two lines share a time.
+ */
 export function songLines(words: readonly TimedWord[]): LyricSegment[] {
+  let previousStart = -Infinity;
+  const timed = [...words]
+    .sort((a, b) => a.start - b.start)
+    .map((word) => {
+      const start = Math.max(word.start, previousStart + MIN_WORD_STEP_SECONDS);
+      previousStart = start;
+      return { text: word.text, start, end: Math.max(word.end, start) };
+    });
   const groups: TimedWord[][] = [];
   let line: TimedWord[] = [];
-  for (const word of [...words].sort((a, b) => a.start - b.start)) {
+  for (const word of timed) {
     const last = line[line.length - 1];
-    if (last && (word.start - last.end > LINE_GAP_SECONDS || line.length >= MAX_LINE_WORDS)) {
+    if (last && startsLine(line, last, word)) {
       groups.push(line);
       line = [];
     }
     line.push(word);
   }
   if (line.length) groups.push(line);
-  return cleanLines(groups.map((group) => ({ time: group[0].start, text: group.map((word) => cleanText(word.text)).filter(Boolean).join(" ") })));
+  return cleanLines(
+    groups.map((group) => ({
+      time: group[0].start,
+      text: group
+        .map((word) => cleanText(word.text))
+        .filter(Boolean)
+        .join(" "),
+    })),
+  );
 }
 
 /** Drops lines with no letters or digits, known hallucinations, and loops of a line repeated too often. */
