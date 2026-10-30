@@ -23,7 +23,8 @@ import { SplitOptions } from "./SplitOptions";
 const PANEL = "glass rounded-xl min-w-0 min-h-0";
 const WAVE_BUCKETS = 800;
 const HINTS = [{ keys: ["Space"], label: "play" }];
-const STEM_LABEL: Record<StemName, string> = { drums: "Drums", bass: "Bass", other: "Other", vocals: "Vocals", guitar: "Guitar", piano: "Piano" };
+/** The name each split stem has in the mixers: the Stems tab and the Performance mixer show the same ones. */
+export const STEM_LABEL: Record<StemName, string> = { drums: "Drums", bass: "Bass", other: "Other", vocals: "Vocals", guitar: "Guitar", piano: "Piano" };
 const STEM_COLOR: Record<StemName, string> = {
   drums: "var(--block-dst)",
   bass: "var(--block-mod)",

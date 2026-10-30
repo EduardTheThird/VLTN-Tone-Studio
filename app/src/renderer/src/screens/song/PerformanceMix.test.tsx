@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Mix } from "@/song/stems/mix";
 import type { Stems, PcmAudio } from "@/song/types";
 import type { TrackInfo } from "@/song/tracks";
-import type { PartChoices } from "@/song/band/part-choice";
+import { ORIGINAL_PARTS, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceMix } from "./PerformanceMix";
 
 const mocks = vi.hoisted(() => ({ names: [] as string[], speed: { followsPitch: {}, rate: 1 } as Record<string, unknown> }));
@@ -45,24 +45,21 @@ function renderMix(partChoices: PartChoices) {
   );
 }
 
-/** The mixer row of a track, found from its enabled checkbox. */
-const rowOf = (label: string) => screen.getByLabelText(`${label} enabled`).closest<HTMLElement>(".rounded-lg") as HTMLElement;
-
 afterEach(cleanup);
 
 describe("PerformanceMix: what plays", () => {
   it("marks the original drums as off when the generated drums play", () => {
     renderMix({ drums: "generated", bass: "original" });
-    expect(within(rowOf("drums")).getByText("Off: generated plays")).toBeTruthy();
-    expect(within(rowOf("Drums (generated)")).queryByText(/^Off:/)).toBeNull();
-    expect(within(rowOf("bass")).queryByText(/^Off:/)).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Drums" })).getByText("Off: generated plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Drums (generated)" })).queryByText(/^Off:/)).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Bass" })).queryByText(/^Off:/)).toBeNull();
   });
 
-  it("marks the generated tracks as off when the originals play", () => {
+  it("marks the generated bass as off when the original bass plays", () => {
     renderMix({ drums: "original", bass: "original" });
-    expect(within(rowOf("Drums (generated)")).getByText("Off: original plays")).toBeTruthy();
-    expect(within(rowOf("Bass (generated)")).getByText("Off: original plays")).toBeTruthy();
-    expect(within(rowOf("drums")).queryByText(/^Off:/)).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Bass (generated)" })).getByText("Off: original plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Drums (generated)" })).getByText("Off: original plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Bass" })).queryByText(/^Off:/)).toBeNull();
   });
 
   it("marks nothing when both play", () => {
@@ -70,8 +67,25 @@ describe("PerformanceMix: what plays", () => {
     expect(screen.queryByText(/^Off:/)).toBeNull();
   });
 
+  it("names the split stems as the Stems tab does, not in lower case", () => {
+    renderMix(ORIGINAL_PARTS);
+    expect(screen.getByRole("group", { name: "Drums" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Bass" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "drums" })).toBeNull();
+  });
+
   it("keeps each row's mute checkbox in its state, since the badge does not change the mute levels", () => {
     renderMix({ drums: "generated", bass: "original" });
-    expect((screen.getByLabelText("drums enabled") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Drums enabled") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("puts every row in one grid, so the columns line up, and offers mute groups only on user tracks", () => {
+    renderMix(ORIGINAL_PARTS);
+    const rows = screen.getByLabelText("Mixer rows");
+    expect(rows.className).toContain("grid-cols-[");
+    expect(rows.children).toHaveLength(4);
+    for (const row of Array.from(rows.children)) expect(row.className).toContain("grid-cols-subgrid");
+    expect(screen.queryByRole("group", { name: "Drums mute groups" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Drums (generated) mute groups" })).toBeTruthy();
   });
 });
