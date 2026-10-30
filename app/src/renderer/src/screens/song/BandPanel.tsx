@@ -23,6 +23,8 @@ import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
 import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
 import { bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, previewMix } from "@/song/band/request";
+import { applyBassTone } from "@/song/band/bass-tone";
+import { renderBassChain } from "@/song/band/bass-chain";
 import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
 import { followStatus } from "@/song/band/feel";
 import { startChordDetection } from "@/song/band/chord-detect-client";
@@ -68,6 +70,8 @@ export interface BandPanelProps {
 }
 
 const PREVIEW_BARS = 4;
+/** The step the bass tone takes after the render, while it is read and rendered through the capture. */
+const BASS_TONE_TEXT = "Bass tone…";
 const PLAYING_TEXT = "Stop playback to generate parts.";
 const NO_SONG_TEXT = "Open a song to generate parts.";
 
@@ -339,10 +343,19 @@ function BandBody({
       rendering.onProgress((stage) => setWork(stageText(stage)));
       const result = await rendering.done;
       setLastNotes(result.notes);
+      // The bass tone is applied before the bass is saved, so the saved bass is the one Generate made. A tone that can't be used
+      // leaves the clean bass and a notice.
+      let bass = result.bass;
+      if (bass && using.bassTone.kind === "nam") {
+        setWork(BASS_TONE_TEXT);
+        const toned = await applyBassTone(bass, using.bassTone, host.tones, renderBassChain);
+        bass = toned.bass;
+        if (toned.notice) notes.push(toned.notice);
+      }
       if (result.follow) notes.push(followStatus(result.follow));
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
-      const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass: result.bass }, { playing: playingNow.current, remove: turnedOff });
+      const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass }, { playing: playingNow.current, remove: turnedOff });
       if (applied.length === 0) {
         // A part that was just generated plays at once when it was on its original, so the user hears what they made. A part turned off
         // with its generated track gone goes back to its original.
@@ -391,7 +404,15 @@ function BandBody({
       const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
       job.current = rendering;
       const result = await rendering.done;
-      const mixed = previewMix(current.audio, from, result);
+      // The preview hears the bass tone too, so it matches what Generate would save.
+      let bass = result.bass;
+      if (bass && settings.bassTone.kind === "nam") {
+        setWork(BASS_TONE_TEXT);
+        const toned = await applyBassTone(bass, settings.bassTone, host.tones, renderBassChain);
+        bass = toned.bass;
+        if (toned.notice) setNotices([toned.notice]);
+      }
+      const mixed = previewMix(current.audio, from, { ...result, bass });
       setWork(null);
       stopPreview.current = playOnce(mixed, () => {
         stopPreview.current = null;
