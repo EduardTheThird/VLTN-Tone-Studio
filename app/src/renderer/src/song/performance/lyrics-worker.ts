@@ -1,13 +1,15 @@
-import { findLyricsQuality, hasWebGpuAdapter, runtimeFor, wasmThreads, type LyricsOptions, type LyricsRuntime } from "./lyrics-options";
+import { findLyricsQuality, hasWebGpuAdapter, wasmThreads, type LyricsOptions, type LyricsRuntime } from "./lyrics-options";
 import { findLyricsModel } from "./lyrics-models";
-import { diagnosticOf, transcribeAll, type LoadRecogniser } from "./lyrics-passes";
+import { diagnosticOf, preferredRuntime, SKIP_GRAPHICS_STATUS, transcribeAll, type LoadRecogniser } from "./lyrics-passes";
 import type { Region } from "./vocal-activity";
 
 // `pieces` are the singing windows (16 kHz mono), `starts` their song times in seconds, and `spans` the song time each window
 // is responsible for (windows overlap, so each word is kept by one of them). The passes and their retry rules are in
 // lyrics-passes.ts. The worker returns every word with a song time, and a diagnostic; the lines are built on the main thread.
-self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: number[]; spans: Region[]; options: LyricsOptions }>) => {
-  const { pieces, starts, spans, options } = event.data;
+self.onmessage = async (
+  event: MessageEvent<{ pieces: Float32Array[]; starts: number[]; spans: Region[]; options: LyricsOptions; graphicsHeardNothing: boolean }>,
+) => {
+  const { pieces, starts, spans, options, graphicsHeardNothing } = event.data;
   try {
     // Load inside the handler so module/asset failures reach the UI instead of
     // terminating worker startup with an opaque error event.
@@ -49,7 +51,10 @@ self.onmessage = async (event: MessageEvent<{ pieces: Float32Array[]; starts: nu
     };
 
     // WebGPU is tried when an adapter exists. See transcribeAll for when a pass is run again on the CPU.
-    const preferred = runtimeFor(await hasWebGpuAdapter(navigator.gpu));
+    // Graphics acceleration that heard nothing for this model in this app version is skipped (the caller remembers that).
+    const webgpu = await hasWebGpuAdapter(navigator.gpu);
+    const preferred = preferredRuntime(webgpu, graphicsHeardNothing);
+    if (webgpu && graphicsHeardNothing) self.postMessage({ status: SKIP_GRAPHICS_STATUS });
     const pass = await transcribeAll(load, { pieces, starts, spans }, preferred, {
       onStatus: (status) => self.postMessage({ status }),
       onPiece: (i) => {

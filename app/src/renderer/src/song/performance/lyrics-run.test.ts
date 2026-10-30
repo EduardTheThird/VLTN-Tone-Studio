@@ -102,3 +102,43 @@ describe("transcribeLyrics", () => {
     expect(FakeWorker.current.terminate).toHaveBeenCalled();
   });
 });
+
+describe("graphics acceleration memory in a run", () => {
+  const KEY = "gp5.lyrics.graphics-empty.v1";
+  const cpuAfterEmpty = { runtime: "wasm", parts: 1, rawWords: 1, keptWords: 1, cpuRetry: true };
+
+  /** Runs one transcription and answers the worker with the given words and diagnostic. Returns the result and the flag the worker got. */
+  async function runWith(diagnostic: unknown, words: { text: string; start: number; end: number }[] = [{ text: "hold", start: 1, end: 1.4 }]) {
+    const result = transcribeLyrics({ audio: audio(voice), options });
+    await vi.waitFor(() => expect(FakeWorker.current).toBeDefined());
+    const worker = FakeWorker.current;
+    FakeWorker.current = undefined!;
+    queueMicrotask(() => worker.onmessage?.({ data: { words, diagnostic } }));
+    const sent = worker.postMessage.mock.calls[0]?.[0] as { graphicsHeardNothing: boolean };
+    return { result: await result, graphicsHeardNothing: sent.graphicsHeardNothing };
+  }
+
+  beforeEach(() => localStorage.removeItem(KEY));
+
+  it("remembers it when the CPU heard words after graphics acceleration heard nothing, and goes straight to the CPU next time", async () => {
+    const first = await runWith(cpuAfterEmpty);
+    expect(first.graphicsHeardNothing).toBe(false);
+    expect(localStorage.getItem(KEY)).not.toBeNull();
+    const second = await runWith({ ...cpuAfterEmpty, cpuRetry: false });
+    expect(second.graphicsHeardNothing).toBe(true);
+  });
+
+  it("does not remember it when both passes heard nothing, since the song may have no singing", async () => {
+    await runWith({ runtime: "wasm", parts: 1, rawWords: 0, keptWords: 0, cpuRetry: true }, []);
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("keeps transcribing when storage throws", async () => {
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const first = await runWith(cpuAfterEmpty);
+    expect(first.result.text).toBe("[00:01.00] hold");
+    set.mockRestore();
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WASM_RUNTIME, WEBGPU_RUNTIME } from "./lyrics-options";
-import { diagnosticOf, heardEnough, noSingingMessage, runPass, transcribeAll, type LoadRecogniser, type WindowInput } from "./lyrics-passes";
+import { diagnosticOf, heardEnough, noSingingMessage, preferredRuntime, runPass, transcribeAll, type LoadRecogniser, type WindowInput } from "./lyrics-passes";
 
 const RATE = 16000;
 type Chunk = { text: string; timestamp: [number | null, number | null] };
@@ -81,7 +81,7 @@ describe("transcribeAll", () => {
     const h = hooks();
     const pass = await transcribeAll(fake.load, input, WEBGPU_RUNTIME, h.hooks);
     expect(pass.words).toEqual([]);
-    expect(diagnosticOf(pass, input.pieces.length)).toEqual({ runtime: "wasm", parts: 2, rawWords: 0, keptWords: 0 });
+    expect(diagnosticOf(pass, input.pieces.length)).toEqual({ runtime: "wasm", parts: 2, rawWords: 0, keptWords: 0, cpuRetry: true });
     expect(noSingingMessage(diagnosticOf(pass, input.pieces.length))).toBe(
       "No singing found in the vocals (2 parts, 0 words heard on the CPU). Import or type lyrics, or retry transcription.",
     );
@@ -151,7 +151,28 @@ describe("runPass", () => {
 
 describe("noSingingMessage", () => {
   it("says the words were dropped when the transcriber returned some but none were kept", () => {
-    expect(noSingingMessage({ runtime: "webgpu", parts: 14, rawWords: 5, keptWords: 0 })).toContain("The transcriber returned 5 words, but none were kept.");
-    expect(noSingingMessage({ runtime: "webgpu", parts: 14, rawWords: 5, keptWords: 0 })).toContain("on the graphics acceleration");
+    expect(noSingingMessage({ runtime: "webgpu", parts: 14, rawWords: 5, keptWords: 0, cpuRetry: true })).toContain(
+      "The transcriber returned 5 words, but none were kept.",
+    );
+    expect(noSingingMessage({ runtime: "webgpu", parts: 14, rawWords: 5, keptWords: 0, cpuRetry: true })).toContain("on the graphics acceleration");
+  });
+});
+
+describe("preferredRuntime", () => {
+  it("starts on WebGPU only when there is an adapter that has not heard nothing here before", () => {
+    expect(preferredRuntime(true, false)).toEqual(WEBGPU_RUNTIME);
+    expect(preferredRuntime(true, true)).toEqual(WASM_RUNTIME);
+    expect(preferredRuntime(false, false)).toEqual(WASM_RUNTIME);
+  });
+});
+
+describe("cpuRetry in the diagnostic", () => {
+  it("is set only when the CPU pass ran after an empty graphics pass", async () => {
+    const retried = await transcribeAll(fakeLoad({ webgpu: () => [], wasm: () => sung(4) }).load, input, WEBGPU_RUNTIME, hooks().hooks);
+    expect(diagnosticOf(retried, 2).cpuRetry).toBe(true);
+    const direct = await transcribeAll(fakeLoad({ wasm: () => sung(4) }).load, input, WASM_RUNTIME, hooks().hooks);
+    expect(diagnosticOf(direct, 2).cpuRetry).toBe(false);
+    const heard = await transcribeAll(fakeLoad({ webgpu: () => sung(4) }).load, input, WEBGPU_RUNTIME, hooks().hooks);
+    expect(diagnosticOf(heard, 2).cpuRetry).toBe(false);
   });
 });

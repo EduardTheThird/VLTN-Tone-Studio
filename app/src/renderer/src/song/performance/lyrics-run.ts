@@ -6,8 +6,9 @@ import type { PcmAudio } from "../types";
 import { keepWordsWithin, lyricsLrc, songLines } from "./lyrics";
 import { alignLyrics, type TimedWord } from "./lyrics-align";
 import { highPass, normalisePeak } from "./lyrics-input";
-import type { LyricsOptions } from "./lyrics-options";
+import { graphicsHeardNothing, rememberGraphicsHeardNothing, type LyricsOptions } from "./lyrics-options";
 import type { LyricsDiagnostic } from "./lyrics-passes";
+import { host } from "@/host";
 import { ownedSpans, singingRegions, transcriptionWindows, type Region } from "./vocal-activity";
 
 export const LYRICS_RATE = 16000;
@@ -55,6 +56,15 @@ export async function mono16k(audio: PcmAudio): Promise<Float32Array> {
   return (await context.startRendering()).getChannelData(0);
 }
 
+/** The app's version, the key for remembering what graphics acceleration did. "unknown" when the host can't say. */
+async function appVersion(): Promise<string> {
+  try {
+    return await host.app.version();
+  } catch {
+    return "unknown";
+  }
+}
+
 /** Runs the transcriber in a worker over the pieces, and resolves with every word it heard, in song time, and its diagnostic. */
 function transcribe(
   pieces: Float32Array[],
@@ -63,6 +73,7 @@ function transcribe(
   options: LyricsOptions,
   signal: AbortSignal | undefined,
   onStatus: ((status: string) => void) | undefined,
+  skipGraphics: boolean,
 ): Promise<{ words: TimedWord[]; diagnostic?: LyricsDiagnostic }> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new LyricsCancelled());
@@ -91,7 +102,7 @@ function transcribe(
       reject(new Error(e.message || "Lyrics worker could not start. Retry transcription."));
     };
     worker.postMessage(
-      { pieces, starts, spans, options },
+      { pieces, starts, spans, options, graphicsHeardNothing: skipGraphics },
       pieces.map((piece) => piece.buffer),
     );
   });
@@ -111,6 +122,9 @@ export async function transcribeLyrics(request: LyricsRequest): Promise<LyricsRe
   const windows = transcriptionWindows(regions, duration);
   if (!windows.length) return { text: "", placed: 0 };
   const pieces = windows.map((w) => clean.slice(Math.round(w.start * LYRICS_RATE), Math.round(w.end * LYRICS_RATE)));
+  const version = await appVersion();
+  const model = request.options.model;
+  const skipGraphics = graphicsHeardNothing(model, version);
   const { words, diagnostic } = await transcribe(
     pieces,
     windows.map((w) => w.start),
@@ -118,7 +132,11 @@ export async function transcribeLyrics(request: LyricsRequest): Promise<LyricsRe
     request.options,
     request.signal,
     request.onStatus,
+    skipGraphics,
   );
+  // Graphics acceleration heard too little and the CPU heard words: remember it, so the CPU goes first next time.
+  // Both empty proves nothing about the machine (the song may have no singing), so nothing is remembered then.
+  if (diagnostic?.cpuRetry && diagnostic.keptWords > 0) rememberGraphicsHeardNothing(model, version);
   const heard = keepWordsWithin(words, regions);
   if (request.pasted) {
     const aligned = alignLyrics(request.pasted, heard, duration);

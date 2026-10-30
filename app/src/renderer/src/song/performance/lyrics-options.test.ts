@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LYRICS_CHOICE,
   fallbackRuntime,
+  graphicsHeardNothing,
+  rememberGraphicsHeardNothing,
   findLyricsQuality,
   hasWebGpuAdapter,
   loadLyricsChoice,
@@ -102,5 +104,36 @@ describe("transcribe lyrics when analysing", () => {
     expect(loadLyricsOnAnalysis()).toBe(true);
     saveLyricsOnAnalysis(false);
     expect(loadLyricsOnAnalysis()).toBe(false);
+  });
+});
+
+describe("graphics acceleration memory", () => {
+  const KEY = "gp5.lyrics.graphics-empty.v1";
+
+  it("remembers the model and app version, and recalls them", () => {
+    localStorage.removeItem(KEY);
+    expect(graphicsHeardNothing("small", "1.0.0")).toBe(false);
+    rememberGraphicsHeardNothing("small", "1.0.0");
+    expect(graphicsHeardNothing("small", "1.0.0")).toBe(true);
+    expect(graphicsHeardNothing("base", "1.0.0")).toBe(false);
+  });
+
+  it("clears the record when the app version changes, so the next run tries graphics acceleration again", () => {
+    rememberGraphicsHeardNothing("small", "1.0.0");
+    expect(graphicsHeardNothing("small", "1.1.0")).toBe(false);
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("does not break when storage throws", () => {
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(graphicsHeardNothing("small", "1.0.0")).toBe(false);
+    expect(() => rememberGraphicsHeardNothing("small", "1.0.0")).not.toThrow();
+    spy.mockRestore();
+    set.mockRestore();
   });
 });

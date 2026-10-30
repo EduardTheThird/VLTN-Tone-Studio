@@ -118,3 +118,32 @@ export function saveLyricsOnAnalysis(on: boolean) {
     /* storage unavailable: the setting is off next launch */
   }
 }
+
+const GRAPHICS_EMPTY_KEY = "gp5.lyrics.graphics-empty.v1";
+
+/**
+ * Remembers, on this machine, that graphics acceleration heard nothing for this model in this app version. The record holds one
+ * model and one version. A record from another app version is cleared, so a fixed driver or runtime gets another chance.
+ */
+export function graphicsHeardNothing(model: LyricsModelId, version: string): boolean {
+  try {
+    const stored = JSON.parse(localStorage.getItem(GRAPHICS_EMPTY_KEY) ?? "null") as { model?: unknown; version?: unknown } | null;
+    if (!stored) return false;
+    if (stored.version !== version) {
+      localStorage.removeItem(GRAPHICS_EMPTY_KEY);
+      return false;
+    }
+    return stored.model === model;
+  } catch {
+    return false;
+  }
+}
+
+/** Records that graphics acceleration heard nothing for this model in this app version. Storage that fails is not an error. */
+export function rememberGraphicsHeardNothing(model: LyricsModelId, version: string): void {
+  try {
+    localStorage.setItem(GRAPHICS_EMPTY_KEY, JSON.stringify({ model, version }));
+  } catch {
+    /* storage unavailable: the CPU is tried first next time, as this time */
+  }
+}

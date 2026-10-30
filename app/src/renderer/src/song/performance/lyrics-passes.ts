@@ -4,7 +4,7 @@
 
 import { windowWords } from "./lyrics";
 import type { TimedWord } from "./lyrics-align";
-import { fallbackRuntime, type LyricsRuntime } from "./lyrics-options";
+import { fallbackRuntime, runtimeFor, type LyricsRuntime } from "./lyrics-options";
 import type { Region } from "./vocal-activity";
 
 type Chunks = Parameters<typeof windowWords>[0];
@@ -32,6 +32,8 @@ export interface Pass {
   words: TimedWord[];
   /** Chunks the transcriber returned before the windows kept their words. */
   rawWords: number;
+  /** The preferred pass heard too little, so this pass is the CPU run that followed it. */
+  retried: boolean;
 }
 
 /** What the main thread needs to explain an empty result. */
@@ -40,6 +42,16 @@ export interface LyricsDiagnostic {
   parts: number;
   rawWords: number;
   keptWords: number;
+  /** The run went to the CPU because graphics acceleration heard too little. */
+  cpuRetry: boolean;
+}
+
+/** The status shown when graphics acceleration is skipped because it heard nothing here before. */
+export const SKIP_GRAPHICS_STATUS = "Transcribing on the CPU (graphics acceleration heard nothing here before)";
+
+/** The runtime to start with: WebGPU when it is present and has not heard nothing here before, otherwise the CPU. */
+export function preferredRuntime(webgpu: boolean, graphicsHeardNothing: boolean): LyricsRuntime {
+  return runtimeFor(webgpu && !graphicsHeardNothing);
 }
 
 export interface PassHooks {
@@ -72,7 +84,7 @@ export async function runPass(load: LoadRecogniser, runtime: LyricsRuntime, inpu
       // Times from a window are relative to it; windowWords moves them to song time and keeps the words it owns.
       words.push(...windowWords(chunks, input.pieces[i].length / SAMPLE_RATE, input.starts[i], input.spans[i]));
     }
-    return { runtime, words, rawWords };
+    return { runtime, words, rawWords, retried: false };
   } finally {
     await recogniser.dispose();
   }
@@ -94,11 +106,11 @@ export async function transcribeAll(load: LoadRecogniser, input: WindowInput, pr
   }
   if (!fallback || heardEnough(pass.words.length, windowSeconds(input))) return pass;
   hooks.onStatus("No words from graphics acceleration; transcribing again on the CPU");
-  return runPass(load, fallback, input, hooks.onPiece);
+  return { ...(await runPass(load, fallback, input, hooks.onPiece)), retried: true };
 }
 
 export function diagnosticOf(pass: Pass, parts: number): LyricsDiagnostic {
-  return { runtime: pass.runtime.device, parts, rawWords: pass.rawWords, keptWords: pass.words.length };
+  return { runtime: pass.runtime.device, parts, rawWords: pass.rawWords, keptWords: pass.words.length, cpuRetry: pass.retried };
 }
 
 /** The message for an empty result: how many parts were run, where, and whether the words were heard or dropped. */
