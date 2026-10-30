@@ -89,7 +89,8 @@ describe("transcribeLyrics", () => {
         ],
       },
     });
-    expect((await result).text).toBe("[00:01.00] Hold on\n[00:04.00] I'm coming");
+    // "I'm" was not heard, so "coming" is stepped back over it by the average heard word (0.4 s).
+    expect((await result).text).toBe("[00:01.00] Hold on\n[00:03.60] I'm coming");
   });
 
   it("stops at once when the signal aborts: the worker is ended and nothing is returned", async () => {
