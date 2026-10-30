@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BeatGrid } from "../band/beat-grid";
 import type { PcmAudio, Stems } from "../types";
-import { ANALYSIS_VERSION, type AnalysisStep, type SongAnalysis } from "./song-analysis";
+import { ANALYSIS_VERSION, songAudioId, type AnalysisStep, type SongAnalysis } from "./song-analysis";
 import {
   BATCH_STEPS,
   DEFAULT_LYRICS_BATCH,
@@ -428,6 +428,17 @@ describe("the lyrics step", () => {
     const outcomes = await runAnalysisBatch([empty], batchOptions({ onlyNeeded: true, choice: lyricsOnly }), deps, new AbortController().signal);
     expect(outcomes).toEqual([{ id: "f", title: "Song f", status: "lyrics", lyrics: { kind: "failed", reason: "Model download failed" } }]);
     expect(writes).toEqual([]);
+  });
+
+  it("saves the analysis under the audio without the generated parts, so generating them keeps it", async () => {
+    const mix = tone();
+    const { deps, writes } = fakeDeps({
+      load: vi.fn(async () => ({ source: mix, stems: { track1: tone(0.2) } as Stems })),
+    });
+    const song1 = song("g", { ":bpm": "120" }, { generatedParts: { drums: "track1" } });
+    await runAnalysisBatch([song1], batchOptions(), deps, new AbortController().signal);
+    const saved = JSON.parse(writes[0].values[":options"]).analysis as SongAnalysis;
+    expect(saved.audioId).toBe(songAudioId(mix, {}));
   });
 
   it("runs only the lyrics for a song whose analysis is current, and writes the chart without touching the analysis", async () => {

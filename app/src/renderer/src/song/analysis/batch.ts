@@ -27,6 +27,7 @@ import {
   ANALYSIS_VERSION,
   PLAYBACK_INTERRUPT,
   parseAnalysis,
+  generatedTrackKeysIn,
   runSongAnalysis,
   songAudioId,
   type AnalysisOutcome,
@@ -421,7 +422,7 @@ async function analyseOne(song: BatchSong, options: BatchOptions, deps: BatchDep
       : null,
   );
   const base = {
-    audioId: songAudioId(mix, stems),
+    audioId: songAudioId(mix, stems, generatedTrackKeysIn(saved)),
     audio,
     steps,
     settings: {

@@ -84,11 +84,6 @@ function optionsOf(key: string): Record<string, unknown> {
  * that no longer matches is ignored, so the key is never deleted when it now belongs to the user's own track. The record is dropped the
  * next time it is saved.
  */
-/** The track keys of the song's generated drum and bass parts, as its options record them. */
-export function generatedTrackKeys(songKey: string, tracks: Record<string, TrackInfo>): string[] {
-  return Object.values(generatedKeysOf(optionsOf(songKey), tracks)).filter((value): value is string => Boolean(value));
-}
-
 function generatedKeysOf(options: Record<string, unknown>, tracks: Record<string, TrackInfo>): GeneratedKeys {
   const saved = options.generatedParts;
   if (!saved || typeof saved !== "object") return {};

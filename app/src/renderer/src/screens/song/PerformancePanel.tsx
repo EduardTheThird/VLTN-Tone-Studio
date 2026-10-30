@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { generatedTrackKeys, useSong } from "@/song/store";
+import { useSong } from "@/song/store";
 import { defaultMix, type Mix } from "@/song/stems/mix";
 import type { TrackBuses } from "@/song/stems/player";
 import { songCues } from "@/song/performance/song-cues";
@@ -18,7 +18,7 @@ import { getSetting, performanceKey, readOptions, setSetting } from "@/song/perf
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
 import { useSongAnalysis } from "./use-song-analysis";
-import { parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
+import { generatedTrackKeysIn, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
 import type { DetectedSection } from "@/song/analysis/sections";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
@@ -274,7 +274,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
   // Generated parts do not change the audio the chords were analysed under (see songAudioId), so the saved chords stay after Generate.
-  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems, generatedTrackKeys(key, tracks)) : ""), [source, stems, tracks, key]);
+  const audioId = useMemo(
+    () => (source ? songAudioId(source.audio, stems, generatedTrackKeysIn(readOptions<Record<string, unknown>>(key, {}))) : ""),
+    [source, stems, tracks, key],
+  );
   const { chords, analysing } = useChordAnalysis(session, harmony, bass, { songKey: key, audioId }, !!stems);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);

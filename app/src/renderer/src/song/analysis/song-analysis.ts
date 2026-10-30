@@ -164,6 +164,16 @@ export function audioFingerprint(sampleRate: number, stems: Record<string, PcmAu
   return `${sampleRate}|${parts.join(",")}`;
 }
 
+/**
+ * The track keys of the generated parts, as a song's saved options record them (`generatedParts`). Every saved analysis is keyed on the
+ * audio without them (see songAudioId), so adding or removing the parts leaves the analysis current.
+ */
+export function generatedTrackKeysIn(options: Record<string, unknown>): string[] {
+  const saved = options.generatedParts;
+  if (!saved || typeof saved !== "object") return [];
+  return Object.values(saved).filter((value): value is string => typeof value === "string" && value.length > 0);
+}
+
 /** The saved analysis matches the audio and the current version, so it needs no run. */
 export function isCurrent(saved: SongAnalysis | null, audioId: string): saved is SongAnalysis {
   return !!saved && saved.audioId === audioId && saved.version === ANALYSIS_VERSION;
