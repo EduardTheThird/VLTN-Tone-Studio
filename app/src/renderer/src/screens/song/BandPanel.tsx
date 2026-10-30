@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Drum } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -33,7 +34,7 @@ import type { Chord } from "@/song/performance/chords";
 import type { Section } from "@/song/performance/sections";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
 import { ORIGINAL_PARTS, partKeysOf, type PartChoices } from "@/song/band/part-choice";
-import { hasGeneratedParts, presenceLine, type PartKind } from "./band-status";
+import { bandEntryStatus, hasGeneratedParts, presenceLine, type PartKind } from "./band-status";
 import { PartChoiceRows } from "./PartChoiceRows";
 import { useBandPanel } from "./band-panel-state";
 import { BandSections, type BandSectionRow } from "./BandSections";
@@ -97,13 +98,35 @@ function playOnce(audio: PcmAudio, onDone: () => void): () => void {
   };
 }
 
-/** The Band button, by the mixer. It opens the panel. */
-export function BandPanelButton() {
+export interface BandPanelButtonProps {
+  /** The song's sections, which name the section a partly found part is missing from. */
+  sections: Section[];
+  /** Which drums and bass play, so the entry point can say what is playing. */
+  partChoices: PartChoices;
+}
+
+/**
+ * The Band entry point, above the mixer: a card that opens the panel. Its label and status follow the song's generated parts, and a
+ * part the split missed is named here too.
+ */
+export function BandPanelButton({ sections, partChoices }: BandPanelButtonProps) {
   const show = useBandPanel((s) => s.show);
+  const stems = useSong((s) => s.stems);
+  const tracks = useSong((s) => s.tracks);
+  const missing = useSong((s) => s.missingParts);
+  const generated = hasGeneratedParts(tracks);
+  const status = bandEntryStatus(partKeysOf(tracks ?? {}, stems), partChoices, missing, sections);
   return (
-    <Button variant="outline" size="sm" onClick={() => show(true)}>
-      Band
-    </Button>
+    <section aria-label="Band parts" className="flex flex-wrap items-center gap-3 rounded-lg border border-seam px-3 py-2 text-sm">
+      <Drum className="size-5 shrink-0 text-silkscreen-3" aria-hidden />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-muted-foreground">Make drum and bass parts that follow this song, and choose what plays.</p>
+        {status && <p>{status}.</p>}
+      </div>
+      <Button variant="secondary" size="sm" onClick={() => show(true)}>
+        {generated ? "Drums & bass…" : "Generate drums & bass…"}
+      </Button>
+    </section>
   );
 }
 

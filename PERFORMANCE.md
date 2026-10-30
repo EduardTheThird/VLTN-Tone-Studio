@@ -343,7 +343,7 @@ Check the receiving device on the rig before relying on it, and see the timecode
 
 ## Generated drums and bass
 
-The Band panel can generate drums and bass to play along, for a song that is missing them and for one that already has them. The split notice names a part that is missing. Press **Band** on the Performance screen to open the panel and make them.
+The Band panel can generate drums and bass to play along, for a song that is missing them and for one that already has them. The split notice names a part that is missing. On the Performance screen, press **Generate drums & bass…** to open the panel and make them. Its help line says what the panel does, and the line under the button shows the state: "No drums found" or "No bass found" for a part the split missed, then the generated parts and what plays, such as "Generated: drums, bass. Playing generated drums, original bass." Once the song has generated parts the button reads **Drums & bass…**. The command palette (Ctrl/Cmd K) also has **Generate drums and bass…**, which opens the panel from the Performance screen.
 
 **Find the beat.** Press **Find the beat** first. It listens to the drums stem if there is one, then the pitched stems, then the whole mix. The panel shows what it found, for example "120.0 BPM, steady, 16 beats, 4 per bar". The parts follow this beat grid, so check it before you generate.
 

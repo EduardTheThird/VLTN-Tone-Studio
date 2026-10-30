@@ -6,7 +6,9 @@ import { fixedBeatGrid } from "@/song/band/beat-grid";
 import { parseSmf } from "@/song/performance/smf";
 import type { Section } from "@/song/performance/sections";
 import { useBandPanel } from "./band-panel-state";
-import { ORIGINAL_PARTS } from "@/song/band/part-choice";
+import { ORIGINAL_PARTS, type PartChoices } from "@/song/band/part-choice";
+import type { TrackInfo } from "@/song/tracks";
+import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
@@ -44,7 +46,7 @@ vi.mock("@/song/band/band-client", async (importOriginal) => ({
 
 // Imported after the mocks, so they see the mocked store.
 const { useSong } = await import("@/song/store");
-const { BandPanel } = await import("./BandPanel");
+const { BandPanel, BandPanelButton } = await import("./BandPanel");
 
 const KEY = "vltn.performance.v1:band-panel-test:8:44100";
 const SECONDS = 8;
@@ -616,5 +618,51 @@ describe("Band panel layout", () => {
     const dialog = screen.getByRole("dialog");
     const fixedWide = [...dialog.querySelectorAll<HTMLElement>("*")].filter((el) => /(^|\s)w-\[\d{4,}/.test(el.className) || el.style.width);
     expect(fixedWide).toEqual([]);
+  });
+});
+
+describe("Band entry point", () => {
+  const CHOICES: PartChoices = ORIGINAL_PARTS;
+  const STEM: PcmAudio = { sampleRate: 44100, channels: [new Float32Array(1)] };
+  const ORIGINAL_STEMS = { drums: STEM, bass: STEM };
+  const GENERATED_TRACKS = {
+    "gen-drums": { kind: "user" as const, name: GENERATED_PART_NAMES.drums },
+    "gen-bass": { kind: "user" as const, name: GENERATED_PART_NAMES.bass },
+  } as Record<string, TrackInfo>;
+
+  function renderEntry(choices: PartChoices = CHOICES) {
+    return render(<BandPanelButton sections={[]} partChoices={choices} />);
+  }
+
+  it("names the action and says what it does, without a generated part yet", () => {
+    renderEntry();
+    expect(screen.getByRole("button", { name: "Generate drums & bass…" })).toBeTruthy();
+    expect(screen.getByText("Make drum and bass parts that follow this song, and choose what plays.")).toBeTruthy();
+    expect(screen.queryByText(/Generated:/)).toBeNull();
+  });
+
+  it("shows the generated parts and what plays once the song has them", () => {
+    useSong.setState({ stems: ORIGINAL_STEMS, tracks: GENERATED_TRACKS, missingParts: null });
+    renderEntry({ drums: "generated", bass: "original" });
+    expect(screen.getByRole("button", { name: "Drums & bass…" })).toBeTruthy();
+    expect(screen.getByText("Generated: drums, bass. Playing generated drums, original bass.")).toBeTruthy();
+  });
+
+  it("names a part the split did not find", () => {
+    useSong.setState({
+      stems: { bass: STEM },
+      tracks: {},
+      missingParts: { drums: "absent", bass: "present", absentSections: { drums: [], bass: [] } },
+    });
+    renderEntry();
+    expect(screen.getByText("No drums found.")).toBeTruthy();
+    expect(screen.queryByText(/No bass found/)).toBeNull();
+  });
+
+  it("opens the Band panel when pressed", () => {
+    renderEntry();
+    expect(useBandPanel.getState().open).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Generate drums & bass…" }));
+    expect(useBandPanel.getState().open).toBe(true);
   });
 });

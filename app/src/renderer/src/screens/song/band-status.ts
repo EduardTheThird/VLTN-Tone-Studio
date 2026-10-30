@@ -2,6 +2,7 @@
 
 import type { MissingParts, PartPresence } from "@/song/band/detect";
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
+import { effectiveChoice, type PartChoices, type PartKeys } from "@/song/band/part-choice";
 import type { TrackInfo } from "@/song/tracks";
 import type { Section } from "@/song/performance/sections";
 
@@ -39,4 +40,26 @@ export function hasGeneratedParts(tracks: Record<string, TrackInfo> | undefined)
   return Object.values(tracks ?? {}).some(
     (track) => track.kind === "user" && (track.name === GENERATED_PART_NAMES.drums || track.name === GENERATED_PART_NAMES.bass),
   );
+}
+
+/** What the Performance screen's Band entry point says about the parts: which are generated, what plays, and any part the split missed. */
+export function bandEntryStatus(keys: PartKeys, choices: PartChoices, missing: MissingParts | null | undefined, sections: readonly Section[]): string | null {
+  const lines: string[] = [];
+  for (const kind of PART_KINDS) {
+    const presence = missing?.[kind];
+    if (presence === "absent" || presence === "partial") lines.push(presenceLine(kind, presence, missing?.absentSections[kind] ?? [], sections));
+  }
+  const generated = PART_KINDS.filter((kind) => keys[kind]?.generated !== undefined);
+  if (generated.length) {
+    lines.push(`Generated: ${generated.join(", ")}`);
+    const plays = PART_KINDS.flatMap((kind) => {
+      const part = keys[kind];
+      if (!part || (part.original === undefined && part.generated === undefined)) return [];
+      const shown = effectiveChoice(choices[kind], part);
+      const what = shown === "both" ? "original and generated" : shown;
+      return [`${what} ${kind}`];
+    });
+    if (plays.length) lines.push(`Playing ${plays.join(", ")}`);
+  }
+  return lines.length ? lines.join(". ") : null;
 }
