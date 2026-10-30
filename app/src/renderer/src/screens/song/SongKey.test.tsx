@@ -93,3 +93,13 @@ it("names a modal flavour after the key, and leaves the key itself to the transp
   render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" shift={0} />);
   expect(screen.getByText("Song key: G major (Mixolydian)")).toBeTruthy();
 });
+
+it("leaves out the alternatives when the estimate has none", () => {
+  render(<SongKey stems={{ guitar: audio }} original={audio} storageKey="song" shift={0} />);
+  act(() => {
+    workers[0].onmessage?.({
+      data: { estimate: { name: "A major", tonic: 9, mode: "major", confidence: "strong", correlation: 0.8, margin: 0.2, alternatives: [] } },
+    } as MessageEvent);
+  });
+  expect(screen.getByRole("status").textContent).toBe("Estimated A major from guitar · clearer match");
+});

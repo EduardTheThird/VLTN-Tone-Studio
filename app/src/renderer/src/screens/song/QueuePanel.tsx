@@ -8,6 +8,12 @@ import { runningSeconds } from "@/song/performance/running-time";
 
 const row = "flex flex-wrap items-center gap-2 rounded border border-seam p-2";
 
+/** The number of songs in the queue. The limit is named only when the queue is full, since it is not a position. */
+export function queueCount(songs: number): string {
+  if (songs >= QUEUE_MAX) return `Queue full (${QUEUE_MAX} songs)`;
+  return `${songs} ${songs === 1 ? "song" : "songs"}`;
+}
+
 /**
  * The queue: the song playing, then the songs still to come. The playing song and the songs before it are locked. Upcoming songs can be
  * dragged or moved, sent to the top or bottom, or removed. Each edit changes only the queue; playback carries on, and the next song is
@@ -33,7 +39,7 @@ export function QueuePanel() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-semibold">Queue</h2>
         <p className="text-sm text-silkscreen-3">
-          {library.queue.length} of {QUEUE_MAX} · {rest.length} to come · {formatTime(remaining)}
+          {queueCount(library.queue.length)} · {rest.length} to come · {formatTime(remaining)}
         </p>
       </div>
       {playing === undefined ? (
