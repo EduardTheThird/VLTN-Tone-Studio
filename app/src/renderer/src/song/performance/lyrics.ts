@@ -43,12 +43,15 @@ function knownTime(time: number | null): number | undefined {
   return typeof time === "number" && Number.isFinite(time) ? time : undefined;
 }
 
+/** A transcribed word, and whether its start was missing and so repaired. */
+type RepairedWord = TimedWord & { startRepaired: boolean };
+
 /**
  * Word chunks from a word-timestamp run, in song time (relative to the window). A word with a missing start takes the end of
  * the word before it, or runs back from its own end. A word with a missing end takes the next word's start, or lasts
  * REPAIRED_WORD_SECONDS. Words that start outside the window are dropped.
  */
-export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
+function repairedWords(chunks: Chunk[], duration: number): RepairedWord[] {
   const heard = chunks
     .map((chunk) => ({ text: cleanText(chunk.text), start: knownTime(chunk.timestamp[0]), end: knownTime(chunk.timestamp[1]) }))
     .filter((word) => word.text);
@@ -58,7 +61,7 @@ export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] 
     nextStart[i] = later;
     if (heard[i].start !== undefined) later = heard[i].start;
   }
-  const words: TimedWord[] = [];
+  const words: RepairedWord[] = [];
   let previousEnd: number | undefined;
   heard.forEach((word, i) => {
     const following = nextStart[i];
@@ -66,20 +69,28 @@ export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] 
     if (start === undefined || !(start >= 0 && start < duration)) return;
     const end = word.end ?? Math.max(start, Math.min(following ?? Infinity, start + REPAIRED_WORD_SECONDS));
     const clamped = Math.max(start, Math.min(end, duration));
-    words.push({ text: word.text, start, end: clamped });
+    words.push({ text: word.text, start, end: clamped, startRepaired: word.start === undefined });
     previousEnd = clamped;
   });
   return words;
 }
 
+export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
+  return repairedWords(chunks, duration).map(({ text, start, end }) => ({ text, start, end }));
+}
+
 /**
  * The words one transcription window heard, in song time. `offset` is the window's song start, and only the words that start
- * inside `span` are kept, so a word in the overlap with a neighbour is kept once.
+ * inside `span` are kept, so a word in the overlap with a neighbour is kept once. A word whose start was repaired is placed by
+ * its end instead: the repaired start can sit before the overlap midpoint the word really lies after.
  */
 export function windowWords(chunks: Chunk[], duration: number, offset: number, span: Region): TimedWord[] {
-  return transcriptWords(chunks, duration)
-    .map((word) => ({ text: word.text, start: word.start + offset, end: word.end + offset }))
-    .filter((word) => word.start >= span.start && word.start < span.end);
+  return repairedWords(chunks, duration)
+    .filter((word) => {
+      const at = (word.startRepaired ? word.end : word.start) + offset;
+      return at >= span.start && at < span.end;
+    })
+    .map(({ text, start, end }) => ({ text, start: start + offset, end: end + offset }));
 }
 
 /** Words that start inside a singing region (padded, since the transcriber's word starts can land just before one). */

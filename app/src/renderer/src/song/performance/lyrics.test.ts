@@ -65,6 +65,19 @@ describe("transcriptWords", () => {
   });
 });
 
+describe("windowWords with a repaired start", () => {
+  it("keeps a word whose repaired start falls before the overlap midpoint, when it really starts after it", () => {
+    // Windows [0, 30] and [28, 58] share the midpoint 29. The second window's first word has no start: its end (29.35) is known.
+    const spans = ownedSpans([
+      { start: 0, end: 30 },
+      { start: 28, end: 58 },
+    ]);
+    const heard = windowWords([{ text: " late", timestamp: [null, 1.35] }], 30, 28, spans[1]);
+    expect(heard.map((word) => word.text)).toEqual(["late"]);
+    expect(Math.abs(heard[0].start - 29.05)).toBeLessThan(0.2);
+  });
+});
+
 describe("windowWords across overlapping windows", () => {
   // Words every 0.5 s from 13 s, each 0.3 s long: an opening verse of about 38 s.
   const song: TimedWord[] = Array.from({ length: 76 }, (_, i) => ({ text: `w${i}`, start: 13 + i * 0.5, end: 13.3 + i * 0.5 }));
