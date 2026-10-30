@@ -7,6 +7,7 @@ import { keepWordsWithin, lyricsLrc, songLines } from "./lyrics";
 import { alignLyrics, type TimedWord } from "./lyrics-align";
 import { highPass, normalisePeak } from "./lyrics-input";
 import type { LyricsOptions } from "./lyrics-options";
+import type { LyricsDiagnostic } from "./lyrics-passes";
 import { ownedSpans, singingRegions, transcriptionWindows, type Region } from "./vocal-activity";
 
 export const LYRICS_RATE = 16000;
@@ -34,6 +35,8 @@ export interface LyricsResult {
   text: string;
   /** Lines with no heard words, placed between their neighbours. Only set when timing pasted lyrics. */
   placed: number;
+  /** How the transcriber ran, set when it ran. Explains an empty text. */
+  diagnostic?: LyricsDiagnostic;
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -52,7 +55,7 @@ export async function mono16k(audio: PcmAudio): Promise<Float32Array> {
   return (await context.startRendering()).getChannelData(0);
 }
 
-/** Runs the transcriber in a worker over the pieces, and resolves with every word it heard, in song time. */
+/** Runs the transcriber in a worker over the pieces, and resolves with every word it heard, in song time, and its diagnostic. */
 function transcribe(
   pieces: Float32Array[],
   starts: number[],
@@ -60,7 +63,7 @@ function transcribe(
   options: LyricsOptions,
   signal: AbortSignal | undefined,
   onStatus: ((status: string) => void) | undefined,
-): Promise<TimedWord[]> {
+): Promise<{ words: TimedWord[]; diagnostic?: LyricsDiagnostic }> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new LyricsCancelled());
     const worker = new Worker(new URL("./lyrics-worker.ts", import.meta.url), { type: "module" });
@@ -73,14 +76,14 @@ function transcribe(
       signal?.removeEventListener("abort", stop);
     };
     signal?.addEventListener("abort", stop, { once: true });
-    worker.onmessage = (event: MessageEvent<{ status?: string; error?: string; words?: TimedWord[] }>) => {
+    worker.onmessage = (event: MessageEvent<{ status?: string; error?: string; words?: TimedWord[]; diagnostic?: LyricsDiagnostic }>) => {
       if (event.data.status) onStatus?.(event.data.status);
       if (event.data.error) {
         done();
         reject(new Error(event.data.error));
       } else if (event.data.words) {
         done();
-        resolve(event.data.words);
+        resolve({ words: event.data.words, diagnostic: event.data.diagnostic });
       }
     };
     worker.onerror = (e) => {
@@ -108,7 +111,7 @@ export async function transcribeLyrics(request: LyricsRequest): Promise<LyricsRe
   const windows = transcriptionWindows(regions, duration);
   if (!windows.length) return { text: "", placed: 0 };
   const pieces = windows.map((w) => clean.slice(Math.round(w.start * LYRICS_RATE), Math.round(w.end * LYRICS_RATE)));
-  const words = await transcribe(
+  const { words, diagnostic } = await transcribe(
     pieces,
     windows.map((w) => w.start),
     ownedSpans(windows),
@@ -121,5 +124,6 @@ export async function transcribeLyrics(request: LyricsRequest): Promise<LyricsRe
     const aligned = alignLyrics(request.pasted, heard, duration);
     return { text: lyricsLrc(aligned), placed: aligned.filter((line) => line.estimated).length };
   }
-  return { text: lyricsLrc(songLines(heard)), placed: 0 };
+  const text = lyricsLrc(songLines(heard));
+  return text ? { text, placed: 0 } : { text, placed: 0, diagnostic };
 }
