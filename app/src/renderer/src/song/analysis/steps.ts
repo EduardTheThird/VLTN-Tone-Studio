@@ -55,9 +55,11 @@ export function tempoStep(onGrid?: (grid: BeatGrid) => void, hint: TempoHintOpti
  * Runs a one-shot worker on `payload` and resolves with its reply. The worker is ended when it answers, fails, or the run is aborted, so a
  * song that is left or re-analysed does not keep a thread busy.
  */
-function runWorker<T>(url: URL, payload: unknown, signal: AbortSignal): Promise<T> {
+function runWorker<T>(createWorker: () => Worker, payload: unknown, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const worker = new Worker(url, { type: "module" });
+    // The worker is built inline with `new Worker(new URL(...))`: Vite only bundles a worker written that way. A URL passed in from
+    // elsewhere is treated as an asset and inlined as a data URL, which the packaged app's Content Security Policy blocks.
+    const worker = createWorker();
     const stop = () => {
       worker.terminate();
       reject(new Error("The analysis was stopped."));
@@ -124,7 +126,11 @@ export function keyStep(): AnalysisStep {
     async run(audio, signal, soFar) {
       if (!hasSignal(audio.harmony.audio)) return {};
       const input: KeyInput = { harmony: audio.harmony.audio, bass: audio.bass, chords: soFar.chords?.chords ?? [], sections: audio.sections };
-      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      const { estimate } = await runWorker<{ estimate: KeyEstimate | null }>(
+        () => new Worker(new URL("../performance/key-worker.ts", import.meta.url), { type: "module" }),
+        input,
+        signal,
+      );
       return estimate ? { key: { source: audio.harmony.name, estimate } } : {};
     },
   };
@@ -148,7 +154,11 @@ export function sectionKeysStep(): AnalysisStep {
         sections: sections.map(({ start, end }) => ({ start, end })),
         songKey,
       };
-      const { keySections } = await runWorker<{ keySections: KeySection[] }>(new URL("../performance/key-worker.ts", import.meta.url), input, signal);
+      const { keySections } = await runWorker<{ keySections: KeySection[] }>(
+        () => new Worker(new URL("../performance/key-worker.ts", import.meta.url), { type: "module" }),
+        input,
+        signal,
+      );
       return { keySections };
     },
   };
@@ -166,7 +176,11 @@ export function chordsStep(gridOf: () => BeatGrid | null = () => null): Analysis
       // The key runs after the chords, so the key prior is normally the harmony's own estimate. A run that resumes with a key already found
       // passes it on here instead.
       const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null, key: soFar.key?.estimate.name ?? null };
-      const { chords } = await runWorker<{ chords: Chord[] }>(new URL("../performance/chords-worker.ts", import.meta.url), input, signal);
+      const { chords } = await runWorker<{ chords: Chord[] }>(
+        () => new Worker(new URL("../performance/chords-worker.ts", import.meta.url), { type: "module" }),
+        input,
+        signal,
+      );
       return { chords: { source: audio.harmony.name, chords } };
     },
   };
@@ -192,7 +206,11 @@ export function sectionsStep(gridOf: () => BeatGrid | null): AnalysisStep {
         spans: bars ?? timeUnitSpans(duration),
         options: bars ? BAR_DETECT : TIME_DETECT,
       };
-      const { sections } = await runWorker<{ sections: DetectedSection[] }>(new URL("./sections-worker.ts", import.meta.url), input, signal);
+      const { sections } = await runWorker<{ sections: DetectedSection[] }>(
+        () => new Worker(new URL("./sections-worker.ts", import.meta.url), { type: "module" }),
+        input,
+        signal,
+      );
       return { sections };
     },
   };
