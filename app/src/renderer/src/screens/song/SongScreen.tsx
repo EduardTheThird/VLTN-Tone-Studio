@@ -9,6 +9,8 @@ import { AUDIO_ACCEPT } from "@/song/decode";
 import { useSongLibrary } from "@/song/library";
 import { useNav } from "@/state/nav";
 import { useSong } from "@/song/store";
+import type { SongSource } from "@/song/types";
+import type { LibrarySong } from "@shared/song-library";
 import { StemsPanel } from "./stems/StemsPanel";
 import { ToneMatchPanel } from "./tonematch/ToneMatchPanel";
 import { SongLibraryPanel } from "./SongLibraryPanel";
@@ -31,10 +33,22 @@ function openSongFiles(files: OpenFile[]) {
   else notifyError(`Couldn't open ${f.name}`, new Error("Drop the file onto the Song screen, or choose it with Open a song."));
 }
 
+/**
+ * The line under the Song heading. A saved song shows its title, then its artist when it has one. An unsaved file shows its file name.
+ * With no song open, `hint` says what the screen is for.
+ */
+export function songHeadline(source: SongSource | null, saved: Pick<LibrarySong, "title" | "artist"> | undefined, hint: string): string {
+  if (!source) return hint;
+  if (!source.libraryId || !saved) return source.name;
+  return saved.artist.trim() ? `${saved.title} · ${saved.artist.trim()}` : saved.title;
+}
+
 /** Song (Stem Splitter + Tone Match): split a song into stems on this computer, then match its guitar tone. */
 export function SongScreen() {
   const [tab, setTab] = useSongTab();
   const source = useSong((s) => s.source);
+  const libraryId = source?.libraryId;
+  const saved = useSongLibrary((s) => (libraryId ? s.index.songs.find((song) => song.id === libraryId) : undefined));
   const fileInput = useRef<HTMLInputElement>(null);
   // Before any pedal was connected the tone can be for any supported model.
   const pedal = usePedalNameOrBoth();
@@ -59,7 +73,7 @@ export function SongScreen() {
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
           <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Song</h1>
           <p className="col-start-1 row-start-2 mt-1.5 truncate text-[12px] text-silkscreen-3">
-            {source ? source.name : `Split a song into stems on this computer, then find a ${pedal} tone for its guitar.`}
+            {songHeadline(source, saved, `Split a song into stems on this computer, then find a ${pedal} tone for its guitar.`)}
           </p>
           <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3">
             <TabsList aria-label="Song">
