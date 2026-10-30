@@ -113,7 +113,7 @@ export function BandPanel(props: BandPanelProps) {
   const show = useBandPanel((s) => s.show);
   return (
     <Dialog open={open} onOpenChange={show}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[90vh] min-w-0 grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Band</DialogTitle>
           <DialogDescription>
@@ -182,7 +182,6 @@ function BandBody({
   const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
   const partKeys = partKeysOf(tracks ?? {}, stems);
-  const partGenerated = { drums: partKeys.drums?.generated !== undefined, bass: partKeys.bass?.generated !== undefined };
   const style = findStyle(settings.style) ?? STYLES.rock;
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
@@ -429,7 +428,7 @@ function BandBody({
   const partLine = (kind: PartKind) => presenceLine(kind, missing?.[kind] ?? "unknown", missing?.absentSections[kind] ?? [], sections);
 
   return (
-    <div className="flex flex-col gap-5 text-sm">
+    <div className="flex min-w-0 flex-col gap-5 text-sm">
       <section aria-label="Band status" className="flex flex-col gap-1 rounded-lg border border-seam px-3 py-2">
         <p>{partLine("drums")}</p>
         <p>{partLine("bass")}</p>
@@ -438,7 +437,7 @@ function BandBody({
         {outOfDate && <p className="text-led-warn">Parts out of date. Press Generate to apply the changes.</p>}
       </section>
 
-      {source !== null && <PartChoiceRows choices={partChoices} generated={partGenerated} disabled={busy} onChange={onPartChoice} />}
+      {source !== null && <PartChoiceRows choices={partChoices} keys={partKeys} disabled={busy} onChange={onPartChoice} />}
 
       <BandGridSection
         grid={grid}

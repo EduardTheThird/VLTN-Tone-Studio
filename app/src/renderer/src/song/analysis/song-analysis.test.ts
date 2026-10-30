@@ -7,6 +7,7 @@ import {
   describeAnalysis,
   parseAnalysis,
   runSongAnalysis,
+  songAudioId,
   type AnalysisStep,
   type SongAnalysis,
 } from "./song-analysis";
@@ -46,6 +47,22 @@ describe("audioFingerprint", () => {
   it("changes when the audio changes", () => {
     expect(audioFingerprint(44100, { drums: pcm(10) })).not.toBe(audioFingerprint(44100, { drums: pcm(11) }));
     expect(audioFingerprint(44100, { drums: pcm(10) })).not.toBe(audioFingerprint(48000, { drums: pcm(10) }));
+  });
+});
+
+describe("songAudioId", () => {
+  const pcm = (length: number): PcmAudio => ({ sampleRate: 44100, channels: [new Float32Array(length)] });
+
+  it("ignores the generated parts, so generating them keeps the saved analysis current", () => {
+    const mix = pcm(100);
+    const before = songAudioId(mix, { guitar: pcm(50) });
+    const after = songAudioId(mix, { guitar: pcm(50), track1: pcm(100), track2: pcm(100) }, ["track1", "track2"]);
+    expect(after).toBe(before);
+  });
+
+  it("still changes when an imported or split track is added", () => {
+    const mix = pcm(100);
+    expect(songAudioId(mix, { guitar: pcm(50), track1: pcm(100) })).not.toBe(songAudioId(mix, { guitar: pcm(50) }));
   });
 });
 

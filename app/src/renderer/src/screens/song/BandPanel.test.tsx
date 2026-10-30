@@ -506,6 +506,22 @@ describe("Band panel: what plays", () => {
     expect(within(drums).getByText("Generate the drums first.")).toBeTruthy();
   });
 
+  it("shows Original pressed when the saved choice is Generated but the generated track is gone, and keeps the saved choice", () => {
+    const { props } = renderPanel({ partChoices: { drums: "generated", bass: "original" } });
+    const drums = screen.getByRole("group", { name: "Drums" });
+    expect(within(drums).getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(drums).getByRole("button", { name: "Generated" }).getAttribute("aria-pressed")).toBe("false");
+    expect(props.onPartChoice).not.toHaveBeenCalled();
+  });
+
+  it("shows the saved Generated choice again once the generated track is back", () => {
+    useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
+    renderPanel({ partChoices: { drums: "generated", bass: "original" } });
+    const drums = screen.getByRole("group", { name: "Drums" });
+    expect(within(drums).getByRole("button", { name: "Generated" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(drums).getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("reports a choice for the part that was picked", () => {
     useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
     const { props } = renderPanel();
@@ -567,5 +583,38 @@ describe("Band panel: what plays", () => {
     renderPanel();
     expect(screen.getByText("Drums found in the song")).toBeTruthy();
     expect(screen.getByText("You can still generate your own and switch between them under What plays.")).toBeTruthy();
+  });
+});
+
+describe("Band panel layout", () => {
+  it("scrolls a long beat grid inside its own strip, not the dialog", () => {
+    // 800 beats is a five-minute song at 120 BPM. The strip is wider than the dialog, so only the strip may scroll sideways.
+    stored({ beatGrid: fixedBeatGrid(120, 0, 4, 400) });
+    renderPanel();
+    const dialog = screen.getByRole("dialog");
+    const strip = screen.getByRole("list", { name: "Beat grid" });
+    expect(strip.className).toContain("overflow-x-auto");
+    expect(strip.className).toContain("min-w-0");
+    expect(strip.querySelectorAll('[role="listitem"]').length).toBe(200);
+
+    // Nothing between the strip and the dialog may be a second sideways scroller, and the dialog itself must not scroll sideways.
+    for (let el: HTMLElement | null = strip.parentElement; el && el !== dialog; el = el.parentElement) {
+      expect(el.className).not.toContain("overflow-x-auto");
+    }
+    expect(dialog.className).not.toContain("overflow-x-auto");
+    expect(dialog.className).toContain("grid-cols-[minmax(0,1fr)]");
+    expect(dialog.className).toContain("min-w-0");
+    // The panel's own body and the grid section can shrink to the dialog's width, so the settings and the table keep to it.
+    const body = dialog.querySelector('[aria-label="Band status"]')?.parentElement;
+    expect(body?.className).toContain("min-w-0");
+    expect(screen.getByRole("region", { name: "Beat grid" }).className).toContain("min-w-0");
+  });
+
+  it("keeps the dialog free of fixed widths wider than the dialog", () => {
+    stored({ beatGrid: fixedBeatGrid(120, 0, 4, 400) });
+    renderPanel();
+    const dialog = screen.getByRole("dialog");
+    const fixedWide = [...dialog.querySelectorAll<HTMLElement>("*")].filter((el) => /(^|\s)w-\[\d{4,}/.test(el.className) || el.style.width);
+    expect(fixedWide).toEqual([]);
   });
 });

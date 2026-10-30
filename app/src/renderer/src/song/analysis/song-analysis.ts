@@ -143,9 +143,13 @@ export type AnalysisOutcome =
   | { status: "interrupted"; next: number; analysis: SongAnalysis }
   | { status: "cancelled"; analysis: SongAnalysis | null };
 
-/** The fingerprint of a song's mix and stems, the id its analysis is saved under. */
-export function songAudioId(mix: PcmAudio, stems: Stems | null): string {
-  return audioFingerprint(mix.sampleRate, { mix, ...stems });
+/**
+ * The fingerprint of a song's mix and stems, the id its analysis is saved under. The generated parts (`generated`, their track keys) are
+ * left out: they are made from the analysis, so adding or removing them must not make the saved analysis, or its chords, out of date.
+ */
+export function songAudioId(mix: PcmAudio, stems: Stems | null, generated: readonly string[] = []): string {
+  const kept = Object.fromEntries(Object.entries(stems ?? {}).filter(([name]) => !generated.includes(name)));
+  return audioFingerprint(mix.sampleRate, { mix, ...kept });
 }
 
 /**
@@ -158,6 +162,16 @@ export function audioFingerprint(sampleRate: number, stems: Record<string, PcmAu
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, audio]) => `${name}:${audio.channels[0]?.length ?? 0}`);
   return `${sampleRate}|${parts.join(",")}`;
+}
+
+/**
+ * The track keys of the generated parts, as a song's saved options record them (`generatedParts`). Every saved analysis is keyed on the
+ * audio without them (see songAudioId), so adding or removing the parts leaves the analysis current.
+ */
+export function generatedTrackKeysIn(options: Record<string, unknown>): string[] {
+  const saved = options.generatedParts;
+  if (!saved || typeof saved !== "object") return [];
+  return Object.values(saved).filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 /** The saved analysis matches the audio and the current version, so it needs no run. */

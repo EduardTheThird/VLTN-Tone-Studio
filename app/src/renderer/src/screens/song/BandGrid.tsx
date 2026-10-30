@@ -25,7 +25,7 @@ export function BandGrid({ grid, harmony }: { grid: BeatGrid; harmony: readonly 
     return chord !== null && chord !== before ? chord : null;
   };
   return (
-    <div role="list" aria-label="Beat grid" className="flex gap-2 overflow-x-auto pb-2 text-xs">
+    <div role="list" aria-label="Beat grid" className="flex min-w-0 gap-2 overflow-x-auto pb-2 text-xs">
       {bars.map((bar, index) => (
         <div role="listitem" aria-label={`Bar ${index + 1}`} key={bar[0]} className="flex shrink-0 flex-col gap-1 border-l border-seam pl-1.5">
           <div className="flex h-4 items-end gap-1 whitespace-nowrap text-led-on">

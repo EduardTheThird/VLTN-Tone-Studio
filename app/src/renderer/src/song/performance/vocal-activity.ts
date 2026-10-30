@@ -1,8 +1,9 @@
 // Where someone sings, found from the vocals stem alone. The transcriber is only run on these regions: Whisper invents
 // text over silence and bleed, so the gaps are left out and the timings of the regions are kept.
 //
-// Frames are 50 ms. A frame is voiced when it is above a floor and within a range of the loudest frame. The range is
-// relative to the stem itself because the stem's own level is all this step has.
+// Frames are 50 ms. A frame is voiced when it is above a floor and within a range of the stem's typical loud level. The range is
+// relative to the stem itself because the stem's own level is all this step has. The typical level is a high percentile of the
+// frames, not the loudest one: a single transient would otherwise set the range and gate out the quieter singing around it.
 
 export interface Region {
   start: number;
@@ -12,8 +13,12 @@ export interface Region {
 export const FRAME_SECONDS = 0.05;
 /** A frame must be louder than this (dBFS). */
 export const FLOOR_DB = -45;
-/** and no more than this far below the stem's loudest frame. */
+/** and no more than this far below the stem's loud level. */
 export const RANGE_DB = 25;
+/** The stem's loud level is this percentile of its frame levels. */
+export const REFERENCE_PERCENTILE = 0.95;
+/** Transcription windows overlap their neighbour by this much, so a word cut by a window's edge is heard whole in one of them. */
+export const WINDOW_OVERLAP_SECONDS = 2;
 /** Voiced frames hold for this long after they end, so word endings aren't cut. */
 export const HANGOVER_SECONDS = 0.3;
 /** Islands shorter than this are dropped as clicks and bleed. */
@@ -35,9 +40,16 @@ export function frameLevels(samples: Float32Array, sampleRate: number): number[]
   return levels;
 }
 
+/** The level at `percentile` of the frame levels (-Infinity when there are none). */
+export function referenceLevel(levels: readonly number[], percentile = REFERENCE_PERCENTILE): number {
+  if (!levels.length) return -Infinity;
+  const sorted = [...levels].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(percentile * sorted.length) - 1)];
+}
+
 export function voicedFrames(levels: readonly number[], floorDb = FLOOR_DB, rangeDb = RANGE_DB): boolean[] {
-  const peak = Math.max(-Infinity, ...levels);
-  return levels.map((level) => level > floorDb && level > peak - rangeDb);
+  const reference = referenceLevel(levels);
+  return levels.map((level) => level > floorDb && level > reference - rangeDb);
 }
 
 /** Extends each voiced run by `hold` frames. */
@@ -86,9 +98,16 @@ export function singingRegions(samples: Float32Array, sampleRate: number): Regio
 
 /**
  * Groups the singing regions into windows the transcriber takes in one call: padded, joined while a window stays
- * within `maxSeconds`, and split when a single region is longer than that. Windows never run past the song.
+ * within `maxSeconds`, and split when a single region is longer than that. A split window overlaps the next piece by
+ * `overlap` seconds, so no word is cut off at a seam. Windows never run past the song.
  */
-export function transcriptionWindows(regions: readonly Region[], duration: number, maxSeconds = WINDOW_SECONDS, pad = WINDOW_PAD_SECONDS): Region[] {
+export function transcriptionWindows(
+  regions: readonly Region[],
+  duration: number,
+  maxSeconds = WINDOW_SECONDS,
+  pad = WINDOW_PAD_SECONDS,
+  overlap = WINDOW_OVERLAP_SECONDS,
+): Region[] {
   const joined: Region[] = [];
   for (const region of regions) {
     const padded = { start: Math.max(0, region.start - pad), end: Math.min(duration, region.end + pad) };
@@ -98,7 +117,23 @@ export function transcriptionWindows(regions: readonly Region[], duration: numbe
   }
   return joined.flatMap((window) => {
     const pieces: Region[] = [];
-    for (let start = window.start; start < window.end; start += maxSeconds) pieces.push({ start, end: Math.min(window.end, start + maxSeconds) });
-    return pieces;
+    let start = window.start;
+    for (;;) {
+      const end = Math.min(window.end, start + maxSeconds);
+      pieces.push({ start, end });
+      if (end >= window.end) return pieces;
+      start = end - overlap;
+    }
   });
+}
+
+/**
+ * The part of the song each window is responsible for: from the midpoint with the window before it to the midpoint with the
+ * window after it. Neighbours that overlap split the overlap between them, so a word in it is kept by exactly one window.
+ */
+export function ownedSpans(windows: readonly Region[]): Region[] {
+  return windows.map((window, i) => ({
+    start: i === 0 ? -Infinity : (windows[i - 1].end + window.start) / 2,
+    end: i === windows.length - 1 ? Infinity : (window.end + windows[i + 1].start) / 2,
+  }));
 }

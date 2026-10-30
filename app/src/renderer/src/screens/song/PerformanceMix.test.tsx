@@ -1,98 +1,91 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createStore } from "zustand";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PerformanceMix } from "./PerformanceMix";
-import type { PerformanceSession } from "@/song/performance/session";
 import type { Mix } from "@/song/stems/mix";
+import type { Stems, PcmAudio } from "@/song/types";
 import type { TrackInfo } from "@/song/tracks";
+import { ORIGINAL_PARTS, type PartChoices } from "@/song/band/part-choice";
+import { PerformanceMix } from "./PerformanceMix";
 
-/** A session that only has what the mixer reads: the player's track names and the speed. */
-function fakeSession(names: string[], rate = 1) {
-  const store = createStore(() => ({ player: { names }, speed: { rate, semitones: 0, cents: 0, capo: 0, applyToChords: false, followsPitch: {} } }));
-  return { store, setSpeed: vi.fn() } as unknown as PerformanceSession;
-}
+const mocks = vi.hoisted(() => ({ names: [] as string[], speed: { followsPitch: {}, rate: 1 } as Record<string, unknown> }));
+vi.mock("@/song/performance/session", () => ({
+  useSession: (_session: unknown, select: (state: unknown) => unknown) => select({ player: { names: mocks.names }, speed: mocks.speed }),
+}));
 
-const tracks: Record<string, TrackInfo> = {
-  track0: { kind: "user", name: "Click", bus: "click", transpose: false },
-  track1: { kind: "user", name: "Keys", muteGroups: [1] },
-  track2: { kind: "user", name: "Pads", muteGroups: [1] },
+const pcm = (): PcmAudio => ({ sampleRate: 44100, channels: [new Float32Array(4)] });
+const session = { setSpeed: vi.fn() } as never;
+const mix: Mix = {};
+
+/** A split song with drums and bass, and a generated drums and bass track each. */
+const split = () => {
+  mocks.names = ["drums", "bass", "track1", "track2"];
+  const stems = { drums: pcm(), bass: pcm() } as Stems;
+  const tracks: Record<string, TrackInfo> = {
+    drums: { kind: "stem", name: "drums" },
+    bass: { kind: "stem", name: "bass" },
+    track1: { kind: "user", name: "Drums (generated)" },
+    track2: { kind: "user", name: "Bass (generated)" },
+  };
+  return { stems, tracks };
 };
-const mix: Mix = {
-  track0: { volume: 1, mute: false, solo: false },
-  track1: { volume: 1, mute: true, solo: false },
-  track2: { volume: 1, mute: false, solo: false },
-};
 
-function renderMix(overrides: Partial<Parameters<typeof PerformanceMix>[0]> = {}) {
-  const onMix = vi.fn<(update: (mix: Mix) => Mix) => void>();
-  const onTrackInfo = vi.fn<(key: string, patch: Partial<Omit<TrackInfo, "kind">>) => void>();
-  render(
+function renderMix(partChoices: PartChoices) {
+  const { stems, tracks } = split();
+  return render(
     <PerformanceMix
-      session={fakeSession(["track0", "track1", "track2"])}
-      stems={{}}
+      session={session}
+      stems={stems}
       tracks={tracks}
       mix={mix}
+      onMix={vi.fn()}
       trackBuses={{}}
       onTrackBus={vi.fn()}
-      {...overrides}
-      onMix={onMix}
-      onTrackInfo={onTrackInfo}
+      onTrackInfo={vi.fn()}
+      partChoices={partChoices}
     />,
   );
-  return { onMix, onTrackInfo };
 }
 
 afterEach(cleanup);
 
-describe("performance mixer", () => {
-  it("warns that a click track is stretched at a speed other than 100%", () => {
-    renderMix({ session: fakeSession(["track0", "track1", "track2"], 0.8) });
-    expect(screen.getByRole("status").textContent).toContain("Click is stretched to 80%");
+describe("PerformanceMix: what plays", () => {
+  it("marks the original drums as off when the generated drums play", () => {
+    renderMix({ drums: "generated", bass: "original" });
+    expect(within(screen.getByRole("group", { name: "Drums" })).getByText("Off: generated plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Drums (generated)" })).queryByText(/^Off:/)).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Bass" })).queryByText(/^Off:/)).toBeNull();
   });
 
-  it("says nothing about the click at 100%", () => {
-    renderMix();
-    expect(screen.queryByRole("status")).toBeNull();
+  it("marks the generated bass as off when the original bass plays", () => {
+    renderMix({ drums: "original", bass: "original" });
+    expect(within(screen.getByRole("group", { name: "Bass (generated)" })).getByText("Off: original plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Drums (generated)" })).getByText("Off: original plays")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Bass" })).queryByText(/^Off:/)).toBeNull();
   });
 
-  it("unmuting a track in a mute group mutes the others in that group", () => {
-    const { onMix } = renderMix();
-    fireEvent.click(screen.getByLabelText("Keys enabled"));
-    const update = onMix.mock.calls[0][0] as (m: Mix) => Mix;
-    const next = update(mix);
-    expect(next.track1.mute).toBe(false);
-    expect(next.track2.mute).toBe(true);
-    expect(next.track0.mute).toBe(false);
+  it("marks nothing when both play", () => {
+    renderMix({ drums: "both", bass: "both" });
+    expect(screen.queryByText(/^Off:/)).toBeNull();
   });
 
-  it("soloing a muted track in a mute group plays it alone, unmuting it", () => {
-    const { onMix } = renderMix();
-    fireEvent.click(screen.getByLabelText("Keys solo"));
-    const next = (onMix.mock.calls[0][0] as (m: Mix) => Mix)(mix);
-    expect(next.track1).toMatchObject({ mute: false, solo: true });
-    expect(next.track2.mute).toBe(true);
-    expect(next.track0.mute).toBe(false);
+  it("names the split stems as the Stems tab does, not in lower case", () => {
+    renderMix(ORIGINAL_PARTS);
+    expect(screen.getByRole("group", { name: "Drums" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Bass" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "drums" })).toBeNull();
   });
 
-  it("the group button plays its members and mutes the rest", () => {
-    const { onMix } = renderMix();
-    fireEvent.click(screen.getByRole("button", { name: "Group 1" }));
-    const next = (onMix.mock.calls[0][0] as (m: Mix) => Mix)(mix);
-    expect(next.track1.mute).toBe(false);
-    expect(next.track2.mute).toBe(false);
-    expect(next.track0.mute).toBe(true);
+  it("keeps each row's mute checkbox in its state, since the badge does not change the mute levels", () => {
+    renderMix({ drums: "generated", bass: "original" });
+    expect((screen.getByLabelText("Drums enabled") as HTMLInputElement).checked).toBe(true);
   });
 
-  it("sets a track's pan from its slider", () => {
-    const { onMix } = renderMix();
-    fireEvent.change(screen.getByLabelText("Keys pan"), { target: { value: "-0.5" } });
-    const next = (onMix.mock.calls[0][0] as (m: Mix) => Mix)(mix);
-    expect(next.track1.pan).toBe(-0.5);
-  });
-
-  it("saves a track's mute group membership when it is toggled", () => {
-    const { onTrackInfo } = renderMix();
-    fireEvent.click(screen.getByLabelText("Click in group 2"));
-    expect(onTrackInfo).toHaveBeenCalledWith("track0", { muteGroups: [2] });
+  it("puts every row in one grid, so the columns line up, and offers mute groups only on user tracks", () => {
+    renderMix(ORIGINAL_PARTS);
+    const rows = screen.getByLabelText("Mixer rows");
+    expect(rows.className).toContain("grid-cols-[");
+    expect(rows.children).toHaveLength(4);
+    for (const row of Array.from(rows.children)) expect(row.className).toContain("grid-cols-subgrid");
+    expect(screen.queryByRole("group", { name: "Drums mute groups" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Drums (generated) mute groups" })).toBeTruthy();
   });
 });

@@ -5,6 +5,22 @@ import { BUS_LABELS, BUS_NAMES, type BusName } from "@/song/audio/outputs";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { followsPitch } from "@/song/performance/speed";
 import { clickStretchWarning, setSolo, silenceGroupmates, type TrackInfo } from "@/song/tracks";
+import { ORIGINAL_PARTS, partKeysOf, silencedByChoice, type PartChoices } from "@/song/band/part-choice";
+import { STEM_LABEL } from "./stems/StemMixer";
+import type { StemName } from "@/song/types";
+
+/**
+ * The name a mixer row shows. A split stem uses the Stems tab's name for it, so the two mixers read alike; a generated or imported track
+ * shows its own name; with no split the song is one row called Song.
+ */
+function rowName(name: string, stems: Stems | null, info: TrackInfo | undefined): string {
+  if (!stems) return "Song";
+  if (info?.kind === "stem" || (info === undefined && name in STEM_LABEL)) return STEM_LABEL[name as StemName] ?? name;
+  return info?.name ?? name;
+}
+
+// One grid for every row, so the columns line up: name, solo, volume, pan, follows pitch, bus and mute groups.
+const ROW_GRID = "grid grid-cols-[minmax(9rem,1.2fr)_auto_minmax(8rem,1fr)_minmax(7rem,0.8fr)_auto_minmax(7rem,auto)_minmax(10rem,auto)] gap-x-3";
 
 /** The mute groups a track belongs to, by key, as the exclusive rule reads them. */
 function groupsOf(tracks: Record<string, TrackInfo>): Record<string, number[]> {
@@ -30,6 +46,7 @@ export function PerformanceMix({
   trackBuses,
   onTrackBus,
   onTrackInfo,
+  partChoices = ORIGINAL_PARTS,
 }: {
   session: PerformanceSession;
   stems: Stems | null;
@@ -39,6 +56,8 @@ export function PerformanceMix({
   trackBuses: TrackBuses;
   onTrackBus: (name: string, bus: BusName) => void;
   onTrackInfo: (key: string, patch: Partial<Omit<TrackInfo, "kind">>) => void;
+  /** What "What plays" is set to. A track it silences is marked, so a muted original or generated part does not look like a fault. */
+  partChoices?: PartChoices;
 }) {
   const player = useSession(session, (s) => s.player);
   const speed = useSession(session, (s) => s.speed);
@@ -49,7 +68,8 @@ export function PerformanceMix({
     speed.rate,
     player.names.map((name) => ({ key: name, name: tracks[name]?.name ?? name, bus: busOf(name) })),
   );
-  const label = (name: string) => (stems ? (tracks[name]?.name ?? name) : "Song");
+  const label = (name: string) => rowName(name, stems, tracks[name]);
+  const silenced = silencedByChoice(partChoices, partKeysOf(tracks, stems));
   const usedGroups = [...new Set(Object.values(groups).flat())].sort((a, b) => a - b);
   return (
     <div aria-label="Performance mixer" className="flex flex-col gap-3">
@@ -84,26 +104,35 @@ export function PerformanceMix({
           {warning}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
+      <div aria-label="Mixer rows" className={`${ROW_GRID} items-center gap-y-2`}>
         {player.names.map((name) => {
           const entry: StemMix = mix[name] ?? defaultStemMix();
           const info = tracks[name];
+          const off = silenced[name];
           return (
-            <div key={name} className="flex flex-wrap items-center gap-2 rounded-lg border border-seam px-3 py-2 text-sm">
-              <span aria-hidden className="size-2.5 rounded-full" style={{ backgroundColor: info?.color ?? "#94a3b8" }} />
-              <label>
-                <input
-                  type="checkbox"
-                  aria-label={`${label(name)} enabled`}
-                  checked={!entry.mute}
-                  onChange={(e) => {
-                    // Read the input now: an updater runs after React has put a controlled input back, so its value would be stale.
-                    const enabled = e.target.checked;
-                    onMix((m) => withMute(m, groups, name, !enabled));
-                  }}
-                />{" "}
-                {label(name)}
-              </label>
+            <div
+              key={name}
+              role="group"
+              aria-label={label(name)}
+              className="col-span-full grid grid-cols-subgrid items-center rounded-lg border border-seam px-3 py-2 text-sm"
+            >
+              <div className={`flex min-w-0 items-center gap-2 ${off ? "opacity-60" : ""}`}>
+                <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: info?.color ?? "#94a3b8" }} />
+                <label className="flex min-w-0 items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    aria-label={`${label(name)} enabled`}
+                    checked={!entry.mute}
+                    onChange={(e) => {
+                      // Read the input now: an updater runs after React has put a controlled input back, so its value would be stale.
+                      const enabled = e.target.checked;
+                      onMix((m) => withMute(m, groups, name, !enabled));
+                    }}
+                  />
+                  <span className="truncate">{label(name)}</span>
+                </label>
+                {off && <span className="shrink-0 rounded-md border border-seam px-1.5 py-0.5 text-xs text-silkscreen-3">{off}</span>}
+              </div>
               <label className="flex items-center gap-1">
                 <input
                   type="checkbox"
@@ -116,23 +145,25 @@ export function PerformanceMix({
                 />
                 Solo
               </label>
-              <input
-                aria-label={`${label(name)} volume`}
-                className="w-24"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={entry.volume}
-                onChange={(e) => {
-                  const volume = Number(e.target.value);
-                  onMix((m) => ({ ...m, [name]: { ...(m[name] ?? defaultStemMix()), volume } }));
-                }}
-              />
-              <span className="w-9 text-right tabular-nums">{Math.round(entry.volume * 100)}%</span>
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label={`${label(name)} volume`}
+                  className="min-w-0 flex-1"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={entry.volume}
+                  onChange={(e) => {
+                    const volume = Number(e.target.value);
+                    onMix((m) => ({ ...m, [name]: { ...(m[name] ?? defaultStemMix()), volume } }));
+                  }}
+                />
+                <span className="w-10 shrink-0 text-right tabular-nums">{Math.round(entry.volume * 100)}%</span>
+              </div>
               <input
                 aria-label={`${label(name)} pan`}
-                className="w-20"
+                className="w-full"
                 type="range"
                 min="-1"
                 max="1"
@@ -154,7 +185,7 @@ export function PerformanceMix({
               </label>
               <select
                 aria-label={`${label(name)} bus`}
-                className="rounded-md border border-seam bg-transparent px-2 py-1"
+                className="w-full rounded-md border border-seam bg-transparent px-2 py-1"
                 value={busOf(name)}
                 onChange={(e) => onTrackBus(name, e.target.value as BusName)}
               >
@@ -164,7 +195,7 @@ export function PerformanceMix({
                   </option>
                 ))}
               </select>
-              {info?.kind === "user" && (
+              {info?.kind === "user" ? (
                 <fieldset className="flex gap-1" aria-label={`${label(name)} mute groups`}>
                   {[1, 2, 3, 4, 5, 6].map((group) => {
                     const member = info.muteGroups?.includes(group) ?? false;
@@ -185,6 +216,8 @@ export function PerformanceMix({
                     );
                   })}
                 </fieldset>
+              ) : (
+                <span aria-hidden />
               )}
             </div>
           );

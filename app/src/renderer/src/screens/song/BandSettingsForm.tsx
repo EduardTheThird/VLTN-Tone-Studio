@@ -11,6 +11,11 @@ const BASS_MODE_LABELS: Record<(typeof BASS_MODES)[number], string> = {
   melodic: "Melodic (approach notes)",
   walking: "Walking",
 };
+/**
+ * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
+ * A lighter track keeps the full length visible at any value.
+ */
+const BAND_TRACK = "bg-white/15";
 const BASS_RANGE_LABELS: Record<(typeof BASS_RANGES)[number], string> = { low: "Low", normal: "Normal", high: "High" };
 const FOLLOW_LABELS: Record<FollowSource, string> = { auto: "Auto", guitar: "Guitar", piano: "Piano", other: "Other", mix: "Mix" };
 const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
@@ -65,6 +70,7 @@ export function BandSettingsForm({ settings, style, followSources, onChange, onS
       <label className="flex items-center gap-3">
         Complexity {Math.round(settings.complexity * 100)}%
         <Slider
+          trackClassName={BAND_TRACK}
           aria-label="Complexity"
           min={0}
           max={100}
@@ -76,6 +82,7 @@ export function BandSettingsForm({ settings, style, followSources, onChange, onS
       <label className="flex items-center gap-3">
         Swing {Math.round(settings.swing * 100)}%
         <Slider
+          trackClassName={BAND_TRACK}
           aria-label="Swing"
           min={0}
           max={75}
@@ -87,6 +94,7 @@ export function BandSettingsForm({ settings, style, followSources, onChange, onS
       <label className="flex items-center gap-3">
         Humanise {Math.round(settings.humanise.amount * 100)}%
         <Slider
+          trackClassName={BAND_TRACK}
           aria-label="Humanise"
           min={0}
           max={100}

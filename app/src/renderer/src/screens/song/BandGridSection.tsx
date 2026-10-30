@@ -28,7 +28,7 @@ export interface BandGridSectionProps {
 /** The beat grid: find the beat, the corrections to it, the fixed tempo, and the strip that shows it. */
 export function BandGridSection({ grid, harmony, blocked, busy, work, onGrid, onFind, onCancel, onFixed, onSetTempo, myTempo }: BandGridSectionProps) {
   return (
-    <section aria-label="Beat grid" className="flex flex-col gap-3">
+    <section aria-label="Beat grid" className="flex min-w-0 flex-col gap-3">
       <h3 className="font-semibold">Beat grid</h3>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" disabled={blocked} onClick={onFind}>

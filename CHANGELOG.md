@@ -76,6 +76,11 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 
 ### Fixed
 - **Lyrics transcription works again.** Since 0.9.2 every transcription, for one song or from the Library, failed with "window is not defined", because the lyrics worker loaded the song settings. A test now loads every worker without a page, so this can't come back unnoticed.
+- **Chords, key and sections work in the installed app.** Three analysis workers were blocked in packaged builds, so every song said "Could not work out: chords, key, sections". A test now guards how the workers are created.
+- **Lyrics catch the opening verse.** The vocal detector measured against the loudest moment, so a quieter start was skipped. Lines no longer share a time or break mid-phrase, and music markers (♪) are dropped; pasted lyrics are timed from their best-matched words ([Lyrics and chords](PERFORMANCE.md#lyrics-and-chords)).
+- **Lyrics still work when graphics acceleration hears nothing.** The app retries on the CPU, remembers that for this machine and version, and goes straight to the CPU next time. An empty result says which runtime heard what.
+- **The Band panel and mixer are easier to use.** The panel fits the window on long songs and keeps chord names after Generate, and generated parts no longer reset a song's saved analysis. What plays now shows the part that actually plays, and the mixer marks the tracks it silences, uses the Stems tab's names and lines its rows up ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
+- **The song screen is easier to read.** The header shows the saved song's title and artist, and the key readout and queue count are clearer.
 
 ### Added
 - **Better key estimates.** The key is read from the harmony, with the bass and the chords, which now run before it. Two sets of key weights are averaged, and a relative major or minor pair is decided by the first and last chords and the bass. The readout names a Mixolydian or Dorian flavour when the chords show one, and lists a section in another key, such as a last chorus a tone up. See [Performance](PERFORMANCE.md#lyrics-and-chords).

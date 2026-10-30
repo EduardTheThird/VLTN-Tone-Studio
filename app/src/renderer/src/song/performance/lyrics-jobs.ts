@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { PcmAudio } from "../types";
 import { pastedLines } from "./lyrics-align";
 import { LyricsCancelled, transcribeLyrics } from "./lyrics-run";
+import { noSingingMessage } from "./lyrics-passes";
 import { lyricsMadeRecord, saveLyricsChart } from "./lyrics-chart";
 import { flushSettings } from "./settings";
 import { type LyricsOptions } from "./lyrics-options";
@@ -64,7 +65,11 @@ export async function generateLyrics(key: string, audio: PcmAudio, options: Lyri
     });
     if (!result.text) {
       update(task, {
-        status: lines ? "No words to time in the vocals. Check the pasted lyrics." : "No singing found in the vocals. Import or type lyrics, or retry transcription.",
+        status: lines
+          ? "No words to time in the vocals. Check the pasted lyrics."
+          : result.diagnostic
+            ? noSingingMessage(result.diagnostic)
+            : "No singing found in the vocals. Import or type lyrics, or retry transcription.",
       });
       finish();
       return;

@@ -18,7 +18,7 @@ import { getSetting, performanceKey, readOptions, setSetting } from "@/song/perf
 import { playerShape, shapeFromOptions } from "@/song/performance/song-shape";
 import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
 import { useSongAnalysis } from "./use-song-analysis";
-import { parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
+import { generatedTrackKeysIn, parseAnalysis, songAudioId } from "@/song/analysis/song-analysis";
 import type { DetectedSection } from "@/song/analysis/sections";
 import type { SilenceEnds } from "@/song/analysis/silence";
 import { SongShapeControls } from "./SongShapeControls";
@@ -273,7 +273,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const shapeShift = shift + chordDisplayTranspose(speed.semitones, capo, speed.applyToChords);
   // The key the chord names are spelled by, from the SongKey readout (its override, then the library key, then a strong estimate).
   const [spellingKey, setSpellingKey] = useState<string | undefined>();
-  const audioId = useMemo(() => (source ? songAudioId(source.audio, stems) : ""), [source, stems]);
+  // Generated parts do not change the audio the chords were analysed under (see songAudioId), so the saved chords stay after Generate.
+  const audioId = useMemo(
+    () => (source ? songAudioId(source.audio, stems, generatedTrackKeysIn(readOptions<Record<string, unknown>>(key, {}))) : ""),
+    [source, stems, tracks, key],
+  );
   const { chords, analysing } = useChordAnalysis(session, harmony, bass, { songKey: key, audioId }, !!stems);
 
   useEffect(() => session.loadSong(source, stems), [session, source, stems]);
@@ -612,6 +616,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           trackBuses={trackBuses}
           onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
           onTrackInfo={setTrackInfo}
+          partChoices={partChoice}
         />
         <PerformanceOutputs player={player} />
         <BandPanel

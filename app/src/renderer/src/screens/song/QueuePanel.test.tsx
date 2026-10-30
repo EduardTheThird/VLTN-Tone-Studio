@@ -63,3 +63,23 @@ it("sets how an upcoming queue entry ends and whether it starts by itself, witho
   expect(useSongLibrary.getState().queueOverrides[1]).toEqual({ autoplay: false });
   expect(useSongLibrary.getState().queue).toEqual(["a", "b", "c"]);
 });
+
+it("counts the songs in the queue, and names the limit only when the queue is full", () => {
+  set(["a", "b", "c"], 0);
+  const { unmount } = render(<QueuePanel />);
+  expect(screen.getByText(/^3 songs · 2 to come/)).toBeTruthy();
+  unmount();
+
+  set(["a"], 0);
+  const single = render(<QueuePanel />);
+  expect(screen.getByText(/^1 song · 0 to come/)).toBeTruthy();
+  single.unmount();
+
+  set(
+    Array.from({ length: 128 }, () => "a"),
+    0,
+  );
+  render(<QueuePanel />);
+  expect(screen.getByText(/^Queue full \(128 songs\) · 127 to come/)).toBeTruthy();
+  expect(screen.queryByText(/of 128/)).toBeNull();
+});

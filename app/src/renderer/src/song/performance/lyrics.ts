@@ -7,10 +7,17 @@ export interface LyricSegment {
 }
 type Chunk = { text: string; timestamp: [number | null, number | null] };
 
-/** A gap this long between words starts a new line. */
+/** A gap this long between words always starts a new line. */
 export const LINE_GAP_SECONDS = 0.6;
+/** Once a line has SOFT_LINE_WORDS words, a gap of this length also starts a new line: sung phrases run on with short gaps. */
+export const SOFT_LINE_GAP_SECONDS = 0.25;
+export const SOFT_LINE_WORDS = 6;
 /** Lines are cut at this many words, even with no gap. */
-export const MAX_LINE_WORDS = 12;
+export const MAX_LINE_WORDS = 10;
+/** Words are never started closer together than this, so no two lines can share a time. */
+export const MIN_WORD_STEP_SECONDS = 0.01;
+/** A word's missing start or end is taken from its neighbours, or assumed to last this long. */
+export const REPAIRED_WORD_SECONDS = 0.4;
 /** A line that repeats more than this many times within REPEAT_WINDOW_SECONDS is a loop, not the song. */
 export const MAX_REPEATS = 3;
 export const REPEAT_WINDOW_SECONDS = 10;
@@ -32,15 +39,58 @@ export function cleanText(text: string): string {
     .trim();
 }
 
-/** Word chunks from a word-timestamp run, in song time. Chunks without a usable start or end are dropped. */
-export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
-  return chunks.flatMap((chunk) => {
-    const [start, end] = chunk.timestamp;
-    const text = cleanText(chunk.text);
-    return start !== null && end !== null && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start < duration && text
-      ? [{ text, start, end: Math.min(end, duration) }]
-      : [];
+function knownTime(time: number | null): number | undefined {
+  return typeof time === "number" && Number.isFinite(time) ? time : undefined;
+}
+
+/** A transcribed word, and whether its start was missing and so repaired. */
+type RepairedWord = TimedWord & { startRepaired: boolean };
+
+/**
+ * Word chunks from a word-timestamp run, in song time (relative to the window). A word with a missing start takes the end of
+ * the word before it, or runs back from its own end. A word with a missing end takes the next word's start, or lasts
+ * REPAIRED_WORD_SECONDS. Words that start outside the window are dropped.
+ */
+function repairedWords(chunks: Chunk[], duration: number): RepairedWord[] {
+  const heard = chunks
+    .map((chunk) => ({ text: cleanText(chunk.text), start: knownTime(chunk.timestamp[0]), end: knownTime(chunk.timestamp[1]) }))
+    .filter((word) => word.text);
+  const nextStart: (number | undefined)[] = new Array(heard.length);
+  let later: number | undefined;
+  for (let i = heard.length - 1; i >= 0; i--) {
+    nextStart[i] = later;
+    if (heard[i].start !== undefined) later = heard[i].start;
+  }
+  const words: RepairedWord[] = [];
+  let previousEnd: number | undefined;
+  heard.forEach((word, i) => {
+    const following = nextStart[i];
+    const start = word.start ?? previousEnd ?? (word.end !== undefined ? Math.max(0, word.end - REPAIRED_WORD_SECONDS) : following);
+    if (start === undefined || !(start >= 0 && start < duration)) return;
+    const end = word.end ?? Math.max(start, Math.min(following ?? Infinity, start + REPAIRED_WORD_SECONDS));
+    const clamped = Math.max(start, Math.min(end, duration));
+    words.push({ text: word.text, start, end: clamped, startRepaired: word.start === undefined });
+    previousEnd = clamped;
   });
+  return words;
+}
+
+export function transcriptWords(chunks: Chunk[], duration: number): TimedWord[] {
+  return repairedWords(chunks, duration).map(({ text, start, end }) => ({ text, start, end }));
+}
+
+/**
+ * The words one transcription window heard, in song time. `offset` is the window's song start, and only the words that start
+ * inside `span` are kept, so a word in the overlap with a neighbour is kept once. A word whose start was repaired is placed by
+ * its end instead: the repaired start can sit before the overlap midpoint the word really lies after.
+ */
+export function windowWords(chunks: Chunk[], duration: number, offset: number, span: Region): TimedWord[] {
+  return repairedWords(chunks, duration)
+    .filter((word) => {
+      const at = (word.startRepaired ? word.end : word.start) + offset;
+      return at >= span.start && at < span.end;
+    })
+    .map(({ text, start, end }) => ({ text, start: start + offset, end: end + offset }));
 }
 
 /** Words that start inside a singing region (padded, since the transcriber's word starts can land just before one). */
@@ -48,20 +98,238 @@ export function keepWordsWithin(words: readonly TimedWord[], regions: readonly R
   return words.filter((word) => regions.some((region) => word.start >= region.start - pad && word.start <= region.end + pad));
 }
 
-/** Words grouped into lines at gaps and at MAX_LINE_WORDS, then cleaned. Each line takes its first word's time. */
-export function songLines(words: readonly TimedWord[]): LyricSegment[] {
-  const groups: TimedWord[][] = [];
-  let line: TimedWord[] = [];
-  for (const word of [...words].sort((a, b) => a.start - b.start)) {
-    const last = line[line.length - 1];
-    if (last && (word.start - last.end > LINE_GAP_SECONDS || line.length >= MAX_LINE_WORDS)) {
-      groups.push(line);
-      line = [];
+/** A word that ends a sentence. Its line ends with it. */
+function endsSentence(text: string): boolean {
+  return /[.!?]["'”’)\]]*$/.test(text);
+}
+
+/** A word that ends with punctuation of any kind (a comma counts). */
+function endsPunctuated(text: string): boolean {
+  return /[.!?,;:…]["'”’)\]]*$/.test(text);
+}
+
+/** Lower case, letters and apostrophes only, so "I'll," compares as "i'll". */
+function bareWord(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}'’]/gu, "")
+    .replace(/’/g, "'");
+}
+
+/**
+ * Words that carry on into the next word (articles, possessives, prepositions, conjunctions, auxiliaries). A line does not end
+ * on one of them, unless the line cannot end anywhere else.
+ */
+export const DANGLING_WORDS: readonly string[] = [
+  "a",
+  "an",
+  "the",
+  "my",
+  "your",
+  "his",
+  "her",
+  "its",
+  "our",
+  "their",
+  "this",
+  "that",
+  "these",
+  "those",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "for",
+  "from",
+  "by",
+  "with",
+  "into",
+  "onto",
+  "over",
+  "under",
+  "about",
+  "as",
+  "like",
+  "than",
+  "and",
+  "but",
+  "or",
+  "so",
+  "if",
+  "because",
+  "while",
+  "when",
+  "nor",
+  "i'm",
+  "i'll",
+  "i've",
+  "i'd",
+  "you'll",
+  "you're",
+  "you've",
+  "we're",
+  "they're",
+  "it's",
+  "that's",
+  "can't",
+  "don't",
+  "won't",
+  "be",
+  "is",
+  "are",
+  "was",
+  "were",
+  "am",
+  "been",
+  "being",
+  "will",
+  "would",
+  "can",
+  "cannot",
+  "could",
+  "should",
+  "shall",
+  "may",
+  "might",
+  "must",
+  "do",
+  "does",
+  "did",
+  "have",
+  "has",
+  "had",
+  "not",
+  "no",
+  "let",
+  "it",
+  "me",
+  "him",
+  "them",
+  "us",
+];
+const DANGLING = new Set(DANGLING_WORDS);
+
+/** Whether a word carries on into the next one, so a line should not end on it. */
+export function isDangling(text: string): boolean {
+  return DANGLING.has(bareWord(text));
+}
+
+/** Music markers Whisper writes for instruments and silence. The symbols and bracketed words are removed, not sung. */
+const MUSIC_MARKER = /\[\s*(?:music|instrumental|applause|silence|solo|intro|outro)\s*\]|\(\s*(?:music|instrumental|applause|silence|solo|intro|outro)\s*\)/gi;
+
+/** The sung text of a word, with music markers and note symbols removed. Empty for a word that was only a marker. */
+export function stripMarkers(text: string): string {
+  return text
+    .replace(MUSIC_MARKER, " ")
+    .replace(/[♪♫♬♩]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A line may run longer than MAX_LINE_WORDS only to move its break past a dangling word. */
+export const LINE_WORD_ALLOWANCE = 2;
+export const LONGEST_LINE_WORDS = MAX_LINE_WORDS + LINE_WORD_ALLOWANCE;
+/** A line of one or two words joins the line before it when the gap before it is shorter than this. */
+export const SHORT_LINE_JOIN_SECONDS = 1.5;
+/** A break before a capitalised word, after a word with no punctuation, counts this many seconds of gap in its favour. */
+const CAPITAL_HINT_SECONDS = 0.2;
+
+/**
+ * How good a line break after `words[k]` is, for a line that starts at `words[start]`: the gap to the next word, plus a hint
+ * for a capital. Undefined where no break is allowed. A sentence end is always the best break.
+ */
+function breakScore(words: readonly TimedWord[], start: number, k: number): number | undefined {
+  const last = words[k];
+  const next = words[k + 1];
+  // Rounded to the centisecond, so gaps that differ only by float noise tie, and the earlier break wins.
+  const gap = Math.round((next.start - last.end) * 100) / 100;
+  const length = k - start + 1;
+  if (endsSentence(last.text)) return 100 + gap;
+  // A one-word line is allowed only where the singer pauses after it.
+  if (length < 2 && gap <= LINE_GAP_SECONDS) return undefined;
+  // A word that carries on is never a break, however long the gap after it.
+  if (isDangling(last.text)) return undefined;
+  if (gap <= SOFT_LINE_GAP_SECONDS) return undefined;
+  if (length < SOFT_LINE_WORDS && gap <= LINE_GAP_SECONDS) return undefined;
+  const capital = /^\p{Lu}/u.test(next.text) && !endsPunctuated(last.text);
+  return gap + (capital ? CAPITAL_HINT_SECONDS : 0);
+}
+
+/** The index of the last word of the line that starts at `start`. */
+function lineEnd(words: readonly TimedWord[], start: number): number {
+  const last = words.length - 1;
+  const reach = Math.min(last, start + MAX_LINE_WORDS - 1);
+  let best = -1;
+  let bestScore = -Infinity;
+  for (let k = start; k <= Math.min(reach, last - 1); k++) {
+    const score = breakScore(words, start, k);
+    if (score !== undefined && score > bestScore) {
+      best = k;
+      bestScore = score;
     }
-    line.push(word);
   }
-  if (line.length) groups.push(line);
-  return cleanLines(groups.map((group) => ({ time: group[0].start, text: group.map((word) => cleanText(word.text)).filter(Boolean).join(" ") })));
+  if (best >= 0) return best;
+  if (reach === last) return last;
+  // No eligible break within the cap, so cut at the cap. If the cut word would dangle, move it to the next word that doesn't.
+  if (!isDangling(words[reach].text)) return reach;
+  for (let k = reach + 1; k <= Math.min(last, start + LONGEST_LINE_WORDS - 1); k++) {
+    if (!isDangling(words[k].text)) return k;
+  }
+  return reach;
+}
+
+/** Words grouped into lines: each line ends where lineEnd says. */
+function groupLines(words: readonly TimedWord[]): TimedWord[][] {
+  const groups: TimedWord[][] = [];
+  for (let start = 0; start < words.length;) {
+    const end = lineEnd(words, start);
+    groups.push(words.slice(start, end + 1));
+    start = end + 1;
+  }
+  return groups;
+}
+
+/** A line of one or two words joins the line before it when the gap before it is short and the joined line stays within MAX_LINE_WORDS. */
+function joinShortLines(groups: TimedWord[][]): TimedWord[][] {
+  const out: TimedWord[][] = [];
+  for (const group of groups) {
+    const previous = out[out.length - 1];
+    const gap = previous ? group[0].start - previous[previous.length - 1].end : Infinity;
+    if (previous && group.length <= 2 && gap < SHORT_LINE_JOIN_SECONDS && previous.length + group.length <= MAX_LINE_WORDS) {
+      out[out.length - 1] = [...previous, ...group];
+    } else out.push(group);
+  }
+  return out;
+}
+
+/**
+ * Words grouped into lines, then cleaned. A line ends at a sentence end, or at the largest pause that is allowed within
+ * MAX_LINE_WORDS (a long gap, or a short gap after several words). It never ends on a dangling word unless it has to, and
+ * a line of one or two words joins the one before it at a short gap. Music markers are removed. Word starts are pushed on by
+ * MIN_WORD_STEP_SECONDS where they would not increase, so each line's time is its own first word's start and no two lines
+ * share a time.
+ */
+export function songLines(words: readonly TimedWord[]): LyricSegment[] {
+  let previousStart = -Infinity;
+  const timed = [...words]
+    .map((word) => ({ text: stripMarkers(word.text), start: word.start, end: word.end }))
+    .filter((word) => word.text)
+    .sort((a, b) => a.start - b.start)
+    .map((word) => {
+      const start = Math.max(word.start, previousStart + MIN_WORD_STEP_SECONDS);
+      previousStart = start;
+      return { text: word.text, start, end: Math.max(word.end, start) };
+    });
+  return cleanLines(
+    joinShortLines(groupLines(timed)).map((group) => ({
+      time: group[0].start,
+      text: group
+        .map((word) => cleanText(word.text))
+        .filter(Boolean)
+        .join(" "),
+    })),
+  );
 }
 
 /** Drops lines with no letters or digits, known hallucinations, and loops of a line repeated too often. */

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PcmAudio, Stems } from "@/song/types";
 import { KEY_NAMES, SONG_KEYS, effectiveSongKey, keyAudio, type KeyEstimate, type KeyInput } from "@/song/performance/key";
 import { readOptions, setSetting } from "@/song/performance/settings";
-import { isCurrent, songAudioId } from "@/song/analysis/song-analysis";
+import { generatedTrackKeysIn, isCurrent, songAudioId } from "@/song/analysis/song-analysis";
 import { storedAnalysis } from "./use-song-analysis";
 
 interface KeySettings {
@@ -10,6 +10,11 @@ interface KeySettings {
   detectedKey: KeyEstimate | null;
   keyAudioSource: string;
 }
+/** The id the song's analysis is saved under: the audio without the generated parts, which the analysis never reads. */
+function savedAudioId(songKey: string, mix: PcmAudio, stems: Stems | null): string {
+  return songAudioId(mix, stems, generatedTrackKeysIn(readOptions<Record<string, unknown>>(songKey, {})));
+}
+
 /**
  * The key the song analysis saved for this audio and stem. Null when nothing matches, so the key is estimated again. Reusing it means a
  * song is not analysed twice: the analysis and the key panel both read the same stem.
@@ -17,7 +22,7 @@ interface KeySettings {
 function savedKey(songKey: string, name: string, mix: PcmAudio | undefined, stems: Stems | null): KeyEstimate | null {
   if (!mix) return null;
   const saved = storedAnalysis(songKey).read();
-  if (!saved || !isCurrent(saved, songAudioId(mix, stems)) || saved.key?.source !== name) return null;
+  if (!saved || !isCurrent(saved, savedAudioId(songKey, mix, stems)) || saved.key?.source !== name) return null;
   return saved.key.estimate;
 }
 
@@ -28,7 +33,7 @@ function savedKey(songKey: string, name: string, mix: PcmAudio | undefined, stem
 function sectionKeyLines(songKey: string, mix: PcmAudio | undefined, stems: Stems | null): string[] {
   if (!mix) return [];
   const saved = storedAnalysis(songKey).read();
-  if (!saved || !isCurrent(saved, songAudioId(mix, stems))) return [];
+  if (!saved || !isCurrent(saved, savedAudioId(songKey, mix, stems))) return [];
   return (saved.keySections ?? []).map(({ sectionId, key }) => `${saved.sections?.[Number(sectionId)]?.name ?? "Section"}: ${key.name}`);
 }
 
@@ -154,7 +159,7 @@ export function SongKey({
           : estimate
             ? `Estimated ${estimate.name} from ${analysisSource} · ${
                 estimate.confidence === "strong" ? "clearer match" : "tentative match"
-              } · alternatives: ${estimate.alternatives.join(", ")}`
+              }${estimate.alternatives.length ? ` · alternatives: ${estimate.alternatives.join(", ")}` : ""}`
             : input
               ? `No reliable major/minor key found in ${analysisSource}.`
               : "Open audio or split the song to analyse its key."}
