@@ -616,6 +616,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           trackBuses={trackBuses}
           onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
           onTrackInfo={setTrackInfo}
+          partChoices={partChoice}
         />
         <PerformanceOutputs player={player} />
         <BandPanel

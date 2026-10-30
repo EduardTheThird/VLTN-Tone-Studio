@@ -5,6 +5,7 @@ import { BUS_LABELS, BUS_NAMES, type BusName } from "@/song/audio/outputs";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { followsPitch } from "@/song/performance/speed";
 import { clickStretchWarning, setSolo, silenceGroupmates, type TrackInfo } from "@/song/tracks";
+import { ORIGINAL_PARTS, partKeysOf, silencedByChoice, type PartChoices } from "@/song/band/part-choice";
 
 /** The mute groups a track belongs to, by key, as the exclusive rule reads them. */
 function groupsOf(tracks: Record<string, TrackInfo>): Record<string, number[]> {
@@ -30,6 +31,7 @@ export function PerformanceMix({
   trackBuses,
   onTrackBus,
   onTrackInfo,
+  partChoices = ORIGINAL_PARTS,
 }: {
   session: PerformanceSession;
   stems: Stems | null;
@@ -39,6 +41,8 @@ export function PerformanceMix({
   trackBuses: TrackBuses;
   onTrackBus: (name: string, bus: BusName) => void;
   onTrackInfo: (key: string, patch: Partial<Omit<TrackInfo, "kind">>) => void;
+  /** What "What plays" is set to. A track it silences is marked, so a muted original or generated part does not look like a fault. */
+  partChoices?: PartChoices;
 }) {
   const player = useSession(session, (s) => s.player);
   const speed = useSession(session, (s) => s.speed);
@@ -50,6 +54,7 @@ export function PerformanceMix({
     player.names.map((name) => ({ key: name, name: tracks[name]?.name ?? name, bus: busOf(name) })),
   );
   const label = (name: string) => (stems ? (tracks[name]?.name ?? name) : "Song");
+  const silenced = silencedByChoice(partChoices, partKeysOf(tracks, stems));
   const usedGroups = [...new Set(Object.values(groups).flat())].sort((a, b) => a - b);
   return (
     <div aria-label="Performance mixer" className="flex flex-col gap-3">
@@ -104,6 +109,7 @@ export function PerformanceMix({
                 />{" "}
                 {label(name)}
               </label>
+              {silenced[name] && <span className="rounded-md border border-seam px-1.5 py-0.5 text-xs text-silkscreen-3">{silenced[name]}</span>}
               <label className="flex items-center gap-1">
                 <input
                   type="checkbox"

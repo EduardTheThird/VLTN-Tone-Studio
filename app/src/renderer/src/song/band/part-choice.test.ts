@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Mix } from "@/song/stems/mix";
 import type { TrackInfo } from "@/song/tracks";
-import { applyPartChoices, defaultPartChoice, defaultPartChoices, ORIGINAL_PARTS, partKeysOf, readPartChoices, type PartChoices, type PartKeys } from "./part-choice";
+import {
+  applyPartChoices,
+  defaultPartChoice,
+  defaultPartChoices,
+  ORIGINAL_PARTS,
+  partKeysOf,
+  readPartChoices,
+  silencedByChoice,
+  type PartChoices,
+  type PartKeys,
+} from "./part-choice";
 import { GENERATED_PART_NAMES } from "./generated-names";
 
 const BOTH: PartKeys = { drums: { original: "drums", generated: "track1" }, bass: { original: "bass", generated: "track2" } };
@@ -129,5 +139,25 @@ describe("applyPartChoices", () => {
     const mix: Mix = { drums: { volume: 1, mute: false, solo: false } };
     applyPartChoices(mix, choices("generated"), BOTH);
     expect(mix.drums.mute).toBe(false);
+  });
+});
+
+describe("silencedByChoice", () => {
+  it("names the track each choice silences, and nothing for a part that plays both", () => {
+    expect(silencedByChoice(choices("generated"), BOTH)).toEqual({ drums: "Off: generated plays", track2: "Off: original plays" });
+    expect(silencedByChoice(choices("original"), BOTH)).toEqual({ track1: "Off: original plays", track2: "Off: original plays" });
+    expect(silencedByChoice(choices("both", "both"), BOTH)).toEqual({});
+  });
+
+  it("agrees with the mute levels applyPartChoices sets", () => {
+    const mix: Mix = {};
+    const muted = applyPartChoices(mix, choices("generated"), BOTH);
+    expect(muted.drums?.mute).toBe(true);
+    expect(muted.track1?.mute).toBe(false);
+    expect(Object.keys(silencedByChoice(choices("generated"), BOTH)).sort()).toEqual(["drums", "track2"]);
+  });
+
+  it("marks nothing for a part with no generated track, since its original is the only track", () => {
+    expect(silencedByChoice(choices("generated"), { drums: { original: "drums" } })).toEqual({});
   });
 });

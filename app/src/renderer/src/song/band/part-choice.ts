@@ -78,12 +78,34 @@ export function applyPartChoices(mix: Mix, choices: PartChoices, keys: PartKeys)
   for (const kind of PART_KINDS) {
     const part = keys[kind];
     if (!part) continue;
-    const choice = choices[kind];
-    const hasGenerated = part.generated !== undefined;
-    const playOriginal = part.original !== undefined && (choice === "original" || choice === "both" || !hasGenerated);
-    const playGenerated = hasGenerated && (choice !== "original" || part.original === undefined);
-    if (part.original !== undefined) next[part.original] = { ...(next[part.original] ?? defaultStemMix()), mute: !playOriginal };
-    if (part.generated !== undefined) next[part.generated] = { ...(next[part.generated] ?? defaultStemMix()), mute: !playGenerated };
+    const { original, generated } = playingTracks(choices[kind], part);
+    if (part.original !== undefined) next[part.original] = { ...(next[part.original] ?? defaultStemMix()), mute: !original };
+    if (part.generated !== undefined) next[part.generated] = { ...(next[part.generated] ?? defaultStemMix()), mute: !generated };
   }
   return next;
+}
+
+/** Whether a part's original and generated tracks play under its choice. The rule is shared by the mute levels and the mixer's badges. */
+function playingTracks(choice: PartChoice, part: { original?: string; generated?: string }): { original: boolean; generated: boolean } {
+  const hasGenerated = part.generated !== undefined;
+  return {
+    original: part.original !== undefined && (choice === "original" || choice === "both" || !hasGenerated),
+    generated: hasGenerated && (choice !== "original" || part.original === undefined),
+  };
+}
+
+/**
+ * The tracks that "What plays" silences, by track key, with the text the mixer shows on them: the original stem is off when the
+ * generated part plays, and the generated track is off when the original plays. A track that plays is not in the result.
+ */
+export function silencedByChoice(choices: PartChoices, keys: PartKeys): Record<string, string> {
+  const off: Record<string, string> = {};
+  for (const kind of PART_KINDS) {
+    const part = keys[kind];
+    if (!part) continue;
+    const playing = playingTracks(choices[kind], part);
+    if (part.original !== undefined && !playing.original) off[part.original] = "Off: generated plays";
+    if (part.generated !== undefined && !playing.generated) off[part.generated] = "Off: original plays";
+  }
+  return off;
 }
