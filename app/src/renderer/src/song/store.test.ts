@@ -350,6 +350,18 @@ describe("generated parts in the song store", () => {
     expect(useSong.getState().stems?.track1).toBe(bass);
   });
 
+  it("a rendered drum takes the drums' generated track, keeps the bass, and keeps the generated record What plays reads", async () => {
+    const useSong = store();
+    await useSong.getState().load(file("song.mp3"));
+    useSong.getState().applyGeneratedParts({ drums: audio(), bass: audio() });
+    const rendered = audio();
+    expect(useSong.getState().applyGeneratedParts({ drums: rendered })).toEqual([]);
+    expect(useSong.getState().stems?.track0).toBe(rendered);
+    expect(useSong.getState().tracks.track0).toMatchObject({ kind: "user", name: "Drums (generated)" });
+    expect(Object.keys(useSong.getState().tracks).sort()).toEqual(["source", "track0", "track1"]);
+    expect(options(useSong.getState().source).generatedParts).toEqual({ drums: "track0", bass: "track1" });
+  });
+
   it("removes the generated track of a part that is turned off, in the same update as the parts that are on", async () => {
     const useSong = store();
     await useSong.getState().load(file("song.mp3"));

@@ -282,3 +282,35 @@ it("backs up and restores a multitrack song with its imported track and that tra
   expect(song.audio).toHaveLength(3);
   await expectAudio(destination, song.id, { ...fixture, audio: { track0: click } });
 });
+
+it("backs up and restores a rendered drum part with its track and the band record that names it", async () => {
+  const fixture = await flacSong(4),
+    rendered = pcm(1, 5),
+    bytes = await encodeFlac({ sampleRate: 44100, channels: rendered });
+  fixture.files["track0.flac"] = bytes;
+  fixture.song.audio.push({
+    name: "Drums (generated)",
+    sampleRate: 44100,
+    frames: FRAMES,
+    channels: 1,
+    file: "track0.flac",
+    codec: "flac" as const,
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    kind: "user" as const,
+    bus: "main" as const,
+  });
+  const options = {
+    band: { rendered: { drums: { name: "drums.wav", importedAt: "2026-10-30T10:00:00.000Z" } }, firstNote: { drums: 0.5 } },
+    generatedParts: { drums: "track0" },
+  };
+  fixture.song.settings[":options"] = JSON.stringify(options);
+  await save(store, fixture);
+  await store.exportBackup(archive);
+  const destination = join(temp, "restored");
+  expect(await new SongLibraryStore(destination).restoreBackup(archive)).toEqual({ songs: 1, playlists: 0 });
+  const [song] = (await new SongLibraryStore(destination).index()).songs;
+  expect(song.audio.find((a) => a.file === "track0.flac")).toMatchObject({ name: "Drums (generated)", kind: "user", bus: "main" });
+  expect(JSON.parse(song.settings[":options"])).toEqual(options);
+  await expectAudio(destination, song.id, { ...fixture, audio: { track0: rendered } });
+});
