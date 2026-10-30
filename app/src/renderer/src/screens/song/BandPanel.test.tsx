@@ -506,6 +506,22 @@ describe("Band panel: what plays", () => {
     expect(within(drums).getByText("Generate the drums first.")).toBeTruthy();
   });
 
+  it("shows Original pressed when the saved choice is Generated but the generated track is gone, and keeps the saved choice", () => {
+    const { props } = renderPanel({ partChoices: { drums: "generated", bass: "original" } });
+    const drums = screen.getByRole("group", { name: "Drums" });
+    expect(within(drums).getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(drums).getByRole("button", { name: "Generated" }).getAttribute("aria-pressed")).toBe("false");
+    expect(props.onPartChoice).not.toHaveBeenCalled();
+  });
+
+  it("shows the saved Generated choice again once the generated track is back", () => {
+    useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
+    renderPanel({ partChoices: { drums: "generated", bass: "original" } });
+    const drums = screen.getByRole("group", { name: "Drums" });
+    expect(within(drums).getByRole("button", { name: "Generated" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(drums).getByRole("button", { name: "Original" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("reports a choice for the part that was picked", () => {
     useSong.setState({ tracks: { track1: GENERATED_DRUMS } });
     const { props } = renderPanel();

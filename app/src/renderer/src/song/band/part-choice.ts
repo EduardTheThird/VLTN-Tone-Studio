@@ -87,11 +87,21 @@ export function applyPartChoices(mix: Mix, choices: PartChoices, keys: PartKeys)
 
 /** Whether a part's original and generated tracks play under its choice. The rule is shared by the mute levels and the mixer's badges. */
 function playingTracks(choice: PartChoice, part: { original?: string; generated?: string }): { original: boolean; generated: boolean } {
-  const hasGenerated = part.generated !== undefined;
+  const shown = effectiveChoice(choice, part);
   return {
-    original: part.original !== undefined && (choice === "original" || choice === "both" || !hasGenerated),
-    generated: hasGenerated && (choice !== "original" || part.original === undefined),
+    original: part.original !== undefined && (shown === "original" || shown === "both"),
+    generated: part.generated !== undefined && shown !== "original",
   };
+}
+
+/**
+ * The choice that actually plays for a part. The saved choice is kept as it is, so it comes back when the generated track is restored, but
+ * a part with no generated track plays its original, and a part with no original stem plays its generated track.
+ */
+export function effectiveChoice(choice: PartChoice, part: { original?: string; generated?: string }): PartChoice {
+  if (part.generated === undefined) return "original";
+  if (part.original === undefined) return "generated";
+  return choice;
 }
 
 /**

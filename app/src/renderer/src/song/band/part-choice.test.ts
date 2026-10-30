@@ -5,6 +5,7 @@ import {
   applyPartChoices,
   defaultPartChoice,
   defaultPartChoices,
+  effectiveChoice,
   ORIGINAL_PARTS,
   partKeysOf,
   readPartChoices,
@@ -159,5 +160,21 @@ describe("silencedByChoice", () => {
 
   it("marks nothing for a part with no generated track, since its original is the only track", () => {
     expect(silencedByChoice(choices("generated"), { drums: { original: "drums" } })).toEqual({});
+  });
+});
+
+describe("effectiveChoice", () => {
+  it("is Original for a part with no generated track, whatever was saved", () => {
+    expect(effectiveChoice("generated", { original: "drums" })).toBe("original");
+    expect(effectiveChoice("both", { original: "drums" })).toBe("original");
+  });
+
+  it("is Generated for a part with no original stem", () => {
+    expect(effectiveChoice("original", { generated: "track1" })).toBe("generated");
+  });
+
+  it("is the saved choice when both tracks exist", () => {
+    expect(effectiveChoice("generated", BOTH.drums!)).toBe("generated");
+    expect(effectiveChoice("both", BOTH.drums!)).toBe("both");
   });
 });

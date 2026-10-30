@@ -182,7 +182,6 @@ function BandBody({
   const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
   const partKeys = partKeysOf(tracks ?? {}, stems);
-  const partGenerated = { drums: partKeys.drums?.generated !== undefined, bass: partKeys.bass?.generated !== undefined };
   const style = findStyle(settings.style) ?? STYLES.rock;
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
@@ -438,7 +437,7 @@ function BandBody({
         {outOfDate && <p className="text-led-warn">Parts out of date. Press Generate to apply the changes.</p>}
       </section>
 
-      {source !== null && <PartChoiceRows choices={partChoices} generated={partGenerated} disabled={busy} onChange={onPartChoice} />}
+      {source !== null && <PartChoiceRows choices={partChoices} keys={partKeys} disabled={busy} onChange={onPartChoice} />}
 
       <BandGridSection
         grid={grid}
