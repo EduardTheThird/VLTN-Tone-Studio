@@ -246,7 +246,8 @@ function breakScore(words: readonly TimedWord[], start: number, k: number): numb
   const gap = Math.round((next.start - last.end) * 100) / 100;
   const length = k - start + 1;
   if (endsSentence(last.text)) return 100 + gap;
-  if (length < 2) return undefined;
+  // A one-word line is allowed only where the singer pauses after it.
+  if (length < 2 && gap <= LINE_GAP_SECONDS) return undefined;
   // A word that carries on is never a break, however long the gap after it.
   if (isDangling(last.text)) return undefined;
   if (gap <= SOFT_LINE_GAP_SECONDS) return undefined;
