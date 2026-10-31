@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { "@": resolve("src/renderer/src"), "@shared": resolve("src/shared") } },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"],
     // Node 25+ has its own global localStorage, which hides jsdom's and breaks every test that stores something.
     execArgv: ["--no-experimental-webstorage"],
   },

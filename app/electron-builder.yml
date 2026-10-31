@@ -22,6 +22,8 @@ files:
   - "!node_modules/@img/**"
   - "!node_modules/onnxruntime-node/**"
 asarUnpack: []
+# Unsigned Mac builds get a valid ad-hoc signature (scripts/adhoc-sign.cjs); a real signing identity skips it.
+afterPack: scripts/adhoc-sign.cjs
 # Valeton's SnapTone test signal, only when it is in the git-ignored fixtures folder: local `npm run dist`
 # builds carry it, CI releases don't (the file isn't ours to publish).
 extraResources:

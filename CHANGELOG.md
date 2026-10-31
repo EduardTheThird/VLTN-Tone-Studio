@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Fixed
+- **Mac downloads open again.** Builds without a signing certificate now carry a valid ad-hoc signature, so macOS no longer calls them damaged. The first time, macOS still asks you to confirm in System Settings › Privacy & Security › Open Anyway, until the app is notarized.
 - **Lyrics transcription works again.** Since 0.9.2 every transcription, for one song or from the Library, failed with "window is not defined", because the lyrics worker loaded the song settings. A test now loads every worker without a page, so this can't come back unnoticed.
 - **Chords, key and sections work in the installed app.** Three analysis workers were blocked in packaged builds, so every song said "Could not work out: chords, key, sections". A test now guards how the workers are created.
 - **Lyrics catch the opening verse.** The vocal detector measured against the loudest moment, so a quieter start was skipped. Lines no longer share a time or break mid-phrase, and music markers (♪) are dropped; pasted lyrics are timed from their best-matched words ([Lyrics and chords](PERFORMANCE.md#lyrics-and-chords)).
