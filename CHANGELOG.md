@@ -2,6 +2,12 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.10] - 2026-10-31
+
+Mac downloads open again.
+
+- **Fixed: the Mac app was "damaged".** The Mac downloads of 0.9.7 to 0.9.9 had a broken signature, so macOS on Apple silicon refused to open them. Builds now carry a valid signature that is checked before release. The first time you open a downloaded copy, macOS still asks you to allow it: open **System Settings › Privacy & Security** and choose **Open Anyway**.
+
 ## [0.9.9] - 2026-10-30
 
 Your own sounds for the generated drums and bass.
