@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.11] - 2026-11-01
+
+A bass that plays the song.
+
+- **Generated parts sit at the song's level.** The drums and bass are matched to the song instead of playing at full volume: to the original bass or drums when the split found them, otherwise a little under the song. After **Generate**, the Band panel says how far under the song each part sits.
+- **A bass part for each section.** In the sections table, each section has a **Bass part**: Ring out, Root pulse, Groove, Melodic, Walking, Pedal or Rest. **Auto** picks one from the section's name: verses ring out, pre-choruses pulse and build, choruses groove, bridges move or lift an octave, and outros end on a held note.
+- **Busy and Loud per section.** **Busy** sets how many notes the bass plays and **Loud** how hard, so a verse can be sparse and soft and a chorus busy and strong. The drums soften or harden with Loud too. **Feel** sets how long the bass notes ring, from tight to ringing.
+- **Phrasing like a bass player.** The bass plays in 4-bar phrases with small fills at phrase ends and a run into each new section, and a second verse varies a little from the first. **More** on each section sets the octave, the fills, a long first note in a chorus, and slides, muted notes and pickups.
+
 ## [0.9.10] - 2026-10-31
 
 Mac downloads open again.
