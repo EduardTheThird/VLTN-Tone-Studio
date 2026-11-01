@@ -266,6 +266,31 @@ describe("Band panel", () => {
     expect(mocks.startBandRender.mock.calls[0][0].follow.source).toBe("guitar");
   });
 
+  it("says after Generate how far under the song the generated drums and bass sit, and sends the stems for the match", async () => {
+    useSong.setState({ stems: { drums: song().audio, bass: song().audio } as never });
+    stored({ beatGrid: grid, bandOutOfDate: true });
+    const silent = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    mocks.startBandRender.mockReturnValue({
+      done: Promise.resolve({
+        drums: silent,
+        bass: silent,
+        notes: { drums: [], bass: [] },
+        levels: {
+          drums: { gainDb: 1, belowSongDb: 4, limitedByPeak: false },
+          bass: { gainDb: -2, belowSongDb: 7.2, limitedByPeak: false },
+        },
+      }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(screen.getByText("Drums set 4.0 dB under the song, bass 7.2 dB under.")).toBeTruthy());
+    const request = mocks.startBandRender.mock.calls[0][0];
+    expect(request.originals.drums).toBe(useSong.getState().stems?.drums);
+    expect(request.mix).toBeDefined();
+  });
+
   it("finds the beat through the beat tracker and shows the tempo", async () => {
     mocks.startBeatGrid.mockReturnValue({ done: Promise.resolve(grid), cancel: vi.fn() });
     renderPanel();
@@ -408,6 +433,79 @@ describe("Band panel", () => {
     expect(savedOptions().band.sections.song.style).toBe("metal");
     fireEvent.click(screen.getByRole("checkbox", { name: "Bass in Whole song" }));
     expect(savedOptions().band.sections.song.play).toEqual({ drums: true, bass: false });
+  });
+
+  it("sets each section's bass part, busy and loud, and saves them as the other columns do", () => {
+    renderPanel({ sections: SECTIONS });
+    pick(screen.getByRole("combobox", { name: "Bass part of Chorus" }), "Groove");
+    expect(savedOptions().band.sections.chorus.bassPart).toBe("groove");
+    pick(screen.getByRole("combobox", { name: "Busy of Chorus" }), "2");
+    expect(savedOptions().band.sections.chorus.busy).toBe(2);
+    pick(screen.getByRole("combobox", { name: "Loud of Chorus" }), "5");
+    expect(savedOptions().band.sections.chorus.loud).toBe(5);
+    expect(savedOptions().bandOutOfDate).toBe(true);
+  });
+
+  it("shows the part Auto resolved to, in muted text, and drops it once a part is chosen", () => {
+    renderPanel({ sections: SECTIONS });
+    // Verse is quiet (energy 2, so busy 2 and a ring), chorus is busy 4 and plays melodic.
+    expect(screen.getByText("Auto · Ring out")).toBeTruthy();
+    expect(screen.getByText("Auto · Melodic")).toBeTruthy();
+    pick(screen.getByRole("combobox", { name: "Bass part of Verse" }), "Root pulse");
+    expect(screen.queryByText("Auto · Ring out")).toBeNull();
+    expect(savedOptions().band.sections.verse.bassPart).toBe("pulse");
+  });
+
+  it("saves each More option: octave, fills, hit the one, slides, dead notes and pickups", () => {
+    renderPanel({ sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "More bass options for Verse" }));
+    pick(screen.getByRole("combobox", { name: "Octave of Verse" }), "+1 octave");
+    expect(savedOptions().band.sections.verse.octave).toBe(1);
+    pick(screen.getByRole("combobox", { name: "Fills of Verse" }), "3");
+    expect(savedOptions().band.sections.verse.fills).toBe(3);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hit the one in Verse" }));
+    expect(savedOptions().band.sections.verse.hitTheOne).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Slides in Verse" }));
+    expect(savedOptions().band.sections.verse.slides).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Dead notes in Verse" }));
+    expect(savedOptions().band.sections.verse.deadNotes).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Pickups in Verse" }));
+    expect(savedOptions().band.sections.verse.pickups).toBe(false);
+  });
+
+  it("shows the style default beside the three techniques in More", () => {
+    renderPanel({ sections: SECTIONS });
+    fireEvent.click(screen.getByRole("button", { name: "More bass options for Verse" }));
+    // The rock style plays pickups by default and no slides or dead notes.
+    expect(screen.getByText("Style: on")).toBeTruthy();
+    expect(screen.getAllByText("Style: off").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("gives the whole-song row the same bass controls, saved under the whole-song key", () => {
+    renderPanel();
+    pick(screen.getByRole("combobox", { name: "Bass part of Whole song" }), "Melodic");
+    expect(savedOptions().band.sections.song.bassPart).toBe("melodic");
+    pick(screen.getByRole("combobox", { name: "Busy of Whole song" }), "4");
+    expect(savedOptions().band.sections.song.busy).toBe(4);
+  });
+
+  it("saves the default bass part and the feel, and says what the default part is for", () => {
+    renderPanel({ sections: SECTIONS });
+    expect(screen.getByText("Used where a section is on Auto and has no rule of its own.")).toBeTruthy();
+    pick(screen.getByRole("combobox", { name: "Default bass part" }), "Walking");
+    expect(savedOptions().band.defaultBassPart).toBe("walking");
+    const feel = document.querySelector<HTMLElement>('[aria-label="Bass feel"] [role="slider"]');
+    expect(feel).toBeTruthy();
+    fireEvent.keyDown(feel!, { key: "ArrowRight" });
+    expect(savedOptions().band.bassFeel).toBeCloseTo(0.55, 2);
+  });
+
+  it("keeps the section table in its own scroll container, so the dialog does not widen", () => {
+    renderPanel({ sections: SECTIONS });
+    const table = screen.getByRole("table");
+    expect(table.parentElement?.className).toContain("overflow-x-auto");
+    expect(table.className).toContain("min-w-[56rem]");
+    expect(screen.getByText(/Energy shapes the drums\. Busy and Loud shape the bass/)).toBeTruthy();
   });
 
   it("detects chords from the audio when the chart and the analysis have none, and generates with them", async () => {

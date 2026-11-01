@@ -7,7 +7,7 @@
 
 import type { PcmAudio } from "../types";
 import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
-import { pickBassSample, pickDrumSample, type SampleSet } from "./samples";
+import { pickBassLayers, pickDrumSample, type SampleSet } from "./samples";
 
 /** The sample rate of a rendered part: the song's rate. */
 export const RENDER_RATE = 44100;
@@ -17,6 +17,11 @@ export const PEAK_LIMIT = 10 ** (-1 / 20);
 const CUT_SECONDS = 0.01;
 /** A bass note fades out over this long after its duration. */
 const BASS_RELEASE_SECONDS = 0.03;
+/** A slide rises into its note over this long. */
+export const SLIDE_SECONDS = 0.04;
+/** A dead note is cut after its duration with this fade, and its one-pole low-pass sits at this frequency so it reads as a muted thump. */
+const DEAD_RELEASE_SECONDS = 0.01;
+export const DEAD_CUTOFF_HZ = 800;
 
 /** Where each kit piece sits, from -1 (left) to 1 (right), as a drummer hears it. Pitches not listed are centred. */
 export const DRUM_PAN: Readonly<Record<number, number>> = {
@@ -65,27 +70,44 @@ interface Voice {
   left: number;
   right: number;
   shape: Shape;
+  /** A slide: the rate starts `semitones` lower and rises to `rate` over `frames` frames, linearly in semitones. */
+  glide?: { semitones: number; frames: number };
+  /** A one-pole low-pass coefficient (0 to 1) applied to the voice before it is shaped. Unset for no filter. */
+  smoothing?: number;
 }
 
 /** Adds one voice into the output. Reads by linear interpolation, and folds a stereo sample to mono. */
 function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
-  const { sample, rate, gain, shape } = voice;
+  const { sample, rate, gain, shape, glide, smoothing } = voice;
   const first = sample.channels[0];
   const second = sample.channels.length > 1 ? sample.channels[1] : first;
   const last = first.length - 1;
   // The voice stops at the end of its sample, at the end of its release, or once a cut has finished fading, whichever comes first.
   const stop = Math.min(left.length, shape.start + Math.floor(last / rate) + 1, shape.holdEnd + shape.release, shape.cutAt + shape.cutFade);
+  // A glide reads the sample at a position that adds up the rate frame by frame, so the pitch can rise. A steady voice multiplies.
+  let glided = 0;
+  let filtered = 0;
   for (let frame = Math.max(0, shape.start); frame < stop; frame++) {
-    const position = (frame - shape.start) * rate;
+    const elapsed = frame - shape.start;
+    const position = glide ? glided : elapsed * rate;
     const index = Math.floor(position);
     const fraction = position - index;
     const next = index < last ? index + 1 : last;
     const a = first[index] + (first[next] - first[index]) * fraction;
     const b = second[index] + (second[next] - second[index]) * fraction;
+    if (glide) {
+      const progress = Math.min(1, elapsed / glide.frames);
+      glided += rate * 2 ** ((-glide.semitones * (1 - progress)) / 12);
+    }
+    let raw = (a + b) * 0.5 * gain;
+    if (smoothing !== undefined) {
+      filtered += smoothing * (raw - filtered);
+      raw = filtered;
+    }
     let envelope = 1;
     if (frame >= shape.holdEnd) envelope *= 1 - (frame - shape.holdEnd) / shape.release;
     if (frame >= shape.cutAt) envelope *= 1 - (frame - shape.cutAt) / shape.cutFade;
-    const value = (a + b) * 0.5 * gain * envelope;
+    const value = raw * envelope;
     left[frame] += value * voice.left;
     right[frame] += value * voice.right;
   }
@@ -129,24 +151,37 @@ function drumVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
   });
 }
 
-/** One voice per bass note, centred. A note is held for its duration, released, and cut at once if the next note starts first. */
+/**
+ * Voices for the bass notes, centred. A note is held for its duration, released, and cut at once if the next note starts first. Between
+ * the soft and hard velocities a note is two voices, one per layer, each at its crossfade weight.
+ */
 function bassVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate: number): Voice[] {
   const starts = notes.map((note) => Math.round(note.time * sampleRate));
   const release = Math.round(BASS_RELEASE_SECONDS * sampleRate);
+  const deadRelease = Math.round(DEAD_RELEASE_SECONDS * sampleRate);
   const cutFade = Math.round(CUT_SECONDS * sampleRate);
   const [left, right] = panGains(0);
-  return notes.map((note, index) => {
+  const smoothing = 1 - Math.exp((-2 * Math.PI * DEAD_CUTOFF_HZ) / sampleRate);
+  return notes.flatMap((note, index) => {
     const start = starts[index];
-    const pick = pickBassSample(samples, note.pitch, note.velocity);
     const next = index + 1 < starts.length ? starts[index + 1] : Infinity;
-    return {
+    const glide = note.slideFrom !== undefined ? { semitones: note.slideFrom, frames: Math.round(SLIDE_SECONDS * sampleRate) } : undefined;
+    return pickBassLayers(samples, note.pitch, note.velocity).map(({ pick, weight }) => ({
       sample: pick.audio,
       rate: (pick.playbackRate * pick.audio.sampleRate) / sampleRate,
-      gain: 1,
+      gain: weight,
       left,
       right,
-      shape: { start, holdEnd: start + Math.round(note.duration * sampleRate), release, cutAt: next, cutFade },
-    };
+      shape: {
+        start,
+        holdEnd: start + Math.round(note.duration * sampleRate),
+        release: note.dead ? deadRelease : release,
+        cutAt: next,
+        cutFade,
+      },
+      glide,
+      smoothing: note.dead ? smoothing : undefined,
+    }));
   });
 }
 

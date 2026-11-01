@@ -21,7 +21,7 @@ import {
   type BandSettings,
   type FollowSource,
   type RenderedKind,
-  type SectionPlan,
+  type SectionOverride,
 } from "@/song/band/arrangement";
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 import type { NoteEvent } from "@/song/band/note";
@@ -30,13 +30,14 @@ import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
 import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
-import { bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, previewMix } from "@/song/band/request";
+import { bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, levelStems, previewMix } from "@/song/band/request";
 import { applyBassTone } from "@/song/band/bass-tone";
 import { renderBassChain } from "@/song/band/bass-chain";
 import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
 import { followStatus } from "@/song/band/feel";
+import { levelStatus } from "@/song/band/level";
 import { startChordDetection } from "@/song/band/chord-detect-client";
-import { findStyle, STYLES, type StyleId } from "@/song/band/styles";
+import { findStyle, type StyleId } from "@/song/band/styles";
 import type { BandStage } from "@/song/band/band-job";
 import type { PcmAudio } from "@/song/types";
 import { parseChart, type Cue } from "@/song/performance/chart";
@@ -239,7 +240,6 @@ function BandBody({
   const blocked = busy || playing || source === null;
   const generated = hasGeneratedParts(tracks);
   const partKeys = partKeysOf(tracks ?? {}, stems);
-  const style = findStyle(settings.style) ?? STYLES.rock;
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
   const save = (next: BandSettings) => {
@@ -266,7 +266,7 @@ function BandBody({
     });
   };
   /** Writes a row's override. A song without sections keeps its one row's overrides under WHOLE_SONG_ID. */
-  const changeRow = (sectionId: string | null, patch: Partial<SectionPlan>) => {
+  const changeRow = (sectionId: string | null, patch: SectionOverride) => {
     const key = sectionId ?? WHOLE_SONG_ID;
     const current = settings.sections[key] ?? {};
     save({ ...settings, sections: { ...settings.sections, [key]: { ...current, ...patch } } });
@@ -297,6 +297,7 @@ function BandBody({
   const rows: BandSectionRow[] = plans.map((plan) => ({
     plan,
     name: plan.sectionId === null ? "Whole song" : (sections.find((section) => section.id === plan.sectionId)?.name ?? "Section"),
+    choice: settings.sections[plan.sectionId ?? WHOLE_SONG_ID]?.bassPart ?? "auto",
   }));
 
   /** Finds the beat in the song's audio. The drums stem is read when present, else the pitched stems, else the mix. */
@@ -361,6 +362,7 @@ function BandBody({
         sampleUrls: bandSampleUrls(),
         follow: followFor(using, useSong.getState().stems, current.audio),
         mix: current.audio,
+        originals: levelStems(useSong.getState().stems),
       };
       let request = bandRequest(input);
       const notes: string[] = [];
@@ -395,6 +397,8 @@ function BandBody({
         if (toned.notice) notes.push(toned.notice);
       }
       if (result.follow) notes.push(followStatus(result.follow));
+      const levels = levelStatus(result.levels);
+      if (levels) notes.push(levels);
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       const turnedOff = only ? [] : (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
       const applied = useSong.getState().applyGeneratedParts({ drums: result.drums, bass }, { playing: playingNow.current, remove: turnedOff });
@@ -512,6 +516,7 @@ function BandBody({
         sampleUrls: bandSampleUrls(),
         follow: followFor(settings, useSong.getState().stems, current.audio),
         mix: current.audio,
+        originals: levelStems(useSong.getState().stems),
       });
       const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
       job.current = rendering;
@@ -629,7 +634,7 @@ function BandBody({
         myTempo={typedTempo ? { bpm, use: useMyTempo, onUse: setUseMyTempo } : undefined}
       />
 
-      <BandSettingsForm settings={settings} style={style} followSources={followSources} onChange={change} onStyle={changeStyle} />
+      <BandSettingsForm settings={settings} followSources={followSources} onChange={change} onStyle={changeStyle} />
 
       <section aria-label="Sections" className="flex flex-col gap-2">
         <h3 className="font-semibold">Sections</h3>

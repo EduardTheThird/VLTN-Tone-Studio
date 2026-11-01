@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Section } from "../performance/sections";
 import {
   DEFAULT_BAND_SETTINGS,
+  defaultFills,
   energyForName,
   isBandSettings,
   parseBandSettings,
@@ -122,7 +123,15 @@ describe("planSections", () => {
   it("gives one plan for the whole song when there are no sections", () => {
     const plans = planSections([], 90, settings());
     expect(plans).toHaveLength(1);
-    expect(plans[0]).toMatchObject({ sectionId: null, start: 0, end: 90, fill: true, energy: 3 });
+    expect(plans[0]).toMatchObject({ sectionId: null, start: 0, end: 90, fill: true, energy: 3, loud: 3 });
+  });
+
+  it("makes each section's loud level its energy, unless the section sets its own", () => {
+    const plans = planSections(sections, 80, settings({ sections: { b: { loud: 5 } } }));
+    // The intro (energy 2) and the outro (energy 2) take their energy, the verse (energy 2) is set to loud 5, and the chorus (energy 4) keeps 4.
+    expect(plans.map((plan) => plan.loud)).toEqual([2, 5, 4, 2]);
+    expect(planSections([], 90, settings({ sections: { song: { energy: 4 } } }))[0]).toMatchObject({ energy: 4, loud: 4 });
+    expect(planSections([], 90, settings({ sections: { song: { energy: 4, loud: 1 } } }))[0]).toMatchObject({ energy: 4, loud: 1 });
   });
 });
 
@@ -178,6 +187,14 @@ describe("isBandSettings and parseBandSettings", () => {
     const parsed = parseBandSettings({ parts: { drums: true, bass: false } });
     expect(parsed.parts).toEqual({ drums: true, bass: false });
     expect(parsed.complexity).toBe(DEFAULT_BAND_SETTINGS.complexity);
+  });
+
+  it("keeps a valid loud level in a section and drops one that is not 1 to 5", () => {
+    expect(parseBandSettings({ sections: { a: { loud: 4 } } }).sections).toEqual({ a: { loud: 4 } });
+    expect(parseBandSettings({ sections: { a: { loud: 9 } } }).sections).toEqual({});
+    expect(parseBandSettings({ sections: { a: { loud: "hard", fill: true } } }).sections).toEqual({ a: { fill: true } });
+    expect(isBandSettings({ ...settings(), sections: { a: { loud: 0 } } })).toBe(false);
+    expect(isBandSettings({ ...settings(), sections: { a: { loud: 2 } } })).toBe(true);
   });
 
   it("returns fresh objects, so changing a parsed result cannot change the defaults", () => {
@@ -304,5 +321,106 @@ describe("rendered parts and first notes", () => {
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, rendered: { drums: { name: 3, importedAt: "x" } } })).toBe(false);
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, firstNote: { drums: -2 } })).toBe(false);
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, rendered, firstNote: { drums: 0 } })).toBe(true);
+  });
+});
+
+describe("section bass parts", () => {
+  const song = [
+    section("i", "Intro", 0, 20),
+    section("v", "Verse", 20, 40),
+    section("p", "Pre-Chorus", 40, 50),
+    section("c", "Chorus", 50, 70),
+    section("b", "Bridge", 70, 90),
+    section("o", "Outro", 90, 100),
+  ];
+
+  it("resolves Auto to a part for each section, so no plan is left on auto", () => {
+    const plans = planSections(song, 100, settings());
+    expect(plans.map((plan) => plan.bassPart)).toEqual(["ring", "ring", "pulse", "melodic", "melodic", "ring"]);
+    expect(plans.every((plan) => plan.bassPart !== ("auto" as string))).toBe(true);
+  });
+
+  it("gives the intro its pedal lead, the pre-chorus its ramp, and the bridge an octave up", () => {
+    const plans = planSections(song, 100, settings());
+    expect(plans[0].bassLead).toEqual({ part: "pedal", bars: 2 });
+    expect(plans[1].bassLead).toBeUndefined();
+    expect(plans[2].bassRamp).toBe(true);
+    expect(plans[4].octave).toBe(1);
+    expect(plans[3].octave).toBe(0);
+  });
+
+  it("rings the bridge when the chorus is a groove, which a chorus at busy 3 is", () => {
+    const grooveChorus = planSections(song, 100, settings({ sections: { c: { busy: 3 } } }));
+    expect(grooveChorus[3].bassPart).toBe("groove");
+    expect(grooveChorus[4].bassPart).toBe("ring");
+  });
+
+  it("keeps a chosen part, busy and octave over Auto's", () => {
+    const plans = planSections(song, 100, settings({ sections: { b: { bassPart: "walking", busy: 5, octave: -1 }, v: { bassPart: "groove" } } }));
+    expect(plans[4]).toMatchObject({ bassPart: "walking", busy: 5, octave: -1, bassLead: undefined });
+    expect(plans[1]).toMatchObject({ bassPart: "groove", busy: 2 });
+  });
+
+  it("defaults busy to the energy, and the octave to 0 for a section that is not on auto", () => {
+    const plans = planSections(song, 100, settings({ sections: { v: { bassPart: "pulse" } } }));
+    expect(plans[1]).toMatchObject({ busy: 2, octave: 0, bassPart: "pulse" });
+  });
+
+  it("falls back to the song's default bass part for a song without sections, and for a name it does not know", () => {
+    expect(planSections([], 90, settings({ defaultBassPart: "pulse" }))[0].bassPart).toBe("pulse");
+    expect(planSections([], 90, settings({ defaultBassPart: "groove" }))[0].bassPart).toBe("groove");
+    expect(planSections([section("x", "Breakdown", 0, 90)], 90, settings({ defaultBassPart: "walking" }))[0].bassPart).toBe("walking");
+  });
+
+  it("takes the default bass part from the old bass mode for a song saved before it existed", () => {
+    expect(parseBandSettings({ bassMode: "fifths" }).defaultBassPart).toBe("groove");
+    expect(parseBandSettings({ bassMode: "melodic" }).defaultBassPart).toBe("melodic");
+    expect(parseBandSettings({ bassMode: "roots", defaultBassPart: "ring" }).defaultBassPart).toBe("ring");
+    expect(parseBandSettings({ defaultBassPart: "rest" }).defaultBassPart).toBe("pulse");
+  });
+
+  it("parses the bass part, busy and octave of a section and the bass feel, and drops what is invalid", () => {
+    expect(parseBandSettings({ sections: { a: { bassPart: "pedal", busy: 4, octave: -1 } } }).sections).toEqual({
+      a: { bassPart: "pedal", busy: 4, octave: -1 },
+    });
+    expect(parseBandSettings({ sections: { a: { bassPart: "fly", busy: 0, octave: 2 } } }).sections).toEqual({});
+    expect(parseBandSettings({ sections: { a: { bassPart: "auto" } } }).sections).toEqual({ a: { bassPart: "auto" } });
+    expect(parseBandSettings({ bassFeel: 0.8 }).bassFeel).toBe(0.8);
+    expect(parseBandSettings({ bassFeel: 2 }).bassFeel).toBe(DEFAULT_BAND_SETTINGS.bassFeel);
+    expect(DEFAULT_BAND_SETTINGS.bassFeel).toBe(0.5);
+    expect(isBandSettings({ ...settings(), bassFeel: -1 })).toBe(false);
+  });
+});
+
+describe("bass fills and hit the one", () => {
+  const song = [section("i", "Intro", 0, 20), section("v", "Verse", 20, 40), section("c", "Chorus", 40, 60), section("c2", "Chorus", 60, 80)];
+
+  it("defaults the fills by name: none for an intro or an outro, most for a chorus", () => {
+    expect(defaultFills("Intro")).toBe(0);
+    expect(defaultFills("Outro")).toBe(0);
+    expect(defaultFills("Verse")).toBe(1);
+    expect(defaultFills("Pre-Chorus")).toBe(1);
+    expect(defaultFills("Chorus")).toBe(2);
+    expect(defaultFills("Bridge")).toBe(1);
+    expect(defaultFills("Breakdown")).toBe(1);
+  });
+
+  it("hits the one on a chorus that follows another kind of section, and not on a chorus after a chorus", () => {
+    const plans = planSections(song, 80, settings());
+    expect(plans.map((plan) => plan.fills)).toEqual([0, 1, 2, 2]);
+    expect(plans.map((plan) => plan.hitTheOne)).toEqual([false, false, true, false]);
+    expect(plans[1].name).toBe("Verse");
+  });
+
+  it("takes a section's fills and hit the one from its overrides", () => {
+    const plans = planSections(song, 80, settings({ sections: { c: { fills: 0, hitTheOne: false }, v: { fills: 3 } } }));
+    expect(plans[1].fills).toBe(3);
+    expect(plans[2]).toMatchObject({ fills: 0, hitTheOne: false });
+  });
+
+  it("parses fills and hit the one defensively", () => {
+    expect(parseBandSettings({ sections: { a: { fills: 2, hitTheOne: true } } }).sections).toEqual({ a: { fills: 2, hitTheOne: true } });
+    expect(parseBandSettings({ sections: { a: { fills: 4, hitTheOne: "yes" } } }).sections).toEqual({});
+    expect(isBandSettings({ ...settings(), sections: { a: { fills: 1.5 } } })).toBe(false);
   });
 });
