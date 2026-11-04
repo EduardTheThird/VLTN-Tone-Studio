@@ -1,3 +1,4 @@
+import { SettingsCard } from "@/components/ui/settings-card";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { host } from "@/host";
 import { BAND_SYNC_LIMITS } from "@shared/band-sync";
 import type { BandSyncStatus } from "@shared/host/band-sync";
+import { HelpNote } from "@/components/ui/help-note";
 
 /**
  * Band sync (spec 44): lets bandmates follow the song on their phones or tablets over this network. It is off until the performer starts
@@ -57,15 +59,19 @@ export function BandSyncSettings() {
   const portNumber = Number(port);
   const portValid = Number.isInteger(portNumber) && portNumber >= BAND_SYNC_LIMITS.portMin && portNumber <= BAND_SYNC_LIMITS.portMax;
   return (
-    <section aria-label="Band sync" className="flex flex-col gap-3 rounded-xl border border-seam bg-black/10 p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto font-semibold">Band sync on this network</h2>
-        {status.listening && (
+    <SettingsCard
+      title="Band sync on this network"
+      summary={status.listening ? "On" : "Off"}
+      storageKey="band-sync"
+      defaultOpen={false}
+      actions={
+        status.listening ? (
           <span className="rounded-md bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-200" role="status">
             Listening
           </span>
-        )}
-      </div>
+        ) : undefined
+      }
+    >
       <p role="status" className="text-sm text-silkscreen-2">
         {error || status.message}
       </p>
@@ -128,10 +134,12 @@ export function BandSyncSettings() {
         />
         Allow followers to play, pause and stop (off: they only follow the song)
       </label>
-      <p className="text-xs text-silkscreen-3">
-        Band sync is off unless you start it. Followers see the song, lyrics and chords; they never load songs or read your library. The
-        traffic is not encrypted, so only the PIN keeps others out: use it on a network you trust, and stop it when the set is over.
-      </p>
-    </section>
+      <HelpNote>
+        <p>
+          Band sync is off unless you start it. Followers see the song, lyrics and chords; they never load songs or read your library. The traffic is not
+          encrypted, so only the PIN keeps others out: use it on a network you trust, and stop it when the set is over.
+        </p>
+      </HelpNote>
+    </SettingsCard>
   );
 }

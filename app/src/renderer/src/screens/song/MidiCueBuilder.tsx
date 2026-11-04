@@ -1,3 +1,4 @@
+import { SettingsCard } from "@/components/ui/settings-card";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { lrcTime, midiCommand, type Cue } from "@/song/performance/chart";
@@ -6,6 +7,7 @@ import { saveMacro, useMidiConfiguration } from "@/song/performance/midi-configu
 import { macroCodeFor } from "@/song/performance/midi-macros";
 import { MacroPanel } from "./MacroPanel";
 import { PedalMidiPicker } from "./PedalMidiPicker";
+import { HelpNote } from "@/components/ui/help-note";
 
 export function MidiCueBuilder({
   cues,
@@ -59,8 +61,7 @@ export function MidiCueBuilder({
         ? `CC ${bytes[1]} = ${bytes[2]}`
         : bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
   return (
-    <div aria-label="MIDI cue builder" className="space-y-3 rounded border border-seam p-3">
-      <h3 className="font-semibold">Song MIDI cues</h3>
+    <SettingsCard title="Song MIDI cues" summary={`${cues.length} cue${cues.length === 1 ? "" : "s"}`} storageKey="midi-cues">
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <label>
           At seconds
@@ -142,10 +143,12 @@ export function MidiCueBuilder({
           <MacroPanel time={seconds} onAdd={onAdd} onTest={onTest} canTest={canTest} />
         </div>
       </details>
-      <p className="text-xs text-silkscreen-3">
-        Set the channel to the target pedal. Added cues are saved in this song’s chart and sent during playback when Send cues is enabled. Program numbers are
-        wire values: a pedal labelled 1–128 may display one higher. Send MIDI now transmits immediately to the selected output.
-      </p>
+      <HelpNote>
+        <p>
+          Set the channel to the target pedal. Added cues are saved in this song’s chart and sent during playback when Send cues is enabled. Program numbers are
+          wire values: a pedal labelled 1–128 may display one higher. Send MIDI now transmits immediately to the selected output.
+        </p>
+      </HelpNote>
       {scheduled.length ? (
         <div className="max-h-48 overflow-auto">
           <table aria-label="Scheduled MIDI cues" className="w-full text-left text-sm">
@@ -178,6 +181,6 @@ export function MidiCueBuilder({
           {error}
         </p>
       )}
-    </div>
+    </SettingsCard>
   );
 }

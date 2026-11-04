@@ -1,3 +1,4 @@
+import { SettingsCard } from "@/components/ui/settings-card";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,6 +8,7 @@ import { host } from "@/host";
 import { AUDIENCE_LIMITS, AUDIENCE_ROTATIONS, type AudienceRotation } from "@shared/audience";
 import type { AudienceStatus } from "@shared/host/audience";
 import { useAudienceSettings } from "@/song/performance/audience-settings";
+import { HelpNote } from "@/components/ui/help-note";
 
 /** The audience display's controls and status: where it shows, how it is laid out, and blackout (spec 43). */
 export function AudienceSettings() {
@@ -30,26 +32,32 @@ export function AudienceSettings() {
   };
   const onDisplay = status?.windowing === "display";
   return (
-    <section aria-label="Audience display" className="flex flex-col gap-3 rounded-xl border border-seam bg-black/10 p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto font-semibold">Audience display</h2>
-        {status?.open ? (
-          <Button variant="outline" onClick={() => run(host.audience.close())}>
-            Close audience display
+    <SettingsCard
+      title="Audience display"
+      summary={status?.open ? "Audience display is on" : "Audience display is off"}
+      storageKey="audience"
+      defaultOpen={false}
+      actions={
+        <>
+          {status?.open ? (
+            <Button variant="outline" onClick={() => run(host.audience.close())}>
+              Close audience display
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => run(host.audience.open())}>
+              Open audience display
+            </Button>
+          )}
+          <Button
+            variant={settings.blackout ? "default" : "outline"}
+            aria-pressed={settings.blackout}
+            onClick={() => settings.update({ blackout: !settings.blackout })}
+          >
+            {settings.blackout ? "Blackout on" : "Blackout"}
           </Button>
-        ) : (
-          <Button variant="outline" onClick={() => run(host.audience.open())}>
-            Open audience display
-          </Button>
-        )}
-        <Button
-          variant={settings.blackout ? "default" : "outline"}
-          aria-pressed={settings.blackout}
-          onClick={() => settings.update({ blackout: !settings.blackout })}
-        >
-          {settings.blackout ? "Blackout on" : "Blackout"}
-        </Button>
-      </div>
+        </>
+      }
+    >
       <p role="status" className="text-sm text-silkscreen-2">
         {error || status?.message || "Checking the audience display…"}
       </p>
@@ -121,9 +129,9 @@ export function AudienceSettings() {
           />
         </label>
       </div>
-      <p className="text-xs text-silkscreen-3">
-        The audience window shows the lyrics and chords of the song on screen, or its PDF page, and follows playback. Closing it does not stop playback.
-      </p>
-    </section>
+      <HelpNote>
+        <p>The audience window shows the lyrics and chords of the song on screen, or its PDF page, and follows playback. Closing it does not stop playback.</p>
+      </HelpNote>
+    </SettingsCard>
   );
 }
