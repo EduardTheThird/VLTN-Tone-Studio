@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.13] - 2026-11-04
+
+An easier Performance tab.
+
+- **The Performance tab in views.** The play controls, tempo and metronome stay at the top. Under them, pick **Play** (sections, mixer and the lyrics and chords reader), **This song**, **Lyrics & chords**, **MIDI** or **Setup**. Setup holds what applies to every song. The view you used last opens next time ([Performance](PERFORMANCE.md#overview)).
+- **Shorter cards.** Long explanations sit behind **How this works**. The cards in Setup and MIDI fold away and still show their state when closed, such as "Audience display is off" or "Output disconnected".
+- **Dialogs fit the window.** A tall dialog, such as **Analyse all songs**, now scrolls inside the window, and its buttons stay at the bottom where you can reach them.
+
 ## [0.9.12] - 2026-11-04
 
 Bass notes in time, song sections, and a full bass tone chain.
