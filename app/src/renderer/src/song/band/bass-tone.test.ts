@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PcmAudio } from "../types";
-import type { BassTone } from "./arrangement";
-import { applyBassTone, CHAIN_RATE, renderBassTone, type BassChain, type BassToneFiles, type LoadedBassTone } from "./bass-tone";
+import type { BassTone, BassToneFile, ToneBlock } from "./arrangement";
+import {
+  applyBassTone,
+  BASS_TONE_PRESETS,
+  CHAIN_RATE,
+  captureRenderSeconds,
+  presetBlocks,
+  renderBassTone,
+  type BassChain,
+  type BassToneFiles,
+  type LoadedBassTone,
+  type LoadedBlock,
+} from "./bass-tone";
 import { PEAK_LIMIT } from "./render";
 
 // The NAM engine itself needs an AudioWorklet, so the capture is passed through as its text, marked so the test can see it was prepared.
@@ -38,11 +49,15 @@ function wav(samples: Float32Array, rate: number): Uint8Array {
   return bytes;
 }
 
-const identity: BassChain = async (_model, input) => input.slice();
-const silent: BassChain = async (_model, input) => new Float32Array(input.length);
+/** The chain of the given blocks is the identity: it passes its input back, as a chain of one unity capture would. */
+const identity: BassChain = async (_blocks, input) => input.slice();
+const silent: BassChain = async (_blocks, input) => new Float32Array(input.length);
+
+/** A capture stage, on, at unity levels. */
+const amp = (model = "capture"): LoadedBlock => ({ type: "capture", role: "amp", model, on: true, inputDb: 0, outputDb: 0, mix: 1 });
 
 function loaded(overrides: Partial<LoadedBassTone> = {}): LoadedBassTone {
-  return { model: "capture", ir: null, inputDb: 0, outputDb: 0, blend: 1, ...overrides };
+  return { blocks: [amp()], dryWet: 1, fast: false, ...overrides };
 }
 
 function noFiles(): BassToneFiles {
@@ -52,37 +67,88 @@ function noFiles(): BassToneFiles {
   return { readNam: fail, readIr: fail, readLocalNam: fail, readLocalIr: fail };
 }
 
-const nam = (overrides: Partial<Extract<BassTone, { kind: "nam" }>> = {}): Extract<BassTone, { kind: "nam" }> => ({
-  kind: "nam",
-  capture: { source: "tone3000", toneId: 42, modelId: 7, name: "Bass amp" },
-  ir: null,
-  inputDb: 0,
-  outputDb: 0,
-  blend: 1,
-  ...overrides,
-});
+/** A chain of an amp and an optional cab, as the Band settings hold a bass tone. */
+type Stage = { capture: BassToneFile; ir: BassToneFile | null; inputDb: number; outputDb: number; blend: number };
+const nam = (overrides: Partial<Stage> = {}): Extract<BassTone, { kind: "chain" }> => {
+  const stage: Stage = {
+    capture: { source: "tone3000", toneId: 42, modelId: 7, name: "Bass amp" },
+    ir: null,
+    inputDb: 0,
+    outputDb: 0,
+    blend: 1,
+    ...overrides,
+  };
+  const blocks: ToneBlock[] = [{ type: "capture", role: "amp", file: stage.capture, inputDb: stage.inputDb, outputDb: stage.outputDb, mix: 1, on: true }];
+  if (stage.ir) blocks.push({ type: "ir", role: "cab", file: stage.ir, inputDb: 0, outputDb: 0, mix: 1, on: true });
+  return { kind: "chain", blocks, dryWet: stage.blend, fast: false };
+};
 
 describe("renderBassTone", () => {
-  it("gives the dry bass back exactly at blend 0", async () => {
+  it("gives the dry bass back exactly at dry/wet 0", async () => {
     const bass = sine(4000, 110, 0.5);
-    const out = await renderBassTone(bass, loaded({ blend: 0 }), identity);
+    const out = await renderBassTone(bass, loaded({ dryWet: 0 }), identity);
     expect(out.channels[0]).toEqual(bass.channels[0]);
     expect(out.channels[1]).toEqual(bass.channels[1]);
   });
 
-  it("mixes half of the dry bass with a silent chain at blend 0.5", async () => {
+  it("keeps the dry bass's shape and loudness with a silent chain at dry/wet 0.5", async () => {
     const bass = sine(4000, 110, 0.5);
-    const out = await renderBassTone(bass, loaded({ blend: 0.5 }), silent);
-    expect(out.channels[0][100]).toBeCloseTo(bass.channels[0][100] * 0.5, 6);
-    expect(out.channels[1][2000]).toBeCloseTo(bass.channels[1][2000] * 0.5, 6);
+    const out = await renderBassTone(bass, loaded({ dryWet: 0.5 }), silent);
+    expect(out.channels[0][100]).toBeCloseTo(bass.channels[0][100], 6);
+    expect(out.channels[1][2000]).toBeCloseTo(bass.channels[1][2000], 6);
   });
 
-  it("gives the bass back, to a close tolerance, through a chain that passes it at blend 1", async () => {
+  it("keeps the loudness of a blend whose chain shifts the phase, where dry and chain partly cancel", async () => {
     const bass = sine(8000, 110, 0.5);
-    const out = await renderBassTone(bass, loaded({ blend: 1 }), identity);
+    // A delay of a third of the sine's period: half dry plus half delayed is about 6 dB quieter than the bass before matching.
+    const delay = Math.round(RATE / 110 / 3);
+    const delayed: BassChain = async (_blocks, input) => {
+      const out = new Float32Array(input.length);
+      out.set(input.subarray(0, input.length - delay), delay);
+      return out;
+    };
+    const out = await renderBassTone(bass, loaded({ dryWet: 0.5 }), delayed);
+    const rms = (c: Float32Array) => Math.sqrt(c.reduce((sum, v) => sum + v * v, 0) / c.length);
+    expect(rms(out.channels[0])).toBeCloseTo(rms(bass.channels[0]), 2);
+  });
+
+  it("gives the bass back, to a close tolerance, through a chain that passes it at dry/wet 1", async () => {
+    const bass = sine(8000, 110, 0.5);
+    const out = await renderBassTone(bass, loaded({ dryWet: 1 }), identity);
     let worst = 0;
     for (let i = 0; i < 8000; i++) worst = Math.max(worst, Math.abs(out.channels[0][i] - bass.channels[0][i]));
     expect(worst).toBeLessThan(0.02);
+  });
+
+  it("matches the whole chain's level to the clean bass, so a quiet or loud chain keeps the loudness", async () => {
+    const bass = sine(8000, 110, 0.5);
+    const quiet = await renderBassTone(bass, loaded(), async (_blocks, input) => input.map((v) => v * 0.1));
+    const loud = await renderBassTone(bass, loaded(), async (_blocks, input) => input.map((v) => v * 3));
+    const rms = (c: Float32Array) => Math.sqrt(c.reduce((sum, v) => sum + v * v, 0) / c.length);
+    expect(rms(quiet.channels[0])).toBeCloseTo(rms(bass.channels[0]), 3);
+    expect(rms(loud.channels[0])).toBeCloseTo(rms(bass.channels[0]), 3);
+  });
+
+  it("passes the blocks that are on, in order, with the fast flag, and does not call the chain when none is on", async () => {
+    const chain = vi.fn(identity);
+    const cab: LoadedBlock = { type: "ir", role: "cab", ir: new Float32Array([1, 0.5]), on: true, inputDb: 2, outputDb: -4, mix: 1 };
+    await renderBassTone(sine(2000, 110, 0.4), loaded({ blocks: [amp("prepared"), cab], fast: true }), chain);
+    expect(chain).toHaveBeenCalledTimes(1);
+    const [blocks, input, fast] = chain.mock.calls[0];
+    expect(blocks).toEqual([amp("prepared"), cab]);
+    expect(input.length).toBeGreaterThanOrEqual(Math.round((2000 * CHAIN_RATE) / RATE));
+    expect(fast).toBe(true);
+
+    const none = vi.fn(identity);
+    const out = await renderBassTone(sine(2000, 110, 0.4), loaded({ blocks: [] }), none);
+    expect(none).not.toHaveBeenCalled();
+    expect(out.channels[0].length).toBe(2000);
+  });
+
+  it("crops the chain's output, which runs past the song, back to the song's length", async () => {
+    const longer: BassChain = async (_blocks, input) => new Float32Array(input.length + 5000).fill(0.1);
+    const out = await renderBassTone(sine(3000, 110, 0.4), loaded(), longer);
+    expect(out.channels.map((c) => c.length)).toEqual([3000, 3000]);
   });
 
   it("gives the bass's rate, channel count and length, for a length that is not a whole number of chain frames", async () => {
@@ -93,37 +159,65 @@ describe("renderBassTone", () => {
     expect(out.channels.map((c) => c.length)).toEqual([10001, 10001]);
   });
 
-  it("passes the capture, the cab IR, and the drive and output levels to the chain", async () => {
-    const chain = vi.fn(identity);
-    const ir = new Float32Array([1, 0.5]);
-    await renderBassTone(sine(2000, 110, 0.4), loaded({ model: "prepared", ir, inputDb: 6, outputDb: -4 }), chain);
-    expect(chain).toHaveBeenCalledTimes(1);
-    const [model, input, sentIr, inputDb, outputDb] = chain.mock.calls[0];
-    expect(model).toBe("prepared");
-    expect(input.length).toBeGreaterThanOrEqual(Math.round((2000 * CHAIN_RATE) / RATE));
-    expect(sentIr).toBe(ir);
-    expect([inputDb, outputDb]).toEqual([6, -4]);
-  });
-
-  it("keeps the peak at or below -1 dBFS, even for a chain that is far too loud", async () => {
-    const loud: BassChain = async (_model, input) => input.map((v) => v * 4);
-    const out = await renderBassTone(sine(4000, 110, 0.5), loaded({ blend: 1 }), loud);
+  it("keeps the peak at or below -1 dBFS, even when the chain makes a spike", async () => {
+    const spiky: BassChain = async (_blocks, input) => {
+      const out = input.slice();
+      out[1000] = 1;
+      return out;
+    };
+    const out = await renderBassTone(sine(4000, 110, 0.5), loaded(), spiky);
     const peak = Math.max(...out.channels.map((c) => Math.max(...c.map(Math.abs))));
     expect(peak).toBeLessThanOrEqual(PEAK_LIMIT + 1e-6);
-    expect(peak).toBeGreaterThan(PEAK_LIMIT * 0.99);
+  });
+});
+
+describe("bass tone presets and the render-time estimate", () => {
+  it("starts a preset as empty slots with their roles, at unity levels, and a space IR at 20% mix", () => {
+    const blocks = presetBlocks([{ role: "pedal" }, { role: "amp" }, { role: "cab" }, { role: "space", mix: 0.2 }]);
+    expect(blocks.map((b) => [b.type, b.role, b.file, b.mix, b.on])).toEqual([
+      ["capture", "pedal", null, 1, true],
+      ["capture", "amp", null, 1, true],
+      ["ir", "cab", null, 1, true],
+      ["ir", "space", null, 0.2, true],
+    ]);
+  });
+
+  it("has the three presets, each a chain of its roles", () => {
+    expect(BASS_TONE_PRESETS.map((preset) => preset.name)).toEqual(["Bass DI + amp", "Driven bass", "Studio bass"]);
+    expect(BASS_TONE_PRESETS[2].blocks.map((block) => block.role)).toEqual(["pedal", "amp", "cab", "space"]);
+  });
+
+  it("estimates the captures' render time per song second, and less for Lite; IRs and empty slots are not counted", () => {
+    const amp = presetBlocks([{ role: "amp" }])[0];
+    const withFile = { ...amp, file: { source: "file" as const, path: "/a.nam", name: "a" } };
+    const cab = { ...withFile, type: "ir" as const, role: "cab" as const, file: { source: "file" as const, path: "/c.wav", name: "c" } };
+    expect(captureRenderSeconds([withFile], 480, false)).toBeCloseTo(38.4, 6);
+    expect(captureRenderSeconds([withFile], 480, true)).toBeCloseTo(24, 6);
+    expect(captureRenderSeconds([withFile, withFile], 480, false)).toBeCloseTo(76.8, 6);
+    expect(captureRenderSeconds([cab], 480, false)).toBe(0);
+    expect(captureRenderSeconds([amp], 480, false)).toBe(0);
+    expect(captureRenderSeconds([{ ...withFile, on: false }], 480, false)).toBe(0);
+  });
+
+  it("leaves an empty slot out of the chain, so loading never reads a file it does not have", async () => {
+    const files = { ...noFiles(), readNam: vi.fn(async () => "capture") };
+    const chain = vi.fn(identity);
+    const tone: BassTone = { kind: "chain", blocks: presetBlocks([{ role: "pedal" }, { role: "amp" }]), dryWet: 1, fast: false };
+    await applyBassTone(sine(2000, 110, 0.4), tone, files, chain);
+    expect(files.readNam).not.toHaveBeenCalled();
+    expect(chain).not.toHaveBeenCalled();
   });
 });
 
 describe("applyBassTone", () => {
   it("leaves a clean bass alone and reads no files", async () => {
     const bass = sine(2000, 110, 0.4);
-    const files = noFiles();
-    const result = await applyBassTone(bass, { kind: "clean" }, files, identity);
+    const result = await applyBassTone(bass, { kind: "clean" }, noFiles(), identity);
     expect(result).toEqual({ bass, notice: null });
     expect(result.bass).toBe(bass);
   });
 
-  it("reads a TONE3000 capture and cab IR by tone and model, and prepares the capture", async () => {
+  it("reads a TONE3000 capture and cab IR by tone and model, prepares the capture, and scales the cab to unit energy", async () => {
     const files = {
       readNam: vi.fn(async () => "capture-text"),
       readIr: vi.fn(async () => wav(new Float32Array([1, 0, 0]), CHAIN_RATE)),
@@ -135,7 +229,10 @@ describe("applyBassTone", () => {
     const result = await applyBassTone(sine(2000, 110, 0.4), tone, files, chain);
     expect(files.readNam).toHaveBeenCalledWith(42, 7);
     expect(files.readIr).toHaveBeenCalledWith(43);
-    expect(chain.mock.calls[0][0]).toBe("prepared:capture-text");
+    const [blocks] = chain.mock.calls[0];
+    expect(blocks[0]).toMatchObject({ type: "capture", role: "amp", model: "prepared:capture-text" });
+    expect(blocks[1]).toMatchObject({ type: "ir", role: "cab" });
+    expect((blocks[1] as { ir: Float32Array }).ir[0]).toBeCloseTo(1, 4);
     expect(result.notice).toBeNull();
   });
 
@@ -154,8 +251,46 @@ describe("applyBassTone", () => {
     await applyBassTone(sine(2000, 110, 0.4), tone, files, chain);
     expect(files.readLocalNam).toHaveBeenCalledWith("/music/bass.nam");
     expect(files.readLocalIr).toHaveBeenCalledWith("/music/cab.wav");
-    const sentIr = chain.mock.calls[0][2] as Float32Array;
+    const sentIr = (chain.mock.calls[0][0][1] as { ir: Float32Array }).ir;
     expect(sentIr.length).toBe(2400);
+  });
+
+  it("keeps a space IR as it was recorded, so its level and its tail are its own", async () => {
+    const room = new Float32Array([0.5, 0.25, 0.1]);
+    const files = { ...noFiles(), readLocalIr: vi.fn(async () => wav(room, CHAIN_RATE)) };
+    const chain = vi.fn(identity);
+    const tone: BassTone = {
+      kind: "chain",
+      blocks: [
+        { type: "capture", role: "amp", file: { source: "file", path: "/a.nam", name: "amp" }, inputDb: 0, outputDb: 0, mix: 1, on: true },
+        { type: "ir", role: "space", file: { source: "file", path: "/room.wav", name: "room" }, inputDb: 0, outputDb: 0, mix: 0.2, on: true },
+      ],
+      dryWet: 1,
+      fast: false,
+    };
+    await applyBassTone(sine(2000, 110, 0.4), tone, { ...files, readLocalNam: async () => "amp" }, chain);
+    const sent = (chain.mock.calls[0][0][1] as { ir: Float32Array }).ir;
+    expect(sent[0]).toBeCloseTo(0.5, 3);
+    expect(sent[1]).toBeCloseTo(0.25, 3);
+  });
+
+  it("leaves an off block out: its files are not read and it is not in the chain", async () => {
+    const files = { ...noFiles(), readNam: vi.fn(async () => "capture"), readLocalIr: vi.fn(async () => wav(new Float32Array([1]), CHAIN_RATE)) };
+    const chain = vi.fn(identity);
+    const tone: BassTone = {
+      kind: "chain",
+      blocks: [
+        { type: "capture", role: "pedal", file: { source: "file", path: "/comp.nam", name: "comp" }, inputDb: 0, outputDb: 0, mix: 1, on: false },
+        { type: "capture", role: "amp", file: { source: "tone3000", toneId: 42, modelId: 7, name: "amp" }, inputDb: 0, outputDb: 0, mix: 1, on: true },
+        { type: "ir", role: "cab", file: { source: "file", path: "/cab.wav", name: "cab" }, inputDb: 0, outputDb: 0, mix: 1, on: false },
+      ],
+      dryWet: 1,
+      fast: false,
+    };
+    await applyBassTone(sine(2000, 110, 0.4), tone, files, chain);
+    expect(files.readNam).toHaveBeenCalledTimes(1);
+    expect(files.readLocalIr).not.toHaveBeenCalled();
+    expect(chain.mock.calls[0][0]).toHaveLength(1);
   });
 
   it("gives the clean bass with a notice when the capture file is missing", async () => {

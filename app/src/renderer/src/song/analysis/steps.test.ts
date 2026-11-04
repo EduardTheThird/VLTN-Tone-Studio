@@ -18,7 +18,7 @@ vi.mock("../band/beat-grid-client", () => ({
   },
 }));
 
-import { chordsStep, keyStep, loudnessStep, partsStep, sectionKeysStep, sectionsStep, tempoStep } from "./steps";
+import { bassLineStep, chordsStep, keyStep, loudnessStep, partsStep, sectionKeysStep, sectionsStep, tempoStep } from "./steps";
 
 const NO_HARMONY = { name: "mix", audio: { sampleRate: 44100, channels: [] } };
 
@@ -133,6 +133,23 @@ describe("keyStep and chordsStep", () => {
     expect(ReplyingWorker.posted).toEqual({ harmony: stem, bass: null, beats: grid.beats, key: null });
   });
 
+  it("re-picks the downbeat from the chord changes and hands the grid on", async () => {
+    // The grid's downbeat is beat 1; the chords change on beat 0 of each bar, so the downbeat moves to 0.
+    const beats = [0.2, 1.2, 2.2, 3.2, 4.2, 5.2, 6.2, 7.2];
+    const tracked = { beatsPerBar: 4, beats, downbeat: 1, bpm: 60, steady: null };
+    reply = { chords: [{ time: 0, name: "F#m", confidence: 0.9 }, { time: 4.2, name: "E", confidence: 0.9 }, { time: 0.0 + 8.2, name: "C#m", confidence: 0.9 }] };
+    const onGrid = vi.fn();
+    await chordsStep(() => tracked, onGrid).run({ ...audio, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, nothingFound);
+    expect(onGrid).toHaveBeenCalledWith({ ...tracked, downbeat: 0 });
+  });
+
+  it("does not hand the grid on when the chords leave the downbeat where it is", async () => {
+    reply = { chords: [{ time: 0, name: "F#m", confidence: 0.9 }] };
+    const onGrid = vi.fn();
+    await chordsStep(() => grid, onGrid).run({ ...audio, harmony: { name: "other", audio: stem }, bass: null }, new AbortController().signal, nothingFound);
+    expect(onGrid).not.toHaveBeenCalled();
+  });
+
   it("gives the chords the key the analysis found, to set the key prior", async () => {
     reply = { chords: [] };
     const found = { audioId: "", version: 0, key: { source: "other", estimate } } as unknown as SongAnalysis;
@@ -241,5 +258,33 @@ describe("sectionsStep", () => {
     const input = posted[0] as { spans: { start: number }[]; options: { snap: number } };
     expect(input.spans.map((span) => span.start)).toEqual([0, 2, 4, 6]);
     expect(input.options.snap).toBe(1);
+  });
+});
+
+describe("bassLineStep", () => {
+  const bass = { sampleRate: 44100, channels: [new Float32Array(44100).fill(0.1)] };
+  const line = { tuningCents: -12, beats: [{ beat: 0, pc: 9, confidence: 1 }] };
+  class LineWorker {
+    static posted: unknown = null;
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: (() => void) | null = null;
+    postMessage(message: unknown) {
+      LineWorker.posted = message;
+      queueMicrotask(() => this.onmessage?.({ data: { bassLine: line } } as MessageEvent));
+    }
+    terminate() {}
+  }
+  beforeEach(() => vi.stubGlobal("Worker", LineWorker));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the bass note of each beat of the grid from the bass stem", async () => {
+    const result = await bassLineStep(() => grid).run({ ...audio, bass }, new AbortController().signal, nothingFound);
+    expect(result).toEqual({ bassLine: line });
+    expect(LineWorker.posted).toEqual({ bass, beats: grid.beats });
+  });
+
+  it("reads nothing without a bass stem or a grid", async () => {
+    expect(await bassLineStep(() => grid).run({ ...audio, bass: null }, new AbortController().signal, nothingFound)).toEqual({});
+    expect(await bassLineStep(() => null).run({ ...audio, bass }, new AbortController().signal, nothingFound)).toEqual({});
   });
 });

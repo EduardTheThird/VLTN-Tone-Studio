@@ -2,7 +2,7 @@
 // result to the run and returns nothing to the screen, so it can run headless.
 
 import { startBeatGrid } from "../band/beat-grid-client";
-import type { BeatGrid, TempoHintOptions } from "../band/beat-grid";
+import { chordChangeTimesOf, withChordDownbeat, type BeatGrid, type TempoHintOptions } from "../band/beat-grid";
 import { tempoFromGrid } from "../performance/tempo-source";
 import type { Chord, ChordsInput } from "../performance/chords";
 import type { KeyEstimate, KeyInput, KeySection } from "../performance/key";
@@ -13,6 +13,7 @@ import { silenceEnds } from "./silence";
 import { BAR_DETECT, TIME_DETECT, barUnitSpans, timeUnitSpans, type DetectedSection } from "./sections";
 import type { SectionsInput } from "./sections-measure";
 import type { AnalysisStep } from "./song-analysis";
+import type { BassLine } from "./bass-line";
 import { transcribeLyrics } from "../performance/lyrics-run";
 import type { LyricsOptions } from "../performance/lyrics-options";
 
@@ -169,19 +170,46 @@ export function sectionKeysStep(): AnalysisStep {
  * is one. The chords change on the beats of the grid `gridOf` gives (the one the tempo step just tracked, or the saved one); without a
  * grid they are read on a fixed hop.
  */
-export function chordsStep(gridOf: () => BeatGrid | null = () => null): AnalysisStep {
+export function chordsStep(gridOf: () => BeatGrid | null = () => null, onGrid?: (grid: BeatGrid) => void): AnalysisStep {
   return {
     name: "chords",
     async run(audio, signal, soFar) {
       // The key runs after the chords, so the key prior is normally the harmony's own estimate. A run that resumes with a key already found
       // passes it on here instead.
-      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: gridOf()?.beats ?? null, key: soFar.key?.estimate.name ?? null };
+      const grid = gridOf();
+      const input: ChordsInput = { harmony: audio.harmony.audio, bass: audio.bass, beats: grid?.beats ?? null, key: soFar.key?.estimate.name ?? null };
       const { chords } = await runWorker<{ chords: Chord[] }>(
         () => new Worker(new URL("../performance/chords-worker.ts", import.meta.url), { type: "module" }),
         input,
         signal,
       );
+      // The beat tracker chose the downbeat from the chart's chords only. Now the chords are known, the bar phase is picked again from them.
+      // The chord changes are a short list, so this runs on the calling thread after the worker has answered.
+      if (grid && onGrid) {
+        const regridded = withChordDownbeat(grid, chordChangeTimesOf(chords));
+        if (regridded !== grid) onGrid(regridded);
+      }
       return { chords: { source: audio.harmony.name, chords } };
+    },
+  };
+}
+
+/**
+ * Reads the bass note the bass stem plays on each beat of the grid `gridOf` gives (spec 86), in the bass-line worker. Nothing is saved
+ * without a bass stem or a grid, so a song without them keeps its chords' own bass.
+ */
+export function bassLineStep(gridOf: () => BeatGrid | null): AnalysisStep {
+  return {
+    name: "bassLine",
+    async run(audio, signal) {
+      const beats = gridOf()?.beats;
+      if (!audio.bass || !beats || beats.length < 2) return {};
+      const { bassLine } = await runWorker<{ bassLine: BassLine }>(
+        () => new Worker(new URL("./bass-line-worker.ts", import.meta.url), { type: "module" }),
+        { bass: audio.bass, beats },
+        signal,
+      );
+      return { bassLine };
     },
   };
 }
@@ -190,21 +218,25 @@ export function chordsStep(gridOf: () => BeatGrid | null = () => null): Analysis
  * Suggests the song's sections on the bar lines of its beat grid, or on two-second frames when there is no grid. `gridOf` gives the grid the
  * tempo step tracked: the grid is too large for the analysis record, so the caller holds it, as `tempoStep`'s `onGrid` does. The harmony
  * is read from the chord stem, or from the mix when none is chosen. The vocals come from the vocals stem; without one, every unit counts
- * as having vocals. The measuring and the detection run in the sections worker.
+ * as having vocals. The chords the chords step found, when it ran, give each unit its harmony. The measuring and the detection run in the
+ * sections worker.
  */
 export function sectionsStep(gridOf: () => BeatGrid | null): AnalysisStep {
   return {
     name: "sections",
-    async run(audio, signal) {
+    async run(audio, signal, soFar) {
       const duration = (audio.mix.channels[0]?.length ?? 0) / audio.mix.sampleRate;
       const grid = gridOf();
-      const bars = grid ? barUnitSpans(grid.beats, grid.downbeat, grid.beatsPerBar, duration) : null;
+      const bars = grid ? barUnitSpans(grid.beats, grid.downbeat, grid.beatsPerBar, duration, grid.barStarts) : null;
       const input: SectionsInput = {
         mix: audio.mix,
         harmony: audio.chordSource?.audio ?? audio.mix,
         vocals: audio.stems?.vocals ?? null,
         spans: bars ?? timeUnitSpans(duration),
         options: bars ? BAR_DETECT : TIME_DETECT,
+        chords: soFar.chords?.chords ?? [],
+        drums: audio.stems?.drums ?? null,
+        bass: audio.stems?.bass ?? null,
       };
       const { sections } = await runWorker<{ sections: DetectedSection[] }>(
         () => new Worker(new URL("./sections-worker.ts", import.meta.url), { type: "module" }),

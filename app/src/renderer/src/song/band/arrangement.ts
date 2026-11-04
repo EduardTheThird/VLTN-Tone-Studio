@@ -14,6 +14,7 @@ import {
   type BassPartChoice,
   type OctaveShift,
 } from "./bass-parts";
+import { parseBassOverrides, type BassOverride } from "./bass-overrides";
 import { findStyle } from "./styles";
 import { ENERGIES, HUMANISE_FEELS, STYLE_IDS, type Energy, type StyleId } from "./styles/types";
 
@@ -21,6 +22,8 @@ export const DRUM_KITS = ["standard"] as const;
 export const BASS_SOUNDS = ["finger", "pick"] as const;
 export const BASS_RANGES = ["low", "normal", "high"] as const;
 export const BASS_MODES = ["roots", "fifths", "octaves", "melodic", "walking"] as const;
+/** Where the generated bass's notes come from: the bass the song's own bassist played (when the song has a bass stem), or the chords. */
+export const BASS_FROM = ["original", "chords"] as const;
 /** Where follow-my-playing reads its accents: a stem the band plays, or the song's mix. "auto" takes the first stem that exists. */
 export const FOLLOW_SOURCES = ["auto", "guitar", "piano", "other", "mix"] as const;
 /** The choices of the humanise feel: "style" is the style's own default, the rest are fixed feels. */
@@ -30,6 +33,7 @@ export type DrumKit = (typeof DRUM_KITS)[number];
 export type BassSound = (typeof BASS_SOUNDS)[number];
 export type BassRange = (typeof BASS_RANGES)[number];
 export type BassMode = (typeof BASS_MODES)[number];
+export type BassFrom = (typeof BASS_FROM)[number];
 export type FollowSource = (typeof FOLLOW_SOURCES)[number];
 export type HumaniseChoice = (typeof HUMANISE_CHOICES)[number];
 
@@ -59,6 +63,8 @@ export interface BassToneFile {
   modelId?: number;
   /** Absolute path of a local file. */
   path?: string;
+  /** True for a TONE3000 capture that is an A1 model (an older capture), so the panel can say so. */
+  older?: boolean;
   /** The name the Band panel shows. */
   name: string;
 }
@@ -75,11 +81,37 @@ export interface RenderedPart {
   importedAt: string;
 }
 
+/** The roles a block of the bass tone chain can play. Pedals, a preamp and an amp are captures; a cab and a space are IRs. */
+export const TONE_ROLES = ["pedal", "preamp", "amp", "cab", "space"] as const;
+export type ToneRole = (typeof TONE_ROLES)[number];
+/** What a block's file is: a NAM capture (pedal, preamp, amp) or an impulse response (cab, space). */
+export const TONE_BLOCK_TYPES = ["capture", "ir"] as const;
+export type ToneBlockType = (typeof TONE_BLOCK_TYPES)[number];
+export const TONE_BLOCK_TYPE: Record<ToneRole, ToneBlockType> = { pedal: "capture", preamp: "capture", amp: "capture", cab: "ir", space: "ir" };
+/** The most blocks a bass tone chain holds. */
+export const MAX_TONE_BLOCKS = 6;
+
+/** One block of the bass tone chain: a capture or an IR, with its drive and output level, its wet mix, and whether it is on. */
+export interface ToneBlock {
+  type: ToneBlockType;
+  role: ToneRole;
+  /** The chosen file. Null is an empty slot (a preset's): it plays nothing until a file is chosen. */
+  file: BassToneFile | null;
+  /** Input drive, in dB (BASS_TONE_INPUT_DB). */
+  inputDb: number;
+  /** Output level, in dB (BASS_TONE_OUTPUT_DB). */
+  outputDb: number;
+  /** How much of the block's output is mixed in, against its own input: 0 bypasses it, 1 is all wet. */
+  mix: number;
+  /** A block that is off is left out of the chain, as if it were not there. */
+  on: boolean;
+}
+
 /**
- * The bass tone. "clean" is the generated DI sample as it is. "nam" plays it through a capture, then a cab IR, and mixes the result with the
- * dry sample by `blend` (0 dry, 1 all amp).
+ * The bass tone. "clean" is the generated DI sample as it is. "chain" plays it through its blocks in order, then mixes the result with the
+ * dry sample by `dryWet` (0 dry, 1 all chain). `fast` renders captures at their Lite size where the file has one.
  */
-export type BassTone = { kind: "clean" } | { kind: "nam"; capture: BassToneFile; ir: BassToneFile | null; inputDb: number; outputDb: number; blend: number };
+export type BassTone = { kind: "clean" } | { kind: "chain"; blocks: ToneBlock[]; dryWet: number; fast: boolean };
 
 /** The key the overrides of a song without sections are kept under. Section ids are UUIDs, so this cannot clash with one. */
 export const WHOLE_SONG_ID = "song";
@@ -160,6 +192,10 @@ export interface BandSettings {
   bassSound: BassSound;
   bassRange: BassRange;
   bassMode: BassMode;
+  /** The notes the generated bass plays under each chord: the song's original bass where it has one, or the chords' own bass (spec 86). */
+  bassFrom: BassFrom;
+  /** Bass notes the performer set by hand, over stretches of the song. They win over the original bass and the chords (bass-overrides.ts). */
+  bassOverrides: BassOverride[];
   /** The bass part a section plays when it is on Auto and Auto has no rule of its own. A song saved before this existed takes it from bassMode. */
   defaultBassPart: BassPart;
   lockToKick: boolean;
@@ -193,6 +229,8 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   bassSound: "finger",
   bassRange: "normal",
   bassMode: "roots",
+  bassFrom: "original",
+  bassOverrides: [],
   defaultBassPart: "pulse",
   bassFeel: 0.5,
   lockToKick: true,
@@ -266,14 +304,52 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
 }
 
 /**
+ * What the song's own band does in a stretch of the song, from the song analysis's sections: where the original drums or bass stop,
+ * and how loud the stretch is against the rest of the song in decibels.
+ */
+export interface SectionBandHint {
+  start: number;
+  end: number;
+  drumsOff?: boolean;
+  bassOff?: boolean;
+  levelDb?: number;
+}
+
+/** A section this many decibels louder than the song's middle section plays one energy level up; this much quieter, one level down. */
+export const HINT_LOUDER_DB = 2;
+export const HINT_QUIETER_DB = -3;
+
+/** The hint covering the middle of a plan, if any. */
+function hintAt(hints: readonly SectionBandHint[], start: number, end: number): SectionBandHint | undefined {
+  const middle = (start + end) / 2;
+  return hints.find((hint) => hint.start <= middle && middle < hint.end);
+}
+
+/**
+ * A section's override with the song's own band as defaults underneath it: no bass where the original bass stops, no drums where the
+ * original drums stop, and one energy level up or down for a louder or quieter section. Whatever the performer set wins.
+ */
+function withHint(override: SectionOverride, hint: SectionBandHint | undefined, settings: BandSettings, name: string): SectionOverride {
+  if (!hint) return override;
+  const fromHint: SectionOverride = {};
+  if (hint.bassOff) fromHint.bassPart = "rest";
+  if (hint.drumsOff) fromHint.play = { drums: false, bass: settings.parts.bass };
+  if (hint.levelDb !== undefined && override.energy === undefined) {
+    const step = hint.levelDb >= HINT_LOUDER_DB ? 1 : hint.levelDb <= HINT_QUIETER_DB ? -1 : 0;
+    if (step !== 0) fromHint.energy = Math.min(5, Math.max(1, energyForName(name) + step)) as Energy;
+  }
+  return { ...fromHint, ...override };
+}
+
+/**
  * Splits the song into one plan per section, in time order. The first plan starts at 0 and the last one runs to the song's end, and
  * each gap between sections goes to the section before it. A song without sections gets one plan for the whole song.
  */
-export function planSections(sections: readonly Section[], songEnd: number, settings: BandSettings): SectionPlan[] {
+export function planSections(sections: readonly Section[], songEnd: number, settings: BandSettings, hints: readonly SectionBandHint[] = []): SectionPlan[] {
   const chorusGroove = chorusIsGroove(sections, settings);
   if (sections.length === 0) {
     // A song without sections is one plan, and its overrides are kept under WHOLE_SONG_ID like a section's are under its id.
-    const override = settings.sections[WHOLE_SONG_ID] ?? {};
+    const override = withHint(settings.sections[WHOLE_SONG_ID] ?? {}, hintAt(hints, 0, songEnd), settings, "");
     return [
       {
         sectionId: null,
@@ -290,13 +366,14 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
   return ordered.map((section, i) => {
     const next = ordered[i + 1];
     const previous = ordered[i - 1];
-    const override = settings.sections[section.id] ?? {};
+    const end = next ? next.start : Math.max(songEnd, section.end);
+    const override = withHint(settings.sections[section.id] ?? {}, hintAt(hints, i === 0 ? 0 : section.start, end), settings, section.name);
     // A chorus after a section that is not a chorus hits the one by default.
     const followsOther = previous !== undefined && !isChorusName(previous.name);
     return {
       sectionId: section.id,
       start: i === 0 ? 0 : section.start,
-      end: next ? next.start : Math.max(songEnd, section.end),
+      end,
       fill: override.fill ?? (next ? isChorusName(next.name) : true),
       hitTheOne: override.hitTheOne ?? (isChorusName(section.name) && followsOther),
       ...playFields(section.name, override, settings, chorusGroove),
@@ -324,6 +401,7 @@ const isDrumKit = isOneOf(DRUM_KITS);
 const isBassSound = isOneOf(BASS_SOUNDS);
 const isBassRange = isOneOf(BASS_RANGES);
 const isBassMode = isOneOf(BASS_MODES);
+const isBassFrom = isOneOf(BASS_FROM);
 const isFollowSource = isOneOf(FOLLOW_SOURCES);
 const isHumaniseChoice = isOneOf(HUMANISE_CHOICES);
 const isHumanise = (value: unknown): value is HumaniseSettings => isRecord(value) && isUnit(value.amount) && isHumaniseChoice(value.feel);
@@ -394,7 +472,8 @@ function parseBassToneFile(value: unknown): BassToneFile | null {
   if (!isRecord(value) || typeof value.name !== "string" || value.name.trim() === "" || value.name.length > MAX_NAME) return null;
   if (value.source === "tone3000") {
     if (!isPositiveId(value.toneId) || !isPositiveId(value.modelId)) return null;
-    return { source: "tone3000", toneId: value.toneId, modelId: value.modelId, name: value.name };
+    const older = value.older === true ? { older: true } : {};
+    return { source: "tone3000", toneId: value.toneId, modelId: value.modelId, name: value.name, ...older };
   }
   if (value.source === "file") {
     if (typeof value.path !== "string" || value.path === "" || value.path.length > MAX_PATH) return null;
@@ -403,36 +482,82 @@ function parseBassToneFile(value: unknown): BassToneFile | null {
   return null;
 }
 
-/** True when the value is a complete, valid bass tone. A missing cab IR means none; a cab IR that is there but invalid fails the check. */
+/** A chain block, if every field it needs is valid. The file's kind must match the role (a cab is an IR, an amp a capture). */
+function parseToneBlock(value: unknown): ToneBlock | null {
+  if (!isRecord(value) || !TONE_ROLES.includes(value.role as ToneRole)) return null;
+  const role = value.role as ToneRole;
+  const file = value.file === null ? null : parseBassToneFile(value.file);
+  if ((value.file !== null && !file) || value.type !== TONE_BLOCK_TYPE[role]) return null;
+  return {
+    type: TONE_BLOCK_TYPE[role],
+    role,
+    file,
+    inputDb: isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) ? value.inputDb : 0,
+    outputDb: isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) ? value.outputDb : 0,
+    mix: isUnit(value.mix) ? value.mix : 1,
+    on: isBool(value.on) ? value.on : true,
+  };
+}
+
+/** True when every field of a chain block is present and valid. */
+function isToneBlock(value: unknown): boolean {
+  if (!isRecord(value) || !TONE_ROLES.includes(value.role as ToneRole)) return false;
+  return (
+    value.type === TONE_BLOCK_TYPE[value.role as ToneRole] &&
+    (value.file === null || parseBassToneFile(value.file) !== null) &&
+    isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) &&
+    isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) &&
+    isUnit(value.mix) &&
+    isBool(value.on)
+  );
+}
+
+/** True when the value is a complete, valid bass tone. A chain holds at most MAX_TONE_BLOCKS blocks, each one valid. */
 function isBassTone(value: unknown): value is BassTone {
   if (!isRecord(value)) return false;
   if (value.kind === "clean") return true;
   return (
-    value.kind === "nam" &&
-    parseBassToneFile(value.capture) !== null &&
-    (value.ir === undefined || value.ir === null || parseBassToneFile(value.ir) !== null) &&
-    isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) &&
-    isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) &&
-    isUnit(value.blend)
+    value.kind === "chain" &&
+    Array.isArray(value.blocks) &&
+    value.blocks.length <= MAX_TONE_BLOCKS &&
+    value.blocks.every(isToneBlock) &&
+    isUnit(value.dryWet) &&
+    isBool(value.fast)
   );
 }
 
 /**
- * Reads a saved bass tone. Anything that is not a valid capture gives the clean bass. A cab IR that is invalid is dropped, and the gains
- * and blend fall back to their defaults one at a time.
+ * Reads a saved bass tone. A spec 83 "nam" tone (one capture, an optional cab IR, a drive, an output and a blend) becomes a chain of an amp
+ * and a cab. A chain keeps its valid blocks, in order, up to MAX_TONE_BLOCKS; an invalid block is dropped. Anything else gives the clean
+ * bass.
  */
 export function parseBassTone(value: unknown): BassTone {
-  if (!isRecord(value) || value.kind !== "nam") return { kind: "clean" };
-  const capture = parseBassToneFile(value.capture);
-  if (!capture) return { kind: "clean" };
-  return {
-    kind: "nam",
-    capture,
-    ir: parseBassToneFile(value.ir),
-    inputDb: isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) ? value.inputDb : 0,
-    outputDb: isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) ? value.outputDb : 0,
-    blend: isUnit(value.blend) ? value.blend : 1,
-  };
+  if (!isRecord(value)) return { kind: "clean" };
+  if (value.kind === "nam") {
+    const capture = parseBassToneFile(value.capture);
+    if (!capture) return { kind: "clean" };
+    const amp: ToneBlock = {
+      type: "capture",
+      role: "amp",
+      file: capture,
+      inputDb: isInDbRange(value.inputDb, BASS_TONE_INPUT_DB) ? value.inputDb : 0,
+      outputDb: isInDbRange(value.outputDb, BASS_TONE_OUTPUT_DB) ? value.outputDb : 0,
+      mix: 1,
+      on: true,
+    };
+    const blocks = [amp];
+    const cab = parseBassToneFile(value.ir);
+    if (cab) blocks.push({ type: "ir", role: "cab", file: cab, inputDb: 0, outputDb: 0, mix: 1, on: true });
+    return { kind: "chain", blocks, dryWet: isUnit(value.blend) ? value.blend : 1, fast: false };
+  }
+  if (value.kind !== "chain") return { kind: "clean" };
+  const blocks = Array.isArray(value.blocks)
+    ? value.blocks
+        .map(parseToneBlock)
+        .filter((block): block is ToneBlock => block !== null)
+        .slice(0, MAX_TONE_BLOCKS)
+    : [];
+  return { kind: "chain", blocks, dryWet: isUnit(value.dryWet) ? value.dryWet : 1, fast: isBool(value.fast) ? value.fast : false };
 }
 
 /** True when the value is a complete, valid set of band settings. Use parseBandSettings for saved data that may be partial or old. */
@@ -449,6 +574,8 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isBassSound(value.bassSound) &&
     isBassRange(value.bassRange) &&
     isBassMode(value.bassMode) &&
+    isBassFrom(value.bassFrom) &&
+    Array.isArray(value.bassOverrides) &&
     DEFAULT_BASS_PARTS.includes(value.defaultBassPart as BassPart) &&
     isBool(value.lockToKick) &&
     isBool(value.followPlaying) &&
@@ -521,6 +648,8 @@ export function parseBandSettings(value: unknown): BandSettings {
     bassSound: isBassSound(source.bassSound) ? source.bassSound : defaults.bassSound,
     bassRange: isBassRange(source.bassRange) ? source.bassRange : defaults.bassRange,
     bassMode: isBassMode(source.bassMode) ? source.bassMode : defaults.bassMode,
+    bassFrom: isBassFrom(source.bassFrom) ? source.bassFrom : defaults.bassFrom,
+    bassOverrides: parseBassOverrides(source.bassOverrides),
     defaultBassPart: DEFAULT_BASS_PARTS.includes(source.defaultBassPart as BassPart)
       ? (source.defaultBassPart as BassPart)
       : isBassMode(source.bassMode)

@@ -21,16 +21,19 @@ import {
   type BandSettings,
   type FollowSource,
   type RenderedKind,
+  type SectionBandHint,
   type SectionOverride,
 } from "@/song/band/arrangement";
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 import type { NoteEvent } from "@/song/band/note";
 import { encodeSmf } from "@/song/performance/smf";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
-import { fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
+import { chordChangeTimesOf, fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
-import { harmonyForSong, type ChordAtBeat } from "@/song/band/harmony";
-import { bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, levelStems, previewMix } from "@/song/band/request";
+import type { ChordAtBeat } from "@/song/band/harmony";
+import type { BassOverride } from "@/song/band/bass-overrides";
+import { bandHarmony, bandRequest, beatSources, chartChordTimes, followFor, followSourcesIn, levelStems, previewMix } from "@/song/band/request";
+import type { BassLineBeat } from "@/song/analysis/bass-line";
 import { applyBassTone } from "@/song/band/bass-tone";
 import { renderBassChain } from "@/song/band/bass-chain";
 import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
@@ -80,6 +83,10 @@ export interface BandPanelProps {
   partChoices: PartChoices;
   /** Changes some parts' choice and updates the mix to match. Works while playing, since it only changes mute levels. */
   onPartChoice(patch: Partial<PartChoices>): void;
+  /** The bass note the song's bass stem plays on each beat, from the song analysis. Null when the song has no bass stem or it is not read yet. */
+  bassLine?: readonly BassLineBeat[] | null;
+  /** The song analysis's sections: where the song's own drums or bass stop, and how loud each is. The plans default to follow them. */
+  sectionHints?: readonly SectionBandHint[];
 }
 
 const PREVIEW_BARS = 4;
@@ -195,6 +202,8 @@ function BandBody({
   getPosition,
   partChoices,
   onPartChoice,
+  bassLine = null,
+  sectionHints = [],
 }: BandPanelProps) {
   // On by default when the tempo was set by hand: the beat is then found near it, not from the tracker's own pick.
   const [useMyTempo, setUseMyTempo] = useState(true);
@@ -233,8 +242,11 @@ function BandBody({
   const missing = useSong((s) => s.missingParts);
   const cues = useMemo<Cue[]>(() => parseChart(chart), [chart]);
   const songEnd = source ? source.audio.channels[0].length / source.audio.sampleRate : 0;
-  const plans = useMemo(() => planSections(sections, songEnd, settings), [sections, songEnd, settings]);
-  const harmony = useMemo<ChordAtBeat[]>(() => (grid ? harmonyForSong(grid, cues, chords, songEnd) : []), [grid, cues, chords, songEnd]);
+  const plans = useMemo(() => planSections(sections, songEnd, settings, sectionHints), [sections, songEnd, settings, sectionHints]);
+  const harmony = useMemo<ChordAtBeat[]>(
+    () => (grid ? bandHarmony({ grid, cues, chords, songEnd, settings, bassLine }) : []),
+    [grid, cues, chords, songEnd, settings, bassLine],
+  );
   const busy = work !== null;
   // With no song there is nothing to find a beat in or to render, so every action waits for one.
   const blocked = busy || playing || source === null;
@@ -311,7 +323,8 @@ function BandBody({
         sources: beatSources(useSong.getState().stems, current.audio),
         sampleRate: current.audio.sampleRate,
         beatsPerBar: beats,
-        chordChanges: chartChordTimes(cues),
+        // The chart's chord changes, or else the detected chords, so the downbeat follows the chords when the chart has none.
+        chordChanges: chartChordTimes(cues).length ? chartChordTimes(cues) : chordChangeTimesOf(chords),
         tempoHint: typedTempo && useMyTempo ? bpm : undefined,
       });
       job.current = found;
@@ -363,6 +376,8 @@ function BandBody({
         follow: followFor(using, useSong.getState().stems, current.audio),
         mix: current.audio,
         originals: levelStems(useSong.getState().stems),
+        bassLine,
+        hints: sectionHints,
       };
       let request = bandRequest(input);
       const notes: string[] = [];
@@ -390,7 +405,7 @@ function BandBody({
       // The bass tone is applied before the bass is saved, so the saved bass is the one Generate made. A tone that can't be used
       // leaves the clean bass and a notice.
       let bass = result.bass;
-      if (bass && using.bassTone.kind === "nam") {
+      if (bass && using.bassTone.kind === "chain") {
         setWork(BASS_TONE_TEXT);
         const toned = await applyBassTone(bass, using.bassTone, host.tones, renderBassChain);
         bass = toned.bass;
@@ -496,12 +511,15 @@ function BandBody({
     generateOrAsk(next);
   };
 
-  const preview = async () => {
+  /**
+   * Renders `bars` bars from `from` with the band `using`, which is the saved settings or a choice not saved yet, and plays them. Nothing is
+   * saved by a preview.
+   */
+  const previewWith = async (from: number, bars: number, using: BandSettings) => {
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before previewing."]);
     if (!grid) return setNotices(["Find the beat first, so the preview has a grid to follow."]);
-    if (!settings.parts.drums && !settings.parts.bass) return setNotices(["Turn on drums or bass to preview them."]);
-    const from = selected !== null ? rows[selected].plan.start : getPosition();
+    if (!using.parts.drums && !using.parts.bass) return setNotices(["Turn on drums or bass to preview them."]);
     setNotices([]);
     setWork("Rendering the preview…");
     await attempt("Rendering the preview was cancelled.", async () => {
@@ -510,20 +528,22 @@ function BandBody({
         cues,
         chords,
         sections,
-        settings,
+        settings: using,
         songEnd,
         lengthFrames: current.audio.channels[0].length,
         sampleUrls: bandSampleUrls(),
-        follow: followFor(settings, useSong.getState().stems, current.audio),
+        follow: followFor(using, useSong.getState().stems, current.audio),
         mix: current.audio,
         originals: levelStems(useSong.getState().stems),
+        bassLine,
+        hints: sectionHints,
       });
-      const rendering: BandJob = renderPreview(request, from, PREVIEW_BARS);
+      const rendering: BandJob = renderPreview(request, from, bars);
       job.current = rendering;
       const result = await rendering.done;
       // The preview hears the bass tone too, so it matches what Generate would save.
       let bass = result.bass;
-      if (bass && settings.bassTone.kind === "nam") {
+      if (bass && settings.bassTone.kind === "chain") {
         setWork(BASS_TONE_TEXT);
         const toned = await applyBassTone(bass, settings.bassTone, host.tones, renderBassChain);
         bass = toned.bass;
@@ -538,6 +558,10 @@ function BandBody({
       setPreviewing(true);
     });
   };
+
+  const preview = () => previewWith(selected !== null ? rows[selected].plan.start : getPosition(), PREVIEW_BARS, settings);
+  /** Plays about two bars around a bass note being edited, with the choice in place. The choice is not saved. */
+  const listen = (from: number, overrides: BassOverride[]) => previewWith(from, 2, { ...settings, bassOverrides: overrides });
 
   /**
    * Saves the last Generate's notes as a standard MIDI file named after the song. Drums are on channel 10 and bass on channel 1, the
@@ -632,9 +656,19 @@ function BandBody({
         onFixed={usesFixed}
         onSetTempo={setTo}
         myTempo={typedTempo ? { bpm, use: useMyTempo, onUse: setUseMyTempo } : undefined}
+        bassNotes={{
+          overrides: settings.bassOverrides,
+          bassFrom: settings.bassFrom,
+          bassLine,
+          sections,
+          songEnd,
+          disabled: blocked,
+          onChange: (next) => change({ bassOverrides: next }),
+          onListen: (from, next) => void listen(from, next),
+        }}
       />
 
-      <BandSettingsForm settings={settings} followSources={followSources} onChange={change} onStyle={changeStyle} />
+      <BandSettingsForm settings={settings} followSources={followSources} onChange={change} onStyle={changeStyle} songSeconds={songEnd} />
 
       <section aria-label="Sections" className="flex flex-col gap-2">
         <h3 className="font-semibold">Sections</h3>

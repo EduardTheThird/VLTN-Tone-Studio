@@ -1,10 +1,10 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_RANGES, HUMANISE_CHOICES, type BandSettings, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
+import { BASS_FROM, BASS_RANGES, HUMANISE_CHOICES, type BandSettings, type BassFrom, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import { STYLE_IDS, STYLES, type StyleId } from "@/song/band/styles";
-import { BassTonePicker } from "./BassTonePicker";
+import { BassToneChain } from "./BassToneChain";
 import { BASS_PART_LABELS } from "./band-labels";
 /**
  * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
@@ -12,6 +12,7 @@ import { BASS_PART_LABELS } from "./band-labels";
  */
 const BAND_TRACK = "bg-white/15";
 const BASS_RANGE_LABELS: Record<(typeof BASS_RANGES)[number], string> = { low: "Low", normal: "Normal", high: "High" };
+const BASS_FROM_LABELS: Record<BassFrom, string> = { original: "Original bass", chords: "Chords" };
 const FOLLOW_LABELS: Record<FollowSource, string> = { auto: "Auto", guitar: "Guitar", piano: "Piano", other: "Other", mix: "Mix" };
 const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
   style: "Style default",
@@ -28,10 +29,12 @@ export interface BandSettingsFormProps {
   onChange(patch: Partial<BandSettings>): void;
   /** Changes the style, which also sets its swing default. */
   onStyle(id: StyleId): void;
+  /** The song's length in seconds, for the bass tone's render-time estimate. */
+  songSeconds?: number;
 }
 
 /** The song-wide band settings. Changing one saves it; nothing is generated until Generate. */
-export function BandSettingsForm({ settings, followSources, onChange, onStyle }: BandSettingsFormProps) {
+export function BandSettingsForm({ settings, followSources, onChange, onStyle, songSeconds = 0 }: BandSettingsFormProps) {
   return (
     <section aria-label="Band settings" className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
       <h3 className="font-semibold sm:col-span-2">Settings</h3>
@@ -153,6 +156,26 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle }:
         </label>
         <p className="text-xs text-silkscreen-3">Used where a section is on Auto and has no rule of its own.</p>
       </div>
+      <div className="flex flex-col gap-1 sm:col-span-2">
+        <label className="flex items-center gap-3">
+          Bass notes from
+          <Select value={settings.bassFrom} onValueChange={(value) => onChange({ bassFrom: value as BassFrom })}>
+            <SelectTrigger aria-label="Bass notes from" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BASS_FROM.map((from) => (
+                <SelectItem key={from} value={from}>
+                  {BASS_FROM_LABELS[from]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <p className="text-xs text-silkscreen-3">
+          Original bass plays the notes the song&apos;s bass stem plays, where it has them. Chords plays each chord&apos;s bass.
+        </p>
+      </div>
       <label className="flex items-center gap-3">
         Feel
         <span className="text-xs text-silkscreen-3">Tight</span>
@@ -194,7 +217,7 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle }:
           </SelectContent>
         </Select>
       </label>
-      <BassTonePicker tone={settings.bassTone} onChange={(bassTone) => onChange({ bassTone })} />
+      <BassToneChain tone={settings.bassTone} songSeconds={songSeconds} onChange={(bassTone) => onChange({ bassTone })} />
     </section>
   );
 }
