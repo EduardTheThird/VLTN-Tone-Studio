@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.14] - 2026-11-04
+
+Song maps: a careful analysis of a song, from outside the app.
+
+- **Export a song brief.** In **This song → Song map**, **Export song brief…** (or **Copy brief**) writes everything the app found in the song: its bars, sections, chords, the bass notes it heard, the lyrics, and a draft song map. Give it to an assistant along with the song.
+- **Import a song map.** A song map is a Markdown file with the song's sections, the drums and bass for each section, bass note fixes, a timed chart with chords and lyrics, and notes. **Import song map…** or **Paste…** shows what each part will change. Tick the parts you want and press **Apply**. **Undo** puts the song back as it was.
+- **Only what differs changes.** Sections that match keep their loops and colours, an unchanged tempo stays as it was, and a map that matches the song changes nothing ([Song maps](SONG-MAP.md)).
+
 ## [0.9.13] - 2026-11-04
 
 An easier Performance tab.
