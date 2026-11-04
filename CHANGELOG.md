@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.12] - 2026-11-04
+
+Bass notes in time, song sections, and a full bass tone chain.
+
+- **Bass and drums stay on the bar when the song shifts.** When a song has a short bar and the chords then change on another beat, the bar lines move with it, so the bass no longer plays a beat late. Run **Analyse again** on a song to get the new bar lines.
+- **Sections found from the whole song.** Analysis finds the intro, verses, choruses, bridge and outro, including an outro after the drums stop, a bridge where the bass drops out, and a loud chorus heard only once. Each section tells the band what to play: no drums or no bass where the song has none, louder in choruses, softer in quiet parts. Your own section settings still win.
+- **Fix a wrong bass note.** Set the bass note for one beat, for a whole section, or for every repeat of it.
+- **A bass tone chain.** Build a chain of up to 6 blocks: pedal, preamp and amp captures, a cab IR, and a room or hall IR for reverb, each with its own levels, mix and on/off. Pick each block from TONE3000 or a file. Presets give a DI and amp, a driven bass, and a studio bass with a little room. The chain matches the clean bass's loudness, including when blended with the dry bass.
+
 ## [0.9.11] - 2026-11-01
 
 A bass that plays the song.
