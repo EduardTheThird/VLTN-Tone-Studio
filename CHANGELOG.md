@@ -6,6 +6,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Added
 - **Audio saves itself.** Generated drums and bass, imported tracks, rendered parts and stem splits in a song from the library are saved as soon as they exist, one save at a time and never while music plays. The Song header shows Saved, Saving… with the step, Not saved or Couldn't save, with a button to save or try again. Opening another song, or closing the window, asks first when audio isn't saved; a playlist that is playing never stops for it ([Song library](SONG-LIBRARY.md)).
+### Changed
+- **The Band dialog keeps its buttons in view.** Generate, Try another, Preview, Remove and Export MIDI sit in a bar at the bottom, with the progress, Cancel and notices beside them. After Generate the bar says it is done and offers Close and Play from the selected section. Preview now takes any section, or the playhead, for the whole section, 4 or 8 bars ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
 
 ### Fixed
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
