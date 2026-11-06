@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## Unreleased
 
+### Added
+- **Audio saves itself.** Generated drums and bass, imported tracks, rendered parts and stem splits in a song from the library are saved as soon as they exist, one save at a time and never while music plays. The Song header shows Saved, Saving… with the step, Not saved or Couldn't save, with a button to save or try again. Opening another song, or closing the window, asks first when audio isn't saved; a playlist that is playing never stops for it ([Song library](SONG-LIBRARY.md)).
+
 ### Fixed
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
