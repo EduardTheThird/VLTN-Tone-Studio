@@ -4,11 +4,6 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## Unreleased
 
-### Added
-- **Audio saves itself.** Generated drums and bass, imported tracks, rendered parts and stem splits in a song from the library are saved as soon as they exist, one save at a time and never while music plays. The Song header shows Saved, Saving… with the step, Not saved or Couldn't save, with a button to save or try again. Opening another song, or closing the window, asks first when audio isn't saved; a playlist that is playing never stops for it ([Song library](SONG-LIBRARY.md)).
-### Changed
-- **The Band dialog keeps its buttons in view.** Generate, Try another, Preview, Remove and Export MIDI sit in a bar at the bottom, with the progress, Cancel and notices beside them. After Generate the bar says it is done and offers Close and Play from the selected section. Preview now takes any section, or the playhead, for the whole section, 4 or 8 bars ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
-
 ### Fixed
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
@@ -23,6 +18,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **The song screen is easier to read.** The header shows the saved song's title and artist, and the key readout and queue count are clearer.
 
 ### Added
+- **Audio saves itself.** Generated drums and bass, imported tracks, rendered parts and stem splits in a song from the library are saved as soon as they exist, one save at a time and never while music plays. The Song header shows Saved, Saving… with the step, Not saved or Couldn't save, with a button to save or try again. Opening another song, or closing the window, asks first when audio isn't saved; a playlist that is playing never stops for it ([Song library](SONG-LIBRARY.md)).
 - **Count in on sticks or a hi-hat.** The metronome and the count-in can now play a drum sound instead of the click: sticks, a closed hi-hat, kick and hat, or ride. Next to **Metronome** there are **Sound**, **Count-in** and a count-in sound menu, so the count-in is no longer hidden in **Metronome settings**. The count-in sound follows the metronome unless you pick one. Each song keeps its own choice, with a default under **Defaults for songs without their own**. The samples load when you choose the sound, never at Play, and the click is used for any beat whose sample is not ready ([Metronome](PERFORMANCE.md#prepare-a-song)).
 - **Remove and edit MIDI cues in the MIDI tab.** Each row of Song MIDI cues has an Edit button and an X. The X takes the cue out of the chart, and Undo puts it back. Edit loads the command and time so you can change them and press Update cue. Both are off while cues are armed and the song plays. The misleading "chart editor below" text is gone.
 - **Fix a wrong bass note yourself.** Click a beat or a chord in the Band panel's beat strip, pick the note and an octave, and choose where it applies: one beat, one bar, up to the next chord change, or one chord everywhere in its section. Your notes win over the original bass and the chords, and the list under the strip removes them one at a time or all at once ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
@@ -78,6 +74,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **MIDI triggers, macros and song MIDI files.** Charts can send commands on load, play, stop or end. Saved command lists (macros) are shared by every song, and a song can attach a standard MIDI file that plays with its cues at the song's speed. Cues also accept bank select, song select and Start/Continue/Stop. Preflight flags Start and Stop cues while app MIDI clock is on. See [MIDI pedal command presets](MIDI-PEDALS.md#triggers-macros-and-song-midi-files).
 
 ### Changed
+- **The Band dialog keeps its buttons in view.** Generate, Try another, Preview, Remove and Export MIDI sit in a bar at the bottom, with the progress, Cancel and notices beside them. After Generate the bar says it is done and offers Close and Play from the selected section. Preview now takes any section, or the playhead, for the whole section, 4 or 8 bars ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
 - **Lyrics start from the analysis, not from opening the lyrics panel.** The lyrics panel no longer starts transcription when it opens, and its "Transcribe lyrics when analysing" box is replaced by the lyrics step under **After the split** on the Stems tab. The panel's own buttons are as they were.
 - GP-150 and GP-180 USB editor sessions are no longer read-only. Bluetooth is for performance MIDI only; Bluetooth editor management is disabled because the GP-180 gave no replies to its handshake.
 
