@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## Unreleased
 
+### Changed
+- **The Band dialog keeps its buttons in view.** Generate, Try another, Preview, Remove and Export MIDI sit in a bar at the bottom, with the progress, Cancel and notices beside them. After Generate the bar says it is done and offers Close and Play from the selected section. Preview now takes any section, or the playhead, for the whole section, 4 or 8 bars ([Generated drums and bass](PERFORMANCE.md#generated-drums-and-bass)).
+
 ### Fixed
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
