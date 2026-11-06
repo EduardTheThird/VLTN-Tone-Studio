@@ -712,6 +712,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           session={session}
           chart={chart}
           onSaveChart={saveChart}
+          onShowChart={() => chooseView("lyrics")}
           midiFile={midiFile}
           onMidiFile={saveMidiFile}
           timecodeOffset={timecodeOffset}
