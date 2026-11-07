@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Fixed
+- **A part split no longer cuts a song short.** Splitting only part of a song for Tone Match left Performance, the playlist and the saved song with stems just that long. Performance now plays the whole song without those stems and says why, the Band panel works on the whole song, and the part's stems are never saved.
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
 - **A song put back from the Trash comes back.** The library used to delete a restored song folder again within ten minutes. It now adds the song back to the library.
