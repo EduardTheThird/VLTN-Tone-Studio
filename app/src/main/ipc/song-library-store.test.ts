@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { decodeFlac, encodeFlac, quantize } from "@shared/flac";
+import { decodeFlac, encodeFlac, matchesQuantized } from "@shared/flac";
 import { isLegacySong } from "@shared/song-library";
-import { SongLibraryStore, libraryFilePath } from "./song-library-store";
+import { SongLibraryStore, V1_BACKUP, libraryFilePath } from "./song-library-store";
 import { FRAMES, flacSong, legacySong, pcm, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
 
 let root: string, store: SongLibraryStore;
@@ -17,13 +17,11 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
-/** The decoded track must equal the stored float32 audio quantized to 24 bits. */
+/** The decoded track must equal the stored float32 audio quantized to the fixture's 16 bits (dither included). */
 async function expectAudio(fixture: FixtureSong, name: string) {
   const decoded = await decodeFlac(await readSaved(root, fixture.song.id, `${name}.flac`));
   expect(decoded.channels).toHaveLength(fixture.audio[name].length);
-  decoded.channels.forEach((channel, c) => {
-    expect(Array.from(channel.map((v) => Math.round(v * (2 ** 23 - 1))))).toEqual(Array.from(fixture.audio[name][c].map(quantize)));
-  });
+  expect(matchesQuantized(decoded, fixture.audio[name], 16)).toBe(true);
 }
 it("round-trips audio, charts and duplicate playlist entries across restart", async () => {
   const first = await flacSong(1),
@@ -53,8 +51,10 @@ it("writes a v2 index and hands out protocol URLs instead of audio bytes", async
 it("keeps the last complete revision after an incomplete replacement", async () => {
   const original = await flacSong();
   await saveFlacSong(store, original);
-  const token = await store.begin({ ...original.song, title: "Replacement" });
-  await expect(store.commit(token)).rejects.toThrow();
+  // The guitar's audio changed, so its new file must be sent. Nothing is sent here, and a file the save did not send is only carried over when it is unchanged.
+  const changed = original.song.audio.map((a) => (a.name === "guitar" ? { ...a, sha256: "c".repeat(64) } : a));
+  const token = await store.begin({ ...original.song, audio: changed, title: "Replacement" });
+  await expect(store.commit(token)).rejects.toThrow("Incomplete song save.");
   await store.abort(token);
   expect((await store.index()).songs[0].title).toBe(original.song.title);
   await expectAudio(original, "source");
@@ -138,7 +138,7 @@ it("returns a clean saved snapshot for intact audio", async () => {
   expect(await store.preflight([s.song.id])).toMatchObject([{ id: s.song.id, song: s.song, errors: [] }]);
 });
 
-it("migrates a v1 library to FLAC with the same audio and settings, then removes the v1 files", async () => {
+it("migrates a v1 library to FLAC with the same audio and settings, and keeps the v1 copy in v1-backup", async () => {
   const first = legacySong(1),
     second = legacySong(2);
   await writeLegacyLibrary(root, [first, second]);
@@ -159,8 +159,73 @@ it("migrates a v1 library to FLAC with the same audio and settings, then removes
     await expectAudio(fixture, "guitar");
     expect((await store.preflight([song.id]))[0].errors).toEqual([]);
   }
-  for (const revision of Object.values(before.revisions) as string[]) expect(await readdir(root)).not.toContain(revision);
+  const revisions = Object.values(before.revisions) as string[];
+  for (const revision of revisions) expect(await readdir(root)).not.toContain(revision);
+  // The v1 folders moved under their own names, beside the index they came from, so the old library can be put back.
+  const kept = await readdir(join(root, V1_BACKUP));
+  expect(kept).toEqual(expect.arrayContaining([...revisions, "library.json", "README.txt"]));
+  expect(JSON.parse(await readFile(join(root, V1_BACKUP, "library.json"), "utf8"))).toEqual(before);
+  expect(await readFile(join(root, V1_BACKUP, "README.txt"), "utf8")).toMatch(/How to go back|To go back/);
   expect(await store.migrate()).toEqual({ converted: 0, failed: 0 });
+});
+it("keeps the v1 index from the first conversion when a later run resumes", async () => {
+  const first = legacySong(1);
+  await writeLegacyLibrary(root, [first]);
+  const original = await readFile(join(root, "library.json"), "utf8");
+  await store.migrate();
+  await writeFile(join(root, V1_BACKUP, "library.json"), "kept");
+  await writeLegacyLibrary(root, [legacySong(2)]);
+  await store.migrate();
+  expect(await readFile(join(root, V1_BACKUP, "library.json"), "utf8")).toBe("kept");
+  expect(original).toContain('"version":1');
+});
+it("reports the v1 copy's size and moves it to the Trash when asked", async () => {
+  const moved: string[] = [];
+  const trash = async (path: string) => {
+    moved.push(path);
+    await rm(path, { recursive: true, force: true });
+  };
+  store = new SongLibraryStore(root, Date.now, trash);
+  expect(await store.v1BackupBytes()).toBeNull();
+  await writeLegacyLibrary(root, [legacySong(1)]);
+  await store.migrate();
+  const bytes = await store.v1BackupBytes();
+  expect(bytes).toBeGreaterThan(0);
+  await store.removeV1Backup();
+  expect(moved).toEqual([join(root, V1_BACKUP)]);
+  expect(await store.v1BackupBytes()).toBeNull();
+  expect((await store.index()).songs).toHaveLength(1);
+});
+it("at start-up, removes unreferenced folders that are empty or partial whatever their age, and keeps the rest", async () => {
+  const clock = Date.now();
+  store = new SongLibraryStore(root, () => clock);
+  const kept = await flacSong(1);
+  await saveFlacSong(store, kept);
+  const old = new Date(clock - 5 * 24 * 60 * 60 * 1000);
+  const empty = randomUUID(),
+    partial = randomUUID(),
+    mixed = randomUUID(),
+    v1 = randomUUID();
+  await mkdir(join(root, empty), { recursive: true });
+  await mkdir(join(root, partial), { recursive: true });
+  await writeFile(join(root, partial, "source.flac.partial"), "x");
+  await writeFile(join(root, partial, "chart-1.tmp"), "x");
+  await mkdir(join(root, mixed), { recursive: true });
+  await writeFile(join(root, mixed, "drums.flac"), "x");
+  await mkdir(join(root, v1), { recursive: true });
+  await writeFile(join(root, v1, "drums-0.f32"), "x");
+  await mkdir(join(root, V1_BACKUP), { recursive: true });
+  // A folder with real audio but no revision is an unfinished save: only the age rule removes it, so it is fresh here.
+  for (const dir of [empty, partial, v1, V1_BACKUP]) await utimes(join(root, dir), old, old);
+  await store.sweep(true);
+  const names = await readdir(root);
+  expect(names).not.toContain(empty);
+  expect(names).not.toContain(partial);
+  expect(names).toContain(mixed);
+  expect(names).toContain(v1);
+  expect(names).toContain(V1_BACKUP);
+  const keptRevision = JSON.parse(await readFile(join(root, "library.json"), "utf8")).revisions[kept.song.id];
+  expect(names.sort()).toEqual([keptRevision, mixed, v1, V1_BACKUP, "library.json"].sort());
 });
 it("leaves a v1 song untouched when its audio is damaged and still converts the others", async () => {
   const bad = legacySong(1),
@@ -274,4 +339,77 @@ it("applies a song's track settings to the other songs with the same imported tr
 it("refuses to apply the settings of a song that is not saved", async () => {
   await expect(store.applyTrackSettings(randomUUID())).rejects.toThrow("Saved song not found.");
   await expect(store.applyTrackSettings("not-an-id")).rejects.toThrow("Saved song not found.");
+});
+
+/** The revision folder the index currently points at for a song. */
+async function currentRevision(songId: string): Promise<string> {
+  return JSON.parse(await readFile(join(root, "library.json"), "utf8")).revisions[songId];
+}
+it("carries files the save did not send into the new revision by hard link, and removes the old revision", async () => {
+  const original = await flacSong(1);
+  await saveFlacSong(store, original);
+  const oldRevision = await currentRevision(original.song.id);
+  const inodes: Record<string, number> = {};
+  for (const name of Object.keys(original.files)) inodes[name] = (await stat(join(root, oldRevision, name))).ino;
+  const token = await store.begin({ ...original.song, title: "Renamed" });
+  await store.commit(token);
+  const revision = await currentRevision(original.song.id);
+  expect(revision).not.toBe(oldRevision);
+  for (const [name, bytes] of Object.entries(original.files)) {
+    expect(new Uint8Array(await readFile(join(root, revision, name)))).toEqual(bytes);
+    expect((await stat(join(root, revision, name))).ino).toBe(inodes[name]);
+  }
+  await expect(stat(join(root, oldRevision))).rejects.toThrow();
+  expect((await store.index()).songs[0].title).toBe("Renamed");
+  await expectAudio(original, "guitar");
+});
+it("fails the save when a carried file is missing or changed, and keeps the last complete revision", async () => {
+  const original = await flacSong(2);
+  await saveFlacSong(store, original);
+  const oldRevision = await currentRevision(original.song.id);
+  const missing = await store.begin({ ...original.song, title: "Missing" });
+  await rm(join(root, oldRevision, "guitar.flac"));
+  await expect(store.commit(missing)).rejects.toThrow("Incomplete song save.");
+  await store.abort(missing);
+  await saveFlacSong(store, original);
+  const changed = await store.begin({ ...original.song, title: "Changed" });
+  const current = await currentRevision(original.song.id);
+  await writeFile(join(root, current, "guitar.flac"), new Uint8Array(original.files["guitar.flac"].length).fill(7));
+  await expect(store.commit(changed)).rejects.toThrow("Incomplete song save.");
+  await store.abort(changed);
+  expect((await store.index()).songs[0].title).toBe(original.song.title);
+});
+it("keeps a 24-bit stem 24-bit when a settings-only save carries its file over", async () => {
+  const fixture = await flacSong(3);
+  const deep = await encodeFlac({ sampleRate: 44100, channels: fixture.audio.guitar, bits: 24 });
+  fixture.files["guitar.flac"] = deep;
+  const entry = fixture.song.audio.find((a) => a.name === "guitar")!;
+  entry.bytes = deep.length;
+  entry.sha256 = createHash("sha256").update(deep).digest("hex");
+  await saveFlacSong(store, fixture);
+  const token = await store.begin({ ...fixture.song, settings: { ...fixture.song.settings, ":bpm": "96" } });
+  await store.commit(token);
+  const stored = await readSaved(root, fixture.song.id, "guitar.flac");
+  expect(stored).toEqual(deep);
+  expect((await decodeFlac(stored)).bits).toBe(24);
+});
+
+it("adds a song back when its folder is put back from the Trash, and keeps the audio", async () => {
+  let clock = Date.now();
+  store = new SongLibraryStore(root, () => clock);
+  const s = await flacSong();
+  await saveFlacSong(store, s);
+  const revision = JSON.parse(await readFile(join(root, "library.json"), "utf8")).revisions[s.song.id];
+  await store.remove(s.song.id);
+  expect((await store.index()).songs).toEqual([]);
+  // Put Back: the folder returns to the library root, older than the sweep's cut-off.
+  const [entry] = await readdir(join(root, ".trash"));
+  await rename(join(root, ".trash", entry), join(root, revision));
+  const old = new Date(clock - 2 * 60 * 60 * 1000);
+  await utimes(join(root, revision), old, old);
+  await store.sweep();
+  expect((await store.index()).songs.map((x) => x.id)).toEqual([s.song.id]);
+  expect(await readdir(join(root, revision))).not.toContain("song.json");
+  await expectAudio(s, "source");
+  expect(Object.keys(await store.audioUrls(s.song.id)).sort()).toEqual(["guitar", "source"]);
 });

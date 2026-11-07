@@ -166,6 +166,9 @@ export interface LibraryTransferProgress {
   completed: number;
   total: number;
 }
+/** The `phase` of the progress events the v1 conversion sends at start-up, and the one it sends when every song is done. */
+export const CONVERTING_PHASE = "Converting saved songs";
+export const CONVERTED_PHASE = "Conversion complete";
 export interface LibraryTransferResult {
   songs: number;
   playlists: number;
@@ -196,6 +199,10 @@ export interface SongLibraryApi {
   /** Restores the backup chosen by `inspectBackup`. */
   restoreBackup(mode: RestoreMode): Promise<LibraryTransferResult>;
   onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;
+  /** The size in bytes of the kept v1 copy (`v1-backup`), or null when there is none. */
+  v1BackupBytes(): Promise<number | null>;
+  /** Moves the kept v1 copy to the Trash. */
+  removeV1Backup(): Promise<void>;
   index(): Promise<SongLibrary>;
   save(song: LibrarySong, assets: { name: string; bytes: Uint8Array }[]): Promise<void>;
   /** `app://library/...` URLs of the song's files, keyed by track key (see `trackKey`). The renderer fetches them directly. */

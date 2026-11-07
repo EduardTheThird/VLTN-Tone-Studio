@@ -5,6 +5,56 @@ import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeFil
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
+/**
+ * Flushes a file or a folder to disk. A folder's flush makes the files created or renamed in it durable. Some systems cannot open a
+ * folder to flush it (Windows), and there the call does nothing.
+ */
+export async function syncPath(path: string): Promise<void> {
+  let handle;
+  try {
+    handle = await open(path, "r");
+  } catch (e) {
+    if (process.platform === "win32") return;
+    throw e;
+  }
+  try {
+    await handle.sync();
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== "EINVAL" && code !== "EPERM" && code !== "EISDIR") throw e;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Waits between the attempts of retryBusy: five tries, about a second in all. */
+const RETRY_DELAYS_MS = [50, 150, 300, 500];
+const BUSY_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+const sleepFor = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/**
+ * Runs a file operation again when Windows says the file is locked (EPERM, EBUSY, EACCES), which happens while
+ * Defender or an indexer holds a file we just wrote. After the last try the original error is thrown.
+ */
+export async function retryBusy<T>(op: () => Promise<T>, sleep: (ms: number) => Promise<void> = sleepFor): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op();
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException | null)?.code;
+      if (attempt >= RETRY_DELAYS_MS.length || !code || !BUSY_CODES.has(code)) throw e;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
+/** rename that retries while the file is locked. */
+export const renameRetry = (from: string, to: string) => retryBusy(() => rename(from, to));
+
+/** rm that retries while the file or folder is locked. */
+export const rmRetry = (path: string, options: { recursive?: boolean; force?: boolean } = {}) => retryBusy(() => rm(path, options));
+
 const tempPathFor = (path: string) => `${path}.${randomBytes(6).toString("hex")}.tmp`;
 
 /** Writes `value` as pretty JSON, creating the folder if needed. Rejects, and leaves `path` untouched, if anything fails. */
@@ -19,9 +69,11 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
     } finally {
       await handle.close();
     }
-    await rename(tmp, path);
+    await renameRetry(tmp, path);
+    // The rename is only durable once the folder is flushed too.
+    await syncPath(dirname(path));
   } catch (e) {
-    await rm(tmp, { force: true }).catch(() => {});
+    await rmRetry(tmp, { force: true }).catch(() => {});
     throw e;
   }
 }

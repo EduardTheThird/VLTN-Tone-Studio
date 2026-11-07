@@ -243,6 +243,27 @@ it("loops a section three times with the clock running: no Stop, a continuous pu
   expect(cueDues).toEqual([9500, 17500, 25500, 33500]);
 });
 
+/** A whole song set to loop: the player wraps at the song end back to its start, and the session plans that jump a second ahead. */
+it("keeps cues and the clock running past the wrap of a looping song, with no stall fault and no disarm", () => {
+  const f = fixture({ cues: parseChart("[00:02.00] {midi:pc 1 5}"), clock: true, duration: 10, origin: 1000, bpm: 120 });
+  // Song 0-10 plays to clock 11000, then jumps back to 2 s and plays on, wrapping again at clock 19000.
+  const audio = (now: number) => (now < 11000 ? (now - 1000) / 1000 : 2 + ((now - 11000) % 8000) / 1000);
+  const loopPlan = (boundary: number) => () => f.schedule.plan(10, { at: boundary, position: 2 }, boundary - 1000);
+  run(f, 1000, 24000, audio, [
+    [10000, loopPlan(11000)],
+    [18000, loopPlan(19000)],
+  ]);
+  const messages = f.messages();
+  expect(f.replies.some((r) => r.type === "fault")).toBe(false);
+  expect(messages.some((m) => m.bytes[0] === 252)).toBe(false);
+  // The pulse is unbroken to the end, well past the 1 s the stall rule would have allowed after the wrap.
+  const pulses = messages.filter((m) => m.bytes[0] === 248).map((m) => m.due);
+  expect(pulses.at(-1)).toBeGreaterThan(23000);
+  pulses.forEach((due, i) => expect(due).toBeCloseTo(1000 + i * (60000 / 120 / 24), 6));
+  // The cue at 2 s is passed again on each pass: once at the start, then when each wrap lands on it.
+  expect(messages.filter((m) => m.bytes[0] === 192 && m.bytes[1] === 5).map((m) => m.due)).toEqual([3000, 11000, 19000]);
+});
+
 it("does not send cues beyond the cap until the plan lifts it", () => {
   const f = fixture({ cues: parseChart("[00:06.00] {midi:pc 1 9}"), duration: 10, origin: 1000 });
   f.schedule.plan(5, null, 1000);
@@ -721,4 +742,32 @@ describe("worker clock", () => {
       [[177, 12, 127], 2000],
     ]);
   });
+});
+
+it("sends timed click messages at their own clock time, ahead by the lookahead, once, and not before they are near", () => {
+  const f = fixture({ cues: [], lookahead: SYSTEM_LOOKAHEAD });
+  f.schedule.addTimed([
+    { bytes: [153, 37, 100], due: 1500 },
+    { bytes: [137, 37, 0], due: 1550 },
+  ]);
+  f.schedule.tick(1000);
+  expect(f.messages()).toEqual([]);
+  f.schedule.sync(0.3, 1300, 1300);
+  f.schedule.tick(1310);
+  expect(f.messages().map((m) => [m.bytes, m.due, m.label])).toEqual([[[153, 37, 100], 1500, "Click"]]);
+  f.schedule.sync(0.35, 1350, 1350);
+  f.schedule.tick(1360);
+  f.schedule.tick(1380);
+  expect(f.messages().map((m) => m.bytes)).toEqual([
+    [153, 37, 100],
+    [137, 37, 0],
+  ]);
+});
+
+it("takes no timed click messages once stopped", () => {
+  const f = fixture({ cues: [], lookahead: SYSTEM_LOOKAHEAD });
+  f.schedule.stop();
+  f.schedule.addTimed([{ bytes: [153, 37, 100], due: 1010 }]);
+  f.schedule.tick(1005);
+  expect(f.messages()).toEqual([]);
 });
