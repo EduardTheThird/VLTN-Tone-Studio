@@ -2,6 +2,13 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.18] - 2026-11-07
+
+A fix for MIDI cues, and What's new shows this fork's features.
+
+- **Remove a pedal command added twice.** A pedal command sent as several messages, such as Recall memory on the GP-180 (a bank select, then a program change), now has an X in Song MIDI cues, so a copy added by mistake can be removed. Undo puts it back. It is still edited in the chart text.
+- **What's new covers the song features.** The dialog that opens after an upgrade shows the song library and live sets, the stems mixer, the Band panel, MIDI cues and stage mode.
+
 ## [0.9.17] - 2026-11-07
 
 A fix for splitting part of a song.
