@@ -2,6 +2,18 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.15] - 2026-11-07
+
+Easier to trust at rehearsal: saving you can see, cues that stay on, and a better count-in.
+
+- **Saving you can see.** A song in the library now saves new audio by itself: generated drums and bass, imported tracks, rendered parts and splits. It never saves while music plays. The Song header shows **Saved**, **Saving…**, **Not saved** or **Couldn't save**, and opening another song or closing the window asks first when audio would be lost.
+- **Band dialog.** Generate, Preview and the other buttons sit in a bar at the bottom with progress and notices right next to them. When it's done you get **Close** and **Play from**. Preview plays a whole section, or 4 or 8 bars of it.
+- **Metronome and count-in sounds.** Sticks, hi-hat, pedal hat, ride, snare, rock, toms, crash on one, cowbell, woodblock and more, with **Listen** to hear a bar first. Load your own hits as **My samples**, or **Send the click as MIDI** to a drum plugin.
+- **Drum tone.** The generated drums can go through TONE3000 captures and a room IR, like the bass, with Clean, Glued kit, Room kit and Recorded kit presets.
+- **MIDI cues.** Each cue in the MIDI tab has Edit and an X to remove it. Cues can fire on sections: **On section → Every Chorus** sends at every chorus, and follows the sections when they move.
+- **Send cues stays on** across song loads, tab switches and restarts, and switches back on when the pedal reconnects.
+- **Practice mute.** Mute guitar (or vocals, bass, drums, piano) in every song of a playlist at once. It can be bound to a key or footswitch.
+
 ## [0.9.14] - 2026-11-04
 
 Song maps: a careful analysis of a song, from outside the app.
