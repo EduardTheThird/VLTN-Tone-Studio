@@ -2,6 +2,12 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.17] - 2026-11-07
+
+A fix for splitting part of a song.
+
+- **A part split no longer cuts a song short.** Splitting only part of a song for Tone Match used to leave Performance and playlists playing just that part. Now the whole song plays, without the part's stems, and Performance says why. Those stems are never saved into the song.
+
 ## [0.9.16] - 2026-11-07
 
 Everything from the original app's 0.9.0, next to this fork's own features.
