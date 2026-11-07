@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, Guitar, Pause, Play, RotateCcw } from "lucide-react";
+import { ChevronDown, Download, Guitar, Pause, Play, RotateCcw, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,6 +14,7 @@ import { useSong } from "@/song/store";
 import { defaultMix, formatTime, mergeMix, peaks, type Mix, type StemMix } from "@/song/stems/mix";
 import { findQuality } from "@/song/stems/options";
 import { StemPlayer } from "@/song/stems/player";
+import { fmtShift, TransposeControl, useTranspose } from "./TransposeControl";
 import { encodeWav } from "@/song/wav";
 import { STEM_NAMES, type StemName, type Stems, type SplitInfo } from "@/song/types";
 import { findModel } from "@shared/host/song";
@@ -52,10 +53,11 @@ async function exportStems(songName: string, stems: Stems, names: StemName[], bi
   }
 }
 
-/** "Split with Best, Balanced in 312.4 s on the processor (WebAssembly)." */
-function splitSummary({ model, quality, seconds, backends }: SplitInfo): string {
+/** "Split 1:20 – 2:45 with Best, Balanced in 312.4 s on the processor (WebAssembly)." */
+function splitSummary({ model, quality, seconds, backends, range }: SplitInfo): string {
   const where = backends.length === 1 ? BACKEND_LABEL[backends[0]] : "on the graphics card and the processor";
-  return `Split with ${findModel(model)?.label ?? model}, ${findQuality(quality)?.label ?? quality} in ${seconds.toFixed(1)} s ${where}.`;
+  const part = range ? ` ${formatTime(range.start)} – ${formatTime(range.end)}` : "";
+  return `Split${part} with ${findModel(model)?.label ?? model}, ${findQuality(quality)?.label ?? quality} in ${seconds.toFixed(1)} s ${where}.`;
 }
 
 /** Transport, one row per stem (mute, solo, volume, waveform, level), the export and splitting again. */
@@ -75,20 +77,34 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
   const [levels, setLevels] = useState<Partial<Record<StemName, number>> | null>(null);
   const waves = useMemo(() => Object.fromEntries(names.map((n) => [n, peaks(stems[n]!.channels, WAVE_BUCKETS)])) as Partial<Record<StemName, Float32Array>>, [stems, names]);
   useStatusHints(HINTS);
+  // Tuning the song swaps the stems under the player: it picks up at the same second, playing or paused.
+  const resume = useRef<{ at: number; play: boolean } | null>(null);
+  const transpose = useTranspose(stems, () => {
+    resume.current = player ? { at: player.position, play: player.isPlaying } : null;
+  });
+  const heard = transpose.heard;
 
   useEffect(() => {
-    const p = new StemPlayer(stems);
+    const p = new StemPlayer(heard);
     p.onEnded = () => {
       setPlaying(false);
       setTime(p.duration);
     };
     setPlayer(p);
+    const r = resume.current;
+    resume.current = null;
+    if (r) {
+      void p
+        .seek(r.at)
+        .then(() => (r.play ? p.play().then(() => setPlaying(true)) : setTime(r.at)))
+        .catch(() => {});
+    }
     return () => {
       setPlayer(null);
       setPlaying(false);
       void p.dispose();
     };
-  }, [stems]);
+  }, [heard]);
 
   useEffect(() => player?.setMix(mix), [player, mix]);
   useEffect(() => {
@@ -153,6 +169,7 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
 
   const update = (name: StemName, patch: Partial<StemMix>) => setMix((m) => ({ ...m, [name]: { ...m[name], ...patch } }));
   const progress = duration ? time / duration : 0;
+  const exportName = transpose.semitones ? `${songName} (${fmtShift(transpose.semitones)} st)` : songName;
 
   return (
     <section aria-label="Stems" className={cn(PANEL, "flex min-h-0 flex-col gap-3 px-4 py-3.5")}>
@@ -172,6 +189,7 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
           value={[time]}
           onValueChange={([v]) => seek(v)}
         />
+        <TransposeControl semitones={transpose.semitones} job={transpose.job} onChange={(n) => void transpose.set(n)} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline">
@@ -182,8 +200,9 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>{COUNT_WORD[names.length]} WAV files, 44.1 kHz stereo</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, names, 16)}>WAV 16-bit</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void exportStems(songName, stems, names, 24)}>WAV 24-bit</DropdownMenuItem>
+            {transpose.semitones !== 0 && <DropdownMenuLabel>Tuned {fmtShift(transpose.semitones)} semitones, as you hear it</DropdownMenuLabel>}
+            <DropdownMenuItem onSelect={() => void exportStems(exportName, heard, names, 16)}>WAV 16-bit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportStems(exportName, heard, names, 24)}>WAV 24-bit</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -205,6 +224,10 @@ export function StemMixer({ stems, songName }: { stems: Stems; songName: string 
         <p className="min-w-0 flex-1 text-[11px] text-pretty text-silkscreen-3">
           {lastSplit && `${splitSummary(lastSplit)} `}Solo a stem to hear it alone.
         </p>
+        <Button variant="outline" onClick={() => useSong.getState().clearStems()}>
+          <Scissors data-icon="inline-start" />
+          Choose another part…
+        </Button>
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline">

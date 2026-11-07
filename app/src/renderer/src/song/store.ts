@@ -2,15 +2,16 @@ import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { findModel } from "@shared/host/song";
 import { decodeSong } from "./decode";
 import { separateStems, type Separation, type SeparationProgress, type SplitSettings } from "./stems/engine";
+import { audioSeconds, clampRange, sliceAudio } from "./range";
 import { detectMissingParts, type MissingParts } from "./band/detect";
 import { GENERATED_PART_NAMES } from "./band/generated-names";
 import { findQuality, loadSplitChoice, saveSplitChoice, type SplitChoice } from "./stems/options";
 import { freeTrackKeys, importTracks, type ImportOutcome, type ImportOptions } from "./import/import-tracks";
 import { mergeTrackDefaults, type TrackInfo } from "./tracks";
+import { sourceBitDepth } from "@shared/source-bits";
 import { USER_TRACKS_MAX } from "@shared/song-library";
 import { getSetting, performanceKey, setSetting } from "./performance/settings";
 import type { PcmAudio, SongState, SplitInfo, Stems } from "./types";
-import { sourceBitDepth } from "@shared/source-bits";
 
 /** The bit depth of an opened file, from its header. Lossy and unreadable files give undefined, which stores the source at 16 bits. */
 async function originalBits(file: File): Promise<number | undefined> {
@@ -22,7 +23,8 @@ async function originalBits(file: File): Promise<number | undefined> {
 }
 
 // The loaded song and its stems (contract: types.ts). One job at a time: loading another song or splitting
-// again aborts the running split; results of a superseded job are dropped.
+// again aborts the running split; results of a superseded job are dropped. A split takes the chosen part of the
+// song (`range`), or all of it.
 
 export interface SongDeps {
   decode(file: File): Promise<PcmAudio>;
@@ -136,6 +138,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
   return create<SongStore>((set, get) => ({
     source: null,
     stems: null,
+    range: null,
     tracks: {},
     status: { kind: "idle" },
     choice: deps.loadChoice(),
@@ -144,7 +147,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
 
     async load(file) {
       const ctrl = begin();
-      set({ source: null, stems: null, tracks: {}, lastSplit: null, missingParts: null, status: { kind: "decoding" } });
+      set({ source: null, stems: null, tracks: {}, range: null, lastSplit: null, missingParts: null, status: { kind: "decoding" } });
       try {
         const audio = await deps.decode(file);
         if (ctrl.signal.aborted) return;
@@ -157,10 +160,11 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     },
 
     async split() {
-      const { source, choice } = get();
+      const { source, choice, range } = get();
       const model = findModel(choice.model);
       const quality = findQuality(choice.quality);
       if (!source || !model || !quality) return;
+      const audio = sliceAudio(source.audio, range);
       const ctrl = begin();
       // Imported tracks are not made by the split, so they stay with the song.
       const kept = userTracksOf(get().stems, get().tracks);
@@ -180,7 +184,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         });
       };
       try {
-        const res = await deps.separate(source.audio, { model, quality }, onProgress, ctrl.signal);
+        const res = await deps.separate(audio, { model, quality }, onProgress, ctrl.signal);
         if (ctrl.signal.aborted || get().source !== source) return;
         const stems: Stems = {};
         for (const name of model.stems) {
@@ -189,10 +193,11 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
           stems[name] = { sampleRate: source.audio.sampleRate, channels };
         }
         for (const [key, pcm] of kept) stems[key] = pcm;
-        const missingParts = detectMissingParts(source.audio, stems);
+        // Detected on the part that was split, since the stems are only that long.
+        const missingParts = detectMissingParts(audio, stems);
         set({
           stems,
-          lastSplit: { model: model.id, quality: quality.id, backends: res.backends, seconds: res.seconds },
+          lastSplit: { model: model.id, quality: quality.id, backends: res.backends, seconds: res.seconds, ...(range && { range }) },
           missingParts,
           status: { kind: "done" },
         });
@@ -352,6 +357,18 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
       set({ choice });
     },
 
+    setRange(range) {
+      const { source } = get();
+      if (source) set({ range: clampRange(range, audioSeconds(source.audio)) });
+    },
+
+    clearStems() {
+      if (get().status.kind !== "done") return;
+      // Imported tracks are not made by a split, so they stay.
+      const kept = userTracksOf(get().stems, get().tracks);
+      set({ stems: kept.length ? Object.fromEntries(kept) : null, lastSplit: null, missingParts: null, status: { kind: "idle" } });
+    },
+
     cancel() {
       if (!job) return;
       job.abort();
@@ -362,7 +379,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
     reset() {
       job?.abort();
       job = null;
-      set({ source: null, stems: null, tracks: {}, lastSplit: null, missingParts: null, status: { kind: "idle" } });
+      set({ source: null, stems: null, tracks: {}, range: null, lastSplit: null, missingParts: null, status: { kind: "idle" } });
     },
   }));
 }

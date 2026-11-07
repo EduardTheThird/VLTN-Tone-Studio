@@ -224,7 +224,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     setMix((current) => applyPartChoices(current, next, partKeysOf(now.tracks ?? {}, now.stems)));
   };
   // An imported track starts on the bus, volume and pan it saved; a choice the song made since then wins.
-  const [mix, setMix] = useState(() => withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
+  const [mix, setMix] = useState<Mix>(() => withPartChoice({ ...mixDefaults(tracks), ...options.mix }));
   // The mix as last read or saved: the Stems tab saves into the same options, so only what changed here is written.
   const savedMix = useRef<Mix | null>(options.mix);
   // What each imported track counts as for the practice mute. It is saved with the song, since only that song's tracks have these names.
