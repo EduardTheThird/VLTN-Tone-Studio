@@ -4,8 +4,8 @@ import type { ConnectionError, DeviceKey, MidiLogEntry, RequestError } from "@/s
 import { pedalName } from "@/state/device-model";
 import { hostLines } from "@/state/host-lines";
 import { formatLogLine } from "@/state/midi-log";
-import type { Check } from "./guidance";
 import type { BluetoothDiagnostics } from "@/bluetooth/connection";
+import type { Check } from "./guidance";
 
 export interface ReportInput {
   appVersion: string;
@@ -14,7 +14,9 @@ export interface ReportInput {
   checks: Check[];
   status: string;
   mode: string;
+  /** Bluetooth MIDI link, when the caller has one to report */
   bluetooth?: { available: boolean; connecting: boolean; name: string | null; state: string; error: string | null };
+  /** Counters of the last Bluetooth session; they survive the connection being closed */
   bluetoothDiagnostics?: BluetoothDiagnostics | null;
   portName: string | null;
   /** The pedal the connection is about: connected, being connected, on USB, else the last connected (guidance attachedDevice) */
@@ -44,18 +46,24 @@ export function buildReport(r: ReportInput): string {
     ...r.checks.map((c) => `  [${MARK[c.state]}] ${c.name}: ${c.detail}${c.hint ? ` (${c.hint})` : ""}`),
     "",
     `Connection: ${r.status} (${r.mode})`,
-    ...(r.bluetooth ? [
-      `Bluetooth API: ${r.bluetooth.available ? 'available' : 'unavailable'}`,
-      `Bluetooth MIDI: ${r.bluetooth.connecting ? 'connecting' : r.bluetooth.state}`,
-      `Bluetooth device: ${r.bluetooth.name ?? 'none'}`,
-      `Last Bluetooth error: ${r.bluetooth.error ?? 'none'}`,
-    ] : []),
-    ...(r.bluetoothDiagnostics ? [
-      `Last Bluetooth session: ${r.bluetoothDiagnostics.device}`,
-      `Bluetooth GATT writes completed: ${r.bluetoothDiagnostics.writes}`,
-      `Bluetooth GATT notifications received: ${r.bluetoothDiagnostics.notifications}`,
-      `Bluetooth MIDI messages decoded: ${r.bluetoothDiagnostics.messages}`,
-    ] : []),
+    ...(r.bluetooth
+      ? [
+          `Bluetooth API: ${r.bluetooth.available ? "available" : "unavailable"}`,
+          `Bluetooth MIDI: ${r.bluetooth.connecting ? "connecting" : r.bluetooth.state}`,
+          `Bluetooth device: ${r.bluetooth.name ?? "none"}`,
+          `Last Bluetooth error: ${r.bluetooth.error ?? "none"}`,
+        ]
+      : []),
+    ...(r.bluetoothDiagnostics
+      ? [
+          `Last Bluetooth session: ${r.bluetoothDiagnostics.device}`,
+          `Bluetooth GATT writes completed: ${r.bluetoothDiagnostics.writes}`,
+          `Bluetooth GATT notifications received: ${r.bluetoothDiagnostics.notifications}`,
+          `Bluetooth MIDI messages decoded: ${r.bluetoothDiagnostics.messages}`,
+          `Bluetooth late messages dropped: ${r.bluetoothDiagnostics.dropped}`,
+          `Bluetooth automatic reconnects: ${r.bluetoothDiagnostics.reconnects}`,
+        ]
+      : []),
     `Pedal model: ${r.device ? pedalName(r.device) : "unknown"}`,
     `MIDI port: ${r.portName ?? "none"}`,
     `Visible MIDI ports: ${r.connectionError?.ports ? r.connectionError.ports.join(", ") || "none" : "not listed"}`,

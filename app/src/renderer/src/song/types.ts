@@ -1,6 +1,7 @@
 // Song: a user's audio file split into stems (Stem Splitter) and analysed for a preset on the pedal (Tone Match).
 // The store (song/store.ts, `useSong`) owns the loaded song and its stems; Tone Match only reads them.
 import type { SeparationModelId } from "@shared/host/song";
+import type { SongRange } from "./range";
 import type { QualityId, SplitChoice } from "./stems/options";
 import type { Backend } from "./stems/protocol";
 import type { TrackInfo } from "./tracks";
@@ -18,6 +19,7 @@ export interface PcmAudio {
 
 /** The decoded song, resampled to the separation rate (44.1 kHz stereo). */
 export interface SongSource {
+  /** Set once the song is saved to the library, or when it was loaded from there */
   libraryId?: string;
   /** File name as dropped or picked, shown in the UI */
   name: string;
@@ -52,12 +54,16 @@ export interface SplitInfo {
   /** Where the passes ran */
   backends: Backend[];
   seconds: number;
+  /** The part of the song that was split; absent for the whole song */
+  range?: SongRange;
 }
 
 export interface SongState {
   source: SongSource | null;
   /** Present once a split finished for `source`; cleared when another song loads. Imported tracks are in it too. */
   stems: Stems | null;
+  /** The part of `source` the next split takes; null for the whole song. Cleared when another song loads */
+  range: SongRange | null;
   /** What the mixer knows about each imported track, by key. Empty for a split song that has none. */
   tracks: Record<string, TrackInfo>;
   status: SplitStatus;
@@ -76,6 +82,10 @@ export interface SongState {
   /** Changes what the mixer knows about one imported track, such as its mute groups. Saved with the song on the next save. */
   setTrackInfo(key: string, patch: Partial<Omit<TrackInfo, "kind">>): void;
   setChoice(patch: Partial<SplitChoice>): void;
+  /** Choose the part to split (kept inside the song, at least MIN_RANGE_SECONDS long); null for the whole song */
+  setRange(range: SongRange | null): void;
+  /** Drop the stems to choose another part of the same song */
+  clearStems(): void;
   cancel(): void;
   reset(): void;
 }

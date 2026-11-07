@@ -25,14 +25,14 @@ Shape tones live, sort and back up every slot, match a song's guitar tone, and b
 <br>
 <br>
 
-### Download v0.8.1
+### Download v0.9.0
 
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 <br>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
-<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.8.1/vltn-tone-studio-0.8.1-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux (AppImage)"></a>
+<a href="https://github.com/grzmol/VLTN-Tone-Studio/releases/download/v0.9.0/vltn-tone-studio-0.9.0-amd64.deb"><img src="https://img.shields.io/badge/Linux-.deb-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Download for Debian and Ubuntu (.deb)"></a>
 
 <sub>Also runs in Chrome & Edge &nbsp;·&nbsp; <a href="#install">Install notes</a> &nbsp;·&nbsp; <a href="https://github.com/grzmol/VLTN-Tone-Studio/releases">All versions and release notes</a></sub>
 
@@ -46,7 +46,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/grzmol/VLTN-Tone-Studi
 <br>
 <br>
 
-[Download](#download-v081) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v090) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -368,7 +368,7 @@ The GP-200 (also R and X), GP-200LT and GP-200JR get the same screens, shaped to
 
 **Which pedal is connected?** Tone Studio works it out by itself and names it everywhere.<br>
 **Presets across models.** A GP-5 preset goes onto a GP-50 unchanged. A GP-50 preset loses its GP-50-only models, its expression pedal settings and synced Time/Rate values on a GP-5, and the app lists what changes before writing. The GP-200, LT and JR share one `.prst` file. Presets don't move between the GP-5 and GP-200 families.<br>
-**GP-150 and GP-180.** Both speak one protocol and use one `.prst` file, known from USB captures of a GP-180 published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tone Studio tells them apart by the MIDI port name. All 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. The `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only. The GP-180 has a third footswitch (FS C) in the footswitch assignments. Both also send performance MIDI (timed program changes and tempo) over USB or Bluetooth, see [Performance](PERFORMANCE.md).
+**GP-150 and GP-180.** Both speak one protocol and use one `.prst` file, known from USB captures of a GP-180 published by [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tone Studio tells them apart by the MIDI port name. All 12 modules in any order, with the models and knob ranges of Valeton Suite 2.1.0's GP-150 list built in. The library shows 200 slots, `001` to `200`. A preset's expression pedal and knob 1–3 assignments are kept as they are, not edited. The `.prst` files carry a checksum whose algorithm isn't known: Tone Studio clears it when it changes a preset (the pedal is reported to accept that) and checks imported files by their layout only. The GP-180 has a third footswitch (FS C) in the footswitch assignments. The Device screen can also open a Bluetooth MIDI link to either pedal; editing stays on USB, see [BLUETOOTH.md](BLUETOOTH.md). Both also send performance MIDI (timed program changes and tempo) over USB or Bluetooth, see [Performance](PERFORMANCE.md).
 
 <br>
 
@@ -486,7 +486,7 @@ The desktop app offers the same under *Device › Simulate*. All commands and th
 
 <br>
 
-VLTN Tone Studio is free software under the [GNU General Public License v3.0](LICENSE). You may use, study, change and share it; a version you distribute must stay under the same license, with its source. The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0), the GP-150 protocol and effect list from [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Other open-source work it builds on is credited in `app/src/renderer/src/gp5/NOTICE.md`, `app/src/renderer/src/gp200/NOTICE.md`, `app/src/renderer/src/gp150/NOTICE.md` and `app/src/renderer/src/song/audio/NOTICE.md` (which includes pdf.js, for PDF charts).
+VLTN Tone Studio is free software under the [GNU General Public License v3.0](LICENSE). You may use, study, change and share it; a version you distribute must stay under the same license, with its source. The GP-200 effect list comes from [GP200 Studio](https://github.com/kabir0st/gp200-studio) (GPL-3.0), the GP-150 protocol and effect list from [Valeton-GP180-Rev-Eng](https://github.com/majabojarska/Valeton-GP180-Rev-Eng) (GPL-3.0). Tuning a song down or up in the Song screen uses the [Rubber Band Library](https://breakfastquay.com/rubberband/) by Breakfast Quay (GPL v2 or later; the app ships its WebAssembly build, [rubberband-wasm](https://github.com/Daninet/rubberband-wasm)). Other open-source work it builds on is credited in `app/src/renderer/src/gp5/NOTICE.md`, `app/src/renderer/src/gp200/NOTICE.md`, `app/src/renderer/src/gp150/NOTICE.md` and `app/src/renderer/src/song/audio/NOTICE.md` (which includes pdf.js, for PDF charts).
 
 <br>
 

@@ -141,6 +141,7 @@ export function SettingsView() {
             <Row label="Tone Studio in the browser" description="Backups stay in this browser. Valeton Suite and folders on disk need the desktop app." />
           )}
         </Section>
+        <OldLibraryCopy />
       </div>
     </div>
   );
@@ -322,7 +323,7 @@ function AppKeyRow() {
       label="App key"
       description={
         isElectron
-          ? "The publishable key (client_id) of your TONE3000 app. Leave empty to use the key this build came with. A different key signs you out."
+          ? "Your TONE3000 publishable key (client_id). Get one from your TONE3000 account page. Changing the key signs you out."
           : "Signing in to TONE3000 needs the desktop app."
       }
     >

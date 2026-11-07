@@ -6,6 +6,8 @@ import type { PcmAudio } from "@/song/types";
 
 vi.mock("@/host", () => ({ host: { song: { downloadedFiles: vi.fn().mockResolvedValue([]) } } }));
 vi.mock("./StemMixer", () => ({ StemMixer: () => "Stem mixer" }));
+// The part picker plays its preview through an AudioContext, which jsdom does not have.
+vi.mock("./PartPicker", () => ({ PartPicker: () => null }));
 
 // Radix measures with ResizeObserver, which jsdom does not have.
 class ResizeObserverStub {

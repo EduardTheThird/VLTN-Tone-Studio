@@ -10,6 +10,7 @@ import { host } from "@/host";
 import { useSong } from "@/song/store";
 import { STEM_NAMES } from "@/song/types";
 import { findModel, missingBytes, type SeparationModel, type SeparationModelId } from "@shared/host/song";
+import { PartPicker } from "./PartPicker";
 import { StemMixer } from "./StemMixer";
 import { AfterSplitOptions, AnalyseSongButton, RunStatus } from "./AfterSplitOptions";
 import { megabytes, SplitOptions, useDownloadedFiles } from "./SplitOptions";
@@ -131,6 +132,7 @@ export function StemsPanel({ onPick }: { onPick: () => void }) {
                 <EmptyDescription>Split it into {stemList(model)}.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="max-w-xl gap-4">
+                <PartPicker className="w-full" />
                 <SplitOptions className="w-full" />
                 <AfterSplitOptions className="w-full" />
               </EmptyContent>
