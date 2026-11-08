@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.19] - 2026-11-08
+
+Solo scales, and the band now plays through an outro after the drums stop.
+
+- **Solo scales.** On the This song tab (and from a button in Lyrics & chords) the song's scale is drawn on the neck, for the key as you play it, capo and pitch shift included. It opens on the minor pentatonic (the relative minor in a major key), offers seven more scales and any root, lights up one box position at a time, and shows fret numbers or note names. Your choice is saved with the song.
+- **Bass in an outro after the drums stop.** A section that starts after the last detected beat now gets its generated parts too, so an outro with no drums still has its bass. Generate the band again for songs like that.
+- **Bass notes you set by hand always play.** A lead-in into the next section no longer plays over them, and a note a few milliseconds off its beat (as song maps write them) lands on that beat.
+- **Songs skip the silence at their start.** A song with no trim start of its own starts on its first sound. Set Trim start to 0 to play from the very start.
+
 ## [0.9.18] - 2026-11-07
 
 A fix for MIDI cues, and What's new shows this fork's features.
