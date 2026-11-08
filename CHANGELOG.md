@@ -5,6 +5,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## Unreleased
 
 ### Fixed
+- **Generated bass plays in an outro after the drums stop.** The beat grid ends where the drums stop, so a section after that got no generated parts. The band now carries the beat on through any section that starts after the grid's last beat, so an outro with no drums still gets its bass.
+- **A bass note you set by hand always plays.** A lead-in into the next section, a fill or a pedal no longer plays over it, and a note whose time is a few milliseconds off its beat (as song maps round them) still lands on that beat.
 - **A part split no longer cuts a song short.** Splitting only part of a song for Tone Match left Performance, the playlist and the saved song with stems just that long. Performance now plays the whole song without those stems and says why, the Band panel works on the whole song, and the part's stems are never saved.
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
