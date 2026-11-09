@@ -2,6 +2,12 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.20] - 2026-11-09
+
+A fix for stuttery playback.
+
+- **Doubled drums and bass no longer play.** A song set to play its generated drums or bass could also play the original part underneath, slightly out of time, which sounded like stutters. The original now stays off whenever its generated part plays, including for the next song in a playlist from its very first beat. Songs saved in that state are corrected when they play.
+
 ## [0.9.19] - 2026-11-08
 
 Solo scales, and the band now plays through an outro after the drums stop.
