@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.21] - 2026-11-09
+
+Generated drums and bass now play in time with the song.
+
+- **Generated drums follow the drummer.** When a song has a drums stem, each generated kick, snare and hat moves onto the original drummer's hit, so the guitar and vocals no longer sound like they stutter against the beat. Turn it off with "Play with the drummer's timing" in the Band panel.
+- **Hits land on the beat.** Each drum and bass sample now starts on its attack, and a tone chain's delay (an amp capture, a wet room) is taken out, so the generated parts no longer drag a few milliseconds behind.
+- **Generate the band again** for songs you already made, so their drums and bass get the new timing.
+
 ## [0.9.20] - 2026-11-09
 
 A fix for stuttery playback.
