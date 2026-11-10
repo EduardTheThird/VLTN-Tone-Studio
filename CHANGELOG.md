@@ -2,6 +2,16 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.22] - 2026-11-10
+
+Export generated drums for the BOSS RC-10R with the parts already assigned.
+
+- **Native rhythm export.** In the Band panel, generate drums and choose **Export for BOSS RC-10R…**. Select passages for Intro, Pattern 1, Fill 1, Pattern 2, Fill 2 and Ending, then save a native `.RC0` rhythm with its ranges, tempo, meter and Studio kit. Use **File → Import…** in RC-10R Rhythm Converter to load it without entering bar ranges manually.
+- **Preview and reuse your choices.** Listen to each passage at the export tempo. Export choices stay with the song, and changes to the source, settings or beat grid require fresh generation. Whole bars and trailing silence are preserved.
+- **MIDI and an import guide are included.** The export also provides a drum-only, single-track MIDI file and the six-part bar table. Explicit 6/8 timing is supported. Native rhythm names use eight characters, BPM is rounded to an integer, and fills are one bar.
+
+Native Import replaces the converter's working rhythm list, so export a backup there first if you want to keep existing rhythms. Six-song native import and all part assignments were verified in the macOS converter; transfer and playback on the pedal remain to be checked.
+
 ## [0.9.21] - 2026-11-09
 
 Generated drums and bass now play in time with the song.
