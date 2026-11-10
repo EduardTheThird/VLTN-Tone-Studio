@@ -25,12 +25,13 @@ it("ignores a late result when the playlist changes and reports request failures
   );
   const view = render(<PlaylistPreflight ids={["old"]} disabled={false} revision={1} songs={[]} />);
   fireEvent.click(screen.getByText("Check playlist"));
+  await waitFor(() => expect(api.preflight).toHaveBeenCalledWith(["old"]));
+  api.preflight.mockRejectedValueOnce(new Error("Disk unavailable"));
   view.rerender(<PlaylistPreflight ids={["new"]} disabled={false} revision={2} songs={[]} />);
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Disk unavailable"));
   await act(async () => {
     finish([{ id: "old", errors: ["Old failure"] }]);
   });
   expect(screen.queryByText(/Old failure/)).toBeNull();
-  api.preflight.mockRejectedValueOnce(new Error("Disk unavailable"));
-  fireEvent.click(screen.getByText("Check playlist"));
-  await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Disk unavailable"));
+  expect(screen.getByRole("alert").textContent).toBe("Disk unavailable");
 });

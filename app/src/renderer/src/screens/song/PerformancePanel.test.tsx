@@ -5,6 +5,7 @@ import { clearSettingsCache, setSetting } from "@/song/performance/settings";
 import { PerformancePanel } from "./PerformancePanel";
 import { readMidiConfiguration, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import type { SchedulerConfig, ScheduledMessage } from "@/song/performance/midi-scheduler";
+import { buildRhythmAutomation, suggestRhythmAutomation } from "@/song/performance/rhythm-automation";
 vi.mock("@/song/performance/midi-scheduler-client", async () => {
   const { MidiSchedule } = await import("@/song/performance/midi-scheduler");
   const now = () => performance.timeOrigin + performance.now();
@@ -72,6 +73,35 @@ it("drops an opening cue that is overdue at start without disarming the session"
   expect((screen.getByLabelText("Send cues") as HTMLInputElement).checked).toBe(true);
   expect(screen.getByText(/late MIDI command dropped/)).toBeTruthy();
 });
+it("recalls the automatic rhythm memory when armed and sends start/stop controls only during the performance", async () => {
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  const song = {
+    key,
+    title: "Test",
+    duration: 20,
+    settings: { ":bpm": "120", ":options": JSON.stringify({ sections: [{ id: "verse", name: "Verse", start: 0, end: 20, mode: "continue" }] }) },
+  };
+  localStorage.setItem(key, buildRhythmAutomation(song, suggestRhythmAutomation(song, 4), { channel: 2, start: 80, division: 81, fill: 82, stop: 83 }).chart);
+  render(<PerformancePanel />);
+  expect(mocks.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc1, 3]]);
+  mocks.send.mockClear();
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play song"));
+  });
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([
+    [0xb1, 80, 127],
+    [0xb1, 80, 0],
+  ]);
+  mocks.send.mockClear();
+  fireEvent.click(screen.getByText("Pause"));
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([
+    [0xb1, 83, 127],
+    [0xb1, 83, 0],
+  ]);
+});
 it("keeps timing faults and disarming visible in expanded performance view", async () => {
   vi.useFakeTimers();
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
@@ -117,7 +147,7 @@ const mocks = vi.hoisted(() => ({
 const noTracks = vi.hoisted(() => ({}));
 vi.mock("@/song/store", () => ({
   useSong: Object.assign((select: (s: unknown) => unknown) => select({ source: mocks.source, stems: null, tracks: noTracks, status: { kind: "idle" } }), {
-    getState: () => ({ source: mocks.source }),
+    getState: () => ({ source: mocks.source, checkMissingParts: vi.fn() }),
   }),
   selectWholeSongStems: (s: { stems: unknown }) => s.stems,
   partSplitNote: () => null,
@@ -131,7 +161,7 @@ const playlist = vi.hoisted(() => ({
   preparedNext: (): unknown => null,
   playlistPlaying: true,
   busy: false,
-  index: { songs: [] },
+  index: { songs: [], playlists: [] },
   midiSession: null as { access: MIDIAccess | null; portId: string; inputId: string; armed: boolean; output: unknown } | null,
   rememberMidi: vi.fn(),
   pausePlaylist: vi.fn(),
@@ -141,21 +171,27 @@ const playlist = vi.hoisted(() => ({
   takeAutoplay: (): boolean => false,
 }));
 vi.mock("@/song/library", () => ({
-  useSongLibrary: Object.assign(() => (playlist.active ? playlist : { queue: [], queueOverrides: [], position: -1, index: { songs: [] } }), {
-    getState: () =>
-      playlist.active
-        ? playlist
-        : {
-            queue: [],
-            queueOverrides: [],
-            position: -1,
-            playlistPlaying: false,
-            rememberMidi: vi.fn(),
-            preparedNext: (): unknown => null,
-            claimHandover: (): unknown => null,
-            takeAutoplay: (): boolean => false,
-          },
-  }),
+  useSongLibrary: Object.assign(
+    (select?: (state: unknown) => unknown) => {
+      const state = playlist.active ? playlist : { queue: [], queueOverrides: [], position: -1, index: { songs: [], playlists: [] } };
+      return select ? select(state) : state;
+    },
+    {
+      getState: () =>
+        playlist.active
+          ? playlist
+          : {
+              queue: [],
+              queueOverrides: [],
+              position: -1,
+              playlistPlaying: false,
+              rememberMidi: vi.fn(),
+              preparedNext: (): unknown => null,
+              claimHandover: (): unknown => null,
+              takeAutoplay: (): boolean => false,
+            },
+    },
+  ),
 }));
 vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}) }));
 vi.mock("@/host", () => ({ host: { song: {} } }));

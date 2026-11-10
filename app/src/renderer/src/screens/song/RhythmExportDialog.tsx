@@ -111,6 +111,7 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
     setMessage("");
     try {
       const where = await host.song.saveFiles(rhythmExportFiles(snapshot, setup), "Export BOSS RC-10R rhythm");
+      if (where) setSetting(songKey, ":options", JSON.stringify({ ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup }));
       if (mounted.current) setMessage(where ? "Saved the RC0 rhythm, MIDI and import guide." : "Export cancelled. Your choices are kept.");
     } catch (error) {
       if (mounted.current) setMessage(error instanceof Error ? error.message : String(error));

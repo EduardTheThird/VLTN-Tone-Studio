@@ -45,6 +45,8 @@ export interface RhythmSelection {
 }
 export interface RhythmSetup {
   version: 1;
+  /** Grid tempo when the choices were saved. A later song-tempo change updates export tempo automatically. */
+  sourceBpm?: number;
   meter: RhythmMeter;
   /** Grid pulse BPM; dotted quarters for 6/8, quarter notes otherwise. */
   bpm: number;
@@ -110,6 +112,7 @@ export function suggestRhythmSetup(snapshot: RhythmSnapshot): RhythmSetup {
   const meter: RhythmMeter = snapshot.grid.beatsPerBar === 3 ? "3/4" : snapshot.grid.beatsPerBar === 2 ? "2/4" : "4/4";
   return {
     version: 1,
+    sourceBpm: snapshot.grid.bpm,
     meter,
     bpm: Math.min(350, Math.max(40, Math.round(snapshot.grid.bpm || 120))),
     parts: {
@@ -146,8 +149,14 @@ export function parseRhythmSetup(value: unknown, snapshot: RhythmSnapshot): Rhyt
   }
   return {
     version: 1,
+    sourceBpm: snapshot.grid.bpm,
     meter: typeof value.meter === "string" && Object.hasOwn(RHYTHM_METERS, value.meter) ? (value.meter as RhythmMeter) : fallback.meter,
-    bpm: typeof value.bpm === "number" && Number.isFinite(value.bpm) && value.bpm >= 40 && value.bpm <= 350 ? value.bpm : fallback.bpm,
+    bpm:
+      typeof value.sourceBpm === "number" && Math.abs(value.sourceBpm - snapshot.grid.bpm) > 0.0001
+        ? fallback.bpm
+        : typeof value.bpm === "number" && Number.isFinite(value.bpm) && value.bpm >= 40 && value.bpm <= 350
+          ? value.bpm
+          : fallback.bpm,
     parts,
   };
 }

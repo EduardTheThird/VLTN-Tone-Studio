@@ -13,6 +13,8 @@ import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 import { useNav } from "@/state/nav";
+import { registerBandRefresh } from "@/song/band/refresh";
+import { performanceKey } from "./settings";
 
 const mocks = vi.hoisted(() => ({
   warm: [] as { cancel: () => void }[],
@@ -336,6 +338,36 @@ it("restores arming handed over by the previous song only for the same output ob
   });
   expect(selectArmed(replaced.state)).toBe(false);
   expect(out.send).not.toHaveBeenCalled();
+});
+it("keeps the Play request through an automatic band buffer replacement, while Pause cancels a waiting Play", async () => {
+  const { session, unload } = armedSession();
+  let finish: () => void = () => {};
+  const unregister = registerBandRefresh(
+    performanceKey(source),
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const playing = session.play();
+  await Promise.resolve();
+  const old = session.state.player;
+  unload();
+  const unloadNew = session.loadSong(source, null);
+  finish();
+  await playing;
+  expect(session.state.player).not.toBe(old);
+  expect(session.state.player?.isPlaying).toBe(true);
+  session.pause();
+  const cancelled = session.play();
+  await Promise.resolve();
+  session.pause();
+  finish();
+  await cancelled;
+  expect(session.state.player?.isPlaying).toBe(false);
+  unregister();
+  unloadNew();
+  session.dispose();
 });
 
 it("releases only the channels that played notes and sends Stop once when paused with clock on", async () => {

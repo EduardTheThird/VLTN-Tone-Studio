@@ -12,6 +12,7 @@ import { orderedKeys } from "../tracks";
 import { describeBinding, type Binding } from "./bindings";
 import { readTempoSource } from "./tempo-source";
 import { bindingClaiming, triggerClashes, type SongEntry } from "./song-triggers";
+import type { RhythmControls } from "./rhythm-automation";
 
 /** The part of a song that plays, when its stored options trim it. Null for a song that plays whole. */
 function trimRange(duration: number, options: object): { start: number; end: number } | undefined {
@@ -44,6 +45,7 @@ export function playlistPreflight(
     /** Every saved song with its MIDI trigger, so a trigger shared with another song, or answered by a binding, is named. */
     songs?: readonly SongEntry[];
     bindings?: readonly Binding[];
+    rhythmControls?: Partial<RhythmControls>;
   },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
@@ -68,8 +70,7 @@ export function playlistPreflight(
       const bpm = raw ? Number(raw) : 120;
       if (!raw) warnings.push("No saved BPM; playback defaults to 120. Confirm the recording tempo.");
       // Earlier builds saved 120 for songs that were never given a tempo. Such a tempo has no source and is only a guess.
-      else if (raw === "120" && !readTempoSource(options))
-        warnings.push("BPM may be the old 120 default. Open the song to detect it, or confirm the tempo.");
+      else if (raw === "120" && !readTempoSource(options)) warnings.push("BPM may be the old 120 default. Open the song to detect it, or confirm the tempo.");
       if (!options.analysis) warnings.push("Song not analysed yet. Open it once so its tempo, key and parts are worked out.");
       if (!Number.isFinite(bpm) || bpm < 30 || bpm > 300) errors.push("Saved BPM must be between 30 and 300.");
       // The pedal is sent the tempo the song plays at, so the tempo range applies to the BPM times the saved speed.
@@ -100,11 +101,17 @@ export function playlistPreflight(
       if (config.songs && trigger) {
         const clashes = triggerClashes(config.songs, id);
         if (clashes.length)
-          warnings.push(`Its MIDI trigger is also used by ${clashes.map((other) => other.title).join(", ")}. The first song in the library loads for that message.`);
+          warnings.push(
+            `Its MIDI trigger is also used by ${clashes.map((other) => other.title).join(", ")}. The first song in the library loads for that message.`,
+          );
         const bound = bindingClaiming(trigger, config.bindings ?? []);
         if (bound) warnings.push(`A remote action answers its MIDI trigger (${describeBinding(bound)}), so the song does not load from it.`);
       }
-      const cued = songCues(song.settings[""] || "", config.macros ?? [], midiFileFromOptions(options));
+      const cued = songCues(song.settings[""] || "", config.macros ?? [], midiFileFromOptions(options), {
+        duration,
+        settings: song.settings,
+        rhythmControls: config.rhythmControls,
+      });
       if (cued.error) errors.push(`${cued.part === "midi-file" ? "MIDI file" : "Chart"} cannot play: ${cued.error}`);
       else {
         const report = midiPreflight(cued.cues, {

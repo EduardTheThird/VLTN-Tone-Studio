@@ -7,6 +7,8 @@ import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-libr
 import { playlistPreflight, type PlaylistCheck } from "@/song/performance/playlist-preflight";
 import { songEntries } from "@/song/performance/song-triggers";
 import type { LibrarySong } from "@shared/song-library";
+import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
+import { flushSettings, onSettingsChange, LIBRARY_PREFIX } from "@/song/performance/settings";
 export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: string[]; disabled: boolean; revision: unknown; songs: readonly LibrarySong[] }) {
   const config = useMidiConfiguration(),
     pedals = usePedalLibrary();
@@ -14,22 +16,46 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const generation = useRef(0);
+  const checked = useRef(false);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const order = JSON.stringify(ids);
+  useEffect(
+    () =>
+      onSettingsChange((key) => {
+        if (ids.some((id) => key === LIBRARY_PREFIX + id)) setSettingsVersion((version) => version + 1);
+      }),
+    [order],
+  );
   useEffect(() => {
     generation.current++;
     setReport(null);
     setError("");
     setBusy(false);
+    if (checked.current) void check();
     return () => {
       generation.current++;
     };
-  }, [order, revision, config.tempoOnStart, config.tempoChannel, config.output, pedals.channels, pedals.profiles]);
+  }, [
+    order,
+    revision,
+    settingsVersion,
+    config.tempoOnStart,
+    config.tempoChannel,
+    config.output,
+    config.macros,
+    config.bindings,
+    pedals.channels,
+    pedals.assignments,
+    pedals.profiles,
+  ]);
   const check = async () => {
+    checked.current = true;
     const request = ++generation.current;
     setBusy(true);
     setReport(null);
     setError("");
     try {
+      await flushSettings();
       const snapshot = await host.song.library!.preflight(ids);
       if (request !== generation.current) return;
       setReport(
@@ -42,6 +68,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
           songs: songEntries(songs),
           bindings: config.bindings,
           pedals: configuredPedals(pedals),
+          rhythmControls: rhythmControlOverrides(pedals),
         }),
       );
     } catch (e) {

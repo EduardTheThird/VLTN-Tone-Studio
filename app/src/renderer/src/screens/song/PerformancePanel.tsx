@@ -22,7 +22,7 @@ import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/p
 import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { type StemName } from "@/song/types";
-import { getSetting, performanceKey, readOptions, setSetting } from "@/song/performance/settings";
+import { getSetting, performanceKey, readOptions, readSettings, setSetting } from "@/song/performance/settings";
 import { playerShapeFromOptions } from "@/song/performance/song-shape";
 import { readTempoSource, type TempoSource } from "@/song/performance/tempo-source";
 import { useSongAnalysis } from "./use-song-analysis";
@@ -50,6 +50,10 @@ import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
 import { applyPartChoices, defaultPartChoices, muteSilencedParts, partKeysOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
+import { RhythmAutomationSetup } from "./RhythmAutomationSetup";
+import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
+import { usePedalLibrary } from "@/song/performance/pedal-library";
+import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
@@ -126,8 +130,12 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     setTrackInfo = useSong((s) => s.setTrackInfo),
     missingParts = useSong((s) => s.missingParts);
   // A split of only part of the song is for Tone Match; Performance plays the whole song and says why the stems are missing.
-  const partNote = partSplitNote(useSong((s) => s.lastSplit), formatTime);
+  const partNote = partSplitNote(
+    useSong((s) => s.lastSplit),
+    formatTime,
+  );
   const key = performanceKey(source);
+  const settingsVersion = useSongSettingsRevision(key);
   const library = useSongLibrary();
   const queued = !!source?.libraryId && library.queue[library.position] === source.libraryId;
   const options = useMemo(
@@ -245,10 +253,40 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const bass = useMemo(() => bassOf(stems), [stems]);
   // The song's MIDI file is saved with its options, so it is read back here when the song is shown.
   const [midiFile, setMidiFile] = useState<MidiFileOption | null>(() => midiFileFromOptions(options));
+  const pedalSettings = usePedalLibrary();
+  const rhythmControls = rhythmControlOverrides(pedalSettings);
+  const cueOptions = useMemo(() => readOptions<Record<string, unknown>>(key, {}), [key, settingsVersion]);
+  // Mixer and display edits must not restart an armed scheduler. Only dependencies of the automatic rhythm change its cues.
+  const rhythmCueSignature = JSON.stringify(
+    cueOptions.rhythmAutomation
+      ? [
+          cueOptions.rhythmAutomation,
+          cueOptions.rhythmExport,
+          cueOptions.trimStart,
+          cueOptions.trimEnd,
+          (cueOptions.analysis as { silence?: unknown } | undefined)?.silence,
+          cueOptions.endBehaviour,
+          bpm,
+          beats,
+          firstBeat,
+          sectionList,
+          rhythmControls,
+        ]
+      : null,
+  );
   const parsed = useMemo(() => {
-    const cued = songCues(chart, midiConfig.macros, midiFile);
+    const settings = {
+      ...readSettings(key),
+      ":bpm": String(bpm),
+      ":options": JSON.stringify({ ...readOptions(key, {}), sections: sectionList, beats, firstBeat }),
+    };
+    const cued = songCues(chart, midiConfig.macros, midiFile, {
+      duration: source ? source.audio.channels[0].length / source.audio.sampleRate : 0,
+      settings,
+      rhythmControls,
+    });
     return { cues: cued.cues, error: cued.error };
-  }, [chart, midiConfig.macros, midiFile]);
+  }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature]);
   // The song's MIDI timecode offset, saved with its options. Empty means 00:00:00:00.
   const [timecodeOffset, setTimecodeOffset] = useState(options.timecodeOffset);
   const saveTimecodeOffset = (value: string) => {
@@ -488,6 +526,26 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     setLoudness(loudnessFromOptions(getSetting(key, ":options")));
     setSilence(saved?.silence ? { songKey: key, ends: saved.silence } : null);
   }, [analysis.revision, key]);
+  const observedSettings = useRef({
+    key,
+    bpm: getSetting(key, ":bpm"),
+    sections: JSON.stringify(readOptions(key, { sections: [] }).sections),
+    firstBeat: readOptions(key, { firstBeat: 0 }).firstBeat,
+    beats: readOptions(key, { beats: 4 }).beats,
+  });
+  useEffect(() => {
+    const saved = readOptions(key, { sections: [], firstBeat: 0, beats: 4 });
+    const next = { key, bpm: getSetting(key, ":bpm"), sections: JSON.stringify(saved.sections), firstBeat: saved.firstBeat, beats: saved.beats };
+    const previous = observedSettings.current;
+    observedSettings.current = next;
+    if (previous.key !== key) return;
+    // Read only fields that actually changed in storage, so unrelated saves cannot overwrite an in-progress local edit.
+    if (previous.bpm !== next.bpm) setBpm(readNumber(next.bpm, 120, 30, 300));
+    if (previous.firstBeat !== next.firstBeat) setFirstBeat(next.firstBeat);
+    if (previous.beats !== next.beats) setBeats(next.beats);
+    if (previous.sections !== next.sections)
+      setSectionList((current) => (JSON.stringify(current) === JSON.stringify(parseSections(saved.sections)) ? current : parseSections(saved.sections)));
+  }, [key, settingsVersion]);
   const detectTempo = (analyseAgain: boolean) => {
     if (analyseAgain) analysis.analyseAgain();
     else analysis.detect();
@@ -581,9 +639,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat, sound: sounds.sound, countInSound: sounds.countInSound });
   }, [player, metronome, bpm, beats, volume, firstBeat, sounds]);
   // The song's trim, fades and end are read from its stored options, so a player always takes the song's own values.
+  const playedShapeSignature = JSON.stringify(playerShapeFromOptions(getSetting(key, ":options")));
   useEffect(() => {
     player?.setShape(playerShapeFromOptions(getSetting(key, ":options")));
-  }, [player, key, shapeVersion]);
+  }, [player, key, shapeVersion, playedShapeSignature]);
   useEffect(() => {
     try {
       localStorage.setItem("vltn.performance.metronome", String(metronome));
@@ -733,6 +792,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         <BandPanel
           songKey={key}
           playing={playing || library.playlistPlaying}
+          audioPlaying={playing}
           chart={chart}
           chords={chords}
           sections={sectionList}
@@ -782,6 +842,23 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       </div>
       <div style={{ display: shownView("midi") }}>
         <SessionMidiHealth session={session} />
+        {source && (
+          <RhythmAutomationSetup
+            key={key}
+            current={{
+              key,
+              title: source.name.replace(/\.[^.]+$/, ""),
+              duration: source.audio.channels[0].length / source.audio.sampleRate,
+              settings: { ...readSettings(key), "": chart },
+            }}
+            locked={playing || library.playlistPlaying}
+            onSaveChart={(value) => {
+              // Re-arming sends this song's new memory recall before playback; editing cues alone does not rerun load triggers.
+              session.disarm();
+              saveChart(value);
+            }}
+          />
+        )}
         <PerformanceMidiSetup
           session={session}
           chart={chart}
