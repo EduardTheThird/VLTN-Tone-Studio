@@ -40,6 +40,7 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
   // Triggers have no time, so they are checked below rather than on the timeline.
   // The chase replays a controller unless it is an assigned trigger here or a fixed one (see midi-chase.ts).
   const triggers = chaseTriggerSet(options.pedals.flatMap((pedal) => pedal.triggers ?? []));
+  const rc10rTriggers = chaseTriggerSet(options.pedals.filter((pedal) => pedal.name === "BOSS RC-10R").flatMap((pedal) => pedal.triggers ?? []));
   const events = timedCues(cues)
     .filter((c) => c.messages.length)
     .slice()
@@ -115,7 +116,13 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
         const id = `${cue.time}:${channel}:${kind}:${kind === 176 ? bytes[1] : ""}`,
           value = bytes.join(",");
         const previous = conflicts.get(id);
-        if (previous)
+        // The output gives recognized RC-10R press/release pairs a real hold time, even when their chart timestamps match.
+        const spacedPulse =
+          kind === 176 &&
+          bytes[2] === 0 &&
+          previous === `${bytes[0]},${bytes[1]},127` &&
+          (cue.managed === "rhythm" || rc10rTriggers.has(triggerKey(channel, bytes[1])));
+        if (previous && !spacedPulse)
           add(
             previous === value ? "duplicate" : "conflict",
             `${previous === value ? "Repeated" : "Conflicting"} ${kind === 192 ? "program change" : "CC" + bytes[1]} ` +

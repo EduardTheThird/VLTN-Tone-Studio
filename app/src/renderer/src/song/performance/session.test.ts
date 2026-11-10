@@ -327,6 +327,59 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("separates RC-10R cue releases and preserves them across pause cleanup", () => {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(1000);
+  const cues = parseChart("[00:01] {nochase} {midi:cc 2 80 127} {midi:cc 2 80 0}").map((cue) => ({ ...cue, managed: "rhythm" as const }));
+  const { session, out, unload } = armedSession(output(), { cues });
+  const now = performance.now();
+  session.sendPerformance([0xb1, 80, 127], now);
+  session.sendPerformance([0xb1, 80, 0], now);
+  expect(out.send.mock.calls.slice(-2)).toEqual([
+    [[0xb1, 80, 127], now],
+    [[0xb1, 80, 0], now + 100],
+  ]);
+  out.send.mockClear();
+  session.panic();
+  expect(out.clear).toHaveBeenCalled();
+  expect(out.send).toHaveBeenCalledWith([0xb1, 80, 0], now + 100);
+  unload();
+  session.dispose();
+  clock.mockRestore();
+});
+
+it("holds an automatic RC-10R stop trigger through the transport's pause cleanup", async () => {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(1000);
+  const cues = parseChart("{midi@stop:cc 2 83 127}\n{midi@stop:cc 2 83 0}").map((cue) => ({ ...cue, managed: "rhythm" as const }));
+  const { session, out, unload } = armedSession(output(), { cues });
+  try {
+    await session.play();
+    out.send.mockClear();
+    session.pause();
+    const stop = out.send.mock.calls.filter(([bytes]) => bytes[0] === 0xb1 && bytes[1] === 83);
+    expect(stop).toEqual([
+      [[0xb1, 83, 127], undefined],
+      [[0xb1, 83, 0], 1100],
+    ]);
+  } finally {
+    unload();
+    session.dispose();
+    clock.mockRestore();
+  }
+});
+
+it("does not delay unrelated pedal controls or unassigned CCs", () => {
+  const { session, out, unload } = armedSession();
+  const now = performance.now();
+  session.sendPerformance([0xb0, 102, 127], now);
+  session.sendPerformance([0xb0, 102, 0], now);
+  expect(out.send.mock.calls.slice(-2)).toEqual([
+    [[0xb0, 102, 127], now],
+    [[0xb0, 102, 0], now],
+  ]);
+  unload();
+  session.dispose();
+});
+
 it("restores arming handed over by the previous song only for the same output object", () => {
   const { session, out } = armedSession();
   expect(selectArmed(session.state)).toBe(true);
