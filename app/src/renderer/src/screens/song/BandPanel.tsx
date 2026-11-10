@@ -28,6 +28,8 @@ import {
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 import type { NoteEvent } from "@/song/band/note";
 import { encodeSmf } from "@/song/performance/smf";
+import type { RhythmSnapshot } from "@/song/band/rhythm-export";
+import { RhythmExportDialog } from "./RhythmExportDialog";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { chordChangeTimesOf, fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
 import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
@@ -190,7 +192,7 @@ export function BandPanel(props: BandPanelProps) {
             Generate.
           </DialogDescription>
         </DialogHeader>
-        {open && <BandBody {...props} />}
+        {open && <BandBody key={props.songKey} {...props} />}
       </DialogContent>
     </Dialog>
   );
@@ -240,15 +242,25 @@ function BandBody({
   const [confirmRemove, setConfirmRemove] = useState(false);
   // The notes of the last Generate, kept so they can be exported as a MIDI file.
   const [lastNotes, setLastNotes] = useState<{ drums: NoteEvent[]; bass: NoteEvent[] } | null>(null);
+  const [rhythmOpen, setRhythmOpen] = useState(false);
+  const [rhythmGeneration, setRhythmGeneration] = useState<{
+    snapshot: RhythmSnapshot;
+    source: typeof source;
+    stems: typeof stems;
+    inputs: string;
+  } | null>(null);
   const job = useRef<{ cancel(): void } | null>(null);
+  const active = useRef(true);
   const stopPreview = useRef<(() => void) | null>(null);
   const playingNow = useRef(playing);
   useEffect(() => {
     playingNow.current = playing;
   }, [playing]);
   useEffect(() => {
+    active.current = true;
     useSong.getState().checkMissingParts();
     return () => {
+      active.current = false;
       job.current?.cancel();
       stopPreview.current?.();
     };
@@ -268,6 +280,17 @@ function BandBody({
   const busy = work !== null;
   // With no song there is nothing to find a beat in or to render, so every action waits for one.
   const blocked = busy || playing || source === null;
+  // Audio bookkeeping changes after Generate are not musical edits. Everything that determines the notes belongs to this key.
+  const generationInputs = (using: BandSettings) => {
+    const { firstNote: _firstNote, rendered: _rendered, ...musical } = using;
+    return JSON.stringify([grid, chart, chords, sections, sectionHints, bassLine, musical]);
+  };
+  const rhythmFresh =
+    rhythmGeneration !== null &&
+    rhythmGeneration.source === source &&
+    rhythmGeneration.inputs === generationInputs(settings) &&
+    Object.keys(rhythmGeneration.stems ?? {}).length === Object.keys(stems ?? {}).length &&
+    Object.entries(rhythmGeneration.stems ?? {}).every(([kind, audio]) => audio === stems?.[kind]);
   const generated = hasGeneratedParts(tracks);
   const partKeys = partKeysOf(tracks ?? {}, stems);
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
@@ -422,6 +445,7 @@ function BandBody({
       job.current = rendering;
       rendering.onProgress((stage) => setWork(stageText(stage)));
       const result = await rendering.done;
+      if (!active.current || useSong.getState().source !== current) return;
       setLastNotes(result.notes);
       // The bass tone is applied before the bass is saved, so the saved bass is the one Generate made. A tone that can't be used
       // leaves the clean bass and a notice.
@@ -443,6 +467,7 @@ function BandBody({
       const levels = levelStatus(result.levels);
       if (levels) notes.push(levels);
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
+      if (!active.current || useSong.getState().source !== current) return;
       const turnedOff = only ? [] : (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
       const applied = useSong.getState().applyGeneratedParts({ drums, bass }, { playing: playingNow.current, remove: turnedOff });
       if (applied.length === 0) {
@@ -472,6 +497,23 @@ function BandBody({
       if (applied.length === 0) {
         setOutOfDate(false);
         writeStoredBand(songKey, { bandOutOfDate: false });
+        setRhythmGeneration(
+          result.notes.drums.length
+            ? {
+                snapshot: {
+                  name: current.name,
+                  duration: songEnd,
+                  grid: structuredClone(request.grid),
+                  notes: structuredClone(result.notes.drums),
+                  sections: structuredClone(sections),
+                  plans: structuredClone(request.plans),
+                },
+                source: current,
+                stems: { ...selectWholeSongStems(useSong.getState()) },
+                inputs: generationInputs(requested),
+              }
+            : null,
+        );
       }
     });
   };
@@ -645,6 +687,7 @@ function BandBody({
       const refused = useSong.getState().removeGeneratedParts({ playing: playingNow.current });
       setNotices(refused);
       if (refused.length === 0) {
+        setRhythmGeneration(null);
         // The rendered audio went with the generated tracks.
         commitBand({ ...settingsRef.current, rendered: {} });
         onPartChoice(ORIGINAL_PARTS);
@@ -829,8 +872,20 @@ function BandBody({
           <Button variant="outline" disabled={playing || lastNotes === null} onClick={() => void exportMidi()}>
             Export MIDI…
           </Button>
+          <Button
+            variant="outline"
+            disabled={blocked || previewing !== null || !rhythmFresh}
+            title={rhythmFresh ? "Choose six drum passages and export them for RC-10R Rhythm Converter" : "Generate drums with the current song settings first"}
+            onClick={() => setRhythmOpen(true)}
+          >
+            Export for BOSS RC-10R…
+          </Button>
         </div>
       </footer>
+
+      {rhythmOpen && rhythmGeneration && (
+        <RhythmExportDialog snapshot={rhythmGeneration.snapshot} songKey={songKey} disabled={blocked || !rhythmFresh} onClose={() => setRhythmOpen(false)} />
+      )}
 
       <AlertDialog open={confirmReplace !== null} onOpenChange={(open) => !open && setConfirmReplace(null)}>
         <AlertDialogContent>
