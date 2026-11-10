@@ -2,6 +2,17 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.23] - 2026-11-10
+
+Song edits now keep generated parts and automatic RC-10R drum cues current.
+
+- **Automatic pedal cues.** In **Performance → MIDI → Automatic RC-10R drums**, preview and save memory recall, rhythm start, pattern changes, fills and ending for one song or a playlist. The first six playlist songs can recall phrase memories 1–6. Review each section's Pattern 1/2 choice and match the pedal's channel and CC assignments.
+- **Edits update what depends on them.** Later BPM, trim, section and export changes recalculate the playable pedal cues. Musical changes refresh existing generated drums and bass while stopped, even with the Band panel closed. Trims use the full-length audio through the new range without an unnecessary render.
+- **Playback waits for fresh parts.** Play waits for regeneration and saving. Playlist preparation discards changed songs, and a song needing new parts waits between songs instead of starting old audio. Failed saves keep the update pending.
+- **Preserved song data.** Cue setup keeps other lyrics and MIDI commands, supports Undo and retries failed saves. Imported rendered parts are preserved. Export choices remember their source tempo and follow later grid-tempo changes.
+
+Start songs from the beginning after a pause or seek. Match the RC-10R's tempo or incoming clock, intro, initial pattern and ending mode to the preview. Updated rhythm notes or native part assignments still need a fresh transfer through Rhythm Converter. Pedal transition timing remains to be checked on hardware.
+
 ## [0.9.22] - 2026-11-10
 
 Export generated drums for the BOSS RC-10R with the parts already assigned.
