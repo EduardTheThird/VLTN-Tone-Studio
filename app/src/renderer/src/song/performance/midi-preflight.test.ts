@@ -20,6 +20,19 @@ it("reports simultaneous conflicts/duplicates without rewriting intentional comm
   expect(report.issues.map((i) => i.code)).toEqual(["conflict", "duplicate"]);
   expect(JSON.stringify(cues)).toBe(before);
 });
+it("accepts RC-10R pulses spaced by the output but still warns about duplicates and unrecognized pairs", () => {
+  const chart = "[00:01] {nochase} {midi:cc 2 80 127} {midi:cc 2 80 0}";
+  const pedals = [{ name: "BOSS RC-10R", channel: 2, triggers: [[2, 80] as [number, number]] }];
+  expect(midiPreflight(parseChart(chart), { ...options, pedals }).issues).toEqual([]);
+  expect(
+    midiPreflight(
+      parseChart(chart).map((cue) => ({ ...cue, managed: "rhythm" })),
+      options,
+    ).issues,
+  ).toEqual([]);
+  expect(midiPreflight(parseChart(chart), options).issues.some((issue) => issue.code === "conflict")).toBe(true);
+  expect(midiPreflight(parseChart(chart + " {midi:cc 2 80 0}"), { ...options, pedals }).issues.map((issue) => issue.code)).toEqual(["duplicate"]);
+});
 it("finds configured pedal-channel collisions, saved-channel mismatches and automatic tempo conflicts", () => {
   const cues = parseChart("[00:00] {label:Pedal A: recall} {midi:pc 1 1}\n[00:01] {label:Pedal B: recall} {midi:pc 2 1}\n[00:02] {midi:cc 1 74 90}");
   const report = midiPreflight(cues, {

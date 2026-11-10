@@ -24,6 +24,7 @@ import { startMidiScheduler, prepareMidiScheduler, midiNow, type SchedulerDegrad
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } from "@/song/performance/midi-chase";
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { refreshBandBeforePlay } from "@/song/band/refresh";
+import { TriggerPulses } from "./trigger-pulse";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump, type TimecodeTail } from "@/song/performance/midi-scheduler";
 import { orderForPedal } from "@/song/performance/midi-pedal-order";
 import { NO_TIMECODE, timecodeOffsetFrames, type TimecodeSetting } from "@/song/performance/timecode";
@@ -83,6 +84,8 @@ export const BLUETOOTH_PORT_ID = "bluetooth-midi";
 
 /** How often the session checks whether the next playlist song can be chained onto this one */
 const CHAIN_CHECK_MS = 250;
+// Output queues outlive a song session during playlist handovers; their controller state must too.
+const rc10rPulses = new TriggerPulses();
 /** The next song is chained this far before its join, so that a pause in between has time to undo it */
 const CHAIN_AHEAD_S = 5;
 /** How often the playing song is checked for having reached its halfway point, to count it as played. */
@@ -896,6 +899,10 @@ export class PerformanceSession {
         this.noteChannels.clear();
         return;
       }
+      for (const release of rc10rPulses.releasesAfterClear(output, performance.now())) {
+        output.send(release.bytes, release.timestamp);
+        this.recordQueued(release.bytes, release.timestamp, "RC-10R control release");
+      }
       // CC64 is sustain on synths but looper Stop on the GP-150 / GP-180. Release only
       // channels where this session actually queued note messages.
       for (const ch of this.noteChannels)
@@ -934,6 +941,7 @@ export class PerformanceSession {
       return;
     }
     try {
+      if (this.output && this.isRc10rTrigger(bytes)) timestamp = rc10rPulses.timestamp(this.output, bytes, timestamp, performance.now());
       this.output?.send(bytes, timestamp);
     } catch (e) {
       this.deadOutput(`MIDI send failed: ${e instanceof Error ? e.message : String(e)}. Cues disarmed.`);
@@ -942,6 +950,16 @@ export class PerformanceSession {
     this.recordQueued(bytes, timestamp, label);
     if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) this.noteChannels.add(bytes[0] & 15);
   };
+
+  private isRc10rTrigger(bytes: number[]): boolean {
+    if (bytes.length !== 3 || (bytes[0] & 240) !== 176 || ![0, 127].includes(bytes[2])) return false;
+    const channel = (bytes[0] & 15) + 1;
+    const pedal = configuredPedals(usePedalLibrary.getState()).find((entry) => entry.name === "BOSS RC-10R");
+    return (
+      !!pedal?.triggers.some(([ch, cc]) => ch === channel && cc === bytes[1]) ||
+      this.state.cues.some((cue) => cue.managed === "rhythm" && cue.messages.some((message) => message[0] === bytes[0] && message[1] === bytes[1]))
+    );
+  }
 
   /** Disarms because the output can no longer take messages. Armed cues are never dropped without a visible fault. */
   private deadOutput(message: string): void {
