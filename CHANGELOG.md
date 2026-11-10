@@ -2,6 +2,16 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.24] - 2026-11-10
+
+RC-10R rhythm controls now give the pedal time to recognize each press.
+
+- **A real trigger hold.** Configured RC-10R momentary controls and automatic rhythm cues schedule their release at least 100 ms after the press. This replaces the zero-duration pair that failed the live rhythm-start test. Start, pattern, fill and stop presses keep their normal timing.
+- **Stop and cleanup stay ordered.** Pending releases are restored when playback clears the MIDI queue, and rapid repetitions keep their press/release order. The controller state follows the output across playlist sessions. Other pedals and continuous controller values are unchanged.
+- **Clearer preflight.** Recognized RC-10R press/release pairs no longer appear as conflicting values. Genuine duplicates and unrecognized pairs still warn.
+
+Existing automatic cue plans use the corrected output timing without rebuilding them. Separate Start and Stop commands were verified on the pedal; the new 100 ms paired timing still needs its live check.
+
 ## [0.9.23] - 2026-11-10
 
 Song edits now keep generated parts and automatic RC-10R drum cues current.
