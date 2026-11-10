@@ -96,6 +96,15 @@ describe("rhythm export dialog", () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Ending: the selected passage goes past/)).toBeTruthy();
   });
+  it("keeps the successfully exported choices for automatic pedal cue setup", async () => {
+    const setup = completeSetup();
+    open();
+    // A newer unrelated option written while the dialog is open must also survive the export.
+    localStorage.setItem(`${key}:options`, JSON.stringify({ other: "newer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export rhythm files…" }));
+    await screen.findByText("Saved the RC0 rhythm, MIDI and import guide.");
+    expect(JSON.parse(localStorage.getItem(`${key}:options`)!)).toEqual({ other: "newer", rhythmExport: setup });
+  });
   it("previews the same normalized notes used in export and stops when choices change or it closes", async () => {
     const setup = completeSetup();
     const view = open();

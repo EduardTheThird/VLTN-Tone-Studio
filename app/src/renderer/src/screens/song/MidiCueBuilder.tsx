@@ -268,14 +268,18 @@ export function MidiCueBuilder({
                   <td className="p-2">{[...new Set(cue.messages.map((bytes) => (bytes[0] < 0xf0 ? (bytes[0] & 15) + 1 : "System")))].join(", ")}</td>
                   <td className="p-2 font-mono">{cue.messages.map(describe).join(" → ")}</td>
                   <td className="p-2">
-                    <CueRowButtons cue={cue} locked={locked} sections={sections} onEdit={() => startEdit(cue)} onRemove={() => remove(cue)} />
+                    {cue.managed === "rhythm" ? (
+                      <span className="text-xs text-silkscreen-3">Automatic RC-10R</span>
+                    ) : (
+                      <CueRowButtons cue={cue} locked={locked} sections={sections} onEdit={() => startEdit(cue)} onRemove={() => remove(cue)} />
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="text-xs text-silkscreen-3">Multi-message actions are sent in the order shown.</p>
-          {scheduled.some((cue) => !cue.source) && (
+          {scheduled.some((cue) => !cue.managed && !cue.source) && (
             <p className="text-xs text-silkscreen-3">
               Some cues share a line with other cues or timestamps, so they are changed in the chart text. To change the chart text directly, open Lyrics &
               chords → Edit chords, lyrics & MIDI

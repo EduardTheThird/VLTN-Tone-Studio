@@ -10,6 +10,8 @@ import { ORIGINAL_PARTS, type PartChoices } from "@/song/band/part-choice";
 import type { TrackInfo } from "@/song/tracks";
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
+import { setSetting } from "@/song/performance/settings";
+import { refreshBandBeforePlay } from "@/song/band/refresh";
 
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
@@ -148,6 +150,44 @@ afterEach(() => {
 });
 
 describe("Band panel", () => {
+  it("automatically refreshes existing generated audio after musical edits while its dialog is closed", async () => {
+    stored({ beatGrid: grid, generatedParts: { drums: "track0" } });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel();
+    act(() => useBandPanel.getState().show(false));
+    act(() => setSetting(KEY, ":options", JSON.stringify({ ...savedOptions(), band: { ...DEFAULT_BAND_SETTINGS, complexity: 0.8 } })));
+    await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(savedOptions().bandOutOfDate).toBe(false));
+    expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1);
+    act(() => setSetting(KEY, ":options", JSON.stringify({ ...savedOptions(), trimStart: 0.5, trimEnd: 7.5 })));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(mocks.startBandRender).toHaveBeenCalledTimes(1);
+  });
+  it("updates the fixed grid after a BPM change and completes its automatic render before Play", async () => {
+    stored({ beatGrid: grid, generatedParts: { drums: "track0" } });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    const view = renderPanel();
+    view.rerender(<BandPanel {...view.props} bpm={140} />);
+    await act(async () => {
+      await refreshBandBeforePlay(KEY);
+    });
+    expect(mocks.startBandRender).toHaveBeenCalledTimes(1);
+    expect(mocks.startBandRender.mock.calls[0][0].grid.bpm).toBe(140);
+    expect(savedOptions().bandOutOfDate).toBe(false);
+  });
+  it("refreshes between playlist songs while the playlist remains active", async () => {
+    stored({ beatGrid: grid, generatedParts: { drums: "track0" }, bandOutOfDate: true });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel({ playing: true, audioPlaying: false });
+    await act(async () => {
+      await refreshBandBeforePlay(KEY);
+    });
+    expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledTimes(1);
+    expect(savedOptions().bandOutOfDate).toBe(false);
+  });
   it("exports bars from the generation grid when it was continued through a later section", async () => {
     stored({ beatGrid: fixedBeatGrid(120, 0, 4, 4) });
     mocks.startBandRender.mockReturnValue({
@@ -183,7 +223,7 @@ describe("Band panel", () => {
     useSong.setState({
       stems: { drums: audio },
       applyGeneratedParts: vi.fn(() => {
-        useSong.setState({ stems: { drums: audio, track0: audio } });
+        useSong.setState({ stems: { drums: audio, track0: audio }, tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
         return [];
       }),
     });
@@ -245,7 +285,7 @@ describe("Band panel", () => {
     const view = renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Export for BOSS RC-10R…" }) as HTMLButtonElement).disabled).toBe(false));
-    view.rerender(<BandPanel {...view.props} chart="[C]Changed" />);
+    view.rerender(<BandPanel {...view.props} chart="[00:00] [C]Changed" />);
     expect((screen.getByRole("button", { name: "Export for BOSS RC-10R…" }) as HTMLButtonElement).disabled).toBe(true);
     view.rerender(<BandPanel {...view.props} songKey={`${KEY}-another-song`} />);
     expect((screen.getByRole("button", { name: "Export for BOSS RC-10R…" }) as HTMLButtonElement).disabled).toBe(true);
