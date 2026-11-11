@@ -1,3 +1,4 @@
+import { PREPARATION_TOKEN, withPreparationWait } from "./preparation-wait";
 import { PreparationHistory, preparationTrigger, type PreparationRepeat, type PreparationCommand } from "./preparation-repeat";
 import { create } from "zustand";
 import { removeCueToken, type Cue } from "./chart";
@@ -89,8 +90,11 @@ export function startPreparation(
   return { opening, commands: explicit, suppressed: opening };
 }
 /** Named pedal and macro pickers keep their labels and message order in the preparation phase. */
-export function preparationLine(line: string, repeat: PreparationRepeat = "always"): string {
-  return line.replace(/^\s*\[[^\]]*\]\s*/, "").replace(/\{midi:([^}]+)\}/g, (_, command: string) => `{midi@${preparationTrigger(repeat)}:${command.trim()}}`);
+export function preparationLine(line: string, repeat: PreparationRepeat = "always", waitMs = 0): string {
+  return withPreparationWait(
+    line.replace(/^\s*\[[^\]]*\]\s*/, "").replace(/\{midi:([^}]+)\}/g, (_, command: string) => `{midi@${preparationTrigger(repeat)}:${command.trim()}}`),
+    waitMs,
+  );
 }
 /** Move an entire command line, preserving bank/PC pairs and macro order without moving lyrics or timed cues. */
 export function movePreparationLine(chart: string, cue: Cue, direction: 1 | -1): string | null {
@@ -98,10 +102,11 @@ export function movePreparationLine(chart: string, cue: Cue, direction: 1 | -1):
   const at = cue.source?.line;
   if (at === undefined || !lines[at]?.includes(cue.source!.text)) return null;
   const eligible = (line: string) =>
-    /\{midi@prepare(?:-beginning|-once)?:/.test(line) &&
+    [...line.matchAll(PREPARATION_TOKEN)].length > 0 &&
     !line
       .split("//")[0]
-      .replace(/\{midi@prepare(?:-beginning|-once)?:[^}]*\}|\{label:[^}]*\}/g, "")
+      .replace(PREPARATION_TOKEN, "")
+      .replace(/\{label:[^}]*\}/g, "")
       .trim();
   const positions = lines.flatMap((line, index) => (eligible(line) ? [index] : []));
   const index = positions.indexOf(at),
@@ -144,6 +149,17 @@ export function setPreparationRepeat(chart: string, cue: Cue, repeat: Preparatio
   const commentAt = line.search(/(^|\s)\/\//),
     code = commentAt < 0 ? line : line.slice(0, commentAt);
   lines[source.line] =
-    code.replace(/\{midi@prepare(?:-beginning|-once)?:/g, `{midi@${preparationTrigger(repeat)}:`) + (commentAt < 0 ? "" : line.slice(commentAt));
+    code.replace(/\{midi@prepare(?:-beginning|-once)?(?=\s|:)/g, `{midi@${preparationTrigger(repeat)}`) + (commentAt < 0 ? "" : line.slice(commentAt));
+  return lines.join(chart.includes("\r\n") ? "\r\n" : "\n");
+}
+
+/** Set the wait on a complete preparation line without moving its lyrics, comment or repeat rules. */
+export function setPreparationWait(chart: string, cue: Cue, milliseconds: number): string | null {
+  const source = cue.source;
+  if (!source || cue.trigger !== "prepare" || cue.managed) return null;
+  const lines = chart.split(/\r?\n/),
+    line = lines[source.line];
+  if (line === undefined || line.slice(source.start, source.end) !== source.text) return null;
+  lines[source.line] = withPreparationWait(line, milliseconds);
   return lines.join(chart.includes("\r\n") ? "\r\n" : "\n");
 }

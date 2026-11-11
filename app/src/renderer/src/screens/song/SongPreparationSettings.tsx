@@ -41,9 +41,9 @@ export function SongPreparationSettings({ songKey, locked, session }: { songKey:
           />
         </label>
         <label>
-          Gap between setup messages (seconds)
+          Gap between setup commands (seconds)
           <Input
-            aria-label="Preparation message gap"
+            aria-label="Preparation command gap"
             className="w-24"
             type="number"
             min={0}
@@ -86,7 +86,10 @@ export function SongPreparationSettings({ songKey, locked, session }: { songKey:
         Prepare again respects each command’s Repeat rule. Once commands stay used after sending begins, including cancellation or a lost connection. Reset once
         commands allows them on the next preparation; it sends nothing by itself.
       </p>
-      <p>Use a message gap if a pedal needs time between a preset change and another setup command. The loading wait follows the complete sequence.</p>
+      <p>
+        Wait after on a command line applies once after its entire bank/preset pair or macro. These waits add to the gap between commands and the final loading
+        wait. Use zero for the global gap or loading wait when you want only individual command waits.
+      </p>
       <p>
         Automatic GP tempo follows your preparation commands. If your commands set a different tempo, turn off automatic song BPM. Cancel start clears queued
         commands and prevents the song from starting; commands already received by a pedal cannot be undone.

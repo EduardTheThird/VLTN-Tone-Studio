@@ -16,6 +16,13 @@ export interface PreparationCommand {
   onceKey?: string;
 }
 
+export interface PreparationGroup {
+  label: string;
+  commands: PreparationCommand[];
+  waitAfterMs: number;
+  skipped?: string;
+}
+
 /** Records sending attempts, not hardware delivery. It never resets just because preparation was cancelled. */
 export class PreparationHistory {
   private used = new Set<string>();
@@ -31,6 +38,9 @@ export class PreparationHistory {
     return true;
   }
   commands(cues: readonly Cue[], atBeginning: boolean): PreparationCommand[] {
+    return this.groups(cues, atBeginning).flatMap((group) => group.commands);
+  }
+  groups(cues: readonly Cue[], atBeginning: boolean): PreparationGroup[] {
     const explicit = cues.filter((cue) => cue.trigger === "prepare");
     const groups = new Map<number, Cue[]>();
     explicit.forEach((cue, index) => {
@@ -49,11 +59,29 @@ export class PreparationHistory {
       const key = `${signature}:${occurrence}`;
       for (const cue of group) keys.set(cue, key);
     }
-    return explicit.flatMap((cue) => {
-      if (cue.prepareRepeat === "beginning" && !atBeginning) return [];
-      const onceKey = keys.get(cue);
-      if (onceKey && this.used.has(onceKey)) return [];
-      return cue.messages.map((bytes) => ({ bytes, ...(onceKey ? { onceKey } : {}) }));
+    const lines = new Map<number, Cue[]>();
+    explicit.forEach((cue, index) => {
+      const line = cue.source?.line ?? -(index + 1);
+      lines.set(line, [...(lines.get(line) ?? []), cue]);
+    });
+    return [...lines.values()].map((line) => {
+      const commands = line.flatMap((cue) => {
+        if (cue.prepareRepeat === "beginning" && !atBeginning) return [];
+        const onceKey = keys.get(cue);
+        if (onceKey && this.used.has(onceKey)) return [];
+        return cue.messages.map((bytes) => ({ bytes, ...(onceKey ? { onceKey } : {}) }));
+      });
+      const skipped = commands.length
+        ? undefined
+        : line.every((cue) => cue.prepareRepeat === "once")
+          ? "Already used this song load"
+          : "Skipped by Repeat rules";
+      return {
+        label: line.find((cue) => cue.label)?.label ?? "Custom MIDI command",
+        commands,
+        waitAfterMs: Math.max(0, ...line.map((cue) => cue.prepareWaitMs ?? 0)),
+        ...(skipped ? { skipped } : {}),
+      };
     });
   }
 }

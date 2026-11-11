@@ -2,6 +2,12 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.29] — 2026-11-11
+
+### Added
+- **Wait after each preparation command.** Set an individual loading wait for a Before song command line or macro. Bank-select/preset messages and macros stay together, with the global command gap between complete groups. Wait edits clear Ready while preserving once-command history.
+- **Preparation sequence preview.** See automatic memory and preset selection, custom commands, waits, automatic tempo and Ready in actual send order, plus configured preparation time and skipped repeat-rule commands. Preview sends nothing and highlights the current step during preparation ([Before song](PERFORMANCE.md#before-song-preparation)).
+
 ## [0.9.28] - 2026-11-11
 
 Choose when your Before song commands repeat, so resuming a song can leave one-shot pedal actions alone.

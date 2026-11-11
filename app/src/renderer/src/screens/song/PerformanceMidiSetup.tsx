@@ -1,5 +1,6 @@
+import { PreparationSequencePreview } from "./PreparationSequencePreview";
 import { SongPreparationSettings } from "./SongPreparationSettings";
-import { moveCueToPreparation, movePreparationLine, setPreparationRepeat } from "@/song/performance/start-preparation";
+import { moveCueToPreparation, movePreparationLine, setPreparationRepeat, setPreparationWait } from "@/song/performance/start-preparation";
 import { hasPedalRhythm } from "@/song/performance/rhythm-runtime";
 import { RhythmHardwareTest } from "./RhythmHardwareTest";
 import { RhythmTempoStatus } from "./RhythmTempoStatus";
@@ -297,6 +298,7 @@ export function PerformanceMidiSetup({
       </HelpNote>
       {songKey && <SongPreparationSettings songKey={songKey} session={session} locked={playing || starting} />}
       <RhythmTempoStatus session={session} />
+      <PreparationSequencePreview session={session} />
       <RhythmHardwareTest session={session} />
       <TimecodeSettings session={session} offset={timecodeOffset} onOffset={onTimecodeOffset} bluetooth={portId === BLUETOOTH_PORT_ID} />
       <MidiFileField file={midiFile} onChange={onMidiFile} />
@@ -309,6 +311,12 @@ export function PerformanceMidiSetup({
           locked={armed && (playing || starting)}
           onPrepare={(cue) => {
             const next = moveCueToPreparation(chart, cue);
+            if (next === null) return false;
+            onSaveChart(next);
+            return true;
+          }}
+          onPreparationWait={(cue, milliseconds) => {
+            const next = setPreparationWait(chart, cue, milliseconds);
             if (next === null) return false;
             onSaveChart(next);
             return true;

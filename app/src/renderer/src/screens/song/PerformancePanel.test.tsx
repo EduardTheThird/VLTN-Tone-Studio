@@ -1127,3 +1127,21 @@ it("respects once commands on Prepare again and exposes an explicit reset withou
     [0xc0, 99],
   ]);
 });
+
+it("previews automatic/custom command order and total waits without sending, and updates when a wait changes", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  localStorage.setItem(key, "[00:00] {midi:cc 16 0 0} {midi:pc 16 6}\n{label:Effect} {midi@prepare wait=0.5:cc 3 20 64}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, commandGapMs: 100, openingPresets: true } }));
+  useMidiConfiguration.setState({ tempoOnStart: true, tempoChannel: 16 });
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByRole("tab", { name: "MIDI" }));
+  const preview = within(screen.getByRole("region", { name: "Preparation sequence preview" }));
+  expect(preview.getByText("Opening preset")).toBeTruthy();
+  expect(preview.getByText("Effect")).toBeTruthy();
+  expect(preview.getByText("Song tempo")).toBeTruthy();
+  expect(preview.getByText(/Configured preparation time/).textContent).toContain("0.9 s");
+  expect(mocks.send).not.toHaveBeenCalled();
+  await act(async () => fireEvent.change(screen.getByLabelText("Wait after Effect"), { target: { value: "1" } }));
+  expect(preview.getByText(/Configured preparation time/).textContent).toContain("1.4 s");
+  expect(mocks.send).not.toHaveBeenCalled();
+});
