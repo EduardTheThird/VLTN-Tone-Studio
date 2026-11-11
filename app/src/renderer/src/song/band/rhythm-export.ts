@@ -1,4 +1,5 @@
 // Assemble reusable drum passages on musical bars. The source follows the recording; the exported pattern has one steady tempo.
+import { rhythmTempo } from "../performance/rhythm-tempo";
 import type { SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { DRUM_PITCHES, type NoteEvent } from "./note";
@@ -245,9 +246,8 @@ export function assembleRhythm(snapshot: RhythmSnapshot, setup: RhythmSetup) {
     startBar += part.bars;
     return part;
   });
-  const meter = RHYTHM_METERS[setup.meter];
   if (notes.length > RHYTHM_BANK_MAX_NOTES) throw new Error("The converter accepts at most 9999 drum hits per rhythm. Choose shorter passages.");
-  return { parts, notes, endTick, quarterBpm: setup.bpm * meter.quarters, warnings: parts.flatMap((part) => part.warnings) };
+  return { parts, notes, endTick, quarterBpm: rhythmTempo(setup.bpm, setup.meter === "6/8").quarterBpm, warnings: parts.flatMap((part) => part.warnings) };
 }
 
 /** The native pattern carries the same notes and section assignments as the MIDI export. */
@@ -268,7 +268,7 @@ export function rhythmBankPattern(snapshot: RhythmSnapshot, setup: RhythmSetup):
 
 /** Preview the exact musical positions at the export tempo with the local clean drum kit. */
 export function rhythmPreview(part: RhythmPart, setup: RhythmSetup): { notes: NoteEvent[]; duration: number } {
-  const secondsPerTick = 60 / (setup.bpm * RHYTHM_METERS[setup.meter].quarters * EXPORT_PPQ);
+  const secondsPerTick = 60 / (rhythmTempo(setup.bpm, setup.meter === "6/8").quarterBpm * EXPORT_PPQ);
   return {
     duration: part.endTick * secondsPerTick,
     notes: part.notes.map((note) => ({

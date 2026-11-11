@@ -20,6 +20,10 @@ import {
   type RhythmSetup,
   type RhythmSnapshot,
 } from "@/song/band/rhythm-export";
+import { currentRhythmAutomation } from "@/song/performance/rhythm-automation";
+import { recordRhythmExport } from "@/song/band/rhythm-transfer";
+import { readSettings } from "@/song/performance/settings";
+import { RhythmTransferStatus } from "./RhythmTransferStatus";
 import { playRhythmPreview } from "@/song/band/rhythm-preview";
 
 interface RhythmExportDialogProps {
@@ -31,7 +35,12 @@ interface RhythmExportDialogProps {
 
 /** A setup is kept separately from generation settings, so export choices do not invalidate the song's generated audio. */
 export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: RhythmExportDialogProps) {
-  const [setup, setSetup] = useState(() => parseRhythmSetup(readOptions<Record<string, unknown>>(songKey, {}).rhythmExport, snapshot));
+  const [setup, setSetup] = useState(() => {
+    const setup = parseRhythmSetup(readOptions<Record<string, unknown>>(songKey, {}).rhythmExport, snapshot);
+    const plan = currentRhythmAutomation({ key: songKey, title: snapshot.name, duration: snapshot.duration, settings: readSettings(songKey) });
+    if (plan) setup.bpm = plan.draft.bpm / RHYTHM_METERS[setup.meter].quarters;
+    return setup;
+  });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState<RhythmRole | null>(null);
@@ -110,8 +119,13 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
     setSaving(true);
     setMessage("");
     try {
+      const startingOptions = { ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup };
+      const exported = recordRhythmExport({ ...readSettings(songKey), ":options": JSON.stringify(startingOptions) });
       const where = await host.song.saveFiles(rhythmExportFiles(snapshot, setup), "Export BOSS RC-10R rhythm");
-      if (where) setSetting(songKey, ":options", JSON.stringify({ ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup }));
+      if (where) {
+        const value = { ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup };
+        setSetting(songKey, ":options", JSON.stringify({ ...value, rhythmTransfer: exported }));
+      }
       if (mounted.current) setMessage(where ? "Saved the RC0 rhythm, MIDI and import guide." : "Export cancelled. Your choices are kept.");
     } catch (error) {
       if (mounted.current) setMessage(error instanceof Error ? error.message : String(error));
@@ -268,6 +282,7 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
             transfer. Import replaces the converter’s working list, so export a backup first to keep existing rhythms. The pedal switches between Pattern 1 and
             Pattern 2 during your performance.
           </p>
+          <RhythmTransferStatus songKey={songKey} locked={blocked} />
           {disabled && <p role="alert">Stop playback and generate drums again if the song or beat grid changed.</p>}
           {message && <p role="status">{message}</p>}
         </div>

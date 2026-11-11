@@ -50,11 +50,13 @@ import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
 import { applyPartChoices, defaultPartChoices, muteSilencedParts, partKeysOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
+import { RhythmTransferStatus } from "./RhythmTransferStatus";
 import { RhythmAutomationSetup } from "./RhythmAutomationSetup";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
-import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
+import { currentRhythmAutomation, rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
+import { pedalDrumMix, usePedalDrums } from "@/song/performance/pedal-drums";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
 import { StageView } from "./StageView";
@@ -241,6 +243,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // What each imported track counts as for the practice mute. It is saved with the song, since only that song's tracks have these names.
   const [countsAs, setCountsAs] = useState<Record<string, CountsAs>>(() => readCountsAs(options));
   const practiceKinds = usePracticeMute((s) => s.kinds);
+  const pedalDrums = usePedalDrums((s) => s.enabled);
   const [trackBuses, setTrackBuses] = useState<TrackBuses>(() => ({ ...busDefaults(tracks), ...options.trackBuses }));
   useEffect(() => {
     setMix((current) => ({ ...mixDefaults(tracks), ...current }));
@@ -285,7 +288,14 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       settings,
       rhythmControls,
     });
-    return { cues: cued.cues, error: cued.error };
+    return {
+      cues: cued.cues,
+      error: cued.error,
+      rhythmTempo: cued.error
+        ? null
+        : (currentRhythmAutomation({ key, title: "", duration: source ? source.audio.channels[0].length / source.audio.sampleRate : 0, settings })?.draft.bpm ??
+          null),
+    };
   }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature]);
   // The song's MIDI timecode offset, saved with its options. Empty means 00:00:00:00.
   const [timecodeOffset, setTimecodeOffset] = useState(options.timecodeOffset);
@@ -328,6 +338,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           cues: parsed.cues,
           parseError: parsed.error,
           bpm,
+          rhythmTempo: parsed.rhythmTempo,
           sections: sectionList,
           bindings: midiConfig.bindings,
           timecode,
@@ -422,6 +433,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       cues: parsed.cues,
       parseError: parsed.error,
       bpm,
+      rhythmTempo: parsed.rhythmTempo,
       timing,
       sections: sectionList,
       bindings: midiConfig.bindings,
@@ -591,8 +603,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   // A track the drums and bass choice turns off never plays, whatever its saved mute says, so the player matches the mixer's badges.
   const playedMix = useMemo(
-    () => effectiveMute(muteSilencedParts(mix, partChoice, partKeysOf(tracks, stems)), practiceSet(practiceKinds), practiceTracks),
-    [mix, partChoice, tracks, stems, practiceKinds, practiceTracks],
+    () =>
+      pedalDrumMix(
+        effectiveMute(muteSilencedParts(mix, partChoice, partKeysOf(tracks, stems)), practiceSet(practiceKinds), practiceTracks),
+        practiceTracks,
+        pedalDrums,
+      ),
+    [mix, partChoice, tracks, stems, practiceKinds, practiceTracks, pedalDrums],
   );
   useEffect(() => {
     player?.setMix(playedMix, songGain);
@@ -852,12 +869,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               settings: { ...readSettings(key), "": chart },
             }}
             locked={playing || library.playlistPlaying}
-            onSaveChart={(value) => {
-              // Re-arming sends this song's new memory recall before playback; editing cues alone does not rerun load triggers.
-              session.disarm();
-              saveChart(value);
-            }}
+            onSaveChart={saveChart}
           />
+        )}
+        {source && !!(cueOptions.rhythmAutomation || cueOptions.rhythmExport || cueOptions.rhythmTransfer) && (
+          <RhythmTransferStatus songKey={key} locked={playing || !!library.playlistPlaying} />
         )}
         <PerformanceMidiSetup
           session={session}
