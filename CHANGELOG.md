@@ -2,6 +2,17 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.26] - 2026-11-11
+
+Prepare pedals before the song starts, with your own MIDI commands and time for presets to load.
+
+- **Custom Before song commands.** In Performance → MIDI → Song MIDI cues, choose When → Before song. Add named pedal commands, raw MIDI or macros, move existing editable cues into preparation, and reorder command lines with ↑/↓. Bank/preset groups and macro message order stay together.
+- **Loading time before audio.** Play prepares RC-10R memory and opening presets, sends your commands in order, waits for loading, sends automatic song BPM, and then starts the count-in and music. The loading wait defaults to one second; set it and an optional message gap per song, or save defaults. Opening presets are not repeated at 0:00; notes, drum/looper starts and later timed cues keep their musical times.
+- **Progress and cancellation.** Ordinary transport and stage view show preparation progress with Cancel start. Cancellation clears the remaining sequence and prevents audio from starting. Changes to the song setup or output during preparation cancel the start. Commands already received by a pedal cannot be undone.
+- **Playlist preparation.** Each song prepares after the outgoing song ends, avoiding preset changes during the previous song. Disable preparation to use crossfades. Whole-song loops do not repeat your preparation sequence. Preflight warns when custom GP tempo commands would be followed by automatic song BPM.
+
+Software validation: 4,406 app tests passed, 5 skipped, 159 protocol tests passed, type checks and app build passed. Custom command entry was checked in the app preview; the new phase still needs live-pedal rehearsal. Previous v0.9.25 hardware testing confirmed Insomnia stayed aligned through its last chorus, its ending stopped naturally, and Silence started correctly in memory 02. The remaining songs and optional looper were not tested.
+
 ## [0.9.25] - 2026-11-11
 
 RC-10R songs prepare their memory and tempo together, and rehearsal controls make the pedal's state clearer.

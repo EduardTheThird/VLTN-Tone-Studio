@@ -1,3 +1,4 @@
+import { SongPreparationStatus } from "./SongPreparationStatus";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -207,6 +208,7 @@ export function PerformanceTransport({
         </p>
       )}
       {queued && library.notice === "Playlist finished." && <p role="status">Playlist finished.</p>}
+      <SongPreparationStatus session={session} />
       {rhythmRestart && <p role="status">RC-10R needs a restart to align its drums. Play from beginning.</p>}
       <div className="flex flex-wrap items-center gap-3">
         {rhythmRestart && (

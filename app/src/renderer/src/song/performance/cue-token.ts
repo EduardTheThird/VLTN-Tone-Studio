@@ -1,7 +1,7 @@
 import { sectionTokenText, type Cue } from "./chart";
 import { expandCommand, type MidiMacro } from "./midi-macros";
 
-const TRIGGER_TOKEN = /^\{midi@(load|play|stop|end):([^}]*)\}$/;
+const TRIGGER_TOKEN = /^\{midi@(load|prepare|play|stop|end):([^}]*)\}$/;
 const SECTION_TOKEN = /^\{midi@section\s+(?:"([^"}]*)"|([^":}]*?))\s*:([^}]*)\}$/;
 /** The editor's text for a section cue, `@section Chorus: pc 1 5`, read back: the section name (quoted when it names one section) and the command. */
 const SECTION_TEXT = /^@section\s+(?:"([^"{}]*)"|([^":{}]*?))\s*:\s*(\S.*)$/;
@@ -23,7 +23,7 @@ export function cueCommandText(cue: Cue): string | null {
 export function cueTokenFor(cue: Cue, command: string, macros: readonly MidiMacro[]): string {
   const text = command.trim();
   if (/[{}]/.test(text)) throw new Error("A MIDI command can't contain braces.");
-  const trigger = /^@(load|play|stop|end)\s+(\S.*)$/.exec(text);
+  const trigger = /^@(load|prepare|play|stop|end)\s+(\S.*)$/.exec(text);
   if (cue.trigger === "section") {
     const section = SECTION_TEXT.exec(text),
       name = (section?.[1] ?? section?.[2] ?? "").trim();
@@ -32,7 +32,7 @@ export function cueTokenFor(cue: Cue, command: string, macros: readonly MidiMacr
     return `{midi@section ${section[1] !== undefined ? `"${name}"` : name}: ${section[3].trim()}}`;
   }
   if (cue.trigger) {
-    if (!trigger) throw new Error("A trigger cue is written @load, @play, @stop or @end, then the command.");
+    if (!trigger) throw new Error("A trigger cue is written @load, @prepare, @play, @stop or @end, then the command.");
     expandCommand(trigger[2], macros);
     return `{midi@${trigger[1]}:${trigger[2]}}`;
   }

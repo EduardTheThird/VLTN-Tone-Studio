@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   swaps: [] as unknown[],
   applied: [] as unknown[],
   configs: [] as {
+    prepared?: { position: number; messages: number[][] };
     bpm?: number;
     rate?: number;
     clock?: boolean;
@@ -2302,6 +2303,102 @@ describe("managed RC-10R preparation", () => {
       expect(session.state.error).toContain("Pause and restart");
     } finally {
       session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+});
+
+describe("Before song preparation", () => {
+  beforeEach(() => {
+    clearSettingsCache();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+  const preparationSettings = { enabled: true, settleMs: 1000, openingPresets: true };
+  const setup = () => {
+    const cues = parseChart("[00:00] {midi:cc 16 0 0} {midi:pc 16 6}\n{midi@prepare:$READY}", [
+      { code: "READY", label: "Ready", commands: ["cc 3 12 0", "pc 3 7"] },
+    ]);
+    return armedSession(output(), { cues, preparationSettings, tempoOnStart: true, tempoChannel: 16, bpm: 140 });
+  };
+  it("sends presets and custom macro messages before the loading wait, then tempo before audio", async () => {
+    const { session, out, unload } = setup();
+    try {
+      const playing = session.play();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Waiting for pedals"));
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xbf, 0, 0],
+        [0xcf, 6],
+        [0xb2, 12, 0],
+        [0xc2, 7],
+      ]);
+      expect(session.state.player?.isPlaying).toBe(false);
+      await vi.advanceTimersByTimeAsync(1100);
+      await playing;
+      expect(session.state.player?.isPlaying).toBe(true);
+      expect(session.state.preparing).toBeNull();
+      expect(out.send.mock.calls.slice(-2).map((call) => call[0])).toEqual([
+        [0xbf, 73, 1],
+        [0xbf, 74, 12],
+      ]);
+      expect(mocks.configs.at(-1)?.tempo).toBeNull();
+      expect(mocks.configs.at(-1)?.prepared?.messages).toContainEqual([0xcf, 6]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it("cancels the waiting start without playing audio or sending a later tempo", async () => {
+    const { session, out, unload } = setup();
+    try {
+      const playing = session.play();
+      await vi.waitFor(() => expect(session.state.preparing).not.toBeNull());
+      session.cancelStart();
+      await vi.advanceTimersByTimeAsync(2000);
+      await playing;
+      expect(session.state.player?.isPlaying).toBe(false);
+      expect(session.state.preparing).toBeNull();
+      expect(out.clear).toHaveBeenCalled();
+      expect(out.send.mock.calls.some((call) => call[0][1] === 74)).toBe(false);
+    } finally {
+      unload();
+      session.dispose();
+    }
+  });
+  it("cancels rather than running stale commands when setup changes during preparation", async () => {
+    const { session, unload } = setup();
+    try {
+      const playing = session.play();
+      await vi.waitFor(() => expect(session.state.preparing).not.toBeNull());
+      session.update({ preparationSettings: { ...session.state.preparationSettings! }, timing: { ...session.state.timing } });
+      expect(session.state.starting).toBe(true);
+      session.update({ cues: parseChart("{midi@prepare:pc 3 8}") });
+      await vi.advanceTimersByTimeAsync(2000);
+      await playing;
+      expect(session.state.playing).toBe(false);
+      expect(session.state.error).toContain("setup changed during preparation");
+    } finally {
+      unload();
+      session.dispose();
+    }
+  });
+  it("respects a configurable gap between setup messages and cancels the remaining sequence", async () => {
+    const { session, out, unload } = setup();
+    session.update({ preparationSettings: { ...preparationSettings, commandGapMs: 250 } });
+    try {
+      const playing = session.play();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xbf, 0, 0]]);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(out.send.mock.calls[1][0]).toEqual([0xcf, 6]);
+      session.cancelStart();
+      await vi.advanceTimersByTimeAsync(3000);
+      await playing;
+      expect(session.state.playing).toBe(false);
+      expect(out.send.mock.calls.some((call) => call[0][0] === 0xc2)).toBe(false);
+    } finally {
       unload();
       session.dispose();
     }
