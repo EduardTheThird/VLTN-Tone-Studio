@@ -31,11 +31,11 @@ This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-
 <br>
 <br>
 
-### Download v0.9.26
+### Download v0.9.27
 
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.26/vltn-tone-studio-0.9.26-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.26/vltn-tone-studio-0.9.26-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.26/vltn-tone-studio-0.9.26-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.27/vltn-tone-studio-0.9.27-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.27/vltn-tone-studio-0.9.27-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.27/vltn-tone-studio-0.9.27-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 
 <sub>Linux users can <a href="#build-it-yourself">build it themselves</a>.</sub>
 

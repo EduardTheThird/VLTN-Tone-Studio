@@ -2,6 +2,17 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.27] - 2026-11-11
+
+Prepare pedals ahead of playback and use macOS system MIDI for Bluetooth connections.
+
+- **Separate Prepare and Play.** Prepare pedals sends the song's setup and tempo, waits for loading and stops at Ready without count-in, audio or Play triggers. Play reuses that preparation without repeating setup commands. Ordinary Play still prepares automatically. Prepare again deliberately reruns setup; normal transport, stage view and remote bindings include the control.
+- **Ready follows the current song and connection.** Tempo, cues, preparation options, speed, trims, position, output and arming changes invalidate Ready. Stop, Panic and manual MIDI commands clear it too. Play prepares the changed setup automatically. Ready confirms commands were sent and the wait ended, not that a pedal acknowledged its settings.
+- **Mac Bluetooth setup stays outside the app.** Open macOS MIDI setup launches Audio MIDI Setup, keeping discovery out of Tone Studio's main process. Choose Window → Show MIDI Studio, then MIDI Studio → Open Bluetooth Configuration. Connect the pedal there and select its system MIDI output in Tone Studio. Replace a remembered Web Bluetooth output once; song cues and pedal channel settings stay unchanged.
+- **Recoverable opening.** A pending system-app launch can be cancelled or retried after a timeout. Late launch results do not replace newer requests. Existing system MIDI connections stay intact, and reconnection does not resume playback. Windows and browser Bluetooth continue using their existing connection flow.
+
+Software validation: 4,422 app tests passed, 5 skipped, 159 protocol tests passed, type checks and app build passed. The macOS system Bluetooth window was checked and listed GP-180 BLE offline. Prepare → Ready → Play, trim/disconnect invalidation and launch recovery were tested in software. No new live-pedal timing or full-playlist test is claimed.
+
 ## [0.9.26] - 2026-11-11
 
 Prepare pedals before the song starts, with your own MIDI commands and time for presets to load.

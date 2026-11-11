@@ -663,7 +663,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // The song's trim, fades and end are read from its stored options, so a player always takes the song's own values.
   const playedShapeSignature = JSON.stringify(playerShapeFromOptions(getSetting(key, ":options")));
   useEffect(() => {
+    const start = player?.start,
+      end = player?.duration;
     player?.setShape(playerShapeFromOptions(getSetting(key, ":options")));
+    if (start !== player?.start || end !== player?.duration) {
+      session.cancelStart();
+      session.invalidatePreparation();
+    }
   }, [player, key, shapeVersion, playedShapeSignature]);
   useEffect(() => {
     try {

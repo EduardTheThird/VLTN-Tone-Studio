@@ -184,6 +184,8 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 
 ### Before song preparation
 
+**Prepare pedals** runs setup and stops at **Ready to play**, without starting the count-in, music or Play triggers. Press **Play** when you are ready; the app reuses the setup without resending presets or repeating the loading wait. **Prepare again** deliberately runs it again. Ready means the commands were sent and the wait finished; it does not confirm the pedal’s received settings. Tempo, cue, trim, speed, output or arming changes clear Ready, as do seeking, Stop/Panic and sending a manual MIDI command. Prepare is available in stage mode and as a remote-control action.
+
 **Before song** gives pedals time to load before the music starts. With **Send cues** enabled, pressing Play sends the RC-10R memory and opening preset changes, then your own preparation commands, waits for loading, sends automatic song BPM if enabled, and starts the count-in and song. It runs for each song in a playlist and each manual start or resume; it does not repeat on a whole-song loop. Cues remain at their musical times, so trimming audio or changing BPM does not require moving presets to negative timestamps.
 
 In **Song MIDI cues**, set **When → Before song**, then add a named pedal command, raw MIDI or macro. Use **Move before song** on an existing editable cue, and ↑/↓ to order preparation command lines. Multi-message bank/preset commands stay together. In chart text, use `{midi@prepare:pc 1 5}`, `{midi@prepare:cc 3 20 127}` or `{midi@prepare:$READY}`. Commands run in chart order; arbitrary commands are not moved early automatically.
