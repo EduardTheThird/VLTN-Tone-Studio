@@ -8,6 +8,14 @@ name: Fork release
 
 on:
   workflow_dispatch:
+    inputs:
+      macos_runner:
+        description: Mac build machine (Intel is an alternative when Apple silicon capacity is unavailable)
+        type: choice
+        default: macos-latest
+        options:
+          - macos-latest
+          - macos-15-intel
 
 concurrency:
   group: fork-release
@@ -67,7 +75,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - os: macos-latest
+          - os: ${{ inputs.macos_runner || 'macos-latest' }}
             target: --mac
           - os: windows-latest
             target: --win
