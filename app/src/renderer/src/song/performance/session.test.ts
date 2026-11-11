@@ -2322,6 +2322,56 @@ describe("Before song preparation", () => {
     ]);
     return armedSession(output(), { cues, preparationSettings, tempoOnStart: true, tempoChannel: 16, bpm: 140 });
   };
+  it("prepares to Ready without audio or Play triggers, then starts immediately without repeating setup", async () => {
+    const { session, out, unload } = setup();
+    try {
+      const preparing = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing).not.toBeNull());
+      await vi.advanceTimersByTimeAsync(1100);
+      await preparing;
+      expect(session.state.pedalsReady).toBe(true);
+      expect(session.state.playing).toBe(false);
+      expect(session.state.player?.isPlaying).toBe(false);
+      expect(mocks.configs).toHaveLength(0);
+      const sent = out.send.mock.calls.length;
+      await session.play();
+      expect(session.state.playing).toBe(true);
+      expect(session.state.pedalsReady).toBe(false);
+      expect(out.send.mock.calls).toHaveLength(sent);
+      expect(mocks.configs.at(-1)?.prepared?.messages).toContainEqual([0xcf, 6]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it.each(["bpm", "cues", "settings", "tempo", "output", "disconnect", "seek", "manual"])("invalidates Ready after %s changes", async (change) => {
+    const { session, unload, out, access } = setup();
+    try {
+      const preparing = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing).not.toBeNull());
+      await vi.advanceTimersByTimeAsync(1100);
+      await preparing;
+      expect(session.state.pedalsReady).toBe(true);
+      if (change === "bpm") session.update({ bpm: 130 });
+      if (change === "cues") session.update({ cues: parseChart("{midi@prepare:pc 3 9}") });
+      if (change === "settings") session.update({ preparationSettings: { ...preparationSettings, settleMs: 2000 } });
+      if (change === "tempo") session.update({ tempoOnStart: false });
+      if (change === "output") session.setArmed(false);
+      if (change === "disconnect") {
+        out.state = "disconnected";
+        access.dispatchEvent(new Event("statechange"));
+      }
+      if (change === "seek") await session.seek(0.2);
+      if (change === "manual") session.sendPerformance([0xc2, 10]);
+      expect(session.state.pedalsReady).toBe(false);
+      expect(session.state.playing).toBe(false);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
   it("sends presets and custom macro messages before the loading wait, then tempo before audio", async () => {
     const { session, out, unload } = setup();
     try {

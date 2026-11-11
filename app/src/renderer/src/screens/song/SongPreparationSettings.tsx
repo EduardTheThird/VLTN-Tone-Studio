@@ -15,7 +15,10 @@ export function SongPreparationSettings({ songKey, locked }: { songKey: string; 
   return (
     <section aria-label="Before song preparation" className="space-y-2 rounded border border-seam p-3 text-sm">
       <h3 className="font-medium">Before song</h3>
-      <p>Play → opening presets and your Before song commands → wait for loading → automatic song BPM → count-in → song.</p>
+      <p>
+        Prepare pedals → presets and your commands → loading wait → song BPM → Ready. Play then starts the count-in and song. Play on its own prepares
+        automatically.
+      </p>
       <fieldset disabled={locked} className="flex flex-wrap items-center gap-3">
         <label>
           <input type="checkbox" checked={settings.enabled} onChange={(event) => save({ enabled: event.target.checked })} /> Prepare pedals before playback

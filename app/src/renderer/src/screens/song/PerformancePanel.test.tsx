@@ -241,7 +241,11 @@ vi.mock("@/song/stems/player", () => ({
     setMetronome(value: unknown) {
       mocks.metronome(value);
     }
-    setShape() {}
+    start = 0;
+    setShape(shape: { trimStart?: number; trimEnd?: number }) {
+      this.start = shape.trimStart ?? 0;
+      this.duration = shape.trimEnd ?? 60;
+    }
     setCustomClickSamples() {}
     setClickListener() {}
     async dispose() {}
@@ -1057,4 +1061,47 @@ it("shows preparation in stage mode and allows cancelling before the music start
   expect(stage.getByText("Play song")).toBeTruthy();
   expect(stage.queryByText(/Preparing pedals:/)).toBeNull();
   expect(stage.queryByText("Pause")).toBeNull();
+});
+
+it("prepares in stage mode, shows Ready, and Play starts without repeating the custom command", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  localStorage.setItem(key, "{midi@prepare:pc 1 7}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 100, openingPresets: true } }));
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  fireEvent.click(screen.getByText("Enter stage mode"));
+  const stage = within(screen.getByRole("dialog", { name: "Stage mode" }));
+  await act(async () => {
+    fireEvent.click(stage.getByText("Prepare pedals"));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
+  expect(stage.getByText(/Ready to play/)).toBeTruthy();
+  expect(stage.getByText("Play song")).toBeTruthy();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 7]]);
+  await act(async () => {
+    fireEvent.click(stage.getByText("Play song"));
+  });
+  expect(stage.getByText("Pause")).toBeTruthy();
+  expect(stage.queryByText(/Ready to play/)).toBeNull();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 7]]);
+});
+
+it("clears Ready when the song trim changes while stopped", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  const preparation = { enabled: true, settleMs: 100, openingPresets: true };
+  localStorage.setItem(key, "{midi@prepare:pc 1 7}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation }));
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  await act(async () => {
+    fireEvent.click(screen.getByText("Prepare pedals"));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
+  expect(screen.getByText(/Ready to play/)).toBeTruthy();
+  await act(async () => setSetting(key, ":options", JSON.stringify({ preparation, trimStart: 0.2 })));
+  expect(screen.queryByText(/Ready to play/)).toBeNull();
+  expect(screen.getByText("Prepare pedals")).toBeTruthy();
+  expect(screen.getByText("Play song")).toBeTruthy();
 });

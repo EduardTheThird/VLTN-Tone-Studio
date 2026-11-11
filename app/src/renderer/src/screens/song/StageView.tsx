@@ -1,3 +1,4 @@
+import { PreparePedalsButton } from "./PreparePedalsButton";
 import { PracticeMuteBanner } from "./PracticeMute";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
@@ -112,6 +113,7 @@ export function StageView({
         }
         transport={
           <>
+            <PreparePedalsButton session={session} />
             <Button
               disabled={!starting && (!player || !!parseError || library.busy)}
               onClick={() => (starting ? session.cancelStart() : playing ? session.pause() : session.startPlayback())}

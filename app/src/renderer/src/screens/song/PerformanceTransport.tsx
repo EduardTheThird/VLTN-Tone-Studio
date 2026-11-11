@@ -1,3 +1,4 @@
+import { PreparePedalsButton } from "./PreparePedalsButton";
 import { SongPreparationStatus } from "./SongPreparationStatus";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -211,6 +212,7 @@ export function PerformanceTransport({
       <SongPreparationStatus session={session} />
       {rhythmRestart && <p role="status">RC-10R needs a restart to align its drums. Play from beginning.</p>}
       <div className="flex flex-wrap items-center gap-3">
+        <PreparePedalsButton session={session} />
         {rhythmRestart && (
           <Button disabled={!player || library.busy || starting || stage} onClick={() => void session.playFromBeginning()}>
             Play from beginning
