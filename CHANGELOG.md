@@ -2,6 +2,18 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.25] - 2026-11-11
+
+RC-10R songs prepare their memory and tempo together, and rehearsal controls make the pedal's state clearer.
+
+- **Memory and tempo preparation.** Editing a managed phrase memory updates its selection while stopped and armed. Play selects it again and allows a short settling interval. Compound-meter cue plans, native export and previews use the same quarter-note tempo conversion; 90 dotted-quarter BPM in 6/8 sends a 135 BPM clock target. GP tempo limits apply at the playback speed.
+- **Safer interruption and cleanup.** Managed rhythm playback requires a restart after a mid-song pause, seek or reconnect. Play from beginning restores the start; unsupported live jumps, section loops, speed changes and pedal-memory crossfades are guarded. Queue clearing preserves an active controller release even when another press is already scheduled.
+- **Visible tempo and drum playback.** Performance → MIDI shows the song pulse tempo, clock target and last queued tempo command. Use pedal drums in every song mutes the app's original/generated drum tracks across the set without changing saved mixes, including the next prepared song.
+- **Export and transfer status.** Rhythm exports record their musical input revision. Changes distinguish Needs export from Needs transfer confirmation. After the converter transfer, explicitly confirm the phrase memory and User rhythm slot. An exported file alone never confirms the pedal's contents; older exports begin unverified.
+- **Hardware test controls.** While playback is stopped and MIDI armed, test memory recall, Start, Fill, pattern change, Ending/Stop and 100/180 BPM. Restore sends the song target tempo and Stop; leaving the test or starting playback cleans up on the same connection. Tests do not edit song BPM or saved cues.
+
+Software validation: 4,391 app tests passed, 5 skipped, 159 protocol tests passed, type checks and app build passed. Previous pedal tests confirmed automatic Start, the first Pattern 2 change, ending/Stop and an audible 100→180 BPM change through GP-180 Bluetooth MIDI. The new preparation path and full six-song timing still need hardware checks. A steady pedal clock can drift against a variable-tempo recording.
+
 ## [0.9.24] - 2026-11-10
 
 RC-10R rhythm controls now give the pedal time to recognize each press.
@@ -10,7 +22,7 @@ RC-10R rhythm controls now give the pedal time to recognize each press.
 - **Stop and cleanup stay ordered.** Pending releases are restored when playback clears the MIDI queue, and rapid repetitions keep their press/release order. The controller state follows the output across playlist sessions. Other pedals and continuous controller values are unchanged.
 - **Clearer preflight.** Recognized RC-10R press/release pairs no longer appear as conflicting values. Genuine duplicates and unrecognized pairs still warn.
 
-Existing automatic cue plans use the corrected output timing without rebuilding them. Separate Start and Stop commands were verified on the pedal; the new 100 ms paired timing still needs its live check.
+Existing automatic cue plans use the corrected output timing without rebuilding them. Automatic Start, the first Pattern 2 change and ending/Stop on pause were confirmed on the pedal through GP-180 Bluetooth MIDI. A later 100→180 BPM test confirmed audible tempo control; exact incoming BPM and full-song drift were not measured.
 
 ## [0.9.23] - 2026-11-10
 
@@ -238,7 +250,6 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 - **The song screen is easier to read.** The header shows the saved song's title and artist, and the key readout and queue count are clearer.
 
 ### Added
-- **RC-10R rehearsal controls.** Show the resolved quarter-note tempo and last queued command, mute app drum tracks across playlists without changing saved mixes, track exported rhythm revisions and explicit transfer confirmations, and test memory, start/fill/pattern/ending and slow/fast tempo without editing a song.
 - **Automatic RC-10R rhythm cues.** In Performance → MIDI, preview the pedal's memory recall, rhythm start, pattern changes, fills and ending for a song or a whole playlist. Playlist order assigns consecutive phrase memories, with editable part choices and timing. Saving preserves existing lyrics and MIDI commands. Playable cues follow later BPM, trim, section, export and pedal-assignment changes automatically. Generated band parts refresh while stopped, Play waits for them, stale playlist preparations are discarded, and Undo restores previous song settings. Match the pedal's MIDI assignments once and test transition timing on hardware ([Automatic rhythm cues](PERFORMANCE.md#automatic-rc-10r-rhythm-cues)).
 - **Drum export for BOSS RC-10R.** Choose and preview six passages from the generated drums, then export a native `.RC0` rhythm with all six assignments, a single-track MIDI file and a matching guide. Use File → Import in Rhythm Converter to skip manual bar entry. Export choices stay with the song; fixed-tempo 2/4, 3/4, 4/4 and explicit 6/8 timing are supported. Native six-song bank import is verified in the macOS converter; pedal playback remains to be checked ([Drum export](PERFORMANCE.md#generated-drums-and-bass)).
 - **Solo scales.** See where to solo on the neck for the song's key. It opens on the minor pentatonic (the relative minor in a major key), with other scales, a root, box positions, and fret numbers or note names. It follows the pitch shift and the capo, shows in **This song** and from a **Solo scale** button in Lyrics & chords, and is saved with the song ([Solo scales](PERFORMANCE.md#solo-scales)).
@@ -314,7 +325,6 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 - **Window and file safety.** The main window runs sandboxed, and MIDI, SysEx and audio capture are granted only to Tone Studio's own pages.
 
 ### Fixed
-- **RC-10R preparation and restart safety.** Edited phrase memories are selected while armed and prepared before Play. Compound-meter cue timing and transmitted tempo share the quarter-note conversion. Queue cleanup retains the active controller release when later presses are already queued. Managed rhythm songs require a restart after mid-song interruption and prevent unsupported loops, jumps, live speed changes and pedal-memory crossfades.
 - **RC-10R controls get a real press.** Same-time press/release pairs for configured RC-10R controls now have a 100 ms hold at the MIDI output. The press keeps its planned time, pending releases survive output cleanup, and other pedals are unchanged. Preflight recognizes these pairs instead of reporting them as conflicting values.
 - **Generated drums play with the original drummer's timing.** The offbeat kicks of a generated drum part sat evenly between the beats while the real drummer played them a little early, so they flammed against the guitar and vocals that were played with that drummer. When a song has a drums stem, each generated hit now moves onto the original drummer's hit (within 40 ms), and a bass note locked to a kick moves with it. There is a **Play with the drummer's timing** switch in the Band settings, on by default. Generate the band again to fix a song you already made.
 - **Generated drums and bass land on the beat.** The generated drums and bass played 5 to 10 ms behind the beat, which made vocals and guitar sound flammed against them. Each sample now starts early by its own attack time, and a tone chain that delays a part (a fully wet room or an amp capture) has its delay measured and taken out, so the hits line up with the beat. Generate the band again to fix a song you already made.
