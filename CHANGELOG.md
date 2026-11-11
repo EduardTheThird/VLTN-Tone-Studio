@@ -2,6 +2,14 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.31] — 2026-11-11
+
+### Improved
+- **Prioritized preflight reports.** Playlist errors appear first across the set, followed by performance warnings. Optional section navigation and ordinary trim advice are collapsed and counted separately; configured arrangement actions, overlaps and sections beyond the original audio remain performance warnings. Song MIDI health uses the same separation.
+
+### Fixed
+- **Preparation-aware trim checks.** Account for bank/preset messages actually restored before playback and for pre-roll. Keep warnings for unsent notes/controls and later preset changes. Reporting allows 10 ms for boundary rounding without changing playback or cue times. Arrangement advice has its own limit so missing note-offs remain visible ([Before song](PERFORMANCE.md#before-song-preparation)).
+
 ## [0.9.30] — 2026-11-11
 
 ### Added

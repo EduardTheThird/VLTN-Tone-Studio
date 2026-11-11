@@ -1,3 +1,4 @@
+import { preRollStart } from "@/song/performance/rhythm";
 import { PreparationSequencePreview } from "./PreparationSequencePreview";
 import { SongPreparationSettings } from "./SongPreparationSettings";
 import { moveCueToPreparation, movePreparationLine, setPreparationRepeat, setPreparationWait } from "@/song/performance/start-preparation";
@@ -21,12 +22,15 @@ import { HelpNote } from "@/components/ui/help-note";
 const field = "rounded border border-seam bg-transparent p-2";
 
 /** MIDI preflight and timing for the current song and output. */
-export function SessionMidiHealth({ session }: { session: PerformanceSession }) {
+export function SessionMidiHealth({ session, firstBeat = 0 }: { session: PerformanceSession; firstBeat?: number }) {
   const cues = useSession(session, (s) => s.cues);
   const parseError = useSession(session, (s) => s.parseError);
   const sections = useSession(session, (s) => s.sections);
   const player = useSession(session, (s) => s.player);
   const clock = useSession(session, (s) => s.clock);
+  const bpm = useSession(session, (s) => s.bpm);
+  const timing = useSession(session, (s) => s.timing);
+  const preparation = useSession(session, (s) => s.preparationSettings);
   const tempoOnStart = useSession(session, (s) => s.tempoOnStart);
   const portId = useSession(session, (s) => s.portId);
   const output = useSession(session, selectOutput);
@@ -48,9 +52,14 @@ export function SessionMidiHealth({ session }: { session: PerformanceSession }) 
     <MidiHealth
       cues={cues}
       sections={sections}
-      duration={player?.duration ?? 0}
+      duration={player?.length ?? 0}
       range={range}
       clock={clock}
+      preparation={preparation ?? undefined}
+      playbackStart={player ? preRollStart(player.start, timing.preRollBeats, bpm) : undefined}
+      bpm={bpm}
+      beats={timing.beatsPerBar}
+      firstBeat={firstBeat}
       tempoChannel={tempoOnStart ? midiConfig.tempoChannel : undefined}
       timecode={timecode}
       outputName={portId === BLUETOOTH_PORT_ID ? `Bluetooth ${output?.name || ""}` : output?.name || undefined}

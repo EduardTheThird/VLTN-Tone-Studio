@@ -869,7 +869,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         />
       </div>
       <div style={{ display: shownView("midi") }}>
-        <SessionMidiHealth session={session} />
+        <SessionMidiHealth session={session} firstBeat={firstBeat} />
         {source && (
           <RhythmAutomationSetup
             key={key}

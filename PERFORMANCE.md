@@ -202,6 +202,10 @@ Automatic GP tempo is sent after your commands and the preset loading wait. If a
 
 **Check playlist** also previews Before song preparation for every saved playlist entry. Expand a song’s preparation row to see its exact command groups and waits; the report totals configured preparation waits across the set. It assumes a fresh song load from the saved playable beginning, with Send cues enabled, so once commands are eligible for each playlist entry. Saved trims, pre-roll, macros, native RC-10R tempo and automatic memory selection are included. Preparation disabled for a song with explicit Before song commands is reported as an error. Changing song settings, preparation defaults, lead-in defaults or MIDI assignments refreshes an already checked report. No audio is loaded and no MIDI is sent.
 
+The playlist report puts **Playback and MIDI issues** first, with every song’s errors before performance warnings. The song rows stay in playlist order. Optional section-navigation advice and ordinary section cutoffs from trims appear under collapsed **Arrangement advice** for each song, counted separately. Off-grid or trimmed sections with configured loop, repeat, skip or pause actions remain performance warnings, as do overlaps and sections beyond the audio. The song’s **MIDI preflight & timing** uses the same separation.
+
+Checks account for bank/preset messages actually restored by Before song preparation and the MIDI start position including pre-roll. Disabling opening preparation restores the warnings; notes, triggers and later preset changes are still checked. A 10 ms tolerance avoids rounded boundary noise in reporting and never changes playback or cue times. Up to 100 MIDI performance warnings and 100 arrangement notes are retained separately per song, so advice cannot crowd out missing note-offs.
+
 ### Preparation command repeat rules
 
 In **Song MIDI cues**, choose **When → Before song**, then pick **Repeat** before adding a named pedal command, raw MIDI or macro. Existing preparation lines have the same control in the cue table. A bank/preset pair on one line takes one rule together.
