@@ -36,6 +36,8 @@ export interface PlaylistCheck {
   title: string;
   errors: string[];
   warnings: string[];
+  /** Optional section navigation and intentional trim advice, separate from performance warnings. */
+  advice: string[];
   /** Information only, shown without the warning label */
   notes: string[];
   /** Fresh-load preparation from the saved playable beginning, with no live repeat history. */
@@ -67,7 +69,8 @@ export function playlistPreflight(
       song = saved?.song;
     const errors = [...(saved?.errors ?? ["Song was not checked."])],
       warnings: string[] = [],
-      notes: string[] = [];
+      notes: string[] = [],
+      advice: string[] = [];
     let preparation: PreparationSequence | undefined;
     if (song) {
       if (config.tempoOnStart && !config.outputName)
@@ -144,6 +147,13 @@ export function playlistPreflight(
       });
       if (cued.error) errors.push(`${cued.part === "midi-file" ? "MIDI file" : "Chart"} cannot play: ${cued.error}`);
       else {
+        const settings = savedPreparation(song.settings, config.preparationDefaults ?? PREPARATION_DEFAULTS);
+        const start = trimRange(duration, options)?.start ?? 0;
+        const lead = resolveLeadIn(
+          { countInBars: "", startDelay: "", preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats) },
+          config.leadInDefaults ?? LEAD_IN_DEFAULTS,
+        );
+        const playbackStart = preRollStart(start, lead.preRollBeats, bpm);
         const report = midiPreflight(cued.cues, {
           duration,
           clock: options.clock === true,
@@ -152,24 +162,21 @@ export function playlistPreflight(
           pedals: config.pedals,
           sections: parseSections(options.sections),
           range: trimRange(duration, options),
+          preparation: settings,
+          playbackStart,
           bpm,
           beats: typeof options.beats === "number" ? options.beats : 4,
           firstBeat: typeof options.firstBeat === "number" ? options.firstBeat : 0,
         });
-        warnings.push(...report.issues.map((i) => i.text));
+        warnings.push(...report.warnings.map((i) => i.text));
+        advice.push(...report.advice.map((i) => i.text));
         try {
-          const settings = savedPreparation(song.settings, config.preparationDefaults ?? PREPARATION_DEFAULTS);
-          const start = trimRange(duration, options)?.start ?? 0;
-          const lead = resolveLeadIn(
-            { countInBars: "", startDelay: "", preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats) },
-            config.leadInDefaults ?? LEAD_IN_DEFAULTS,
-          );
           // An invalid tempo already has its own actionable error above. Do not encode it as MIDI.
           const tempo =
             config.tempoOnStart && Number.isFinite(played) && played >= 40 && played <= 300 ? pedalTempoMessages(played, config.tempoChannel) : null;
           const plan = preparationSequence({
             cues: expandSectionCues(cued.cues, parseSections(options.sections)),
-            position: preRollStart(start, lead.preRollBeats, bpm),
+            position: playbackStart,
             requestedPosition: start,
             start,
             settings,
@@ -187,6 +194,6 @@ export function playlistPreflight(
         }
       }
     }
-    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, notes, ...(preparation ? { preparation } : {}) };
+    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, advice, notes, ...(preparation ? { preparation } : {}) };
   });
 }

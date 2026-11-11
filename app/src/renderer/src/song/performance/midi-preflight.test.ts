@@ -169,3 +169,48 @@ it("checks output and saved profile channels for preparation-only songs", () => 
   expect(report.commands).toBe(1);
   expect(report.channels).toEqual([[2, 1]]);
 });
+
+const preparation = { enabled: true, settleMs: 1000, openingPresets: true };
+it("accounts for bank/preset state restored before a trimmed start, keeping mixed and unprepared commands visible", () => {
+  const chart = "[00:00] {midi:cc 1 0 2} {midi:pc 1 4}";
+  const setup = { ...options, range: { start: 2, end: 8 }, preparation };
+  expect(midiPreflight(parseChart(chart), setup).warnings).toEqual([]);
+  expect(midiPreflight(parseChart(chart), { ...setup, preparation: { ...preparation, enabled: false } }).warnings.map((issue) => issue.code)).toContain(
+    "cue-trim",
+  );
+  expect(midiPreflight(parseChart(chart), { ...setup, preparation: { ...preparation, openingPresets: false } }).warnings.map((issue) => issue.code)).toContain(
+    "cue-trim",
+  );
+  for (const extra of ["{midi:cc 1 10 127}", "{midi:note 1 60 100}"])
+    expect(midiPreflight(parseChart(chart + " " + extra), setup).warnings.map((issue) => issue.code)).toContain("cue-trim");
+  expect(midiPreflight(parseChart("[00:00] {nochase} {midi:pc 1 4}"), setup).warnings.map((issue) => issue.code)).toContain("cue-trim");
+  // The same preset later than the trimmed end still never plays; an earlier prepared copy cannot excuse it.
+  expect(midiPreflight(parseChart(chart + "\n[00:09] {midi:pc 1 4}"), setup).warnings.map((issue) => issue.code)).toContain("cue-trim");
+});
+it("uses the actual pre-roll start and a 10ms reporting tolerance without editing cue timestamps", () => {
+  const cues = parseChart("[00:01.995] {midi:cc 1 10 4}\n[00:06.005] {midi:cc 1 11 4}");
+  const before = JSON.stringify(cues);
+  expect(midiPreflight(cues, { ...options, range: { start: 2, end: 6 } }).warnings).toEqual([]);
+  expect(JSON.stringify(cues)).toBe(before);
+  expect(midiPreflight(parseChart("[00:01.98] {midi:cc 1 10 4}"), { ...options, range: { start: 2, end: 6 } }).warnings.map((issue) => issue.code)).toEqual([
+    "cue-trim",
+  ]);
+  expect(midiPreflight(parseChart("[00:03] {midi:cc 1 10 4}"), { ...options, range: { start: 4, end: 8 }, playbackStart: 3 }).warnings).toEqual([]);
+  expect(midiPreflight(parseChart("[00:10.005] {midi:pc 1 2}"), options).warnings).toEqual([]);
+  expect(midiPreflight(parseChart("[00:10.02] {midi:pc 1 2}"), { ...options, range: { start: 2, end: 10 } }).warnings.map((issue) => issue.code)).toEqual([
+    "past-end",
+  ]);
+});
+it("keeps missing note-offs visible even after the arrangement-advice limit is reached", () => {
+  const sections = Array.from({ length: 120 }, (_, i) => ({
+    id: String(i),
+    name: `Verse ${i}`,
+    start: i * 4 + 0.2,
+    end: i * 4 + 3.2,
+    mode: "continue" as const,
+  }));
+  const report = midiPreflight(parseChart("[00:01] {midi:note 1 60 100}"), { ...options, duration: 1000, sections, bpm: 120, beats: 4 });
+  expect(report.advice).toHaveLength(100);
+  expect(report.warnings.map((issue) => issue.code)).toEqual(["note-off"]);
+  expect(report.issues[0].code).toBe("note-off");
+});

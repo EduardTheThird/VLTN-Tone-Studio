@@ -237,3 +237,29 @@ it("includes current managed RC-10R memory and native tempo, with the minimum me
   ]);
   expect(result.preparation?.totalWaitMs).toBe(250);
 });
+
+it("separates arrangement advice and accounts for prepared presets using saved trims and pre-roll", () => {
+  const song = {
+    ...saved.song!,
+    settings: {
+      ":bpm": "120",
+      ":options": JSON.stringify({
+        trimStart: 4,
+        trimEnd: 8,
+        preRollBeats: 2,
+        tempoSource: "manual",
+        analysis: {},
+        sections: [{ id: "v", name: "Verse", start: 0, end: 10, mode: "continue" }],
+      }),
+      "": "[00:00] {midi:pc 1 3}\n[00:03] {midi:cc 3 10 64}",
+    },
+  };
+  const [result] = playlistPreflight(["one"], [{ ...saved, song }], config);
+  expect(result.warnings).toEqual([]);
+  expect(result.advice.join(" ")).toContain("outside the playable range");
+  const disabled = {
+    ...song,
+    settings: { ...song.settings, ":options": JSON.stringify({ ...JSON.parse(song.settings[":options"]), preparation: { openingPresets: false } }) },
+  };
+  expect(playlistPreflight(["one"], [{ ...saved, song: disabled }], config)[0].warnings.join(" ")).toContain("commands that will not play");
+});
