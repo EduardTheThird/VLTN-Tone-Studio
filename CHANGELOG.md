@@ -2,6 +2,17 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.28] - 2026-11-11
+
+Choose when your Before song commands repeat, so resuming a song can leave one-shot pedal actions alone.
+
+- **Repeat rules in the cue builder.** For new or existing Before song commands choose Every start, Only from beginning or Once per song load. Named pedal commands, raw MIDI and macros are supported. Bank/preset messages on one command line share the rule, and existing commands keep Every start.
+- **Resumes and trimmed starts.** Every start runs on each new preparation. Only from beginning runs from the playable start, including a trimmed start, and skips later resumes. Play reuses a valid Ready setup without repeating it; Prepare again respects the selected rules. Automatic RC-10R memory and song tempo retain their existing behaviour.
+- **Once actions stay used after an interruption.** A once line is marked used when sending begins. Cancellation, send failure, reconnection, view changes and generated-audio rebuilds do not silently re-enable it. The app preserves the history when an unsaved song is first saved into the library. Actual MIDI edits or a fresh song load can create a new action.
+- **Explicit reset and preserved chart editing.** Reset once commands clears the current load's history and Ready without sending MIDI; the next preparation can run the commands again. Chart tokens, macro order, reader hiding and row editing preserve the rules and command groups. Partial or failed sends cannot confirm what the pedal received, so reset deliberately when retrying a one-shot action.
+
+Software validation: 4,434 app tests passed, 5 skipped, 159 protocol tests passed, type checks and app build passed. Tests cover resume and trimmed-start filtering, Ready reuse, partial cancellation, ambiguous send failures, explicit reset, bank/macro grouping, duplicate actions and chart/UI editing.
+
 ## [0.9.27] - 2026-11-11
 
 Prepare pedals ahead of playback and use macOS system MIDI for Bluetooth connections.

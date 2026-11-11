@@ -1,3 +1,4 @@
+import { useSession, type PerformanceSession } from "@/song/performance/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { preparationSettings, usePreparationDefaults } from "@/song/performance/start-preparation";
@@ -5,7 +6,8 @@ import { readOptions, setSetting } from "@/song/performance/settings";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 
 /** Song overrides keep the wait and automatic opening presets separate from the musical timeline. */
-export function SongPreparationSettings({ songKey, locked }: { songKey: string; locked: boolean }) {
+export function SongPreparationSettings({ songKey, locked, session }: { songKey: string; locked: boolean; session: PerformanceSession }) {
+  const used = useSession(session, (state) => state.preparationOnceUsed);
   useSongSettingsRevision(songKey);
   const defaults = usePreparationDefaults((state) => state.settings);
   const options = readOptions<Record<string, unknown>>(songKey, {});
@@ -71,6 +73,18 @@ export function SongPreparationSettings({ songKey, locked }: { songKey: string; 
       <p>
         In Song MIDI cues choose When → Before song. Add named pedal commands, raw MIDI or macros; use ↑/↓ to order command lines. Opening Program Change and
         bank-select messages can run early automatically; drum/looper starts and notes keep their song times.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span>
+          {used} once command line{used === 1 ? "" : "s"} used for this song load.
+        </span>
+        <Button size="sm" variant="outline" disabled={locked || used === 0} onClick={session.resetPreparationCommands}>
+          Reset once commands
+        </Button>
+      </div>
+      <p>
+        Prepare again respects each command’s Repeat rule. Once commands stay used after sending begins, including cancellation or a lost connection. Reset once
+        commands allows them on the next preparation; it sends nothing by itself.
       </p>
       <p>Use a message gap if a pedal needs time between a preset change and another setup command. The loading wait follows the complete sequence.</p>
       <p>

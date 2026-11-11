@@ -25,6 +25,7 @@ import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } fro
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { refreshBandBeforePlay } from "@/song/band/refresh";
 import { hasPedalRhythm, hasSavedPedalRhythm, canStartRhythm, rhythmMemory, rhythmMemoryKey, RHYTHM_RESTART, RHYTHM_MEMORY_SETTLE_MS } from "./rhythm-runtime";
+import { PreparationHistory, preparationHistoryFor, type PreparationCommand } from "./preparation-repeat";
 import { startPreparation, savedPreparation, type PreparationSettings } from "./start-preparation";
 import { TriggerPulses } from "./trigger-pulse";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump, type TimecodeTail } from "@/song/performance/midi-scheduler";
@@ -161,6 +162,7 @@ export interface SessionState {
   preparationSettings: PreparationSettings | null;
   preparing: { label: string; until: number; commands: number } | null;
   pedalsReady: boolean;
+  preparationOnceUsed: number;
   lastTempo: { bpm: number; channel: number; output: string } | null;
   timing: Timing;
   /** A start is waiting: the start delay, or the scheduler worker. A Play press cancels it. */
@@ -327,6 +329,7 @@ export class PerformanceSession {
   private playRequest = 0;
   private playPending = false;
   private startTempo: number[][] | null = null;
+  private preparationHistory = new PreparationHistory();
   private readySetup: { player: StemPlayer; output: MidiOutput; key: string; opening: { position: number; messages: number[][] } } | null = null;
   private openingPrepared: { position: number; messages: number[][] } | undefined;
   private tempoMsb = new Map<number, number>();
@@ -494,6 +497,7 @@ export class PerformanceSession {
       preparationSettings: null,
       preparing: null,
       pedalsReady: false,
+      preparationOnceUsed: 0,
       lastTempo: null,
       timing: NO_TIMING,
       starting: false,
@@ -537,6 +541,8 @@ export class PerformanceSession {
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
     const handover = this.claimHandover(source);
     if (!source) return () => {};
+    this.preparationHistory = preparationHistoryFor(source.audio);
+    this.set({ preparationOnceUsed: this.preparationHistory.size });
     if (this.bandPreparationKey !== null && this.bandPreparationKey !== performanceKey(source)) this.cancelPendingStart();
     this.loadedSongId = source.libraryId;
     this.playedRecorded = false;
@@ -847,12 +853,25 @@ export class PerformanceSession {
   invalidatePreparation = () => {
     if (!this.readySetup && !this.state.pedalsReady) return;
     this.readySetup = null;
+    this.openingPrepared = undefined;
     this.store.setState({ pedalsReady: false });
+  };
+
+  /** Explicitly allows once commands again. It sends nothing until the next Prepare or Play. */
+  resetPreparationCommands = () => {
+    if (this.playPending || this.state.playing) {
+      this.fail("Stop playback or cancel preparation before resetting once commands.");
+      return;
+    }
+    this.preparationHistory.reset();
+    this.invalidatePreparation();
+    this.set({ preparationOnceUsed: 0 });
   };
 
   private set(patch: Partial<SessionState>) {
     if (this.readySetup && (!this.readyFor({ ...this.state, ...patch }) || patch.playing)) {
       this.readySetup = null;
+      if (!patch.playing) this.openingPrepared = undefined;
       patch = { ...patch, pedalsReady: false };
     }
     this.store.setState(patch);
@@ -1230,10 +1249,16 @@ export class PerformanceSession {
       let prepared = !!cached;
       if (cached) this.openingPrepared = cached.opening;
       if (armed && preparation && !cached) {
-        const plan = startPreparation(this.playCues(this.state), preparationPosition, preparation, this.chaseTriggers());
+        const plan = startPreparation(this.playCues(this.state), preparationPosition, preparation, this.chaseTriggers(), {
+          history: this.preparationHistory,
+          atBeginning: Math.abs(requestedPosition - player.start) <= 0.001,
+        });
         if (preparation.enabled) {
           prepared = true;
-          const commands = [...rhythmMemory(this.state.cues), ...orderForPedal(plan.opening, this.state.tempoChannel, (bytes) => bytes), ...plan.commands];
+          const commands: PreparationCommand[] = [
+            ...[...rhythmMemory(this.state.cues), ...orderForPedal(plan.opening, this.state.tempoChannel, (bytes) => bytes)].map((bytes) => ({ bytes })),
+            ...plan.commands,
+          ];
           const check = () => request === this.playRequest && this.armed && this.output === output && output?.state === "connected";
           this.set({ preparing: { label: "Sending setup commands", until: performance.now(), commands: commands.length } });
           for (let index = 0; index < commands.length; index++) {
@@ -1243,7 +1268,10 @@ export class PerformanceSession {
               if (request !== this.playRequest) return;
             }
             if (!check()) throw new Error("MIDI preparation was interrupted. Check the output and press Play again.");
-            this.sendPerformance(commands[index], undefined, "Before song preparation");
+            const command = commands[index];
+            // Consume before attempting the first message: a failed send may still have reached a pedal.
+            if (this.preparationHistory.started(command.onceKey)) this.set({ preparationOnceUsed: this.preparationHistory.size });
+            this.sendPerformance(command.bytes, undefined, "Before song preparation");
           }
           const settleMs = commands.length ? Math.max(preparation.settleMs, hasPedalRhythm(this.state.cues) ? RHYTHM_MEMORY_SETTLE_MS : 0) : 0;
           if (settleMs) {
