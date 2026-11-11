@@ -1,3 +1,4 @@
+import { MIDI_TRIGGER_PATTERN, preparationWaitMs } from "./preparation-wait";
 import type { PreparationRepeat } from "./preparation-repeat";
 import { expandCommand, isLegacyCommand, type MidiMacro } from "./midi-macros";
 import { isChordName, transposeChordName } from "./speed";
@@ -48,6 +49,8 @@ export interface Cue {
   trigger?: MidiTrigger | "section";
   /** How a Before song command repeats. Missing preserves Every start. */
   prepareRepeat?: PreparationRepeat;
+  /** Loading time after this preparation command line, in milliseconds. */
+  prepareWaitMs?: number;
   /** Set with `trigger: "section"`: the section or sections the cue fires on. The cue has no time until `expandSectionCues` gives it one. */
   section?: SectionTarget;
   /**
@@ -118,7 +121,7 @@ export function timedCues(cues: readonly Cue[]): Cue[] {
 }
 
 const TIMESTAMP = /\[(\d+):([0-5]\d(?:\.\d+)?)\]/g;
-const TRIGGER = /\{midi@(load|prepare(?:-beginning|-once)?|play|stop|end):([^}]*)\}/g;
+const TRIGGER = new RegExp(String.raw`\{midi@(${MIDI_TRIGGER_PATTERN}):([^}]*)\}`, "g");
 /** `{midi@section Chorus: pc 1 5}` or, for one section, `{midi@section "Chorus 2": pc 1 5}`. */
 const SECTION_TRIGGER = /\{midi@section\s+(?:"([^"}]*)"|([^":}]*?))\s*:([^}]*)\}/g;
 const MIDI_TOKEN = /\{midi:([^}]+)\}/g;
@@ -178,7 +181,9 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
         );
       // Positions are read from the code part of the original line, since the label is cut out of `content`.
       const triggerCues: Cue[] = [...code.matchAll(TRIGGER)].map((t) => {
-        const command = t[2].trim();
+        const command = t[2].trim(),
+          header = t[1].split(/\s+/)[0],
+          wait = preparationWaitMs(t[1]);
         if (!command) throw new Error(`Line ${index + 1}: MIDI triggers need contents.`);
         const source = { line: index, start: t.index, end: t.index + t[0].length, text: t[0] };
         return {
@@ -186,12 +191,15 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
           text: "",
           messages: expandCommand(command, macros),
           trigger: (t[1].startsWith("prepare") ? "prepare" : t[1]) as Cue["trigger"],
-          ...(t[1] === "prepare-once" ? { prepareRepeat: "once" as const } : t[1] === "prepare-beginning" ? { prepareRepeat: "beginning" as const } : {}),
+          ...(header === "prepare-once" ? { prepareRepeat: "once" as const } : header === "prepare-beginning" ? { prepareRepeat: "beginning" as const } : {}),
+          ...(wait !== undefined ? { prepareWaitMs: wait } : {}),
           tokens: [`@${t[1]} ${command}`],
           ...labelled,
           source,
         };
       });
+      if (triggerCues.filter((cue) => cue.prepareWaitMs !== undefined).length > 1)
+        throw new Error(`Line ${index + 1}: use one Wait after per preparation command line. Put separate waits on separate lines.`);
       const sectionCues: Cue[] = [...code.matchAll(SECTION_TRIGGER)].map((t): Cue => {
         const exact = t[1] !== undefined,
           name = (t[1] ?? t[2]).trim(),

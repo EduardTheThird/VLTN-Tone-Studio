@@ -1,3 +1,4 @@
+import { preparationSequence, type PreparationSequence } from "./preparation-sequence";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { StemPlayer, type Lead, type RenderedBuffers } from "@/song/stems/player";
@@ -25,8 +26,8 @@ import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, type TriggerCc } fro
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { refreshBandBeforePlay } from "@/song/band/refresh";
 import { hasPedalRhythm, hasSavedPedalRhythm, canStartRhythm, rhythmMemory, rhythmMemoryKey, RHYTHM_RESTART, RHYTHM_MEMORY_SETTLE_MS } from "./rhythm-runtime";
-import { PreparationHistory, preparationHistoryFor, type PreparationCommand } from "./preparation-repeat";
-import { startPreparation, savedPreparation, type PreparationSettings } from "./start-preparation";
+import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
+import { savedPreparation, type PreparationSettings } from "./start-preparation";
 import { TriggerPulses } from "./trigger-pulse";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type SchedulerJump, type TimecodeTail } from "@/song/performance/midi-scheduler";
 import { orderForPedal } from "@/song/performance/midi-pedal-order";
@@ -160,7 +161,8 @@ export interface SessionState {
   rhythmTempo: number | null;
   rhythmRestart: boolean;
   preparationSettings: PreparationSettings | null;
-  preparing: { label: string; until: number; commands: number } | null;
+  preparing: { label: string; until: number; commands: number; step?: number } | null;
+  preparationPlan: PreparationSequence | null;
   pedalsReady: boolean;
   preparationOnceUsed: number;
   lastTempo: { bpm: number; channel: number; output: string } | null;
@@ -496,6 +498,7 @@ export class PerformanceSession {
       rhythmRestart: false,
       preparationSettings: null,
       preparing: null,
+      preparationPlan: null,
       pedalsReady: false,
       preparationOnceUsed: 0,
       lastTempo: null,
@@ -1000,7 +1003,7 @@ export class PerformanceSession {
     this.invalidatePreparation();
     this.playRequest++;
     this.playPending = false;
-    this.set({ starting: false, preparing: null });
+    this.set({ starting: false, preparing: null, preparationPlan: null });
     const cancel = this.cancelDelay;
     this.cancelDelay = null;
     cancel?.();
@@ -1249,46 +1252,37 @@ export class PerformanceSession {
       let prepared = !!cached;
       if (cached) this.openingPrepared = cached.opening;
       if (armed && preparation && !cached) {
-        const plan = startPreparation(this.playCues(this.state), preparationPosition, preparation, this.chaseTriggers(), {
+        const sequence = preparationSequence({
+          cues: this.playCues(this.state),
+          position: preparationPosition,
+          requestedPosition,
+          start: player.start,
+          settings: preparation,
+          triggers: this.chaseTriggers(),
           history: this.preparationHistory,
-          atBeginning: Math.abs(requestedPosition - player.start) <= 0.001,
+          pedalChannel: this.state.tempoChannel,
+          tempo: tempoMessages,
         });
         if (preparation.enabled) {
           prepared = true;
-          const commands: PreparationCommand[] = [
-            ...[...rhythmMemory(this.state.cues), ...orderForPedal(plan.opening, this.state.tempoChannel, (bytes) => bytes)].map((bytes) => ({ bytes })),
-            ...plan.commands,
-          ];
           const check = () => request === this.playRequest && this.armed && this.output === output && output?.state === "connected";
-          this.set({ preparing: { label: "Sending setup commands", until: performance.now(), commands: commands.length } });
-          for (let index = 0; index < commands.length; index++) {
-            if (index > 0 && preparation.commandGapMs) {
-              this.set({ preparing: { label: "Between setup commands", until: performance.now() + preparation.commandGapMs, commands: commands.length } });
-              await this.waitStartDelay(preparation.commandGapMs / 1000);
+          const commands = sequence.steps.reduce((total, step) => total + (step.kind === "send" ? step.commands.length : 0), 0);
+          this.set({ preparationPlan: sequence });
+          for (const [index, step] of sequence.steps.entries()) {
+            this.set({ preparing: { label: step.label, until: performance.now() + (step.kind === "wait" ? step.durationMs : 0), commands, step: index } });
+            if (step.kind === "wait") {
+              await this.waitStartDelay(step.durationMs / 1000);
               if (request !== this.playRequest) return;
-            }
-            if (!check()) throw new Error("MIDI preparation was interrupted. Check the output and press Play again.");
-            const command = commands[index];
-            // Consume before attempting the first message: a failed send may still have reached a pedal.
-            if (this.preparationHistory.started(command.onceKey)) this.set({ preparationOnceUsed: this.preparationHistory.size });
-            this.sendPerformance(command.bytes, undefined, "Before song preparation");
+            } else
+              for (const command of step.commands) {
+                if (!check()) throw new Error("MIDI preparation was interrupted. Check the output and press Play again.");
+                // A failed send may still have reached a pedal, so once commands are consumed before the first attempt.
+                if (this.preparationHistory.started(command.onceKey)) this.set({ preparationOnceUsed: this.preparationHistory.size });
+                this.sendPerformance(command.bytes, undefined, step.origin === "tempo" ? "Song tempo" : `Before song: ${step.label}`);
+              }
+            if (!check()) throw new Error("MIDI output changed during preparation. Check it and press Play again.");
           }
-          const settleMs = commands.length ? Math.max(preparation.settleMs, hasPedalRhythm(this.state.cues) ? RHYTHM_MEMORY_SETTLE_MS : 0) : 0;
-          if (settleMs) {
-            this.set({ preparing: { label: "Waiting for pedals", until: performance.now() + settleMs, commands: commands.length } });
-            await this.waitStartDelay(settleMs / 1000);
-          }
-          if (request !== this.playRequest) return;
-          if (!check()) throw new Error("MIDI output changed during preparation. Check it and press Play again.");
-          for (const bytes of tempoMessages ?? []) this.sendPerformance(bytes, undefined, "Song tempo");
-          if (tempoMessages?.length) {
-            const tempoWait = commands.length ? 100 : preparation.settleMs;
-            this.set({ preparing: { label: "Setting song tempo", until: performance.now() + tempoWait, commands: commands.length } });
-            await this.waitStartDelay(tempoWait / 1000);
-          }
-          if (request !== this.playRequest) return;
-          if (!check()) throw new Error("MIDI output changed during preparation. Check it and press Play again.");
-          this.openingPrepared = { position: preparationPosition, messages: plan.suppressed };
+          this.openingPrepared = { position: preparationPosition, messages: sequence.suppressed };
           this.set({ rhythmRestart: false });
         }
       }
@@ -1345,7 +1339,7 @@ export class PerformanceSession {
     } finally {
       if (request === this.playRequest) {
         this.playPending = false;
-        this.set({ starting: false, preparing: null });
+        this.set({ starting: false, preparing: null, preparationPlan: null });
       }
     }
   };
@@ -1405,9 +1399,14 @@ export class PerformanceSession {
 
   /** The one-time tempo message a start sends, or null when it sends none. Throws when the tempo is out of range. */
   private tempoMessages(armed: boolean, output: MidiOutput | undefined, rate = this.state.player?.playbackRate ?? 1): number[][] | null {
-    const { tempoOnStart, tempoChannel, bpm } = this.state;
+    const { tempoOnStart } = this.state;
     if (!armed || !tempoOnStart || output?.state !== "connected") return null;
     // The pedal is sent the tempo the song plays at, so the range is checked on the effective BPM.
+    return this.configuredTempoMessages(rate);
+  }
+
+  private configuredTempoMessages(rate = this.state.player?.playbackRate ?? 1): number[][] {
+    const { tempoChannel, bpm } = this.state;
     const tempoBpm = effectiveBpm(this.state.rhythmTempo ?? bpm, rate);
     if (tempoBpm < 40 || tempoBpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
     const tempo = Math.round(tempoBpm),
@@ -1416,6 +1415,25 @@ export class PerformanceSession {
       [status, 73, tempo >> 7],
       [status, 74, tempo & 127],
     ];
+  }
+
+  /** Read-only: this never consumes repeat rules or sends MIDI. */
+  preparationPreview(): PreparationSequence | null {
+    if (this.state.preparationPlan) return this.state.preparationPlan;
+    const { player, preparationSettings: settings, bpm, timing } = this.state;
+    if (!player || !settings?.enabled) return null;
+    const requestedPosition = player.position >= player.duration ? player.start : Math.max(0, player.position);
+    return preparationSequence({
+      cues: this.playCues(this.state),
+      position: preRollStart(requestedPosition, timing.preRollBeats, bpm),
+      requestedPosition,
+      start: player.start,
+      settings,
+      triggers: this.chaseTriggers(),
+      history: this.preparationHistory,
+      pedalChannel: this.state.tempoChannel,
+      tempo: this.state.tempoOnStart ? this.configuredTempoMessages() : null,
+    });
   }
 
   /** Crossfades into the next playlist song now. Returns false when no next song is ready, or a join is already planned. */

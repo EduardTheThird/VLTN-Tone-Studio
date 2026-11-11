@@ -1,4 +1,4 @@
-import { setPreparationRepeat } from "@/song/performance/start-preparation";
+import { setPreparationRepeat, setPreparationWait } from "@/song/performance/start-preparation";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -41,6 +41,12 @@ function Harness({ start, locked = false }: { start: string; locked?: boolean })
         cues={parseChart(chart)}
         locked={locked}
         onAdd={(line) => setChart([chart, line].filter(Boolean).join("\n"))}
+        onPreparationWait={(cue, milliseconds) => {
+          const next = setPreparationWait(chart, cue, milliseconds);
+          if (next === null) return false;
+          setChart(next);
+          return true;
+        }}
         onPreparationRepeat={(cue, repeat) => {
           const next = setPreparationRepeat(chart, cue, repeat);
           if (next === null) return false;
@@ -192,4 +198,16 @@ it("adds a once preparation command and changes an existing bank/preset line's r
   fireEvent.change(screen.getByLabelText("Cue command number"), { target: { value: "9" } });
   fireEvent.click(screen.getByText("Add MIDI cue"));
   expect(chartText()).toContain("{midi@prepare-beginning:pc 1 9}");
+});
+
+it("stores one Wait after on the whole bank/preset group and preserves it when Repeat changes", () => {
+  render(<Harness start="{label:Patch} {midi@prepare:cc 1 0 2} {midi@prepare:pc 1 5}" />);
+  fireEvent.change(screen.getByLabelText("Wait after Patch"), { target: { value: "0.5" } });
+  expect(chartText()).toBe("{label:Patch} {midi@prepare:cc 1 0 2} {midi@prepare wait=0.5:pc 1 5}");
+  fireEvent.change(screen.getByLabelText("Preparation repeat for Patch"), { target: { value: "once" } });
+  expect(chartText()).toBe("{label:Patch} {midi@prepare-once:cc 1 0 2} {midi@prepare-once wait=0.5:pc 1 5}");
+  fireEvent.change(screen.getByLabelText("Cue when"), { target: { value: "prepare" } });
+  fireEvent.change(screen.getByLabelText("New preparation command wait after"), { target: { value: "0.2" } });
+  fireEvent.click(screen.getByText("Add MIDI cue"));
+  expect(chartText()).toContain("{midi@prepare wait=0.2:pc 1 0}");
 });

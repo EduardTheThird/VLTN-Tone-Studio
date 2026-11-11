@@ -2434,20 +2434,28 @@ describe("Before song preparation", () => {
       session.dispose();
     }
   });
-  it("respects a configurable gap between setup messages and cancels the remaining sequence", async () => {
+  it("keeps bank/preset and macro messages together while spacing setup commands", async () => {
     const { session, out, unload } = setup();
     session.update({ preparationSettings: { ...preparationSettings, commandGapMs: 250 } });
     try {
       const playing = session.play();
       await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
-      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xbf, 0, 0]]);
-      await vi.advanceTimersByTimeAsync(250);
-      expect(out.send.mock.calls[1][0]).toEqual([0xcf, 6]);
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xbf, 0, 0],
+        [0xcf, 6],
+      ]);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(out.send.mock.calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(out.send.mock.calls.slice(-2).map((call) => call[0])).toEqual([
+        [0xb2, 12, 0],
+        [0xc2, 7],
+      ]);
       session.cancelStart();
       await vi.advanceTimersByTimeAsync(3000);
       await playing;
       expect(session.state.playing).toBe(false);
-      expect(out.send.mock.calls.some((call) => call[0][0] === 0xc2)).toBe(false);
+      expect(out.send.mock.calls.some((call) => call[0][1] === 73)).toBe(false);
     } finally {
       unload();
       session.dispose();
@@ -2499,15 +2507,13 @@ describe("preparation command repeat rules", () => {
       session.dispose();
     }
   });
-  it("keeps a partially sent once line consumed after cancellation, and resets it only on an explicit request", async () => {
-    const { session, out, unload } = setup("{midi@prepare-once:cc 3 20 127} {midi@prepare-once:cc 3 20 0}", 200);
+  it("keeps an interrupted once line consumed, and resets it only on an explicit request", async () => {
+    const { session, out, unload } = setup("{midi@prepare-once:cc 3 20 127} {midi@prepare-once:cc 3 20 0}");
     try {
-      const pending = session.preparePedals();
-      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
+      out.send.mockImplementationOnce(() => session.cancelStart());
+      await session.preparePedals();
       expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xb2, 20, 127]]);
       expect(session.state.preparationOnceUsed).toBe(1);
-      session.cancelStart();
-      await pending;
       await session.preparePedals();
       expect(out.send.mock.calls).toHaveLength(1);
       expect(session.state.pedalsReady).toBe(true);
@@ -2515,10 +2521,7 @@ describe("preparation command repeat rules", () => {
       expect(session.state.preparationOnceUsed).toBe(0);
       expect(session.state.pedalsReady).toBe(false);
       expect(out.send.mock.calls).toHaveLength(1);
-      const retry = session.preparePedals();
-      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
-      await vi.advanceTimersByTimeAsync(200);
-      await retry;
+      await session.preparePedals();
       expect(out.send.mock.calls.slice(-2).map((call) => call[0])).toEqual([
         [0xb2, 20, 127],
         [0xb2, 20, 0],
@@ -2558,6 +2561,75 @@ describe("preparation command repeat rules", () => {
       await session.preparePedals();
       expect(out.send).toHaveBeenCalledTimes(1);
       expect(session.state.pedalsReady).toBe(true);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+});
+
+describe("individual preparation waits", () => {
+  beforeEach(() => {
+    clearSettingsCache();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+  it("uses the preview's exact wait plan, keeps a bank pair together, and stops at Ready without audio", async () => {
+    const { session, out, unload } = armedSession(output(), {
+      cues: parseChart("{label:Patch} {midi@prepare:cc 3 0 0} {midi@prepare wait=0.5:pc 3 5}\n{label:Effect} {midi@prepare wait=0.2:cc 3 12 64}"),
+      preparationSettings: { enabled: true, settleMs: 100, openingPresets: true },
+      tempoOnStart: true,
+      tempoChannel: 16,
+      bpm: 140,
+    });
+    try {
+      expect(session.preparationPreview()?.totalWaitMs).toBe(900);
+      expect(out.send).not.toHaveBeenCalled();
+      const pending = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Wait after Patch"));
+      expect(session.state.preparationPlan?.totalWaitMs).toBe(900);
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xb2, 0, 0],
+        [0xc2, 5],
+      ]);
+      await vi.advanceTimersByTimeAsync(350);
+      expect(out.send.mock.calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(out.send.mock.calls.at(-1)?.[0]).toEqual([0xb2, 12, 64]);
+      await vi.advanceTimersByTimeAsync(400);
+      await pending;
+      expect(session.state.pedalsReady).toBe(true);
+      expect(session.state.playing).toBe(false);
+      expect(out.send.mock.calls.slice(-2).map((call) => call[0])).toEqual([
+        [0xbf, 73, 1],
+        [0xbf, 74, 12],
+      ]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it("cancels a wait before the next command and keeps an attempted once action used", async () => {
+    const { session, out, unload } = armedSession(output(), {
+      cues: parseChart("{label:Once} {midi@prepare-once wait=0.5:cc 3 25 127}\n{midi@prepare:pc 3 4}"),
+      preparationSettings: { enabled: true, settleMs: 0, openingPresets: true },
+    });
+    session.resetPreparationCommands();
+    try {
+      const pending = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Wait after Once"));
+      session.cancelStart();
+      await pending;
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xb2, 25, 127]]);
+      expect(session.preparationPreview()?.totalWaitMs).toBe(0);
+      await session.preparePedals();
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xb2, 25, 127],
+        [0xc2, 4],
+      ]);
+      expect(session.state.preparationOnceUsed).toBe(1);
     } finally {
       session.pause();
       unload();

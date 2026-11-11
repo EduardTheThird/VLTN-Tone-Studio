@@ -1,4 +1,5 @@
-import { PREPARATION_REPEATS, PREPARATION_REPEAT_LABELS, type PreparationRepeat } from "@/song/performance/preparation-repeat";
+import { PreparationTimingFields } from "./PreparationTimingFields";
+import { PREPARATION_REPEAT_LABELS, type PreparationRepeat } from "@/song/performance/preparation-repeat";
 import { preparationLine } from "@/song/performance/start-preparation";
 import { SettingsCard } from "@/components/ui/settings-card";
 import { useState } from "react";
@@ -25,6 +26,7 @@ export function MidiCueBuilder({
   onPrepare,
   onMovePreparation,
   onPreparationRepeat,
+  onPreparationWait,
   locked = false,
   onShowChart,
   onTest,
@@ -41,6 +43,7 @@ export function MidiCueBuilder({
   onPrepare?: (cue: Cue) => boolean;
   onMovePreparation?: (cue: Cue, direction: 1 | -1) => boolean;
   onPreparationRepeat?: (cue: Cue, repeat: PreparationRepeat) => boolean;
+  onPreparationWait?: (cue: Cue, milliseconds: number) => boolean;
   /** True while cues are armed and the song plays, when the chart is not changed under the performance. */
   locked?: boolean;
   /** Goes to the view where the chart text is edited directly. */
@@ -57,6 +60,7 @@ export function MidiCueBuilder({
   const [when, setWhen] = useState<"time" | "section" | "prepare">("time"),
     [choiceId, setChoiceId] = useState("");
   const [repeat, setRepeat] = useState<PreparationRepeat>("always");
+  const [waitMs, setWaitMs] = useState(0);
   const choices = sectionChoices(sections),
     choice = choices.find((c) => c.id === choiceId) ?? choices[0];
   const [editing, setEditing] = useState<Cue | null>(null),
@@ -70,7 +74,7 @@ export function MidiCueBuilder({
       setError("Stop playback or cancel preparation before changing cues.");
       return;
     }
-    onAdd(when === "prepare" ? preparationLine(line, repeat) : when === "section" && choice ? sectionLine(line, choice.target) : line);
+    onAdd(when === "prepare" ? preparationLine(line, repeat, waitMs) : when === "section" && choice ? sectionLine(line, choice.target) : line);
   };
   const whenLabel = (cue: Cue) =>
     cue.trigger === "section"
@@ -199,23 +203,7 @@ export function MidiCueBuilder({
           <p>Runs in chart order during preparation, before the count-in and first note.</p>
         )}
       </div>
-      {when === "prepare" && !editing && (
-        <label className="text-sm">
-          Repeat
-          <select
-            aria-label="New preparation command repeat"
-            className={field}
-            value={repeat}
-            onChange={(event) => setRepeat(event.target.value as PreparationRepeat)}
-          >
-            {PREPARATION_REPEATS.map((value) => (
-              <option key={value} value={value}>
-                {PREPARATION_REPEAT_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {when === "prepare" && !editing && <PreparationTimingFields repeat={repeat} waitMs={waitMs} onRepeat={setRepeat} onWait={setWaitMs} disabled={locked} />}
       {when === "prepare" && (
         <p className="text-xs text-silkscreen-3">
           Every start includes resumes and Prepare again. Only from beginning uses the trimmed song start. Once per song load runs on the first preparation;
@@ -338,24 +326,32 @@ export function MidiCueBuilder({
                       <div className="flex flex-wrap items-center gap-1">
                         {cue.trigger === "prepare" &&
                           cue.source &&
-                          onPreparationRepeat &&
                           scheduled.findIndex((other) => other.trigger === "prepare" && other.source?.line === cue.source?.line) === i && (
-                            <select
-                              aria-label={`Preparation repeat for ${cue.label || `command ${i + 1}`}`}
-                              title="Applies to all Before song commands on this chart line, keeping bank/preset pairs together."
-                              className="rounded border border-seam bg-background p-1 text-xs"
+                            <PreparationTimingFields
+                              name={cue.label || `command ${i + 1}`}
+                              repeat={cue.prepareRepeat ?? "always"}
                               disabled={locked}
-                              value={cue.prepareRepeat ?? "always"}
-                              onChange={(event) => {
-                                if (!onPreparationRepeat(cue, event.target.value as PreparationRepeat)) setError(CHANGED);
-                              }}
-                            >
-                              {PREPARATION_REPEATS.map((value) => (
-                                <option key={value} value={value}>
-                                  {PREPARATION_REPEAT_LABELS[value]}
-                                </option>
-                              ))}
-                            </select>
+                              waitMs={Math.max(
+                                0,
+                                ...scheduled
+                                  .filter((other) => other.trigger === "prepare" && other.source?.line === cue.source?.line)
+                                  .map((other) => other.prepareWaitMs ?? 0),
+                              )}
+                              onRepeat={
+                                onPreparationRepeat
+                                  ? (value) => {
+                                      if (!onPreparationRepeat(cue, value)) setError(CHANGED);
+                                    }
+                                  : undefined
+                              }
+                              onWait={
+                                onPreparationWait
+                                  ? (value) => {
+                                      if (!onPreparationWait(cue, value)) setError(CHANGED);
+                                    }
+                                  : undefined
+                              }
+                            />
                           )}
                         <CueRowButtons cue={cue} locked={locked} sections={sections} onEdit={() => startEdit(cue)} onRemove={() => remove(cue)} />
                         {cue.trigger !== "prepare" && cue.trigger !== "section" && onPrepare && (cue.source || cue.line) && (
