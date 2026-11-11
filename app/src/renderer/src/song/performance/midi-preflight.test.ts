@@ -157,3 +157,15 @@ it("counts preparation commands and warns when automatic tempo will overwrite a 
   expect(report.commands).toBe(2);
   expect(report.issues.some((issue) => issue.code === "preparation-tempo")).toBe(true);
 });
+
+it("checks output and saved profile channels for preparation-only songs", () => {
+  const report = midiPreflight(parseChart("{label:Pedal A: recall} {midi@prepare:pc 2 4}"), {
+    ...options,
+    outputName: undefined,
+    tempoChannel: 1,
+    pedals: [{ name: "Pedal A", channel: 1 }],
+  });
+  expect(report.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["saved-channel", "output", "tempo-channel"]));
+  expect(report.commands).toBe(1);
+  expect(report.channels).toEqual([[2, 1]]);
+});

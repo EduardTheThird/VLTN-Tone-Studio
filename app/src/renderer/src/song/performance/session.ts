@@ -1,3 +1,4 @@
+import { pedalTempoMessages } from "./pedal-tempo";
 import { preparationSequence, type PreparationSequence } from "./preparation-sequence";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
@@ -1408,13 +1409,7 @@ export class PerformanceSession {
   private configuredTempoMessages(rate = this.state.player?.playbackRate ?? 1): number[][] {
     const { tempoChannel, bpm } = this.state;
     const tempoBpm = effectiveBpm(this.state.rhythmTempo ?? bpm, rate);
-    if (tempoBpm < 40 || tempoBpm > 300) throw new Error("GP-150 / GP-180 one-time tempo supports 40–300 BPM.");
-    const tempo = Math.round(tempoBpm),
-      status = 0xb0 + tempoChannel - 1;
-    return [
-      [status, 73, tempo >> 7],
-      [status, 74, tempo & 127],
-    ];
+    return pedalTempoMessages(tempoBpm, tempoChannel);
   }
 
   /** Read-only: this never consumes repeat rules or sends MIDI. */

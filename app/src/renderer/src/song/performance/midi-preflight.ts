@@ -51,6 +51,12 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
       if (bytes[0] < 240) {
         const channel = (bytes[0] & 15) + 1;
         channels.set(channel, (channels.get(channel) ?? 0) + 1);
+        const pedal = options.pedals.find((pedal) => cue.label?.startsWith(pedal.name + ":"));
+        if (pedal && pedal.channel !== channel)
+          add(
+            "saved-channel",
+            `${pedal.name} Before song cue uses channel ${channel}; its current profile is channel ${pedal.channel}. Existing cue bytes are unchanged.`,
+          );
       }
     }
   for (const cue of unmatchedSectionCues(chartCues, options.sections ?? []))
@@ -70,9 +76,9 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
       "transport-conflict",
       "A Start, Continue or Stop cue conflicts with app MIDI clock, which already sends Start and Stop. Turn clock off or remove the cue.",
     );
-  if (events.length && !options.outputName)
+  if ((events.length || preparation.some((cue) => cue.messages.length)) && !options.outputName)
     add("output", "No MIDI output selected. Connect the intended output and explicitly enable Send cues before performing.");
-  const referenced = options.pedals.filter((p) => events.some((c) => c.label?.startsWith(p.name + ":")));
+  const referenced = options.pedals.filter((p) => [...events, ...preparation].some((c) => c.label?.startsWith(p.name + ":")));
   const labels = new Map<number, string[]>();
   for (const pedal of referenced) {
     const names = labels.get(pedal.channel) || [];
