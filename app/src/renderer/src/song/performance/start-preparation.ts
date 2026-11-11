@@ -1,3 +1,4 @@
+import { PreparationHistory, preparationTrigger, type PreparationRepeat, type PreparationCommand } from "./preparation-repeat";
 import { create } from "zustand";
 import { removeCueToken, type Cue } from "./chart";
 import { cueCommandText } from "./cue-token";
@@ -51,13 +52,20 @@ export function isPresetMessage(bytes: readonly number[]): boolean {
 }
 export interface StartPreparation {
   opening: number[][];
-  commands: number[][];
+  commands: PreparationCommand[];
   suppressed: number[][];
 }
-export function startPreparation(cues: Cue[], position: number, settings: PreparationSettings, triggers: TriggerCc[] = []): StartPreparation {
-  const explicit = cues.filter((cue) => cue.trigger === "prepare").flatMap((cue) => cue.messages);
+export function startPreparation(
+  cues: Cue[],
+  position: number,
+  settings: PreparationSettings,
+  triggers: TriggerCc[] = [],
+  repeats: { history: PreparationHistory; atBeginning: boolean } = { history: new PreparationHistory(), atBeginning: position <= 0.001 },
+): StartPreparation {
+  const explicit = repeats.history.commands(cues, repeats.atBeginning);
   if (!settings.enabled) {
-    if (explicit.length) throw new Error("Enable Before song preparation to run this song's preparation commands.");
+    if (cues.some((cue) => cue.trigger === "prepare" && cue.messages.length))
+      throw new Error("Enable Before song preparation to run this song's preparation commands.");
     return { opening: [], commands: [], suppressed: [] };
   }
   const opening: number[][] = [];
@@ -81,8 +89,8 @@ export function startPreparation(cues: Cue[], position: number, settings: Prepar
   return { opening, commands: explicit, suppressed: opening };
 }
 /** Named pedal and macro pickers keep their labels and message order in the preparation phase. */
-export function preparationLine(line: string): string {
-  return line.replace(/^\s*\[[^\]]*\]\s*/, "").replace(/\{midi:([^}]+)\}/g, (_, command: string) => `{midi@prepare:${command.trim()}}`);
+export function preparationLine(line: string, repeat: PreparationRepeat = "always"): string {
+  return line.replace(/^\s*\[[^\]]*\]\s*/, "").replace(/\{midi:([^}]+)\}/g, (_, command: string) => `{midi@${preparationTrigger(repeat)}:${command.trim()}}`);
 }
 /** Move an entire command line, preserving bank/PC pairs and macro order without moving lyrics or timed cues. */
 export function movePreparationLine(chart: string, cue: Cue, direction: 1 | -1): string | null {
@@ -90,10 +98,10 @@ export function movePreparationLine(chart: string, cue: Cue, direction: 1 | -1):
   const at = cue.source?.line;
   if (at === undefined || !lines[at]?.includes(cue.source!.text)) return null;
   const eligible = (line: string) =>
-    line.includes("{midi@prepare:") &&
+    /\{midi@prepare(?:-beginning|-once)?:/.test(line) &&
     !line
       .split("//")[0]
-      .replace(/\{midi@prepare:[^}]*\}|\{label:[^}]*\}/g, "")
+      .replace(/\{midi@prepare(?:-beginning|-once)?:[^}]*\}|\{label:[^}]*\}/g, "")
       .trim();
   const positions = lines.flatMap((line, index) => (eligible(line) ? [index] : []));
   const index = positions.indexOf(at),
@@ -124,4 +132,18 @@ export function moveCueToPreparation(chart: string, cue: Cue): string | null {
     line = `${cue.label ? `{label:${cue.label}} ` : ""}{midi@prepare:${command}}`;
   }
   return [removed.trimEnd(), line].filter(Boolean).join(chart.includes("\r\n") ? "\r\n" : "\n");
+}
+
+/** Change the repeat policy for the complete preparation line, keeping bank/PC pairs together. */
+export function setPreparationRepeat(chart: string, cue: Cue, repeat: PreparationRepeat): string | null {
+  const source = cue.source;
+  if (!source || cue.trigger !== "prepare" || cue.managed) return null;
+  const lines = chart.split(/\r?\n/),
+    line = lines[source.line];
+  if (line === undefined || line.slice(source.start, source.end) !== source.text) return null;
+  const commentAt = line.search(/(^|\s)\/\//),
+    code = commentAt < 0 ? line : line.slice(0, commentAt);
+  lines[source.line] =
+    code.replace(/\{midi@prepare(?:-beginning|-once)?:/g, `{midi@${preparationTrigger(repeat)}:`) + (commentAt < 0 ? "" : line.slice(commentAt));
+  return lines.join(chart.includes("\r\n") ? "\r\n" : "\n");
 }

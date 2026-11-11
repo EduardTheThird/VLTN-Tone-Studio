@@ -2454,3 +2454,114 @@ describe("Before song preparation", () => {
     }
   });
 });
+
+describe("preparation command repeat rules", () => {
+  beforeEach(() => {
+    clearSettingsCache();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+  const setup = (chart: string, commandGapMs = 0) => {
+    const result = armedSession(output(), { cues: parseChart(chart), preparationSettings: { enabled: true, openingPresets: true, settleMs: 0, commandGapMs } });
+    result.session.resetPreparationCommands();
+    return result;
+  };
+  it("resumes with Every start only, and replays beginning commands only at the trimmed start", async () => {
+    const { session, out, unload } = setup("{midi@prepare:pc 1 5}\n{midi@prepare-beginning:cc 3 20 127}\n{midi@prepare-once:cc 4 21 127}");
+    Object.assign(session.state.player!, { start: 10 });
+    mocks.position = 10;
+    try {
+      await session.preparePedals();
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xc0, 5],
+        [0xb2, 20, 127],
+        [0xb3, 21, 127],
+      ]);
+      expect(session.state.preparationOnceUsed).toBe(1);
+      await session.play();
+      expect(out.send.mock.calls).toHaveLength(3);
+      session.pause();
+      mocks.position = 10.02;
+      out.send.mockClear();
+      await session.play();
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 5]]);
+      session.pause();
+      mocks.position = 10;
+      out.send.mockClear();
+      await session.play();
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([
+        [0xc0, 5],
+        [0xb2, 20, 127],
+      ]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it("keeps a partially sent once line consumed after cancellation, and resets it only on an explicit request", async () => {
+    const { session, out, unload } = setup("{midi@prepare-once:cc 3 20 127} {midi@prepare-once:cc 3 20 0}", 200);
+    try {
+      const pending = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xb2, 20, 127]]);
+      expect(session.state.preparationOnceUsed).toBe(1);
+      session.cancelStart();
+      await pending;
+      await session.preparePedals();
+      expect(out.send.mock.calls).toHaveLength(1);
+      expect(session.state.pedalsReady).toBe(true);
+      session.resetPreparationCommands();
+      expect(session.state.preparationOnceUsed).toBe(0);
+      expect(session.state.pedalsReady).toBe(false);
+      expect(out.send.mock.calls).toHaveLength(1);
+      const retry = session.preparePedals();
+      await vi.waitFor(() => expect(session.state.preparing?.label).toBe("Between setup commands"));
+      await vi.advanceTimersByTimeAsync(200);
+      await retry;
+      expect(out.send.mock.calls.slice(-2).map((call) => call[0])).toEqual([
+        [0xb2, 20, 127],
+        [0xb2, 20, 0],
+      ]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it("does not consume a once command when preparation is cancelled before sending begins", async () => {
+    const { session, out, unload } = setup("{midi@prepare-once:pc 3 9}");
+    try {
+      const pending = session.preparePedals();
+      session.cancelStart();
+      await pending;
+      expect(session.state.preparationOnceUsed).toBe(0);
+      expect(out.send).not.toHaveBeenCalled();
+      await session.preparePedals();
+      expect(out.send.mock.calls.map((call) => call[0])).toEqual([[0xc2, 9]]);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+  it("does not automatically repeat an ambiguous failed once send after rearming", async () => {
+    const { session, out, unload } = setup("{midi@prepare-once:cc 3 22 127}");
+    try {
+      out.send.mockImplementationOnce(() => {
+        throw new Error("link failed");
+      });
+      await session.preparePedals();
+      expect(session.state.preparationOnceUsed).toBe(1);
+      expect(session.state.pedalsReady).toBe(false);
+      session.setArmed(true);
+      await session.preparePedals();
+      expect(out.send).toHaveBeenCalledTimes(1);
+      expect(session.state.pedalsReady).toBe(true);
+    } finally {
+      session.pause();
+      unload();
+      session.dispose();
+    }
+  });
+});

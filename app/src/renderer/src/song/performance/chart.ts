@@ -1,3 +1,4 @@
+import type { PreparationRepeat } from "./preparation-repeat";
 import { expandCommand, isLegacyCommand, type MidiMacro } from "./midi-macros";
 import { isChordName, transposeChordName } from "./speed";
 
@@ -45,6 +46,8 @@ export interface Cue {
   chase?: boolean;
   /** Set on a `{midi@…}` trigger, which has no song time. `time` is 0 and is never used for scheduling. A section cue has `"section"`. */
   trigger?: MidiTrigger | "section";
+  /** How a Before song command repeats. Missing preserves Every start. */
+  prepareRepeat?: PreparationRepeat;
   /** Set with `trigger: "section"`: the section or sections the cue fires on. The cue has no time until `expandSectionCues` gives it one. */
   section?: SectionTarget;
   /**
@@ -115,7 +118,7 @@ export function timedCues(cues: readonly Cue[]): Cue[] {
 }
 
 const TIMESTAMP = /\[(\d+):([0-5]\d(?:\.\d+)?)\]/g;
-const TRIGGER = /\{midi@(load|prepare|play|stop|end):([^}]*)\}/g;
+const TRIGGER = /\{midi@(load|prepare(?:-beginning|-once)?|play|stop|end):([^}]*)\}/g;
 /** `{midi@section Chorus: pc 1 5}` or, for one section, `{midi@section "Chorus 2": pc 1 5}`. */
 const SECTION_TRIGGER = /\{midi@section\s+(?:"([^"}]*)"|([^":}]*?))\s*:([^}]*)\}/g;
 const MIDI_TOKEN = /\{midi:([^}]+)\}/g;
@@ -171,7 +174,7 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
       const labelled = label ? { label } : {};
       if (/\{midi@/.test(content.replace(TRIGGER, "").replace(SECTION_TRIGGER, "")))
         throw new Error(
-          `Line ${index + 1}: a MIDI trigger is {midi@load: …}, {midi@prepare: …}, {midi@play: …}, {midi@stop: …}, {midi@end: …} or {midi@section Name: …} with one command.`,
+          `Line ${index + 1}: a MIDI trigger is {midi@load: …}, {midi@prepare: …}, {midi@prepare-beginning: …}, {midi@prepare-once: …}, {midi@play: …}, {midi@stop: …}, {midi@end: …} or {midi@section Name: …} with one command.`,
         );
       // Positions are read from the code part of the original line, since the label is cut out of `content`.
       const triggerCues: Cue[] = [...code.matchAll(TRIGGER)].map((t) => {
@@ -182,7 +185,8 @@ export function parseChart(text: string, macros: readonly MidiMacro[] = []): Cue
           time: 0,
           text: "",
           messages: expandCommand(command, macros),
-          trigger: t[1] as Cue["trigger"],
+          trigger: (t[1].startsWith("prepare") ? "prepare" : t[1]) as Cue["trigger"],
+          ...(t[1] === "prepare-once" ? { prepareRepeat: "once" as const } : t[1] === "prepare-beginning" ? { prepareRepeat: "beginning" as const } : {}),
           tokens: [`@${t[1]} ${command}`],
           ...labelled,
           source,

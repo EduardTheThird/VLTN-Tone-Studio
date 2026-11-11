@@ -22,7 +22,7 @@ const TOKEN = new RegExp(
   [
     String.raw`\[\d+:[0-5]\d(?:\.\d+)?\]`,
     String.raw`\[[^\]\s]+\]`,
-    String.raw`\{midi(?:@(?:load|prepare|play|stop|end))?:[^}]*\}`,
+    String.raw`\{midi(?:@(?:load|prepare(?:-beginning|-once)?|play|stop|end))?:[^}]*\}`,
     String.raw`\{color:[a-z]+\}|\{\/color\}`,
     String.raw`\{label:[^}]*\}|\{(?:no)?chase\}`,
     String.raw`(?<=^|\s)\/\/.*$`,

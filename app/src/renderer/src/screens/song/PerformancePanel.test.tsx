@@ -1105,3 +1105,25 @@ it("clears Ready when the song trim changes while stopped", async () => {
   expect(screen.getByText("Prepare pedals")).toBeTruthy();
   expect(screen.getByText("Play song")).toBeTruthy();
 });
+
+it("respects once commands on Prepare again and exposes an explicit reset without sending MIDI", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  localStorage.setItem(key, "{midi@prepare-once:pc 1 99}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 0, openingPresets: true } }));
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  await act(async () => fireEvent.click(screen.getByText("Prepare pedals")));
+  expect(screen.getByText(/1 once command line used/)).toBeTruthy();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 99]]);
+  await act(async () => fireEvent.click(screen.getByText("Prepare again")));
+  expect(mocks.send).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText("Reset once commands"));
+  expect(screen.queryByText(/Ready to play/)).toBeNull();
+  expect(mocks.send).toHaveBeenCalledTimes(1);
+  await act(async () => fireEvent.click(screen.getByText("Prepare pedals")));
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([
+    [0xc0, 99],
+    [0xc0, 99],
+  ]);
+});

@@ -1,5 +1,5 @@
 import { SongPreparationSettings } from "./SongPreparationSettings";
-import { moveCueToPreparation, movePreparationLine } from "@/song/performance/start-preparation";
+import { moveCueToPreparation, movePreparationLine, setPreparationRepeat } from "@/song/performance/start-preparation";
 import { hasPedalRhythm } from "@/song/performance/rhythm-runtime";
 import { RhythmHardwareTest } from "./RhythmHardwareTest";
 import { RhythmTempoStatus } from "./RhythmTempoStatus";
@@ -295,7 +295,7 @@ export function PerformanceMidiSetup({
           and TRS clock output On. Continuous app clock fluctuated in real GP-180 USB and Bluetooth tests with a TimeLine and caused audible delay changes.
         </p>
       </HelpNote>
-      {songKey && <SongPreparationSettings songKey={songKey} locked={playing || starting} />}
+      {songKey && <SongPreparationSettings songKey={songKey} session={session} locked={playing || starting} />}
       <RhythmTempoStatus session={session} />
       <RhythmHardwareTest session={session} />
       <TimecodeSettings session={session} offset={timecodeOffset} onOffset={onTimecodeOffset} bluetooth={portId === BLUETOOTH_PORT_ID} />
@@ -309,6 +309,12 @@ export function PerformanceMidiSetup({
           locked={armed && (playing || starting)}
           onPrepare={(cue) => {
             const next = moveCueToPreparation(chart, cue);
+            if (next === null) return false;
+            onSaveChart(next);
+            return true;
+          }}
+          onPreparationRepeat={(cue, repeat) => {
+            const next = setPreparationRepeat(chart, cue, repeat);
             if (next === null) return false;
             onSaveChart(next);
             return true;

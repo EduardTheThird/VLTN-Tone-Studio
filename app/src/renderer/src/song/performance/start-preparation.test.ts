@@ -11,7 +11,7 @@ it("moves opening presets and banks early but keeps notes and drum/looper starts
       [0xbf, 0, 0],
       [0xcf, 6],
     ],
-    commands: [[0xb2, 20, 127]],
+    commands: [{ bytes: [0xb2, 20, 127] }],
     suppressed: [
       [0xbf, 0, 0],
       [0xcf, 6],
@@ -34,10 +34,7 @@ it("uses the current preset state for a trimmed or resumed start and preserves e
   ]);
   const plan = startPreparation(cues, 10, enabled);
   expect(plan.opening).toEqual([[0xcf, 6]]);
-  expect(plan.commands).toEqual([
-    [0xb3, 12, 0],
-    [0xc3, 9],
-  ]);
+  expect(plan.commands).toEqual([{ bytes: [0xb3, 12, 0] }, { bytes: [0xc3, 9] }]);
 });
 it("keeps labelled multi-message pedal actions together when moving preparation lines", () => {
   const first = "{label:GP patch} {midi@prepare:cc 16 0 0} {midi@prepare:pc 16 6}";

@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- **Repeat rules for preparation commands.** Choose Every start, Only from beginning or Once per song load for named commands, raw MIDI and macros. Bank/preset groups stay together; cancellation, resume and reconnection do not replay used once commands. Reset once commands explicitly allows another attempt without sending MIDI itself ([Repeat rules](PERFORMANCE.md#preparation-command-repeat-rules)).
 - **Prepare pedals, then Play.** Prepare sends presets and tempo, waits and stops at Ready without audio or start triggers. Play reuses that setup; edits, seeking, manual MIDI commands and connection changes clear Ready. Normal Play still prepares automatically, and Prepare is available in stage view and remote bindings.
 - **macOS Bluetooth MIDI recovery.** Open Audio MIDI Setup directly from Tone Studio and select its system MIDI port. Discovery stays in the system app, avoiding the native Bluetooth call that froze the main app. Opening is cancellable and bounded; reconnecting does not resume playback.
 - **Before song MIDI preparation.** Add your own named pedal commands, raw MIDI or macros to a preparation phase, order them, set a loading wait and optional message gap, and save defaults or song overrides. Opening presets and RC-10R memory load before automatic tempo, count-in and audio; prepared presets are not repeated at 0:00. Transport and stage view show progress with Cancel start ([Before song](PERFORMANCE.md#before-song-preparation)).

@@ -184,7 +184,7 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 
 ### Before song preparation
 
-**Prepare pedals** runs setup and stops at **Ready to play**, without starting the count-in, music or Play triggers. Press **Play** when you are ready; the app reuses the setup without resending presets or repeating the loading wait. **Prepare again** deliberately runs it again. Ready means the commands were sent and the wait finished; it does not confirm the pedal’s received settings. Tempo, cue, trim, speed, output or arming changes clear Ready, as do seeking, Stop/Panic and sending a manual MIDI command. Prepare is available in stage mode and as a remote-control action.
+**Prepare pedals** runs setup and stops at **Ready to play**, without starting the count-in, music or Play triggers. Press **Play** when you are ready; the app reuses the setup without resending presets or repeating the loading wait. **Prepare again** runs setup again while respecting each command’s Repeat rule. Ready means the commands were sent and the wait finished; it does not confirm the pedal’s received settings. Tempo, cue, trim, speed, output or arming changes clear Ready, as do seeking, Stop/Panic and sending a manual MIDI command. Prepare is available in stage mode and as a remote-control action.
 
 **Before song** gives pedals time to load before the music starts. With **Send cues** enabled, pressing Play sends the RC-10R memory and opening preset changes, then your own preparation commands, waits for loading, sends automatic song BPM if enabled, and starts the count-in and song. It runs for each song in a playlist and each manual start or resume; it does not repeat on a whole-song loop. Cues remain at their musical times, so trimming audio or changing BPM does not require moving presets to negative timestamps.
 
@@ -195,6 +195,22 @@ The **Before song** settings have a **Preset loading wait**, initially one secon
 The transport and stage view show preparation progress with **Cancel start**. Cancelling stops the remaining commands and prevents audio from starting; it cannot undo commands a pedal has already received. Changing the MIDI output or song setup during preparation cancels the start. Preparation runs between playlist songs, so crossfades are unavailable while pedal preparation is enabled. Turn it off to use crossfades; a song with explicit preparation commands must have it enabled to play armed.
 
 Automatic GP tempo is sent after your commands and the preset loading wait. If a custom command should set a different tempo, switch off automatic song BPM. The preflight warns when both are present.
+
+### Preparation command repeat rules
+
+In **Song MIDI cues**, choose **When → Before song**, then pick **Repeat** before adding a named pedal command, raw MIDI or macro. Existing preparation lines have the same control in the cue table. A bank/preset pair on one line takes one rule together.
+
+| Repeat | Behaviour |
+| --- | --- |
+| **Every start** | Runs on each new preparation, including resumes and **Prepare again**. **Play** reuses a valid Ready setup without sending it twice. This is the default for existing commands. |
+| **Only from beginning** | Runs only when preparing from the song's playable start, including its trimmed start. Resuming later skips it; returning to the beginning allows it again. |
+| **Once per song load** | Runs during the first preparation after loading the song. Pausing, seeking, **Prepare again**, view changes, audio regeneration or reconnecting do not re-enable an attempted command. |
+
+For a looper action or another command with side effects, choose **Once per song load** when it must not run again on resume. It is marked used as soon as sending its line begins. If cancellation or a send failure interrupts the sequence, the line stays used because the pedal may already have acted. The app cannot undo that action or confirm delivery. Automatic RC-10R memory preparation and automatic song BPM retain their existing behaviour.
+
+**Before song → Reset once commands** clears this history without sending anything. The next Prepare or Play can run those commands again. A fresh song load or app restart also starts a new history. History stays with the currently loaded song when the performance view or generated audio is rebuilt; it is not part of the saved song or backup. Editing a command's actual MIDI bytes or macro expansion makes a new action; changing its label, whitespace within its command line or position in the chart does not. Splitting or combining command lines changes their grouping and can make a new action.
+
+Chart syntax is `{midi@prepare:pc 1 5}`, `{midi@prepare-beginning:pc 1 5}` and `{midi@prepare-once:$INIT}`. The chart editor preserves these rules and keeps a preparation line's bank/preset group together.
 
 ### Tempo and clock
 

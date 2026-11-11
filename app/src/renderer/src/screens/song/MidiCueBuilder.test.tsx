@@ -1,3 +1,4 @@
+import { setPreparationRepeat } from "@/song/performance/start-preparation";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -39,7 +40,13 @@ function Harness({ start, locked = false }: { start: string; locked?: boolean })
       <MidiCueBuilder
         cues={parseChart(chart)}
         locked={locked}
-        onAdd={() => {}}
+        onAdd={(line) => setChart([chart, line].filter(Boolean).join("\n"))}
+        onPreparationRepeat={(cue, repeat) => {
+          const next = setPreparationRepeat(chart, cue, repeat);
+          if (next === null) return false;
+          setChart(next);
+          return true;
+        }}
         onTest={() => {}}
         canTest
         onRemove={(cue) => {
@@ -174,4 +181,15 @@ it("adds user commands to Before song and labels them distinctly from timed and 
   expect(add).toHaveBeenCalledWith("{midi@prepare:pc 1 0}");
   expect(screen.getByText("Before song", { selector: "td" })).toBeTruthy();
   expect(screen.getByLabelText("Edit cue at Before song: Raw MIDI command")).toBeTruthy();
+});
+
+it("adds a once preparation command and changes an existing bank/preset line's repeat rule together", () => {
+  render(<Harness start="{label:Patch} {midi@prepare:cc 1 0 2} {midi@prepare:pc 1 5}" />);
+  fireEvent.change(screen.getByLabelText("Preparation repeat for Patch"), { target: { value: "once" } });
+  expect(chartText()).toBe("{label:Patch} {midi@prepare-once:cc 1 0 2} {midi@prepare-once:pc 1 5}");
+  fireEvent.change(screen.getByLabelText("Cue when"), { target: { value: "prepare" } });
+  fireEvent.change(screen.getByLabelText("New preparation command repeat"), { target: { value: "beginning" } });
+  fireEvent.change(screen.getByLabelText("Cue command number"), { target: { value: "9" } });
+  fireEvent.click(screen.getByText("Add MIDI cue"));
+  expect(chartText()).toContain("{midi@prepare-beginning:pc 1 9}");
 });
