@@ -1,3 +1,4 @@
+import { rhythmTempo } from "./rhythm-tempo";
 import { lrcTime, parseChart } from "./chart";
 import { parseSections, type Section } from "./sections";
 import { playedTrimStart, storedShape } from "./song-shape";
@@ -85,7 +86,7 @@ function timing(song: RhythmAutomationSong) {
   const beats = meter ? RHYTHM_METERS[meter].pulses : integer(options.beats, 1, 12) ? options.beats : 4;
   // The native bank stores integer quarter-note BPM. Use that same rounding, including compound meter.
   const quarters = meter ? RHYTHM_METERS[meter].quarters : 1;
-  const barSeconds = (60 * beats * quarters) / Math.round(bpm * quarters);
+  const barSeconds = (60 * beats * quarters) / rhythmTempo(bpm, meter === "6/8").quarterBpm;
   const start = Math.max(playedTrimStart(options) ?? 0, finite(options.firstBeat) ? options.firstBeat : 0);
   const end = Math.min(song.duration, storedShape(options).trimEnd ?? song.duration);
   return { options, exported, sections: parseSections(options.sections), bpm, start, end, barSeconds, barQuarters: beats * quarters };
@@ -118,7 +119,7 @@ export function suggestRhythmAutomation(song: RhythmAutomationSong, memory: numb
     memory,
     bpm: integer(saved.bpm, 40, 350)
       ? saved.bpm
-      : Math.round((finite(exported.bpm) ? exported.bpm : Number(song.settings[":bpm"])) * (exported.meter === "6/8" ? 1.5 : 1)),
+      : rhythmTempo(finite(exported.bpm) ? exported.bpm : Number(song.settings[":bpm"]), exported.meter === "6/8").quarterBpm,
     start: finite(saved.start) ? saved.start : start,
     endingAt: finite(saved.endingAt)
       ? saved.endingAt
@@ -191,7 +192,7 @@ export function currentRhythmAutomation(song: RhythmAutomationSong): { draft: Rh
   };
   if (saved.referenceInputs === automaticReference(song)) return { draft, controls: configuredControls };
   const meter = object(options.rhythmExport).meter;
-  if ((song.settings[":bpm"] ?? "") !== saved.referenceTempo) draft.bpm = Math.round(Number(song.settings[":bpm"]) * (meter === "6/8" ? 1.5 : 1));
+  if ((song.settings[":bpm"] ?? "") !== saved.referenceTempo) draft.bpm = rhythmTempo(Number(song.settings[":bpm"]), meter === "6/8").quarterBpm;
   else if (
     (saved.referenceExportTempo !== undefined && saved.referenceExportTempo !== (object(options.rhythmExport).bpm ?? null)) ||
     (saved.referenceMeter !== undefined && saved.referenceMeter !== (meter ?? null))

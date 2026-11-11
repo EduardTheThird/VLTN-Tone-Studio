@@ -1,3 +1,6 @@
+import { hasPedalRhythm } from "@/song/performance/rhythm-runtime";
+import { RhythmHardwareTest } from "./RhythmHardwareTest";
+import { RhythmTempoStatus } from "./RhythmTempoStatus";
 import { SettingsCard } from "@/components/ui/settings-card";
 import { useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -83,7 +86,7 @@ export function PerformanceMidiSetup({
   const cues = useSession(session, (s) => s.cues);
   const sections = useSession(session, (s) => s.sections);
   const parseError = useSession(session, (s) => s.parseError);
-  const output =useSession(session, selectOutput);
+  const output = useSession(session, selectOutput);
   const armed = useSession(session, selectArmed);
   const remembered = useSession(session, (s) => s.armedByPreference);
   const playing = useSession(session, (s) => s.playing);
@@ -231,7 +234,8 @@ export function PerformanceMidiSetup({
             disabled={output?.state !== "connected" || !!parseError}
             checked={armed}
             onChange={(e) => {
-              session.panic();
+              if (hasPedalRhythm(cues)) session.pause();
+              else session.panic();
               session.sendCues(e.target.checked);
               session.setMidiStatus("");
             }}
@@ -260,8 +264,7 @@ export function PerformanceMidiSetup({
         <Button
           variant="outline"
           onClick={() => {
-            session.panic();
-            session.disarm();
+            session.panicAndDisarm();
           }}
         >
           Panic / disarm
@@ -284,6 +287,8 @@ export function PerformanceMidiSetup({
           and TRS clock output On. Continuous app clock fluctuated in real GP-180 USB and Bluetooth tests with a TimeLine and caused audible delay changes.
         </p>
       </HelpNote>
+      <RhythmTempoStatus session={session} />
+      <RhythmHardwareTest session={session} />
       <TimecodeSettings session={session} offset={timecodeOffset} onOffset={onTimecodeOffset} bluetooth={portId === BLUETOOTH_PORT_ID} />
       <MidiFileField file={midiFile} onChange={onMidiFile} />
       {midiConfig.showCommands && (

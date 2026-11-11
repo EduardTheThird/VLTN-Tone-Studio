@@ -103,7 +103,11 @@ describe("rhythm export dialog", () => {
     localStorage.setItem(`${key}:options`, JSON.stringify({ other: "newer" }));
     fireEvent.click(screen.getByRole("button", { name: "Export rhythm files…" }));
     await screen.findByText("Saved the RC0 rhythm, MIDI and import guide.");
-    expect(JSON.parse(localStorage.getItem(`${key}:options`)!)).toEqual({ other: "newer", rhythmExport: setup });
+    expect(JSON.parse(localStorage.getItem(`${key}:options`)!)).toMatchObject({
+      other: "newer",
+      rhythmExport: setup,
+      rhythmTransfer: { version: 1, exported: { input: expect.any(String) } },
+    });
   });
   it("previews the same normalized notes used in export and stops when choices change or it closes", async () => {
     const setup = completeSetup();
@@ -132,4 +136,22 @@ describe("rhythm export dialog", () => {
     expect((screen.getByRole("button", { name: "Export rhythm files…" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("alert").textContent).toContain("Stop playback");
   });
+});
+
+it("does not mark a file current when musical inputs change while the save dialog is open", async () => {
+  completeSetup();
+  let finish: (value: string) => void = () => {};
+  mocks.save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  open();
+  fireEvent.click(screen.getByRole("button", { name: "Export rhythm files…" }));
+  const options = JSON.parse(localStorage.getItem(`${key}:options`)!);
+  localStorage.setItem(`${key}:options`, JSON.stringify({ ...options, firstBeat: 0.3 }));
+  finish("/exports");
+  await screen.findByText("Saved the RC0 rhythm, MIDI and import guide.");
+  expect(screen.getByText("RC-10R rhythm: Needs export.")).toBeTruthy();
 });

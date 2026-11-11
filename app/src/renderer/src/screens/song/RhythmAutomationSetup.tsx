@@ -122,10 +122,11 @@ export function RhythmAutomationSetup({ current, locked, onSaveChart }: { curren
               Pattern changes include the pedal's fill, so they are sent one bar early by default. Adjust the lead after testing the pedal. The ending command
               is sent just before its requested bar.
             </p>
+            <p>A steady pedal clock can drift against a recording with a changing tempo. Check alignment through the full song, including its last chorus.</p>
             <p>RC-10R press/release pairs have a 100 ms hold at the MIDI output so the pedal can recognize the press. The press keeps its planned time.</p>
             <p>
               Play from the beginning. After pausing, seeking, looping or jumping, restart the song to align the pedal again. Match its tempo to the song;
-              changing playback speed also needs a matching pedal tempo.
+              playback speed can be changed while stopped; the matching pedal tempo is sent on restart when automatic GP tempo is enabled.
             </p>
             <p>
               Cue timing follows later song BPM, trim, section, export and MIDI assignment changes automatically. Match the pedal's tempo or enable its MIDI

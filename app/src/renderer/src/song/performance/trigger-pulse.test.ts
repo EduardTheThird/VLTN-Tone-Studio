@@ -48,3 +48,14 @@ describe("momentary controller timing", () => {
     expect(pulses.releasesAfterClear(output, 1300)).toEqual([]);
   });
 });
+
+it("releases an active pulse when a later pulse on the same controller is cancelled", () => {
+  const pulses = new TriggerPulses(),
+    output = {};
+  pulses.timestamp(output, press, 1000, 900);
+  pulses.timestamp(output, release, 1000, 900);
+  pulses.timestamp(output, press, 1200, 900);
+  pulses.timestamp(output, release, 1200, 900);
+  expect(pulses.releasesAfterClear(output, 1050)).toEqual([{ bytes: release, timestamp: 1100 }]);
+  expect(pulses.timestamp(output, press, undefined, 1050)).toBe(1110);
+});
