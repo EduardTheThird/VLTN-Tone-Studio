@@ -1,3 +1,11 @@
+import { expandSectionCues } from "./chart";
+import { PreparationHistory } from "./preparation-repeat";
+import { preparationSequence, type PreparationSequence } from "./preparation-sequence";
+import { preparationPreflight } from "./preparation-preflight";
+import { savedPreparation, PREPARATION_DEFAULTS, type PreparationSettings } from "./start-preparation";
+import { ownLeadIn, resolveLeadIn, LEAD_IN_DEFAULTS, type LeadIn } from "./lead-in";
+import { preRollStart } from "./rhythm";
+import { pedalTempoMessages } from "./pedal-tempo";
 import type { LibraryPreflightSong } from "@shared/song-library";
 import { trackKey, trackKindOf } from "@shared/song-library";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
@@ -30,6 +38,8 @@ export interface PlaylistCheck {
   warnings: string[];
   /** Information only, shown without the warning label */
   notes: string[];
+  /** Fresh-load preparation from the saved playable beginning, with no live repeat history. */
+  preparation?: PreparationSequence;
 }
 export function playlistPreflight(
   ids: string[],
@@ -47,6 +57,8 @@ export function playlistPreflight(
     songs?: readonly SongEntry[];
     bindings?: readonly Binding[];
     rhythmControls?: Partial<RhythmControls>;
+    preparationDefaults?: PreparationSettings;
+    leadInDefaults?: LeadIn;
   },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
@@ -56,10 +68,20 @@ export function playlistPreflight(
     const errors = [...(saved?.errors ?? ["Song was not checked."])],
       warnings: string[] = [],
       notes: string[] = [];
+    let preparation: PreparationSequence | undefined;
     if (song) {
       if (config.tempoOnStart && !config.outputName)
         warnings.push("Automatic tempo is enabled but no MIDI output preference is saved. Select and arm the intended output before performing.");
-      let options: { clock?: boolean; sections?: unknown; beats?: unknown; firstBeat?: unknown; analysis?: unknown; tempoSource?: unknown } = {};
+      let options: {
+        clock?: boolean;
+        sections?: unknown;
+        beats?: unknown;
+        firstBeat?: unknown;
+        analysis?: unknown;
+        tempoSource?: unknown;
+        preRollBeats?: unknown;
+        preparation?: unknown;
+      } = {};
       try {
         const value = JSON.parse(song.settings[":options"] || "{}");
         if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
@@ -100,7 +122,8 @@ export function playlistPreflight(
       const playable = song.audio.filter((a) => trackKindOf(a) !== "source");
       const byKey = new Map(playable.map((a) => [trackKey(a), a]));
       const tracks = playable.length ? orderedKeys([...byKey.keys()]).map((key) => byKey.get(key)!) : song.audio;
-      const duration = tracks[0].frames / tracks[0].sampleRate;
+      if (!tracks.length) errors.push("Song has no playable audio tracks.");
+      const duration = tracks.length ? tracks[0].frames / tracks[0].sampleRate : 0;
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
       // The chart and the MIDI file are checked together, because the file's messages play beside the chart's.
@@ -134,8 +157,36 @@ export function playlistPreflight(
           firstBeat: typeof options.firstBeat === "number" ? options.firstBeat : 0,
         });
         warnings.push(...report.issues.map((i) => i.text));
+        try {
+          const settings = savedPreparation(song.settings, config.preparationDefaults ?? PREPARATION_DEFAULTS);
+          const start = trimRange(duration, options)?.start ?? 0;
+          const lead = resolveLeadIn(
+            { countInBars: "", startDelay: "", preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats) },
+            config.leadInDefaults ?? LEAD_IN_DEFAULTS,
+          );
+          // An invalid tempo already has its own actionable error above. Do not encode it as MIDI.
+          const tempo =
+            config.tempoOnStart && Number.isFinite(played) && played >= 40 && played <= 300 ? pedalTempoMessages(played, config.tempoChannel) : null;
+          const plan = preparationSequence({
+            cues: expandSectionCues(cued.cues, parseSections(options.sections)),
+            position: preRollStart(start, lead.preRollBeats, bpm),
+            requestedPosition: start,
+            start,
+            settings,
+            triggers: config.pedals.flatMap((pedal) => pedal.triggers ?? []),
+            history: new PreparationHistory(),
+            pedalChannel: config.tempoChannel,
+            tempo,
+          });
+          if (settings.enabled) {
+            preparation = plan;
+            warnings.push(...preparationPreflight(plan, config.pedals).map((issue) => issue.text));
+          }
+        } catch (reason) {
+          errors.push(`Before song cannot prepare: ${reason instanceof Error ? reason.message : String(reason)}`);
+        }
       }
     }
-    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, notes };
+    return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, notes, ...(preparation ? { preparation } : {}) };
   });
 }

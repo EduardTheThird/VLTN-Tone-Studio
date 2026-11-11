@@ -2,6 +2,15 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.30] — 2026-11-11
+
+### Added
+- **Whole-playlist preparation overview.** Check playlist shows each saved song’s Before song sequence and configured waiting time, plus a total for the set. It follows saved trims, pre-roll, macros, effective tempo and automatic RC-10R memory choices. Changes to songs, defaults and MIDI setup refresh the checked report without loading audio or sending MIDI.
+- **Preparation checks.** Flag disabled preparation, multiple preset recalls on one channel and custom actions that can run before music. Preparation-only songs receive output and saved-channel checks. Song previews show the same advisory warnings; intentional commands stay unchanged ([Before song](PERFORMANCE.md#before-song-preparation)).
+
+### Fixed
+- A playlist song with no audio tracks reports an error without aborting checks for the rest of the playlist.
+
 ## [0.9.29] — 2026-11-11
 
 ### Added

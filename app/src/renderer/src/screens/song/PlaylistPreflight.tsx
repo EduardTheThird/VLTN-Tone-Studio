@@ -1,3 +1,6 @@
+import { PreparationSequenceDetails, preparationSeconds } from "./PreparationSequenceDetails";
+import { usePreparationDefaults } from "@/song/performance/start-preparation";
+import { readLeadInDefaults } from "@/song/performance/lead-in";
 import { useEffect, useRef, useState } from "react";
 import { isRenderedAhead } from "@/song/library";
 import { host } from "@/host";
@@ -10,6 +13,7 @@ import type { LibrarySong } from "@shared/song-library";
 import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { flushSettings, onSettingsChange, LIBRARY_PREFIX } from "@/song/performance/settings";
 export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: string[]; disabled: boolean; revision: unknown; songs: readonly LibrarySong[] }) {
+  const preparationDefaults = usePreparationDefaults((state) => state.settings);
   const config = useMidiConfiguration(),
     pedals = usePedalLibrary();
   const [report, setReport] = useState<PlaylistCheck[] | null>(null),
@@ -22,7 +26,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
   useEffect(
     () =>
       onSettingsChange((key) => {
-        if (ids.some((id) => key === LIBRARY_PREFIX + id)) setSettingsVersion((version) => version + 1);
+        if (key === "vltn.performance.leadin.v1" || ids.some((id) => key === LIBRARY_PREFIX + id)) setSettingsVersion((version) => version + 1);
       }),
     [order],
   );
@@ -39,6 +43,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
     order,
     revision,
     settingsVersion,
+    preparationDefaults,
     config.tempoOnStart,
     config.tempoChannel,
     config.output,
@@ -60,6 +65,8 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
       if (request !== generation.current) return;
       setReport(
         playlistPreflight(ids, snapshot, {
+          preparationDefaults,
+          leadInDefaults: readLeadInDefaults(),
           tempoOnStart: config.tempoOnStart,
           tempoChannel: config.tempoChannel,
           outputName: config.output?.name,
@@ -83,8 +90,8 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
         {busy ? "Checking playlist…" : "Check playlist"}
       </Button>
       <p className="text-xs text-silkscreen-3">
-        Checks saved audio files, charts, MIDI channels and tempo for every entry. Save song changes first. No playback or MIDI is sent. Output preferences do
-        not confirm a connected pedal.
+        Checks saved audio files, charts, MIDI channels, tempo and Before song preparation for every entry. Save song changes first. No playback or MIDI is
+        sent. Output preferences do not confirm a connected pedal.
       </p>
       {busy && <p role="status">Checking saved files without loading audio into memory…</p>}
       {error && <p role="alert">{error}</p>}
@@ -98,12 +105,27 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
             Snapshot of saved files and current MIDI preferences. Recheck after external file changes. File presence and size are checked, not audio contents or
             physical pedal response. Warnings are advisory.
           </p>
+          <p aria-label="Playlist preparation total">
+            Configured preparation waits: {preparationSeconds(report.reduce((total, result) => total + (result.preparation?.totalWaitMs ?? 0), 0))} s across{" "}
+            {report.filter((result) => result.preparation).length} entries. Fresh song loads with Send cues enabled are assumed. Audio loading, MIDI delivery,
+            start delay and count-in can add time; entries with errors need fixing first.
+          </p>
           <ol className="max-h-80 space-y-2 overflow-auto">
             {report.map((r) => (
               <li key={r.entry} className="rounded border border-seam p-2">
                 <strong>
                   {r.entry}. {r.title}
                 </strong>
+                {r.preparation && (
+                  <details className="my-2 rounded border border-seam p-2">
+                    <summary className="cursor-pointer">
+                      Before song: {preparationSeconds(r.preparation.totalWaitMs)} s · {r.preparation.steps.filter((step) => step.kind === "send").length}{" "}
+                      command group{r.preparation.steps.filter((step) => step.kind === "send").length === 1 ? "" : "s"}
+                    </summary>
+                    <p className="my-2 text-xs">From the saved playable beginning, with fresh once-command history. Opening this preview sends nothing.</p>
+                    <PreparationSequenceDetails plan={r.preparation} label={`Preparation steps for entry ${r.entry}`} />
+                  </details>
+                )}
                 {!r.errors.length && !r.warnings.length && !r.notes.length ? (
                   <p>No static issues found.</p>
                 ) : (
