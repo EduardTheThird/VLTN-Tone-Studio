@@ -164,3 +164,14 @@ it("removes one of two identical pedal commands sent as several messages, which 
   expect(chartText()).toBe(line);
   expect(screen.getAllByLabelText("Remove cue at [00:00.00]: Recall memory 009")).toHaveLength(1);
 });
+
+it("adds user commands to Before song and labels them distinctly from timed and load events", () => {
+  const add = vi.fn();
+  render(<MidiCueBuilder cues={parseChart("{midi@prepare:pc 3 8}")} onAdd={add} onRemove={() => null} onReplace={() => false} onTest={() => {}} canTest />);
+  fireEvent.change(screen.getByLabelText("Cue when"), { target: { value: "prepare" } });
+  expect(screen.queryByLabelText("Cue time in seconds")).toBeNull();
+  fireEvent.click(screen.getByText("Add MIDI cue"));
+  expect(add).toHaveBeenCalledWith("{midi@prepare:pc 1 0}");
+  expect(screen.getByText("Before song", { selector: "td" })).toBeTruthy();
+  expect(screen.getByLabelText("Edit cue at Before song: Raw MIDI command")).toBeTruthy();
+});

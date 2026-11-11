@@ -182,6 +182,18 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 
 **MIDI preflight & timing** (collapsible) lists cues beyond the audio, conflicting or dense commands, missing note-offs and channel clashes. Warnings are advice; they never change or disable a cue. The app cannot read a pedal's receive channel, so check those yourself.
 
+### Before song preparation
+
+**Before song** gives pedals time to load before the music starts. With **Send cues** enabled, pressing Play sends the RC-10R memory and opening preset changes, then your own preparation commands, waits for loading, sends automatic song BPM if enabled, and starts the count-in and song. It runs for each song in a playlist and each manual start or resume; it does not repeat on a whole-song loop. Cues remain at their musical times, so trimming audio or changing BPM does not require moving presets to negative timestamps.
+
+In **Song MIDI cues**, set **When → Before song**, then add a named pedal command, raw MIDI or macro. Use **Move before song** on an existing editable cue, and ↑/↓ to order preparation command lines. Multi-message bank/preset commands stay together. In chart text, use `{midi@prepare:pc 1 5}`, `{midi@prepare:cc 3 20 127}` or `{midi@prepare:$READY}`. Commands run in chart order; arbitrary commands are not moved early automatically.
+
+The **Before song** settings have a **Preset loading wait**, initially one second, and an optional **Gap between setup messages** for pedals that need time between commands. Both allow zero to ten seconds. Save different settings per song, or **Use these as defaults** for songs without overrides. Automatic opening preparation replays user load presets and brings bank/program changes at the starting position forward; notes, drum/looper starts and later timed changes keep their song times. Presets already prepared are not sent again when audio begins. Turn off **Prepare opening preset changes automatically** if you prefer to choose every early command yourself.
+
+The transport and stage view show preparation progress with **Cancel start**. Cancelling stops the remaining commands and prevents audio from starting; it cannot undo commands a pedal has already received. Changing the MIDI output or song setup during preparation cancels the start. Preparation runs between playlist songs, so crossfades are unavailable while pedal preparation is enabled. Turn it off to use crossfades; a song with explicit preparation commands must have it enabled to play armed.
+
+Automatic GP tempo is sent after your commands and the preset loading wait. If a custom command should set a different tempo, switch off automatic song BPM. The preflight warns when both are present.
+
 ### Tempo and clock
 
 For the GP-180, send the tempo once and let the pedal generate the clock. Apply the **GP-150 / GP-180 + pedals** setup preset (below), or add **Valeton GP-180 → Set tempo (BPM)** at time zero. On the pedal, set Clock Source to Internal and TRS clock output to On. Update a saved tempo cue by hand if you change the Song BPM. The preset uses the current BPM (40–300) automatically.

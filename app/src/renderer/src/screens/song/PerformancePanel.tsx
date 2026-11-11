@@ -56,6 +56,7 @@ import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { currentRhythmAutomation, rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
+import { preparationSettings, usePreparationDefaults } from "@/song/performance/start-preparation";
 import { pedalDrumMix, usePedalDrums } from "@/song/performance/pedal-drums";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
@@ -259,6 +260,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const pedalSettings = usePedalLibrary();
   const rhythmControls = rhythmControlOverrides(pedalSettings);
   const cueOptions = useMemo(() => readOptions<Record<string, unknown>>(key, {}), [key, settingsVersion]);
+  const preparationDefaults = usePreparationDefaults((s) => s.settings);
+  const beforeSong = useMemo(() => preparationSettings(cueOptions.preparation, preparationDefaults), [cueOptions.preparation, preparationDefaults]);
   // Mixer and display edits must not restart an armed scheduler. Only dependencies of the automatic rhythm change its cues.
   const rhythmCueSignature = JSON.stringify(
     cueOptions.rhythmAutomation
@@ -339,6 +342,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           parseError: parsed.error,
           bpm,
           rhythmTempo: parsed.rhythmTempo,
+          preparationSettings: beforeSong,
           sections: sectionList,
           bindings: midiConfig.bindings,
           timecode,
@@ -434,6 +438,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       parseError: parsed.error,
       bpm,
       rhythmTempo: parsed.rhythmTempo,
+      preparationSettings: beforeSong,
       timing,
       sections: sectionList,
       bindings: midiConfig.bindings,
@@ -877,6 +882,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         )}
         <PerformanceMidiSetup
           session={session}
+          songKey={key}
           chart={chart}
           onSaveChart={saveChart}
           onShowChart={() => chooseView("lyrics")}

@@ -1,3 +1,4 @@
+import { usePreparationDefaults } from "@/song/performance/start-preparation";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { usePracticeMute } from "@/song/performance/practice-mute";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -42,6 +43,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
   };
 });
 beforeEach(() => {
+  usePreparationDefaults.setState({ settings: { enabled: false, settleMs: 1000, openingPresets: true } });
   localStorage.clear();
   clearSettingsCache();
   useMidiConfiguration.setState(readMidiConfiguration());
@@ -1010,4 +1012,49 @@ it("uses a managed 6/8 plan's quarter-note tempo in the rendered panel and actua
     cleanup();
     mocks.source.audio.channels[0] = original;
   }
+});
+
+it("prepares an opening preset before audio and does not repeat it at song time zero", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  localStorage.setItem(key, "[00:00] {midi:pc 1 5}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, openingPresets: true } }));
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  await act(async () => {
+    fireEvent.click(screen.getByText("Play song"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(screen.getByText("Cancel start")).toBeTruthy();
+  expect(screen.getByText(/Preparing pedals:/)).toBeTruthy();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 5]]);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 230));
+  });
+  expect(screen.getByText("Pause")).toBeTruthy();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 5]]);
+});
+
+it("shows preparation in stage mode and allows cancelling before the music starts", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  localStorage.setItem(key, "{midi@prepare:pc 1 7}");
+  localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, openingPresets: true } }));
+  mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  render(<PerformancePanel />);
+  fireEvent.click(screen.getByLabelText("Send cues"));
+  fireEvent.click(screen.getByText("Enter stage mode"));
+  const stage = within(screen.getByRole("dialog", { name: "Stage mode" }));
+  await act(async () => {
+    fireEvent.click(stage.getByText("Play song"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(stage.getByText(/Preparing pedals:/)).toBeTruthy();
+  expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 7]]);
+  await act(async () => {
+    fireEvent.click(stage.getByText("Cancel start"));
+    await new Promise((resolve) => setTimeout(resolve, 230));
+  });
+  expect(stage.getByText("Play song")).toBeTruthy();
+  expect(stage.queryByText(/Preparing pedals:/)).toBeNull();
+  expect(stage.queryByText("Pause")).toBeNull();
 });

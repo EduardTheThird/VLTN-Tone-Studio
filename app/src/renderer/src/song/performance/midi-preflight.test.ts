@@ -145,3 +145,15 @@ it("says a raw CC matching an assigned trigger is skipped by the chase unless it
   expect(report("[00:03] {midi:cc 2 70 127}").issues.map((i) => i.code)).toEqual(["chase-assigned-trigger"]);
   expect(report("[00:03] {chase} {midi:cc 2 70 127}").issues).toEqual([]);
 });
+
+it("counts preparation commands and warns when automatic tempo will overwrite a custom setup tempo", () => {
+  const report = midiPreflight(parseChart("{midi@prepare:cc 16 73 1}\n{midi@prepare:cc 16 74 12}"), {
+    duration: 10,
+    clock: false,
+    tempoChannel: 16,
+    pedals: [],
+    outputName: "GP-180",
+  });
+  expect(report.commands).toBe(2);
+  expect(report.issues.some((issue) => issue.code === "preparation-tempo")).toBe(true);
+});

@@ -1,3 +1,4 @@
+import { preparationLine } from "@/song/performance/start-preparation";
 import { SettingsCard } from "@/components/ui/settings-card";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ export function MidiCueBuilder({
   onAdd,
   onRemove,
   onReplace,
+  onPrepare,
+  onMovePreparation,
   locked = false,
   onShowChart,
   onTest,
@@ -33,6 +36,8 @@ export function MidiCueBuilder({
   onRemove: (cue: Cue) => (() => boolean) | null;
   /** Replaces the cue's token (and its timestamp, when `time` is given). Returns false when the chart changed and nothing was replaced. */
   onReplace: (cue: Cue, token: string, time?: number) => boolean;
+  onPrepare?: (cue: Cue) => boolean;
+  onMovePreparation?: (cue: Cue, direction: 1 | -1) => boolean;
   /** True while cues are armed and the song plays, when the chart is not changed under the performance. */
   locked?: boolean;
   /** Goes to the view where the chart text is edited directly. */
@@ -46,7 +51,7 @@ export function MidiCueBuilder({
     [number, setNumber] = useState(0),
     [value, setValue] = useState(127),
     [error, setError] = useState("");
-  const [when, setWhen] = useState<"time" | "section">("time"),
+  const [when, setWhen] = useState<"time" | "section" | "prepare">("time"),
     [choiceId, setChoiceId] = useState("");
   const choices = sectionChoices(sections),
     choice = choices.find((c) => c.id === choiceId) ?? choices[0];
@@ -56,25 +61,44 @@ export function MidiCueBuilder({
   const macros = useMidiConfiguration((s) => s.macros);
   const field = "ml-2 rounded border border-seam bg-background p-2";
   // On a section, the pickers' lines are written for the section instead of a time.
-  const add = (line: string) => onAdd(when === "section" && choice ? sectionLine(line, choice.target) : line);
-  const whenLabel = (cue: Cue) => (cue.trigger === "section" ? describeSectionCue(cue, sections).text : cue.trigger ? `On ${cue.trigger}` : lrcTime(cue.time));
+  const add = (line: string) => {
+    if (locked) {
+      setError("Stop playback or cancel preparation before changing cues.");
+      return;
+    }
+    onAdd(when === "prepare" ? preparationLine(line) : when === "section" && choice ? sectionLine(line, choice.target) : line);
+  };
+  const whenLabel = (cue: Cue) =>
+    cue.trigger === "section"
+      ? describeSectionCue(cue, sections).text
+      : cue.trigger === "prepare"
+        ? "Before song"
+        : cue.trigger
+          ? `On ${cue.trigger}`
+          : lrcTime(cue.time);
   const command = () => {
-    if (!Number.isFinite(seconds) || seconds < 0) throw new Error("Cue time must be zero or more seconds.");
+    if (when === "time" && (!Number.isFinite(seconds) || seconds < 0)) throw new Error("Cue time must be zero or more seconds.");
     const text = `${type} ${channel} ${number}${type === "cc" ? ` ${value}` : ""}`;
     return { text, bytes: midiCommand(text) };
   };
   const run = (test: boolean) => {
+    if (locked) {
+      setError("Stop playback or cancel preparation before sending commands.");
+      return;
+    }
     try {
       const cue = command();
       setError("");
       if (test) onTest(cue.bytes);
-      else add(`${lrcTime(seconds)} {midi:${cue.text}}`);
+      else add(`${lrcTime(when === "time" ? seconds : 0)} {midi:${cue.text}}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
   // The song's file messages are many and are shown in the MIDI file field, not in this table.
-  const scheduled = cues.filter((cue) => cue.messages.length && !cue.fromFile);
+  const scheduled = cues
+    .filter((cue) => cue.messages.length && !cue.fromFile)
+    .sort((a, b) => Number(b.trigger === "prepare") - Number(a.trigger === "prepare"));
   const saveRaw = () => {
     try {
       const cue = command();
@@ -86,6 +110,7 @@ export function MidiCueBuilder({
   };
   const startEdit = (cue: Cue) => {
     setEditing(cue);
+    setWhen(cue.trigger === "prepare" ? "prepare" : cue.trigger === "section" ? "section" : "time");
     setEditText(cueCommandText(cue) ?? "");
     setSeconds(cue.time);
     setRemoved(null);
@@ -123,8 +148,14 @@ export function MidiCueBuilder({
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <label>
           When
-          <select aria-label="Cue when" className={field} value={when} onChange={(e) => setWhen(e.target.value === "section" ? "section" : "time")}>
+          <select
+            aria-label="Cue when"
+            className={field}
+            value={when}
+            onChange={(e) => setWhen(e.target.value === "prepare" ? "prepare" : e.target.value === "section" ? "section" : "time")}
+          >
             <option value="time">At time</option>
+            <option value="prepare">Before song</option>
             <option value="section" disabled={!choices.length}>
               On section
             </option>
@@ -141,7 +172,7 @@ export function MidiCueBuilder({
               ))}
             </select>
           </label>
-        ) : (
+        ) : when === "time" ? (
           <>
             <label>
               At seconds
@@ -159,6 +190,8 @@ export function MidiCueBuilder({
               Use playback time
             </Button>
           </>
+        ) : (
+          <p>Runs in chart order during preparation, before the count-in and first note.</p>
         )}
       </div>
       {editing && (
@@ -174,7 +207,7 @@ export function MidiCueBuilder({
           </Button>
         </div>
       )}
-      <PedalMidiPicker time={seconds} onAdd={add} onTest={onTest} canTest={canTest} />
+      <PedalMidiPicker time={when === "time" ? seconds : 0} onAdd={add} onTest={onTest} canTest={canTest && !locked} />
       <details>
         <summary className="cursor-pointer text-sm">Raw MIDI command</summary>
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -235,7 +268,7 @@ export function MidiCueBuilder({
       <details>
         <summary className="cursor-pointer text-sm">MIDI macros</summary>
         <div className="py-2">
-          <MacroPanel time={seconds} onAdd={add} onTest={onTest} canTest={canTest} />
+          <MacroPanel time={when === "time" ? seconds : 0} onAdd={add} onTest={onTest} canTest={canTest && !locked} />
         </div>
       </details>
       <HelpNote>
@@ -271,7 +304,50 @@ export function MidiCueBuilder({
                     {cue.managed === "rhythm" ? (
                       <span className="text-xs text-silkscreen-3">Automatic RC-10R</span>
                     ) : (
-                      <CueRowButtons cue={cue} locked={locked} sections={sections} onEdit={() => startEdit(cue)} onRemove={() => remove(cue)} />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <CueRowButtons cue={cue} locked={locked} sections={sections} onEdit={() => startEdit(cue)} onRemove={() => remove(cue)} />
+                        {cue.trigger !== "prepare" && cue.trigger !== "section" && onPrepare && (cue.source || cue.line) && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={locked}
+                            onClick={() => {
+                              if (!onPrepare(cue)) setError(CHANGED);
+                            }}
+                          >
+                            Move before song
+                          </Button>
+                        )}
+                        {cue.trigger === "prepare" &&
+                          onMovePreparation &&
+                          cue.source &&
+                          scheduled.findIndex((other) => other.trigger === "prepare" && other.source?.line === cue.source?.line) === i && (
+                            <>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                disabled={locked}
+                                aria-label={`Move preparation command ${i + 1} up`}
+                                onClick={() => {
+                                  if (!onMovePreparation(cue, -1)) setError("Already first, or this line needs editing in the chart.");
+                                }}
+                              >
+                                ↑
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                disabled={locked}
+                                aria-label={`Move preparation command ${i + 1} down`}
+                                onClick={() => {
+                                  if (!onMovePreparation(cue, 1)) setError("Already last, or this line needs editing in the chart.");
+                                }}
+                              >
+                                ↓
+                              </Button>
+                            </>
+                          )}
+                      </div>
                     )}
                   </td>
                 </tr>

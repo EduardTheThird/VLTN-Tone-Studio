@@ -1,3 +1,4 @@
+import { usePreparationDefaults } from "@/song/performance/start-preparation";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -159,6 +160,7 @@ const song = (id: string, bpm: number, pc: number): LibrarySong => ({
 const first = song("first", 95, 12),
   second = song("second", 130, 22);
 beforeEach(() => {
+  usePreparationDefaults.setState({ settings: { enabled: false, settleMs: 1000, openingPresets: true } });
   vi.clearAllMocks();
   localStorage.clear();
   clearSettingsCache();

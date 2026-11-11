@@ -31,7 +31,14 @@ export function editableEvents(chart: string, lyrics: string, estimates: Chord[]
   const cues = parseChart(chart, macros),
     rows: EditableEvent[] = [];
   const add = (seconds: number | null) => {
-    const created = { id: rows.length, seconds: seconds !== null && Number.isFinite(seconds) ? String(seconds) : "", lyrics: "", chords: "", midi: "", label: "" };
+    const created = {
+      id: rows.length,
+      seconds: seconds !== null && Number.isFinite(seconds) ? String(seconds) : "",
+      lyrics: "",
+      chords: "",
+      midi: "",
+      label: "",
+    };
     rows.push(created);
     return created;
   };
@@ -58,7 +65,7 @@ export function editableEvents(chart: string, lyrics: string, estimates: Chord[]
 
 /** The chart token for one command line: `{midi:…}`, or `{midi@load: …}` for a trigger line such as `@load pc 1 5`. */
 function token(line: string): string {
-  const trigger = /^@(load|play|stop|end) (.+)$/.exec(line);
+  const trigger = /^@(load|prepare|play|stop|end) (.+)$/.exec(line);
   return trigger ? `{midi@${trigger[1]}: ${trigger[2]}}` : `{midi:${line}}`;
 }
 
@@ -85,8 +92,8 @@ export function eventChart(rows: EditableEvent[]): string {
       if (commands.length > triggers.length && seconds === null) throw new Error(`Line ${index + 1}: MIDI needs a timestamp.`);
       if (triggers.length && seconds !== null) throw new Error(`Line ${index + 1}: a MIDI trigger has no timestamp. Clear the time to use it.`);
       for (const c of commands) {
-        const trigger = /^@(load|play|stop|end) (.+)$/.exec(c);
-        if (c.startsWith("@") && !trigger) throw new Error(`Line ${index + 1}: a MIDI trigger starts @load, @play, @stop or @end, then one command.`);
+        const trigger = /^@(load|prepare|play|stop|end) (.+)$/.exec(c);
+        if (c.startsWith("@") && !trigger) throw new Error(`Line ${index + 1}: a MIDI trigger starts @load, @prepare, @play, @stop or @end, then one command.`);
         checkCommandText(trigger ? trigger[2] : c);
       }
       // A colour span is part of the lyric text, so it is allowed; any other brace is not.
