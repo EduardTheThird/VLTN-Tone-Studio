@@ -2,6 +2,12 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [0.9.32] — 2026-11-12
+
+### Fixed
+- **Simultaneous generated drum hits stay together.** Hats and crashes, or snares and toms, on the same beat share the original drummer’s hit instead of being pulled apart by timing alignment.
+- **Clear automatic start trimming.** Song shape controls show when detected start silence is skipped and provide a saved **Play from the very start** checkbox for keeping silence or quiet intros. The detected-silence offer only trims the end and preserves the start choice. Updated silence-analysis documentation to match playback.
+
 ## [0.9.31] — 2026-11-11
 
 ### Improved
