@@ -7,6 +7,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [0.9.33] — 2026-11-13
 
 ### Added
+- **Try another for one section, or keep a section while the rest changes.** In the Band dialog's Notes tab, "Try another for this section" draws a new groove, fills and bass for that section only. "Keep this section" stops a later "Try another" for the whole song from changing it. Turning it on draws the section once more from its own seed.
 - **See the generated drums and bass bar by bar, and mark a bar for a fill, a stop, a crash or a rest.** The Band dialog's Notes tab draws one section at a time (drum hits on their lanes, bass notes at pitch height, chords above). Click a bar to put a fill, a stop, a crash or a rest on it, or a stab. The parts update by themselves when playback is stopped, and your marks are listed under the view. The notes are kept with the song, so a song made before this shows them after its next Generate.
 - **A built-in room for the generated drums.** A Room slider under Drums (25% to start) mixes a short room under the drums, with no download. It is skipped when the drum tone chain has its own space block.
 - **A heavier drum kit for rock and metal.** "Standard, heavier" is the standard kit with a thump and click on the kick, a brighter snare, lower toms and more room. A Kit menu under Drums picks it; Automatic uses it for metal, rock and half-time, and a song saved with the standard kit keeps it.
