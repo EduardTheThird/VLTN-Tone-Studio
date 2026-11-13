@@ -61,6 +61,7 @@ import { pedalDrumMix, usePedalDrums } from "@/song/performance/pedal-drums";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
 import { StageView } from "./StageView";
+import { SessionTimeline } from "./SessionTimeline";
 import { AnalysisCard } from "./AnalysisCard";
 import { TransportBar } from "./TransportBar";
 import { SectionStrip } from "./SectionStrip";
@@ -725,6 +726,14 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           ))}
         </div>
         <div style={{ display: shownView("play") }}>
+          <SessionTimeline
+            session={session}
+            songId={source ? (source.libraryId ?? source.name) : null}
+            channels={source?.audio.channels ?? null}
+            sampleRate={source?.audio.sampleRate ?? 0}
+            barSeconds={(beats * 60) / effectiveBpm(bpm, speed.rate)}
+            stage={stage}
+          />
           <AnalysisCard
             quiet
             analysis={analysis}

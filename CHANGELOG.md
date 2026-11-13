@@ -11,6 +11,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Changed
 - The Performance tab has a transport bar that stays in view in every view. The playlist row, metronome and tempo controls stay in Play; the analysis line moves into an Analysis card in This song.
+- The Play view opens with a full-width song timeline: the waveform, the sections in proportion to their length and coloured by kind, the playhead, the trimmed ends and the MIDI cues. Click to seek, drag to scrub, arrow keys to move.
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
 
 ### Fixed
