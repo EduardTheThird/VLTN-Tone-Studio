@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+- Tone Studio asks before closing or restarting for an update while a song is playing.
+
 ## [0.9.37] — 2026-11-13
 
 ### Changed
