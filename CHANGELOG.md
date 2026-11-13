@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.37] — 2026-11-13
+
 ### Changed
 - The editor no longer re-reads the pedal while a song is playing; it catches up when playback stops. A patch change or save made on the pedal during a song is picked up once, shortly after the song stops, and the Rig screen says so until then.
 
