@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.33] — 2026-11-13
+
 ### Added
 - **A built-in room for the generated drums.** A Room slider under Drums (25% to start) mixes a short room under the drums, with no download. It is skipped when the drum tone chain has its own space block.
 - **A heavier drum kit for rock and metal.** "Standard, heavier" is the standard kit with a thump and click on the kick, a brighter snare, lower toms and more room. A Kit menu under Drums picks it; Automatic uses it for metal, rock and half-time, and a song saved with the standard kit keeps it.
