@@ -13,6 +13,7 @@ import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 import { useNav } from "@/state/nav";
+import { STAGE_IDLE_DEBOUNCE_MS, resetStageActivity, useStageActivity } from "@/state/stage-activity";
 import { registerBandRefresh } from "@/song/band/refresh";
 import { clearSettingsCache, performanceKey, setSetting } from "./settings";
 import { packExtras } from "@/song/band/extras";
@@ -2896,4 +2897,37 @@ describe("individual preparation waits", () => {
       session.dispose();
     }
   });
+});
+
+it("tells the device store a song is playing, and that it stopped once the debounce has passed", async () => {
+  resetStageActivity();
+  const { session, unload } = armedSession(output(), { cues: parseChart("[00:01] {midi:pc 1 2}") });
+  vi.useFakeTimers();
+  try {
+    await session.play();
+    expect(useStageActivity.getState().busy).toBe(true);
+    session.pause();
+    vi.advanceTimersByTime(STAGE_IDLE_DEBOUNCE_MS);
+    expect(useStageActivity.getState().busy).toBe(false);
+  } finally {
+    vi.useRealTimers();
+    unload();
+    session.dispose();
+    resetStageActivity();
+  }
+});
+
+it("does not stay busy after the session is disposed mid-song", async () => {
+  resetStageActivity();
+  const { session, unload } = armedSession(output(), { cues: parseChart("[00:01] {midi:pc 1 2}") });
+  vi.useFakeTimers();
+  try {
+    await session.play();
+    unload();
+    session.dispose();
+    vi.advanceTimersByTime(STAGE_IDLE_DEBOUNCE_MS);
+    expect(useStageActivity.getState().busy).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
