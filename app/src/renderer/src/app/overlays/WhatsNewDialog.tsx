@@ -33,7 +33,7 @@ const SLIDES: Slide[] = [
   },
   {
     title: "A band behind you",
-    text: "The Band panel finds the beat and writes drums and bass that follow the song's chords and sections, in tabs for each part. The bass plays repeating figures with a warm built-in tone, drums can end on a hit, a fill and hold, three hits or a slow-down, and a heavier kit and room are built in. Choose the original, the generated part or both, play 3/4 songs with a 3/4 style, and use Update… on an older song to get the newest bass. The Notes tab shows every bar, where you can mark a stop, a fill or a crash, or try another groove for one section.",
+    text: "The Band panel finds the beat and writes drums that play in four-bar phrases, with fills sized to each change, and bass that follow the song's chords and sections, in tabs for each part. The bass plays repeating figures with a warm built-in tone, drums can end on a hit, a fill and hold, three hits or a slow-down, and a heavier kit and room are built in. Choose the original, the generated part or both, play 3/4 songs with a 3/4 style, and use Update… on an older song to get the newest bass. The Notes tab shows every bar, where you can mark a stop, a fill or a crash, or try another groove for one section.",
     image: band,
   },
   {
