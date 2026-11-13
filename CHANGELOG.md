@@ -7,6 +7,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Added
 - GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
 
+### Changed
+- The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
+
 ### Fixed
 - **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **Generated bass slides and muted notes are heard again when humanise is on.**
