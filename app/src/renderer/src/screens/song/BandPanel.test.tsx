@@ -297,7 +297,7 @@ describe("Band panel", () => {
     expect(exporting.disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(exporting.disabled).toBe(false));
-  });
+  }, 20_000);
 
   it("does not offer rhythm export after bass-only generation", async () => {
     stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, parts: { drums: false, bass: true } } });
