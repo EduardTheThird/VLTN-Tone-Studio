@@ -4,6 +4,10 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Changed
+- **Generated drums play in four-bar phrases with turnarounds, lead into every section with a fill sized to the change, and can build or drop in a section.** A section plays one groove for its whole length, the last bar of each phrase turns around, and the last bar of every second phrase has a small fill. The fill at a section's end is Auto, None, Short, Half bar or Whole bar (a menu in the Band dialog's Parts tab), and Auto sizes it to how big the change into the next section is. A section's Shape (in its More popover) can be Steady, Build, Drop or Half-time. A crash replaces the hat or ride on the same beat, and the drums play only what the bar's tempo allows: the busy hits drop above 150 BPM and a slow song fills in. A song made before this keeps its drums until you choose Update… in the Band dialog and generate again.
+- A song map's Sections table reads and writes an optional Fill column (auto, none, short, half, whole) and Shape column (steady, build, drop, half).
+
 ## [0.9.34] — 2026-11-13
 
 ### Added
