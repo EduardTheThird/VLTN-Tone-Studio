@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.39] — 2026-11-13
+
 ### Added
 - MIDI health checks a connected GP-150/GP-180's own MIDI settings and can correct them. Under "Pedal settings" it lists where the pedal disagrees with how the app drives it (MIDI in source, the USB or Bluetooth input channel, tempo clock source, the FS jack) with a button for each fix, and the playlist check reports the same once. The fix buttons wait while a song plays. The clock source fix is not confirmed on the pedal yet.
 
