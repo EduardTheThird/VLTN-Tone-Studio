@@ -31,11 +31,11 @@ This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-
 <br>
 <br>
 
-### Download v0.9.35
+### Download v0.9.36
 
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.35/vltn-tone-studio-0.9.35-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.35/vltn-tone-studio-0.9.35-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.35/vltn-tone-studio-0.9.35-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.36/vltn-tone-studio-0.9.36-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.36/vltn-tone-studio-0.9.36-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.36/vltn-tone-studio-0.9.36-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 
 <sub>Linux users can <a href="#build-it-yourself">build it themselves</a>.</sub>
 
@@ -53,7 +53,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/EduardTheThird/VLTN-To
 <br>
 <br>
 
-[Download](#download-v0935) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v0936) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -420,6 +420,7 @@ Fix a wrong bass note by hand, and play the bass and the drums through NAM captu
 A song in 3/4 gets a 3/4 style, and a section marker that sits a little off the bar line still changes the drums and bass on that bar.<br>
 The bass plays repeating figures, a song can end on a hit, a fill and hold, three hits or a slow-down, and a heavier kit and a room are built in. A song made with the earlier band patterns shows an Update… button in the Band dialog.<br>
 The drums play in four-bar phrases with turnarounds, a fill sized to each section change, and builds and drops you can set per section.<br>
+The drummer can count the song in with sticks or a hat, and a looped section (a vamp) ends with a fill and a bass lead-in when you let it go.<br>
 See the drums and bass bar by bar, mark a bar for a stop, a fill, a crash or a rest, and try another groove for one section while keeping the rest.
 
 <br>
