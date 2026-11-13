@@ -41,6 +41,7 @@ import {
   followFor,
   followSourcesIn,
   levelStems,
+  keysFromOptions,
   playsThreeFourDefault,
   previewMix,
 } from "@/song/band/request";
@@ -446,6 +447,7 @@ function BandBody({
         originals: levelStems(selectWholeSongStems(useSong.getState())),
         bassLine,
         hints: sectionHints,
+        ...keysFromOptions(readOptions<Record<string, unknown>>(songKey, {})),
       };
       let request = bandRequest(input);
       const notes: (string | BandNotice)[] = [];
@@ -743,6 +745,7 @@ function BandBody({
         originals: levelStems(selectWholeSongStems(useSong.getState())),
         bassLine,
         hints: sectionHints,
+        ...keysFromOptions(readOptions<Record<string, unknown>>(songKey, {})),
       });
       const rendering: BandJob = renderPreview(request, from, bars);
       job.current = rendering;

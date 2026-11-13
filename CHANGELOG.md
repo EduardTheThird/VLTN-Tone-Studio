@@ -19,6 +19,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Songs & playlists opens on the song list. Each song is one line with icon buttons (Load stays labelled), the backup actions and Analyse all songs are in a Library… menu, and Save the current song is a bar that shows only while the open song is not saved.
 - **Generated drums use several recordings of each hit and more loudness levels, so repeated hits no longer sound identical.**
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
+- **The generated bass keeps its fills in the song's key.** A run or approach note into a chord now walks the song's scale (from the key override, or a strong key estimate, and section keys) instead of the chord's own, so a fill into F in C major no longer plays a B flat. A song saved before this keeps the earlier bass until it is updated.
 
 ### Fixed
 - **A missing bass or drum tone no longer replaces a song's generated part with a clean one unless you ask.** An automatic update stops with "Not updated: the bass tone's amp capture is missing", Generate asks "Generate with a clean bass?" first, and a part rendered clean because of a missing tone says so beside What plays.
