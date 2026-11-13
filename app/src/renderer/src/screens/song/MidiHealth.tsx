@@ -11,6 +11,7 @@ import { useKnownPresetNames } from "./use-preset-names";
 import { useBluetooth, resetBluetoothTiming } from "@/bluetooth/connection";
 import { HelpNote } from "@/components/ui/help-note";
 import { PedalSettings } from "./PedalSettings";
+import { MemoryUse } from "./MemoryUse";
 
 /** How often the counters on screen may refresh. The scheduler and Bluetooth writes update their stores far more often than that. */
 const REFRESH_MS = 500;
@@ -89,6 +90,8 @@ export function MidiHealth({
       library.assignments,
     ],
   );
+  // The memory line polls, so it exists only while the panel is open.
+  const [open, setOpen] = useState(false);
   const [timing, setTiming] = useState(() => useMidiDiagnostics.getState());
   const [ble, setBle] = useState(() => useBluetooth.getState().diagnostics);
   useEffect(() => {
@@ -109,7 +112,7 @@ export function MidiHealth({
     };
   }, []);
   return (
-    <details className="rounded border border-seam p-3" aria-label="MIDI health">
+    <details className="rounded border border-seam p-3" aria-label="MIDI health" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer">
         MIDI preflight & timing · {parseError ? "chart error" : `${report.warnings.length} warnings · ${report.advice.length} arrangement notes`} ·{" "}
         {timing.failures} timing/dispatch failures
@@ -126,6 +129,7 @@ export function MidiHealth({
           </p>
         </HelpNote>
         <PedalSettings clock={clock} />
+        {open && <MemoryUse />}
         {parseError ? (
           <p className="text-red-400">{parseError}</p>
         ) : report.warnings.length ? (

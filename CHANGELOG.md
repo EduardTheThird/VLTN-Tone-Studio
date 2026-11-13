@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+- MIDI health shows how much memory the app and the open song use.
+
 ## [0.9.39] — 2026-11-13
 
 ### Added
