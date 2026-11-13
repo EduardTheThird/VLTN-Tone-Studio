@@ -10,6 +10,7 @@ Play a song or a whole set from one screen: stems, a metronome, lyrics and chord
 - [MIDI cues](#midi-cues)
 - [Pedal commands](#pedal-commands)
 - [Bluetooth](#bluetooth)
+- [Transport and timeline](#transport-and-timeline)
 - [Sections](#sections)
 - [Playlists](#playlists)
 - [Gapless and crossfade](#gapless-and-crossfade)
@@ -308,6 +309,12 @@ All results are from a GP-180 (firmware 1.1.1) with a Strymon TimeLine on its MI
 
 The rig had the GP-180 receiving OMNI and the TimeLine on channel 1, so tempo on channel 16 reached only the GP-180. To keep downstream program changes from recalling GP-180 patches, consider setting the GP-180 to receive on 16 as well; that has not been confirmed on hardware.
 
+## Transport and timeline
+
+The transport bar stays in view on every Performance tab, with play, stop and the song time (`0:00 / 5:30`). The playlist row, metronome and tempo controls stay in Play, and the analysis line sits in an Analysis card under This song.
+
+The Play view opens with a full-width timeline: the waveform, the sections in proportion to their length and coloured by kind, the playhead, the trimmed ends and the MIDI cues. Click to seek, drag to scrub, and use the arrow keys to move. Seeking pauses playback, as it always has.
+
 ## Sections
 
 Name the parts of a song on the waveform in the section editor: start and end times snap to the beat when a tempo is set, and each section has a mode for its end:
@@ -321,7 +328,7 @@ While playing:
 - **Loop** repeats the current section until you tap **Exit loop**. The current pass finishes, then the song moves on. A release within the last 150 ms before the end of a pass takes effect after that pass.
 - **Save as default** writes live loops and releases into the sections' stored modes. Other live changes are not saved.
 
-Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; cues in a skipped section are not sent. In Stage the sections replace the seek bar, and seeking stays locked. A section that does not start or end on a bar line is flagged in preflight, because a loop there lands off the beat.
+Jumps and loops keep the metronome on its bar grid and keep MIDI clock running; cues in a skipped section are not sent. In stage mode the timeline's blocks jump to a section instead of seeking, and seeking stays locked. A section that does not start or end on a bar line is flagged in preflight, because a loop there lands off the beat.
 
 ## Playlists
 
@@ -526,9 +533,12 @@ The drum and bass samples are CC0, so they need no attribution. The [sample noti
 
 ## Stage mode
 
-Choose **Enter stage mode** in Performance. The window fills with large lyrics and transport buttons, and MIDI status and faults stay visible. Setup, the mixer, editors, seeking, rewind and chord popups are locked, and Escape or clicking outside does not exit.
+Choose **Enter stage mode** in Performance. The window fills with large lyrics, a status strip, a timeline and large action buttons, and MIDI status and faults stay visible. Setup, the mixer, editors, seeking, rewind and chord popups are locked, and Escape or clicking outside does not exit.
 
-- **Play/Pause** and **Stop playback** stay available.
+- **The status strip** shows the current section, the bars left in it (counted on the song's saved beat grid when it has one), what comes next and the pedal preset.
+- **The timeline** blocks jump to a section. Seeking stays locked.
+- **Play/Pause** stays available. **Stop playback** and **Panic / stop MIDI** need a hold of 0.6 s or a second press, so a stray tap cannot end the show. Between songs of a set, a card shows the next song.
+- **Follow playback**, **Show MIDI commands** and **Edge flash** are in the "⋯" menu.
 - **Panic / stop MIDI** pauses playback, clears queued MIDI, disarms and turns Send cues off. It cannot undo commands a pedal already received.
 - **Exit stage mode** unlocks everything. Leaving the Performance screen also exits.
 - Stage mode does not arm MIDI or change the BPM, and it stays on across playlist songs.

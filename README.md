@@ -301,7 +301,8 @@ The next song loads while the current one plays, so songs join without a gap, or
 <br>
 
 Play at 50 to 150% speed, shift the pitch, set a capo, and send the click to its own output for in-ear monitors.<br>
-The metronome and the one-bar count-in can be a click, sticks, a hi-hat, a rock beat or your own drum samples, or go out as MIDI notes to a drum plugin.
+The metronome and the one-bar count-in can be a click, sticks, a hi-hat, a rock beat or your own drum samples, or go out as MIDI notes to a drum plugin.<br>
+A transport bar stays in view on every Performance tab, and a full-width timeline shows the sections, trims and cues. Click it to seek.
 
 <br>
 
@@ -332,7 +333,7 @@ Fire a cue at a time, on load, play or stop, or at the start of every chorus. Cu
 <br>
 
 The timing runs in its own worker on the audio clock, so a busy screen never makes a cue late.<br>
-Named commands for the GP-150 and GP-180 and other popular pedals save you looking up MIDI numbers, and a check before the set says what a cue needs that isn't connected. MIDI clock and MIDI timecode are there for gear that follows them.
+Named commands for the GP-150 and GP-180 and other popular pedals save you looking up MIDI numbers, and a check before the set says what a cue needs that isn't connected. Cues show the GP-150 and GP-180 preset names, and the check warns when a recalled preset has changed. MIDI clock and MIDI timecode are there for gear that follows them.
 
 <br>
 
@@ -367,7 +368,8 @@ A program change can load the song that goes with your patch.
 <br>
 <br>
 
-Stage mode fills the screen with big lyrics and chords and locks everything you shouldn't touch mid-song. A PDF chart can take the text chart's place, with your pen and highlighter marks.<br>
+Stage mode fills the screen with big lyrics and chords and locks everything you shouldn't touch mid-song. A status strip shows the section, the bars left, what comes next and the pedal preset, and Stop and Panic take a hold so a stray tap can't end the show.<br>
+A PDF chart can take the text chart's place, with your pen and highlighter marks.<br>
 An audience display shows the lyrics on a projector, and band sync puts them on your bandmates' phones over the local network, behind a PIN.
 
 <br>
@@ -415,7 +417,8 @@ Analyse one song, or the whole library in one go.
 
 Missing a drummer or a bass player? Generate drums and bass that follow the song's beat, chords and sections, preview any section, and export them as MIDI.<br>
 Fix a wrong bass note by hand, and play the bass and the drums through NAM captures and IRs from TONE3000.<br>
-A song in 3/4 gets a 3/4 style, and a section marker that sits a little off the bar line still changes the drums and bass on that bar.
+A song in 3/4 gets a 3/4 style, and a section marker that sits a little off the bar line still changes the drums and bass on that bar.<br>
+The bass plays repeating figures, a song can end on a hit, a fill and hold, three hits or a slow-down, and a heavier kit and a room are built in. A song made with the earlier band patterns shows an Update… button in the Band dialog.
 
 <br>
 
