@@ -7,12 +7,13 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Added
 - GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
 - **Choose how a song ends: a hit, a fill and hold, three hits or a slow-down.** The generated drums and bass end at the end of the last section with drums (or at the last full bar before the song's trim end) instead of wherever the beat tracker stopped. A hold, three hits or a slow-down can play past the end of the song, and the player now plays to the longest track.
-- **A warm built-in bass tone.** A fixed chain in code (a 35 Hz high-pass, a gentle compressor and saturation, a dip at 400 Hz and a 4.5 kHz low-pass) that needs no download. The playlist check also lists every song whose bass or drum tone files are missing on this computer, with a Download button for TONE3000 files.
+- **A warm built-in bass tone.** A fixed chain in code (a 35 Hz high-pass, a gentle compressor and saturation, a dip at 400 Hz and a 4.5 kHz low-pass) that needs no download. A new song starts on it; Clean stays for songs that already have settings. The ending can be chosen under Feel, and the song's Trim end now sets where it lands. The playlist check also lists every song whose bass or drum tone files are missing on this computer, with a Download button for TONE3000 files.
 
 ### Changed
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
 
 ### Fixed
+- **A missing bass or drum tone no longer replaces a song's generated part with a clean one unless you ask.** An automatic update stops with "Not updated: the bass tone's amp capture is missing", Generate asks "Generate with a clean bass?" first, and a part rendered clean because of a missing tone says so beside What plays.
 - **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **Generated bass slides and muted notes are heard again when humanise is on.**
 - **A 3/4 song no longer plays a 4/4 groove squeezed into three beats.** There is a 3/4 style, a song with three beats to the bar uses it unless a section has a style of its own, and the style menus list the styles that fit the song first.
