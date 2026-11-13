@@ -10,6 +10,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **A warm built-in bass tone.** A fixed chain in code (a 35 Hz high-pass, a gentle compressor and saturation, a dip at 400 Hz and a 4.5 kHz low-pass) that needs no download. A new song starts on it; Clean stays for songs that already have settings. The ending can be chosen under Feel, and the song's Trim end now sets where it lands. The playlist check also lists every song whose bass or drum tone files are missing on this computer, with a Download button for TONE3000 files.
 
 ### Changed
+- The Performance tab has a transport bar that stays in view in every view. The playlist row, metronome and tempo controls stay in Play; the analysis line moves into an Analysis card in This song.
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
 
 ### Fixed
