@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+- **The generated drummer can count the song in.** A "Drummer counts in" menu in the Band dialog (Off, 1 bar, 2 bars, on sticks or the hat) renders a count through the generated drums, so the audience hears it where the metronome's count-in only reaches the click output. It plays ahead of the song when the song has no free bar before its first beat, only when a song starts from stopped or after the pause between songs, and not into a crossfade. If the metronome's count-in is on too, both play. The count is kept with the song as one extra track beside the generated drums, which the mixer does not show. Check by ear: the stick click is the cross-stick sample moved up and cut short.
+
 ## [0.9.35] — 2026-11-13
 
 ### Changed
