@@ -14,6 +14,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - The Play view opens with a full-width song timeline: the waveform, the sections in proportion to their length and coloured by kind, the playhead, the trimmed ends and the MIDI cues. Click to seek, drag to scrub, arrow keys to move.
 - Times and tempos are shown rounded: trim and fade fields show at most two decimals with a dot on every computer (and take a comma when typed), the song time reads `0:00 / 5:30`, and a tempo reads `149.9 BPM` or `150 BPM`.
 - Song screen controls show only what applies: no playlist row for a single song; the mixer labels its Level and Pan sliders and marks generated parts; section keys and the section count use the song's own sections; Stems waveforms are scaled to each track and list the generated drums and bass.
+- Songs & playlists opens on the song list. Each song is one line with icon buttons (Load stays labelled), the backup actions and Analyse all songs are in a Library… menu, and Save the current song is a bar that shows only while the open song is not saved.
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
 
 ### Fixed
