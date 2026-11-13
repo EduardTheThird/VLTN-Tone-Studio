@@ -297,6 +297,9 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 
 ## Unreleased
 
+### Added
+- GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
+
 ### Fixed
 - **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **A part split no longer cuts a song short.** Splitting only part of a song for Tone Match left Performance, the playlist and the saved song with stems just that long. Performance now plays the whole song without those stems and says why, the Band panel works on the whole song, and the part's stems are never saved.

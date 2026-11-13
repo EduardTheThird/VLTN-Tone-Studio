@@ -1,3 +1,4 @@
+import { knownPresetNames } from "./use-preset-names";
 import { ArrangementAdvice } from "./ArrangementAdvice";
 import { PlaylistPreflightIssues } from "./PlaylistPreflightIssues";
 import { PreparationSequenceDetails, preparationSeconds } from "./PreparationSequenceDetails";
@@ -77,6 +78,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
           songs: songEntries(songs),
           bindings: config.bindings,
           pedals: configuredPedals(pedals),
+          presetNames: knownPresetNames(),
           rhythmControls: rhythmControlOverrides(pedals),
         }),
       );
