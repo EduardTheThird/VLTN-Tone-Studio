@@ -1,3 +1,4 @@
+import { withToneWarnings } from "@/song/performance/tone-preflight";
 import { knownPresetNames } from "./use-preset-names";
 import { ArrangementAdvice } from "./ArrangementAdvice";
 import { PlaylistPreflightIssues } from "./PlaylistPreflightIssues";
@@ -66,22 +67,24 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
       await flushSettings();
       const snapshot = await host.song.library!.preflight(ids);
       if (request !== generation.current) return;
-      setReport(
-        playlistPreflight(ids, snapshot, {
-          preparationDefaults,
-          leadInDefaults: readLeadInDefaults(),
-          tempoOnStart: config.tempoOnStart,
-          tempoChannel: config.tempoChannel,
-          outputName: config.output?.name,
-          renderReady: isRenderedAhead,
-          macros: config.macros,
-          songs: songEntries(songs),
-          bindings: config.bindings,
-          pedals: configuredPedals(pedals),
-          presetNames: knownPresetNames(),
-          rhythmControls: rhythmControlOverrides(pedals),
-        }),
-      );
+      const checks = playlistPreflight(ids, snapshot, {
+        preparationDefaults,
+        leadInDefaults: readLeadInDefaults(),
+        tempoOnStart: config.tempoOnStart,
+        tempoChannel: config.tempoChannel,
+        outputName: config.output?.name,
+        renderReady: isRenderedAhead,
+        macros: config.macros,
+        songs: songEntries(songs),
+        bindings: config.bindings,
+        pedals: configuredPedals(pedals),
+        presetNames: knownPresetNames(),
+        rhythmControls: rhythmControlOverrides(pedals),
+      });
+      // Reading the tone files is asynchronous, so the song's own checks are done first and the tone warnings are added to them.
+      const withTones = await withToneWarnings(checks, ids, snapshot, host.tones);
+      if (request !== generation.current) return;
+      setReport(withTones);
     } catch (e) {
       if (request === generation.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -109,7 +112,7 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
             Snapshot of saved files and current MIDI preferences. Recheck after external file changes. File presence and size are checked, not audio contents or
             physical pedal response. Warnings are advisory.
           </p>
-          <PlaylistPreflightIssues report={report} />
+          <PlaylistPreflightIssues report={report} onDownloaded={() => void check()} />
           <p aria-label="Playlist preparation total">
             Configured preparation waits: {preparationSeconds(report.reduce((total, result) => total + (result.preparation?.totalWaitMs ?? 0), 0))} s across{" "}
             {report.filter((result) => result.preparation).length} entries. Fresh song loads with Send cues enabled are assumed. Audio loading, MIDI delivery,

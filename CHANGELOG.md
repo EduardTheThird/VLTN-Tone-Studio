@@ -7,6 +7,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Added
 - GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
 - **Choose how a song ends: a hit, a fill and hold, three hits or a slow-down.** The generated drums and bass end at the end of the last section with drums (or at the last full bar before the song's trim end) instead of wherever the beat tracker stopped. A hold, three hits or a slow-down can play past the end of the song, and the player now plays to the longest track.
+- **A warm built-in bass tone.** A fixed chain in code (a 35 Hz high-pass, a gentle compressor and saturation, a dip at 400 Hz and a 4.5 kHz low-pass) that needs no download. The playlist check also lists every song whose bass or drum tone files are missing on this computer, with a Download button for TONE3000 files.
 
 ### Changed
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
