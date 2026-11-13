@@ -4,7 +4,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+- GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
+
 ### Fixed
+- **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **Generated bass slides and muted notes are heard again when humanise is on.**
 - **A 3/4 song no longer plays a 4/4 groove squeezed into three beats.** There is a 3/4 style, a song with three beats to the bar uses it unless a section has a style of its own, and the style menus list the styles that fit the song first.
 - **Generated parts change with the section even when the section marker is slightly off the bar line.** A section that starts a little after a bar line now gets that bar's fill, crash and first bass note.
@@ -304,11 +308,7 @@ The first release from the fork, EduardTheThird/VLTN-Tone-Studio. It brings the 
 
 ## Unreleased
 
-### Added
-- GP-150/GP-180 cues show the pedal's preset names, and MIDI health warns when a recalled preset has changed.
-
 ### Fixed
-- **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **A part split no longer cuts a song short.** Splitting only part of a song for Tone Match left Performance, the playlist and the saved song with stems just that long. Performance now plays the whole song without those stems and says why, the Band panel works on the whole song, and the part's stems are never saved.
 - **Songs from an old backup open straight after a restore.** Restoring a backup made by an early version used to leave its songs unopenable until the app was restarted. They are now converted right away, with progress, as the restore finishes.
 - **Saving a song no longer loses tracks.** A track that could not be read when the song opened is kept as saved instead of being deleted on the next save, and an unreadable source is never replaced by a mix of the stems.
