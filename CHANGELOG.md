@@ -8,6 +8,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Added
 - MIDI health shows how much memory the app and the open song use.
+### Added
+- If the app's window crashes mid-set it reloads and offers to resume where the music stopped. The set comes back paused on the same song, with a Resume button, and nothing plays or sends MIDI until you press it. If the window crashes three times in a minute, or stops answering for five seconds, the app asks what to do instead of reloading on its own.
 
 ## [0.9.39] — 2026-11-13
 
