@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.34] — 2026-11-13
+
 ### Added
 - **A song map can put marks on bars.** A `## Marks` table (Bar such as `Chorus 2:8`, or a Time, then Mark and Beats) turns an analysis like "the band stops before the last chorus" into a stop on that bar. The song brief explains the table and the draft map carries the song's own marks.
 - **Try another for one section, or keep a section while the rest changes.** In the Band dialog's Notes tab, "Try another for this section" draws a new groove, fills and bass for that section only. "Keep this section" stops a later "Try another" for the whole song from changing it. Turning it on draws the section once more from its own seed.
