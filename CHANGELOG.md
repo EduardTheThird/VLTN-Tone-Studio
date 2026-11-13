@@ -18,6 +18,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Times and tempos are shown rounded: trim and fade fields show at most two decimals with a dot on every computer (and take a comma when typed), the song time reads `0:00 / 5:30`, and a tempo reads `149.9 BPM` or `150 BPM`.
 - Song screen controls show only what applies: no playlist row for a single song; the mixer labels its Level and Pan sliders and marks generated parts; section keys and the section count use the song's own sections; Stems waveforms are scaled to each track and list the generated drums and bass.
 - Songs & playlists opens on the song list. Each song is one line with icon buttons (Load stays labelled), the backup actions and Analyse all songs are in a Library… menu, and Save the current song is a bar that shows only while the open song is not saved.
+- **Stage mode puts the chart first and shows the section, the bars left in it, what comes next and the pedal preset.** A status strip, the song timeline (its blocks jump to a section) and a row of large actions replace the section buttons and status lines. Stop and Panic need a hold of 0.6 s or a second press, and between songs of a set a card shows the next song. Follow playback, Show MIDI commands and Edge flash are in the "⋯" menu.
 - **Generated drums use several recordings of each hit and more loudness levels, so repeated hits no longer sound identical.**
 - The Band dialog is organised in tabs (Parts, Feel, Sound, Notes, Timing) and shows all sections at once.
 - **The generated bass keeps its fills in the song's key.** A run or approach note into a chord now walks the song's scale (from the key override, or a strong key estimate, and section keys) instead of the chord's own, so a fill into F in C major no longer plays a B flat. A song saved before this keeps the earlier bass until it is updated.
@@ -26,6 +27,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - **The generated bass stays in one register through a section.** Each section has a home octave, set by its most common root, and every root is the nearest instance to it, so a section no longer drops a root a ninth lower four bars later. A section's octave shift is part of that home octave, and a note that would leave the range moves an octave back on its own. A song saved before this keeps the earlier bass until it is updated.
 
 ### Fixed
+- **In stage mode the chart now follows the song from the start**, instead of waiting for something to change on screen.
 - **A missing bass or drum tone no longer replaces a song's generated part with a clean one unless you ask.** An automatic update stops with "Not updated: the bass tone's amp capture is missing", Generate asks "Generate with a clean bass?" first, and a part rendered clean because of a missing tone says so beside What plays.
 - **GP-150/GP-180: a backup, rename or export no longer picks up the wrong preset when the pedal changes preset during the read.**
 - **Generated bass slides and muted notes are heard again when humanise is on.**
