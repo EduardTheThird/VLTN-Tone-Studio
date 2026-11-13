@@ -14,6 +14,7 @@ import { humanise } from "./humanise";
 import { loudnessOf, matchLoudness, STEM_SILENT_LUFS, targetLoudness, type LevelKind, type LevelReport, type PartLevels } from "./level";
 import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
+import { addRoom } from "./room";
 import type { SampleSet } from "./samples";
 import { barBeats, beatSpan } from "./timing";
 import type { PcmAudio } from "../types";
@@ -167,6 +168,11 @@ export function renderLength(request: BandRequest, notes: Notes): number {
   return Math.min(wanted, request.lengthFrames + Math.ceil(allowed * bar * RENDER_RATE));
 }
 
+/** Whether a tone chain has a space block that is on: the performer chose their own room, so the built-in one is skipped. */
+function hasOwnSpace(tone: BandSettings["drumTone"]): boolean {
+  return tone.kind === "chain" && tone.blocks.some((block) => block.role === "space" && block.on);
+}
+
 function render(request: BandRequest, generated: Generated, samples: SampleSet, songFrames: number, onStage?: (stage: BandStage) => void): BandResult {
   onStage?.("rendering");
   const lengthFrames = Math.max(songFrames, renderLength(request, generated.notes));
@@ -176,7 +182,8 @@ function render(request: BandRequest, generated: Generated, samples: SampleSet, 
   const levels: PartLevels = {};
   for (const kind of ["drums", "bass"] as const) {
     if (!request.parts[kind]) continue;
-    const rendered = renderPart(notes[kind], kind, samples, lengthFrames, RENDER_RATE).audio;
+    const dry = renderPart(notes[kind], kind, samples, lengthFrames, RENDER_RATE).audio;
+    const rendered = kind === "drums" && !hasOwnSpace(request.settings.drumTone) ? addRoom(dry, samples.room, request.settings.drumRoom) : dry;
     const leveled = levelPart(kind, rendered, request, songLufs);
     result[kind] = leveled.audio;
     if (leveled.report) levels[kind] = leveled.report;
