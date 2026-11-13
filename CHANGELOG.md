@@ -7,6 +7,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [0.9.33] — 2026-11-13
 
 ### Added
+- **A song map can put marks on bars.** A `## Marks` table (Bar such as `Chorus 2:8`, or a Time, then Mark and Beats) turns an analysis like "the band stops before the last chorus" into a stop on that bar. The song brief explains the table and the draft map carries the song's own marks.
 - **Try another for one section, or keep a section while the rest changes.** In the Band dialog's Notes tab, "Try another for this section" draws a new groove, fills and bass for that section only. "Keep this section" stops a later "Try another" for the whole song from changing it. Turning it on draws the section once more from its own seed.
 - **See the generated drums and bass bar by bar, and mark a bar for a fill, a stop, a crash or a rest.** The Band dialog's Notes tab draws one section at a time (drum hits on their lanes, bass notes at pitch height, chords above). Click a bar to put a fill, a stop, a crash or a rest on it, or a stab. The parts update by themselves when playback is stopped, and your marks are listed under the view. The notes are kept with the song, so a song made before this shows them after its next Generate.
 - **A built-in room for the generated drums.** A Room slider under Drums (25% to start) mixes a short room under the drums, with no download. It is skipped when the drum tone chain has its own space block.
