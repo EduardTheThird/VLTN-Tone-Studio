@@ -2,6 +2,13 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [Unreleased]
+
+### Fixed
+- **Generated bass slides and muted notes are heard again when humanise is on.**
+- **A 3/4 song no longer plays a 4/4 groove squeezed into three beats.** There is a 3/4 style, a song with three beats to the bar uses it unless a section has a style of its own, and the style menus list the styles that fit the song first.
+- **Generated parts change with the section even when the section marker is slightly off the bar line.** A section that starts a little after a bar line now gets that bar's fill, crash and first bass note.
+
 ## [0.9.32] — 2026-11-12
 
 ### Fixed
