@@ -81,3 +81,26 @@ it("refuses while stage activity is busy", async () => {
   await expect(regenerateSong("fixture", { input: input(), detectChords: async () => [] })).rejects.toThrow("Stop playback");
   expect(mock.render).not.toHaveBeenCalled();
 });
+
+it("allows the transport's stopped preparation but keeps bulk updates blocked", async () => {
+  const { setStageBusy } = await import("@/state/stage-activity");
+  const owner = {};
+  setStageBusy(true, owner);
+  const preparation = { owner, stopped: () => true };
+  await expect(regenerateSong("fixture", { input: input(), detectChords: async () => [], preparation: () => preparation })).resolves.toBeDefined();
+  await expect(regenerateSong("fixture", { input: input(), detectChords: async () => [] })).rejects.toThrow("Stop playback");
+});
+
+it("does not publish a render when Pause revokes its pre-play permission", async () => {
+  const { setStageBusy } = await import("@/state/stage-activity");
+  const owner = {};
+  setStageBusy(true, owner);
+  let stopped = true;
+  mock.render.mockImplementation((request) => {
+    stopped = false;
+    return { done: Promise.resolve(runBandJob(request, samples)), onProgress: vi.fn(), cancel: vi.fn() };
+  });
+  await expect(
+    regenerateSong("fixture", { input: input(), detectChords: async () => [], preparation: () => ({ owner, stopped: () => stopped }) }),
+  ).rejects.toThrow("Stop playback");
+});

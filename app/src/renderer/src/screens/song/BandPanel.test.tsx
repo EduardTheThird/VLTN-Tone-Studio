@@ -1559,3 +1559,51 @@ describe("Band panel: set upgrades", () => {
     expect(mocks.startBandRender).not.toHaveBeenCalled();
   });
 });
+
+describe("Band panel: transport preparation", () => {
+  it("refreshes for Play while the same stopped transport owns stage activity", async () => {
+    const { setStageBusy, resetStageActivity } = await import("@/state/stage-activity");
+    const owner = {};
+    setStageBusy(true, owner);
+    stored({ beatGrid: grid, generatedParts: { drums: "track0" }, bandOutOfDate: true });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel({ playing: true, audioPlaying: false });
+    try {
+      await act(async () => refreshBandBeforePlay(KEY, { owner, stopped: () => true }));
+      expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledOnce();
+      expect(savedOptions().bandOutOfDate).toBe(false);
+    } finally {
+      resetStageActivity();
+    }
+  });
+
+  it("lets Play await an automatic render already running when preparation starts", async () => {
+    const { setStageBusy, resetStageActivity } = await import("@/state/stage-activity");
+    const owner = {};
+    let finish!: (value: unknown) => void;
+    stored({ beatGrid: grid, generatedParts: { drums: "track0" }, bandOutOfDate: true });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    mocks.startBandRender.mockReturnValue({
+      done: new Promise((resolve) => {
+        finish = resolve;
+      }),
+      onProgress: vi.fn(),
+      cancel: vi.fn(),
+    });
+    renderPanel();
+    await waitFor(() => expect(mocks.startBandRender).toHaveBeenCalledOnce());
+    setStageBusy(true, owner);
+    try {
+      await act(async () => {
+        const ready = refreshBandBeforePlay(KEY, { owner, stopped: () => true });
+        finish({ notes: { drums: [], bass: [] } });
+        await ready;
+      });
+      expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledOnce();
+      expect(savedOptions().bandOutOfDate).toBe(false);
+    } finally {
+      resetStageActivity();
+    }
+  });
+});

@@ -1279,7 +1279,15 @@ export class PerformanceSession {
     try {
       this.bandPreparationKey = this.songSettingsKey;
       try {
-        await refreshBandBeforePlay(this.songSettingsKey);
+        await refreshBandBeforePlay(this.songSettingsKey, {
+          owner: this,
+          stopped: () =>
+            request === this.playRequest &&
+            this.state.starting &&
+            !this.state.playing &&
+            !this.state.player?.isPlaying &&
+            this.state.preparing === null,
+        });
       } finally {
         this.bandPreparationKey = null;
       }

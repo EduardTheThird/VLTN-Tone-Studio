@@ -38,3 +38,18 @@ export function resetStageActivity(): void {
   busyOwners.clear();
   useStageActivity.setState({ busy: false });
 }
+
+/** A transport may refresh its own band before starting audio, while keeping the editor quiet. */
+export interface StagePreparation {
+  owner: unknown;
+  /** True only while this request is current and its transport has not started audio or MIDI preparation. */
+  stopped(): boolean;
+}
+
+/** Bulk work is blocked by every stage owner. A transport's own pre-play refresh may exclude only that stopped owner. */
+export function stageActivityBlocks(preparation?: StagePreparation): boolean {
+  if (preparation && !preparation.stopped()) return true;
+  if (!useStageActivity.getState().busy) return false;
+  if (!preparation || !busyOwners.has(preparation.owner)) return true;
+  return [...busyOwners].some((owner) => owner !== preparation.owner);
+}

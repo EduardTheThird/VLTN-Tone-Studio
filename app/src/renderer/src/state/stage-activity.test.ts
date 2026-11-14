@@ -39,3 +39,25 @@ it("is not cleared by an old owner ending after a new owner started", () => {
   vi.advanceTimersByTime(STAGE_IDLE_DEBOUNCE_MS);
   expect(useStageActivity.getState().busy).toBe(false);
 });
+
+it("permits only the stopped transport's own pre-play work, never another owner", async () => {
+  const { resetStageActivity, stageActivityBlocks } = await import("./stage-activity");
+  resetStageActivity();
+  const owner = {};
+  const other = {};
+  let stopped = true;
+  const preparation = { owner, stopped: () => stopped };
+  try {
+    setStageBusy(true, owner);
+    expect(stageActivityBlocks()).toBe(true);
+    expect(stageActivityBlocks(preparation)).toBe(false);
+    setStageBusy(true, other);
+    expect(stageActivityBlocks(preparation)).toBe(true);
+    setStageBusy(false, other);
+    expect(stageActivityBlocks(preparation)).toBe(false);
+    stopped = false;
+    expect(stageActivityBlocks(preparation)).toBe(true);
+  } finally {
+    resetStageActivity();
+  }
+});

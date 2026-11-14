@@ -23,6 +23,7 @@ import { packExtras } from "@/song/band/extras";
 import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
 
 const mocks = vi.hoisted(() => ({
+  bandRender: vi.fn(),
   warm: [] as { cancel: () => void }[],
   song: { source: null as unknown },
   position: 0,
@@ -125,6 +126,8 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/app/notify", () => ({ showToast: (spec: unknown) => mocks.toasts.push(spec) }));
+vi.mock("@/song/band/band-client", () => ({ startBandRender: mocks.bandRender }));
+vi.mock("@/song/band/bass-chain", () => ({ renderPartChain: vi.fn() }));
 vi.mock("@/host", () => ({
   host: {
     song: {
@@ -3051,4 +3054,45 @@ describe("resume point", () => {
       session.dispose();
     }
   });
+});
+
+
+it("Play refreshes its band through the real render guard while its own stage owner is starting", async () => {
+  const { regenerateSong } = await import("@/song/band/regenerate");
+  const { fixedBeatGrid } = await import("@/song/band/beat-grid");
+  const { session, out, unload } = armedSession();
+  mocks.bandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
+  const unregister = registerBandRefresh(performanceKey(source), async (preparation) => {
+    expect(session.state.starting).toBe(true);
+    expect(session.state.player?.isPlaying).toBe(false);
+    expect(useStageActivity.getState().busy).toBe(true);
+    await regenerateSong(performanceKey(source), {
+      input: {
+        grid: fixedBeatGrid(120, 0, 4, 8),
+        cues: [],
+        chords: [],
+        sections: [],
+        settings: structuredClone(DEFAULT_BAND_SETTINGS),
+        songEnd: 8,
+        lengthFrames: 352800,
+        sampleUrls: {},
+      },
+      detectChords: async () => [],
+      explicit: true,
+      preparation: () => preparation,
+    });
+    expect(session.state.player?.isPlaying).toBe(false);
+    expect(out.send).not.toHaveBeenCalled();
+  });
+  try {
+    await session.play();
+    expect(mocks.bandRender).toHaveBeenCalled();
+    expect(session.state.error).toBe("");
+    expect(session.state.player?.isPlaying).toBe(true);
+  } finally {
+    unregister();
+    session.pause();
+    unload();
+    session.dispose();
+  }
 });

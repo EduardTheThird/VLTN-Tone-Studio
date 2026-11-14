@@ -1,5 +1,5 @@
 import { host } from "@/host";
-import { useStageActivity } from "@/state/stage-activity";
+import { stageActivityBlocks, type StagePreparation } from "@/state/stage-activity";
 import type { BandSettings } from "./arrangement";
 import { startBandRender, type BandJob } from "./band-client";
 import { bandRequest, playsThreeFourDefault, THREE_FOUR_NOTE, extendedRangeNote, type BandInputs } from "./request";
@@ -22,11 +22,13 @@ export interface RegenerateOptions {
   onJob?(job: BandJob): void;
   /** Explicit Generate retains its confirmed clean fallback and replacement behaviour. Automatic callers use the safe default. */
   explicit?: boolean;
+  /** Only the transport's registered pre-play refresh supplies this. Read at each guard so Pause revokes it immediately. */
+  preparation?(): StagePreparation | undefined;
 }
 
 /** Renders a song without mutating its settings or audio. The caller publishes the fully prepared result in one save. */
 export async function regenerateSong(_songKey: string, options: RegenerateOptions) {
-  if (useStageActivity.getState().busy) throw new Error("Stop playback to update the set");
+  if (stageActivityBlocks(options.preparation?.())) throw new Error("Stop playback to update the set");
   const input = options.input;
   const requested = input.settings;
   const using: BandSettings = options.explicit
@@ -113,7 +115,7 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
   const levels = levelStatus(result.levels);
   if (levels) notes.push(info(levels));
 
-  if (useStageActivity.getState().busy) throw new Error("Stop playback to update the set");
+  if (stageActivityBlocks(options.preparation?.())) throw new Error("Stop playback to update the set");
   const partExtras = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass } };
   const extras = {
     ...(drums && hasExtras(partExtras.drums) ? { drums: partExtras.drums } : {}),

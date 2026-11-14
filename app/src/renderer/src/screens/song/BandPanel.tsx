@@ -1,3 +1,4 @@
+import type { StagePreparation } from "@/state/stage-activity";
 import { regenerateSong, regeneratedSettings } from "@/song/band/regenerate";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -179,6 +180,7 @@ function BandBody({
   const [confirmReplace, setConfirmReplace] = useState<{ kinds: RenderedKind[]; run(): void } | null>(null);
   const [grid, setGrid] = useState<BeatGrid | null>(stored.grid);
   const settingsVersion = useSongSettingsRevision(songKey);
+  const stagePreparation = useRef<StagePreparation | undefined>(undefined);
   const automaticPromise = useRef<Promise<void> | null>(null);
   const appliedInputs = useRef<string | null>(null);
   const hydratedInputs = useRef<string | null>(null);
@@ -461,6 +463,7 @@ function BandBody({
       const prepared = await regenerateSong(songKey, {
         input,
         explicit: true,
+        preparation: () => stagePreparation.current,
         detectChords: () => detectChords(current.audio),
         onWork: setWork,
         onNotices: setNotices,
@@ -602,7 +605,17 @@ function BandBody({
       automaticPromise.current = null;
     }
   };
-  useEffect(() => registerBandRefresh(songKey, () => refreshNow.current()), [songKey]);
+  useEffect(
+    () => registerBandRefresh(songKey, async (preparation) => {
+      stagePreparation.current = preparation;
+      try {
+        await refreshNow.current();
+      } finally {
+        stagePreparation.current = undefined;
+      }
+    }),
+    [songKey],
+  );
   useEffect(() => {
     if (
       audioPlaying ||
