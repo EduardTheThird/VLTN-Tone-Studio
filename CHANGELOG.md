@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.42] — 2026-11-14
+
 ### Added
 - Bring this set up to date: one step updates a playlist's generated band to the newest patterns, can switch clean bass to Warm and name GP-150/GP-180 preset cues, then runs the playlist check.
 

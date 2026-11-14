@@ -22,6 +22,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Bring your set up to date",
+    text: "In Songs & playlists, select a playlist and open Playlist menu… → Bring this set up to date…. Back up first, then update older generated drums and bass in one run. You can switch clean bass to Warm and add the pedal's names to GP-150/GP-180 cue labels. Your rendered parts, bass notes and bar marks stay yours. Each song is saved before moving on; a missing tone skips the song. The playlist check and per-song reminders help you choose the musical details before rehearsal.",
+    image: band,
+  },
+  {
     title: "A song library and live sets",
     text: "Save a song with its stems, chart, tempo, key and mix, then put songs in playlists and sets. A set plays from one song to the next with crossfades or gapless joins, a queue shows what comes next, and the playlist check flags songs with missing band tones. A library backup takes everything with it.",
     image: songLibrary,
