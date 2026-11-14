@@ -13,6 +13,9 @@ import { CURRENT_ENGINE, DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
 import { setSetting } from "@/song/performance/settings";
 import { refreshBandBeforePlay } from "@/song/band/refresh";
 
+// The Band dialog renders every tab and its part view, which takes several seconds on the slower release runners.
+vi.setConfig({ testTimeout: 20_000 });
+
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
   startBandRender: vi.fn(),
