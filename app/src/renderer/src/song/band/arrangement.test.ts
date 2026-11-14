@@ -5,6 +5,7 @@ import {
   defaultFills,
   energyForName,
   isBandSettings,
+  kitFor,
   parseBandSettings,
   parseBassTone,
   planSections,
@@ -84,13 +85,63 @@ describe("planSections", () => {
     const plans = planSections(
       [section("a", "Verse", 0, 10), section("b", "Chorus", 10, 20), section("c", "Bridge", 20, 30), section("d", "Outro", 30, 40)],
       40,
-      settings(),
+      settings({ engine: 2 }),
     );
     expect(plans.map((plan) => plan.fill)).toEqual([true, false, false, true]);
   });
 
+  it("gives a pre-chorus and a build the build shape, the rest steady, and lets an override win", () => {
+    const plans = planSections(
+      [section("a", "Verse", 0, 10), section("b", "Pre-chorus", 10, 20), section("c", "Build", 20, 30), section("d", "Chorus", 30, 40)],
+      40,
+      settings({ sections: { d: { shape: "half" } } }),
+    );
+    expect(plans.map((plan) => plan.shape)).toEqual(["steady", "build", "build", "half"]);
+  });
+
+  it("drops a section the song's own drums play quietly, unless the drums are off or the performer chose a shape", () => {
+    const sections = [section("a", "Verse", 0, 10), section("b", "Bridge", 10, 20), section("c", "Solo", 20, 30)];
+    const hints = [
+      { start: 0, end: 10, levelDb: -4 },
+      { start: 10, end: 20, levelDb: -6, drumsOff: true },
+      { start: 20, end: 30, levelDb: -4 },
+    ];
+    const plans = planSections(sections, 30, settings({ sections: { c: { shape: "steady" } } }), hints);
+    expect(plans.map((plan) => plan.shape)).toEqual(["drop", "steady", "steady"]);
+  });
+
+  it("lifts the bass in a build by the shape, and only at drum engine 3", () => {
+    const sections = [section("a", "Verse", 0, 10), section("b", "Pre-chorus", 10, 20), section("c", "Build", 20, 30)];
+    expect(planSections(sections, 30, settings({ engine: 3 })).map((plan) => plan.bassRamp)).toEqual([false, true, true]);
+    expect(planSections(sections, 30, settings({ engine: 2 })).map((plan) => plan.bassRamp)).toEqual([false, true, false]);
+    const steady = planSections(sections, 30, settings({ engine: 3, sections: { b: { shape: "steady" }, a: { shape: "build" } } }));
+    expect(steady.map((plan) => plan.bassRamp)).toEqual([true, false, true]);
+  });
+
+  it("reads a shape from a saved song and drops an unknown one", () => {
+    const read = (shape: unknown) => parseBandSettings({ sections: { a: { shape } } }).sections.a?.shape;
+    expect(["steady", "build", "drop", "half"].map(read)).toEqual(["steady", "build", "drop", "half"]);
+    expect([1, "loud", null].map(read)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("leaves the fill automatic for every section at drum engine 3", () => {
+    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Chorus", 10, 20), section("c", "Bridge", 20, 30)], 30, settings({ engine: 3 }));
+    expect(plans.map((plan) => plan.fill)).toEqual([true, true, true]);
+  });
+
+  it("reads a fill as on, off or a size from a saved song, and drops anything else", () => {
+    const read = (fill: unknown) => parseBandSettings({ sections: { a: { fill } } }).sections.a?.fill;
+    expect([true, false, 0, 1, 2, 3].map(read)).toEqual([true, false, 0, 1, 2, 3]);
+    expect([4, -1, "half", null].map(read)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it("lets a section's fill size win over the default", () => {
+    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Chorus", 10, 20)], 20, settings({ sections: { a: { fill: 3 } } }));
+    expect(plans[0].fill).toBe(3);
+  });
+
   it("does not fill before a pre-chorus", () => {
-    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Pre-chorus", 10, 20), section("c", "Chorus", 20, 30)], 30, settings());
+    const plans = planSections([section("a", "Verse", 0, 10), section("b", "Pre-chorus", 10, 20), section("c", "Chorus", 20, 30)], 30, settings({ engine: 2 }));
     expect(plans.map((plan) => plan.fill)).toEqual([false, true, true]);
   });
 
@@ -139,8 +190,46 @@ describe("bass notes from", () => {
   it("takes the original bass by default, and keeps a valid choice", () => {
     expect(DEFAULT_BAND_SETTINGS.bassFrom).toBe("original");
     expect(parseBandSettings({ bassFrom: "chords" }).bassFrom).toBe("chords");
+    // A song saved before the engine existed keeps the earlier bass; a song with nothing saved starts on the newest.
+    expect(parseBandSettings({ bassFrom: "chords" }).engine).toBe(1);
+    expect(parseBandSettings({ engine: 2 }).engine).toBe(2);
+    expect(parseBandSettings({ engine: 3 }).engine).toBe(3);
+    expect(parseBandSettings({ engine: 4 }).engine).toBe(1);
+    expect(parseBandSettings(undefined).engine).toBe(3);
     expect(parseBandSettings({ bassFrom: "piano" }).bassFrom).toBe("original");
     expect(parseBandSettings({}).bassFrom).toBe("original");
+  });
+});
+
+describe("kitFor", () => {
+  it("uses the heavier kit for metal, rock and half-time and the standard kit for the rest, when the song has not chosen", () => {
+    expect(DEFAULT_BAND_SETTINGS.kit).toBeUndefined();
+    for (const style of ["metal", "rock", "half-time"] as const) expect(kitFor({ kit: undefined, style }), style).toBe("rock");
+    for (const style of ["pop", "ballad", "funk", "shuffle", "country", "reggae", "six-eight", "three-four"] as const)
+      expect(kitFor({ kit: undefined, style }), style).toBe("standard");
+  });
+
+  it("keeps a chosen kit, so a song saved with the standard kit keeps it under a rock style", () => {
+    expect(kitFor({ kit: "standard", style: "metal" })).toBe("standard");
+    expect(kitFor({ kit: "rock", style: "pop" })).toBe("rock");
+    expect(kitFor(parseBandSettings({ kit: "standard", style: "rock" }))).toBe("standard");
+  });
+
+  it("reads a saved kit and ignores an unknown one", () => {
+    expect(parseBandSettings({ kit: "rock" }).kit).toBe("rock");
+    expect(parseBandSettings({ kit: "jazz" }).kit).toBeUndefined();
+    expect(parseBandSettings({}).kit).toBeUndefined();
+  });
+});
+
+describe("drumRoom", () => {
+  it("defaults to 0.25, keeps a saved amount from 0 to 1, and ignores anything else", () => {
+    expect(DEFAULT_BAND_SETTINGS.drumRoom).toBe(0.25);
+    expect(parseBandSettings({}).drumRoom).toBe(0.25);
+    expect(parseBandSettings({ drumRoom: 0 }).drumRoom).toBe(0);
+    expect(parseBandSettings({ drumRoom: 0.6 }).drumRoom).toBe(0.6);
+    expect(parseBandSettings({ drumRoom: 2 }).drumRoom).toBe(0.25);
+    expect(parseBandSettings({ drumRoom: "loud" }).drumRoom).toBe(0.25);
   });
 });
 
@@ -532,5 +621,22 @@ describe("planSections with what the song's own band does", () => {
 
   it("plans the same as before without hints", () => {
     expect(planSections(sections, 60, settings(), [])).toEqual(planSections(sections, 60, settings()));
+  });
+});
+
+describe("a section's own seed", () => {
+  const sections = [section("a", "Verse", 0, 10), section("b", "Chorus", 10, 20)];
+
+  it("goes onto the plan of the section that has one, and onto no other", () => {
+    const plans = planSections(sections, 20, settings({ sections: { b: { seed: 77 } } }));
+    expect(plans[1].seed).toBe(77);
+    expect("seed" in plans[0]).toBe(false);
+  });
+
+  it("is saved with the section's override, and an invalid seed is dropped", () => {
+    const saved = parseBandSettings({ ...DEFAULT_BAND_SETTINGS, sections: { a: { seed: 5, energy: 4 }, b: { seed: -1 }, c: { seed: 1.5 } } });
+    expect(saved.sections).toEqual({ a: { seed: 5, energy: 4 } });
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, sections: { a: { seed: 5 } } })).toBe(true);
+    expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, sections: { a: { seed: "5" } } })).toBe(false);
   });
 });

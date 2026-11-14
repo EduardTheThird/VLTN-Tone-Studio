@@ -10,8 +10,8 @@ import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { useKnownPresetNames } from "./use-preset-names";
 import { useBluetooth, resetBluetoothTiming } from "@/bluetooth/connection";
 import { HelpNote } from "@/components/ui/help-note";
-import { MemoryUse } from "./MemoryUse";
 import { PedalSettings } from "./PedalSettings";
+import { MemoryUse } from "./MemoryUse";
 
 /** How often the counters on screen may refresh. The scheduler and Bluetooth writes update their stores far more often than that. */
 const REFRESH_MS = 500;
@@ -128,8 +128,8 @@ export function MidiHealth({
             routing and receive channels before the set.
           </p>
         </HelpNote>
-        {open && <MemoryUse />}
         <PedalSettings clock={clock} />
+        {open && <MemoryUse />}
         {parseError ? (
           <p className="text-red-400">{parseError}</p>
         ) : report.warnings.length ? (

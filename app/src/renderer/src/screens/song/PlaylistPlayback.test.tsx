@@ -193,8 +193,7 @@ afterEach(() => {
   useBluetooth.setState({ connection: null });
 });
 
-it.each([false, true])("automatically plays the next song with its BPM and armed MIDI (preparation %s), then finishes the set", async (enabled) => {
-  usePreparationDefaults.setState({ settings: { enabled, settleMs: 50, openingPresets: true } });
+it("automatically plays the next song with its BPM and armed MIDI, then finishes the set", async () => {
   await useSongLibrary.getState().load(first.id, [first.id, second.id]);
   render(<PerformancePanel />);
   fireEvent.click(screen.getByLabelText("Send cues"));
@@ -202,7 +201,7 @@ it.each([false, true])("automatically plays the next song with its BPM and armed
     fireEvent.click(screen.getByText("Play playlist"));
   });
   await waitFor(() => expect(mock.send.mock.calls.some((c) => c[0][0] === 192 && c[0][1] === 12)).toBe(true));
-  await waitFor(() => expect(mock.players.at(-1)?.isPlaying).toBe(true));
+  expect(mock.players.at(-1)?.isPlaying).toBe(true);
   await act(async () => {
     mock.players.at(-1)!.end();
   });

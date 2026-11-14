@@ -8,7 +8,8 @@
 import type { PcmAudio } from "../types";
 import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { ATTACK_ENVELOPE_SAMPLES } from "./beat-grid";
-import { pickBassLayers, pickDrumSample, type SampleSet } from "./samples";
+import { STICK_SECONDS, STICK_TRANSPOSE, STICK_CLICK } from "./count-in";
+import { pickBassLayers, pickDrumLayers, type SampleSet } from "./samples";
 
 /** The sample rate of a rendered part: the song's rate. */
 export const RENDER_RATE = 44100;
@@ -174,24 +175,30 @@ function rateOf(semitones: number, sourceRate: number, outputRate: number): numb
   return (2 ** (semitones / 12) * sourceRate) / outputRate;
 }
 
-/** One voice per drum hit. A closed or pedal hat chokes any open hat that is still ringing, with a short fade. */
+/** One voice per drum hit, or two between velocity layers. A closed or pedal hat chokes any open hat that is still ringing, with a short fade. */
 function drumVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate: number): Voice[] {
   const chokes: number[] = [];
   for (const note of notes) if (note.pitch === CLOSED_HAT || note.pitch === PEDAL_HAT) chokes.push(Math.round(note.time * sampleRate));
   const cutFade = Math.round(CUT_SECONDS * sampleRate);
-  return notes.map((note) => {
+  // Hit number n of a pitch plays take n of its layer, so a repeated hit is not the same recording. The notes are sorted by time, so the
+  // same notes always give the same takes.
+  const hitsOf = new Map<number, number>();
+  return notes.flatMap((note) => {
     const start = Math.round(note.time * sampleRate);
-    const pick = pickDrumSample(samples, note.pitch, note.velocity);
+    const take = hitsOf.get(note.pitch) ?? 0;
+    hitsOf.set(note.pitch, take + 1);
     const [left, right] = panGains(DRUM_PAN[note.pitch] ?? 0);
-    const cutAt = note.pitch === OPEN_HAT ? nextAfter(chokes, start) : Infinity;
-    return {
+    // A stick click is the cross-stick sample moved up and cut short: the kit has no sample of its own for it (count-in.ts).
+    const stick = note.pitch === STICK_CLICK;
+    const cutAt = stick ? start + Math.round(STICK_SECONDS * sampleRate) : note.pitch === OPEN_HAT ? nextAfter(chokes, start) : Infinity;
+    return pickDrumLayers(samples, stick ? SIDE_STICK : note.pitch, note.velocity, take).map(({ pick, weight }) => ({
       sample: pick.audio,
-      rate: rateOf(pick.transpose, pick.audio.sampleRate, sampleRate),
-      gain: pick.gain,
+      rate: rateOf(pick.transpose + (stick ? STICK_TRANSPOSE : 0), pick.audio.sampleRate, sampleRate),
+      gain: pick.gain * weight,
       left,
       right,
       shape: { start, holdEnd: Infinity, release: 0, cutAt, cutFade },
-    };
+    }));
   });
 }
 

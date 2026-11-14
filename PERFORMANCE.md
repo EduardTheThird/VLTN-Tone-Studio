@@ -594,3 +594,9 @@ Band sync lets bandmates follow the song on their own phones or tablets over the
 - Bluetooth editor management and RTP-MIDI are not supported.
 
 The Song screen keeps its transport visible across views and shows a seekable waveform/section timeline on Play. Controls appear when they apply to the loaded song. Stage mode gives the chart most of the window, with section, bars-left, next-section and preset status above it, a timeline and large actions. Stop and Panic require a hold, and a set card appears between songs.
+
+Generated drums rotate recorded takes and blend adjacent velocity layers. **Room** mixes a built-in stereo room unless the drum tone already has an active space block. **Kit** chooses Standard or Standard, heavier; Automatic picks the heavier voicing for rock, metal and half-time styles.
+
+The Band workspace groups Parts, Feel, Sound, Notes and Timing. Notes shows saved generated parts bar by bar, with fill/stop/crash/rest marks and per-section re-roll or keep. Bass figures follow the key and keep a register, with an extended low range. Endings can hit, hold, play three hits, slow down or be left unchanged. Missing tone files are reported while usable generated audio is kept. Song maps can carry bar marks.
+
+New Band generations use drum engine 3, with section grooves and phrase turns; earlier songs retain their engine until updated. A rendered drummer count-in can lead into the song, and open-ended section loops play without repeated exit fills until released. The normal wrap and the release/exit bar are rendered separately.

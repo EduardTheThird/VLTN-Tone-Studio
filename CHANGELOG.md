@@ -5,6 +5,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- **Drum kit layers and room.** Generated drums rotate recorded takes and blend velocity layers, with a built-in Room control and Standard / Standard, heavier kit choices.
+- **Band workspace and notes.** Tabbed settings, saved drum/bass notes, bar marks, per-section re-roll/keep, song-map marks, configurable endings and missing-tone warnings. New bass figures stay in key/register and support lower tunings; 3/4 and compound-meter playback and articulation are corrected.
+- **Drums play phrases.** New generations use section grooves, four-bar turns, transition-sized fills, tempo-aware density and builds/drops/half-time. Earlier engines keep their saved notes. A drummer count-in and rendered vamp wrap/exit bars lead into the next section.
 - **Song and stage layout.** A persistent transport bar, seekable waveform/section timeline, contextual Song controls and readable time/tempo values. Stage mode prioritises the chart, adds section/bar/preset status and a between-song set card, and uses hold-to-stop/panic actions.
 - **Show protection and recovery.** Closing or restarting for an update asks while a set runs. A crashed renderer reloads and offers a paused resume point. MIDI health shows renderer/system and song-buffer memory use.
 - **RC-10R rhythms.** Export native six-part rhythms or MIDI, plan song/playlist rhythm cues, track export and explicit transfer revisions, and prepare memory/tempo before playback.
