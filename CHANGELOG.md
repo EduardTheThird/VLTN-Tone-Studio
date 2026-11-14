@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.43] — 2026-11-14
+
 ### Fixed
 - Play can finish refreshing generated drums and bass before starting. The set updater's playback guard no longer mistakes the song's own stopped preparation for active playback; bulk updates still refuse while a performance is busy.
 
