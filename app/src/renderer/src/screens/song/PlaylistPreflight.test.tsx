@@ -108,3 +108,13 @@ it("puts all errors before performance warnings and keeps arrangement advice sep
   expect(advice instanceof HTMLDetailsElement && !advice.open).toBe(true);
   expect(advice.textContent).toContain("bar line");
 });
+
+it("automatically checks after an upgrade and offers the full report", async () => {
+  api.preflight.mockResolvedValue([{ id: "missing", errors: ["Song is missing from the library."] }]);
+  render(<PlaylistPreflight ids={["missing"]} disabled={false} revision={1} songs={[]} autoStart compact />);
+  await screen.findByText("1 entries checked · 1 errors · 0 performance warnings · 0 arrangement notes");
+  expect(api.preflight).toHaveBeenCalledOnce();
+  expect(screen.queryByText("Song is missing from the library.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open full report" }));
+  expect(screen.getByText("Song is missing from the library.")).toBeTruthy();
+});

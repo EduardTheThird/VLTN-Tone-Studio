@@ -383,10 +383,31 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
  * Loads a saved song's mix and stems for an analysis, without opening the song. The open song, its panel and the song store are not
  * changed, and nothing is played. The caller holds one song's audio at a time, and drops it before it loads the next.
  */
-export async function loadSongAudio(id: string): Promise<{ source: PcmAudio; stems: Stems }> {
+export async function loadSongAudio(id: string, strict = false): Promise<{ source: PcmAudio; stems: Stems }> {
   const loaded = await fetchSong(await api().index(), id);
+  if (strict && loaded.skipped.length) throw new Error(`Missing or damaged audio: ${loaded.skipped.join(", ")}.`);
   return { source: loaded.source.audio, stems: loaded.stems };
 }
+/** Accepts a successful background save without reloading or moving the open performance. */
+export function acceptUpgradedSong(song: LibrarySong, replacements: Record<string, PcmAudio>): void {
+  for (const [key, audio] of Object.entries(replacements)) {
+    const track = song.audio.find((track) => trackKey(track) === key);
+    if (track) storedTrack.set(audio, { songId: song.id, track });
+  }
+  const state = useSong.getState();
+  if (state.source?.libraryId === song.id) {
+    const keys = new Set(song.audio.map(trackKey));
+    const stems = Object.fromEntries(Object.entries({ ...selectWholeSongStems(state), ...replacements }).filter(([key]) => keys.has(key)));
+    const tracks = Object.fromEntries(song.audio.filter((track) => trackKindOf(track) !== "source").map((track) => [trackKey(track), trackInfoOf(track)]));
+    if (stems.source) tracks.source = state.tracks.source ?? { kind: "source", name: "Song" };
+    useSong.setState({ stems, tracks });
+  }
+  renderedAhead.delete(song.id);
+  seedSettings(song.id, song.settings);
+  const library = useSongLibrary.getState();
+  useSongLibrary.setState({ index: { ...library.index, songs: library.index.songs.map((entry) => entry.id === song.id ? song : entry) } });
+}
+
 /** Reads the index after moving any settings an earlier version left in localStorage into the library. */
 async function readIndex(): Promise<SongLibrary> {
   const index = await api().index();

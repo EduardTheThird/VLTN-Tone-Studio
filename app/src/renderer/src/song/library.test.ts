@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
-import { applyPracticeMute, loadSongAudio, useSongLibrary, type PreparedSong } from "./library";
+import { acceptUpgradedSong, applyPracticeMute, loadSongAudio, useSongLibrary, type PreparedSong } from "./library";
 import { usePracticeMute } from "./performance/practice-mute";
 import { clearSettingsCache, flushSettings, getSetting, performanceKey, setSetting } from "./performance/settings";
 import { useNav } from "@/state/nav";
@@ -962,4 +962,30 @@ describe("the practice mute on a prepared song", () => {
     applyPracticeMute(song);
     expect(song.player.setMix.mock.calls.at(-1)?.[0].t1?.mute).toBe(true);
   });
+});
+
+
+it("strict background audio loads refuse a missing track without changing the open song", async () => {
+  fetchFile.mockImplementation(async (url: string) => url.endsWith("guitar.flac") ? new Response(null, { status: 404 }) : file());
+  await expect(loadSongAudio(saved.id, true)).rejects.toThrow("Missing or damaged audio: guitar.");
+  expect(useSong.getState().source).toBeNull();
+  expect(api.save).not.toHaveBeenCalled();
+});
+
+it("accepts a background upgrade without navigating, replacing owned tracks or leaving unsaved audio", async () => {
+  await useSongLibrary.getState().load(saved.id);
+  const original = useSong.getState().source;
+  const guitar = useSong.getState().stems!.guitar;
+  const bandAudio = { sampleRate: 44100, channels: [new Float32Array([0.2, 0.3, 0.4])] };
+  const bandTrack = { ...saved.audio[1], name: "Bass (generated)", file: "track0.flac", kind: "user" as const, transpose: true };
+  const next = { ...saved, audio: [...saved.audio, bandTrack], settings: { ...saved.settings, ":options": '{"bandOutOfDate":false,"generatedParts":{"bass":"track0"}}' } };
+  acceptUpgradedSong(next, { track0: bandAudio });
+  expect(useSong.getState().source).toBe(original);
+  expect(useSong.getState().stems!.guitar).toBe(guitar);
+  expect(useSong.getState().stems!.track0).toBe(bandAudio);
+  expect(useSong.getState().tracks.track0.name).toBe("Bass (generated)");
+  expect(getSetting(performanceKey(original), ":options")).toBe(next.settings[":options"]);
+  expect(useSongLibrary.getState().index.songs[0]).toEqual(next);
+  await useSongLibrary.getState().saveBeforePlayback();
+  expect(api.save).not.toHaveBeenCalled();
 });

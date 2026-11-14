@@ -1536,3 +1536,26 @@ describe("Band panel: bass notes (spec 87)", () => {
     expect(savedOptions().band.bassOverrides).toEqual([{ start: 0.5, end: 1, pc: 7 }]);
   });
 });
+
+describe("Band panel: set upgrades", () => {
+  it("adopts a background upgrade's saved notes without starting a second render", async () => {
+    const { useSongLibrary } = await import("@/song/library");
+    const { writeStoredBand } = await import("@/song/band/stored");
+    useSongLibrary.setState({ busy: true });
+    stored({ beatGrid: grid, band: { ...DEFAULT_BAND_SETTINGS, engine: 1 }, generatedParts: { drums: "track0" } });
+    useSong.setState({ tracks: { track0: { kind: "user", name: GENERATED_PART_NAMES.drums } } });
+    useBandPanel.getState().show(false);
+    render(<BandPanel songKey={KEY} playing={false} chart="[0:00] [C]" chords={[]} sections={[]} beats={4} bpm={120} firstBeat={0} onMetronome={vi.fn()} getPosition={() => 0} partChoices={ORIGINAL_PARTS} onPartChoice={vi.fn()} />);
+    await act(async () => {
+      writeStoredBand(KEY, {
+        band: { ...DEFAULT_BAND_SETTINGS, engine: CURRENT_ENGINE },
+        bandNotes: { engine: CURRENT_ENGINE, seed: DEFAULT_BAND_SETTINGS.seed, drums: [[0, 36, 100, 100, 0]], bass: [] },
+        bandOutOfDate: false,
+      });
+      writeStoredBand(KEY, { bandOutOfDate: false });
+    });
+    await act(async () => { useSongLibrary.setState({ busy: false }); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 500)); });
+    expect(mocks.startBandRender).not.toHaveBeenCalled();
+  });
+});

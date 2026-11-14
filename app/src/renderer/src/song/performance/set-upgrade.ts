@@ -1,6 +1,7 @@
 import { trackKey, trackKindOf, type LibrarySong } from "@shared/song-library";
-import { CURRENT_ENGINE, parseBandSettings, type BandSettings, type RenderedKind } from "../band/arrangement";
+import { CURRENT_ENGINE, WHOLE_SONG_ID, parseBandSettings, type BandSettings, type RenderedKind } from "../band/arrangement";
 import { GENERATED_PART_NAMES } from "../band/generated-names";
+import { parseSections } from "./sections";
 import { parseChart } from "./chart";
 import type { MidiMacro } from "./midi-macros";
 import { presetCueLabel, presetCueTarget, type PresetNames } from "./pedal-preset-names";
@@ -91,13 +92,13 @@ export function relabelPresetCues(chart: string, known: readonly CueNaming[], ma
       continue;
     }
     const text = lines[line];
-    const commentAt = text.search(/(^|\s)\/\/.*$/);
+    const commentAt = text.search(/(^|\s)\/\//);
     const code = commentAt < 0 ? text : text.slice(0, commentAt);
     const comment = commentAt < 0 ? "" : text.slice(commentAt);
     const label = `{label:${replacements[0]}}`;
     lines[line] = /\{label:[^}]*\}/.test(code)
       ? code.replace(/\{label:[^}]*\}/g, label) + comment
-      : code.trimEnd() + " " + label + (comment ? " " + comment : "");
+      : code.slice(0, code.trimEnd().length) + " " + label + code.slice(code.trimEnd().length) + comment;
     renamed += replacements.length;
   }
   const next = lines.join("\n");
@@ -110,15 +111,27 @@ export function relabelPresetCues(chart: string, known: readonly CueNaming[], ma
 
 /** Reminders only. No musical decision here is applied by the upgrade. */
 export function setUpgradeReminders(song: LibrarySong, first: boolean) {
-  const settings = parseBandSettings(upgradeSongOptions(song).band);
+  const saved = upgradeSongOptions(song);
+  const settings = parseBandSettings(saved.band);
+  const sections = parseSections(saved.sections);
+  const rows = sections.length ? sections : [{ id: WHOLE_SONG_ID, name: "Whole song" }];
+  const automatic = rows.filter(({ id }) => settings.sections[id]?.fill === undefined || settings.sections[id]?.shape === undefined).map(({ name }) => name);
+  const loops = sections.filter((section) => section.mode === "loop" || section.mode === "repeat-once").map((section) => section.name);
+  const endings = { hit: "Hit", hold: "Fill and hold", hits: "Three hits", slow: "Slow down", none: "None" };
   return [
-    { text: `Key: confirm ${song.key || "the song's key"}`, tab: "parts" as const },
-    { text: "Room and Kit", tab: "sound" as const },
-    { text: `Ending: ${settings.ending.kind}`, tab: "feel" as const },
-    { text: first ? "Count-in on the first song" : "Count-in: confirm whether this song follows a pause", tab: "feel" as const },
-    { text: "Fill and Shape: review sections left on Auto", tab: "parts" as const },
-    { text: "Loop sections: choose any open-ended solos or jams", tab: "parts" as const },
-    { text: "Bar marks: check stops, fills and hits", tab: "notes" as const },
+    { text: `Key: confirm ${song.key || "the song's key"} in Performance → This song`, tab: "parts" as const },
+    {
+      text: `Room and Kit: ${Math.round(settings.drumRoom * 100)}% · ${settings.kit === undefined ? "Automatic" : settings.kit === "rock" ? "Standard, heavier" : "Standard"}`,
+      tab: "feel" as const,
+    },
+    { text: `Ending: ${endings[settings.ending.kind]}`, tab: "feel" as const },
+    {
+      text: `${first ? "Count-in on the first song" : "Count-in after a pause"}: ${settings.countIn.bars ? `${settings.countIn.bars} bar(s), ${settings.countIn.sound}` : "Off"}`,
+      tab: "feel" as const,
+    },
+    { text: `Fill and Shape left on Auto: ${automatic.join(", ") || "None"}`, tab: "parts" as const },
+    { text: `Loop sections: ${loops.join(", ") || "None"} — choose in This song → Sections → At the end`, tab: "parts" as const },
+    { text: `Bar marks: ${settings.marks.length} saved — check stops, fills and hits`, tab: "notes" as const },
   ];
 }
 
@@ -127,8 +140,10 @@ export function savedGeneratedKeys(song: LibrarySong): Partial<Record<RenderedKi
   const saved = upgradeSongOptions(song).generatedParts;
   if (!saved || typeof saved !== "object") return {};
   const record = saved as Record<string, unknown>;
-  return Object.fromEntries((["drums", "bass"] as const).flatMap((kind) => {
-    const track = song.audio.find((audio) => trackKey(audio) === record[kind] && trackKindOf(audio) === "user" && audio.name === GENERATED_PART_NAMES[kind]);
-    return track ? [[kind, trackKey(track)]] : [];
-  }));
+  return Object.fromEntries(
+    (["drums", "bass"] as const).flatMap((kind) => {
+      const track = song.audio.find((audio) => trackKey(audio) === record[kind] && trackKindOf(audio) === "user" && audio.name === GENERATED_PART_NAMES[kind]);
+      return track ? [[kind, trackKey(track)]] : [];
+    }),
+  );
 }

@@ -64,7 +64,10 @@ describe("set upgrade plan", () => {
     const options = { ...DEFAULT_SET_UPGRADE, warmBass: true };
     expect(planSetUpgrade(fixture, DEFAULT_SET_UPGRADE).warm).toBe(false);
     expect(planSetUpgrade(fixture, options).settings.bassTone).toEqual({ kind: "builtin", id: "warm" });
-    fixture.settings[":options"] = JSON.stringify({ generatedParts: { drums: "track0", bass: "track1" }, band: { ...DEFAULT_BAND_SETTINGS, bassTone: { kind: "builtin", id: "warm" } } });
+    fixture.settings[":options"] = JSON.stringify({
+      generatedParts: { drums: "track0", bass: "track1" },
+      band: { ...DEFAULT_BAND_SETTINGS, bassTone: { kind: "builtin", id: "warm" } },
+    });
     expect(planSetUpgrade(fixture, options).warm).toBe(false);
   });
 });
@@ -90,4 +93,18 @@ describe("cue names", () => {
     const result = relabelPresetCues(chart, [{ names: { model: "gp180", names: ["Lead"], source: "live" }, channel: 16 }]);
     expect(result.chart).toBe(chart);
   });
+});
+
+it("does not treat an owned track with a generated-looking name as generated without its saved mapping", () => {
+  const fixture = song(1);
+  fixture.settings[":options"] = JSON.stringify({ band: { ...DEFAULT_BAND_SETTINGS, engine: 1 } });
+  expect(planSetUpgrade(fixture, DEFAULT_SET_UPGRADE).render).toBe(false);
+});
+
+it("labels trigger macros while retaining their tokens, comments and CRLF line endings", () => {
+  const chart = "{midi@play:$LEAD}  // notes\r\n";
+  const macros = [{ code: "LEAD", label: "Lead", commands: ["cc 16 0 0", "pc 16 0"] }];
+  const result = relabelPresetCues(chart, [{ names: { model: "gp180", names: ["Lead"], source: "live" }, channel: 16 }], macros);
+  expect(result.chart).toBe("{midi@play:$LEAD} {label:GP-180: 001 Lead}  // notes\r\n");
+  expect(parseChart(result.chart, macros).map((cue) => cue.messages)).toEqual(parseChart(chart, macros).map((cue) => cue.messages));
 });

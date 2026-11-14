@@ -17,7 +17,21 @@ import { songEntries } from "@/song/performance/song-triggers";
 import type { LibrarySong } from "@shared/song-library";
 import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { flushSettings, onSettingsChange, LIBRARY_PREFIX } from "@/song/performance/settings";
-export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: string[]; disabled: boolean; revision: unknown; songs: readonly LibrarySong[] }) {
+export function PlaylistPreflight({
+  ids,
+  disabled,
+  revision,
+  songs,
+  autoStart = false,
+  compact = false,
+}: {
+  ids: string[];
+  disabled: boolean;
+  revision: unknown;
+  songs: readonly LibrarySong[];
+  autoStart?: boolean;
+  compact?: boolean;
+}) {
   const preparationDefaults = usePreparationDefaults((state) => state.settings);
   const config = useMidiConfiguration(),
     pedals = usePedalLibrary();
@@ -25,7 +39,8 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const generation = useRef(0);
-  const checked = useRef(false);
+  const checked = useRef(autoStart);
+  const [fullReport, setFullReport] = useState(!compact);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const order = JSON.stringify(ids);
   useEffect(
@@ -110,48 +125,57 @@ export function PlaylistPreflight({ ids, disabled, revision, songs }: { ids: str
             {report.length} entries checked · {report.reduce((n, r) => n + r.errors.length, 0)} errors · {report.reduce((n, r) => n + r.warnings.length, 0)}{" "}
             performance warnings · {report.reduce((n, r) => n + r.advice.length, 0)} arrangement notes
           </p>
-          <p className="text-xs">
-            Snapshot of saved files and current MIDI preferences. Recheck after external file changes. File presence and size are checked, not audio contents or
-            physical pedal response. Warnings are advisory.
-          </p>
-          <PlaylistPreflightIssues report={report} onDownloaded={() => void check()} />
-          <p aria-label="Playlist preparation total">
-            Configured preparation waits: {preparationSeconds(report.reduce((total, result) => total + (result.preparation?.totalWaitMs ?? 0), 0))} s across{" "}
-            {report.filter((result) => result.preparation).length} entries. Fresh song loads with Send cues enabled are assumed. Audio loading, MIDI delivery,
-            start delay and count-in can add time; entries with errors need fixing first.
-          </p>
-          <ol className="max-h-80 space-y-2 overflow-auto">
-            {report.map((r) => (
-              <li key={r.entry} className="rounded border border-seam p-2">
-                <strong>
-                  {r.entry}. {r.title}
-                </strong>
-                {r.preparation && (
-                  <details className="my-2 rounded border border-seam p-2">
-                    <summary className="cursor-pointer">
-                      Before song: {preparationSeconds(r.preparation.totalWaitMs)} s · {r.preparation.steps.filter((step) => step.kind === "send").length}{" "}
-                      command group{r.preparation.steps.filter((step) => step.kind === "send").length === 1 ? "" : "s"}
-                    </summary>
-                    <p className="my-2 text-xs">From the saved playable beginning, with fresh once-command history. Opening this preview sends nothing.</p>
-                    <PreparationSequenceDetails plan={r.preparation} label={`Preparation steps for entry ${r.entry}`} />
-                  </details>
-                )}
-                <p>
-                  {r.errors.length} errors · {r.warnings.length} performance warnings
-                </p>
-                <ArrangementAdvice items={r.advice} />
-                {r.notes.length > 0 && (
-                  <ul>
-                    {r.notes.map((text, index) => (
-                      <li key={index} className="text-silkscreen-3">
-                        Note: {text}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
+          {!fullReport && (
+            <Button variant="outline" onClick={() => setFullReport(true)}>
+              Open full report
+            </Button>
+          )}
+          {fullReport && (
+            <>
+              <p className="text-xs">
+                Snapshot of saved files and current MIDI preferences. Recheck after external file changes. File presence and size are checked, not audio
+                contents or physical pedal response. Warnings are advisory.
+              </p>
+              <PlaylistPreflightIssues report={report} onDownloaded={() => void check()} />
+              <p aria-label="Playlist preparation total">
+                Configured preparation waits: {preparationSeconds(report.reduce((total, result) => total + (result.preparation?.totalWaitMs ?? 0), 0))} s across{" "}
+                {report.filter((result) => result.preparation).length} entries. Fresh song loads with Send cues enabled are assumed. Audio loading, MIDI
+                delivery, start delay and count-in can add time; entries with errors need fixing first.
+              </p>
+              <ol className="max-h-80 space-y-2 overflow-auto">
+                {report.map((r) => (
+                  <li key={r.entry} className="rounded border border-seam p-2">
+                    <strong>
+                      {r.entry}. {r.title}
+                    </strong>
+                    {r.preparation && (
+                      <details className="my-2 rounded border border-seam p-2">
+                        <summary className="cursor-pointer">
+                          Before song: {preparationSeconds(r.preparation.totalWaitMs)} s · {r.preparation.steps.filter((step) => step.kind === "send").length}{" "}
+                          command group{r.preparation.steps.filter((step) => step.kind === "send").length === 1 ? "" : "s"}
+                        </summary>
+                        <p className="my-2 text-xs">From the saved playable beginning, with fresh once-command history. Opening this preview sends nothing.</p>
+                        <PreparationSequenceDetails plan={r.preparation} label={`Preparation steps for entry ${r.entry}`} />
+                      </details>
+                    )}
+                    <p>
+                      {r.errors.length} errors · {r.warnings.length} performance warnings
+                    </p>
+                    <ArrangementAdvice items={r.advice} />
+                    {r.notes.length > 0 && (
+                      <ul>
+                        {r.notes.map((text, index) => (
+                          <li key={index} className="text-silkscreen-3">
+                            Note: {text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
         </>
       )}
     </section>

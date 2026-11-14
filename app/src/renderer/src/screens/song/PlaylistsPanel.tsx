@@ -1,3 +1,7 @@
+import { SetUpgradeDialog } from "./SetUpgradeDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useStageActivity } from "@/state/stage-activity";
+import { evaluateSmart } from "@shared/library-filter";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +35,8 @@ interface Edits {
 /** Playlists: regular playlists as headed sets, and smart playlists defined by rules. Creating, renaming and deleting are here too. */
 export function PlaylistsPanel() {
   const library = useSongLibrary();
+  const stageBusy = useStageActivity((state) => state.busy);
+  const [upgrade, setUpgrade] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"static" | "smart">("static");
   const [selected, setSelected] = useState("");
@@ -162,6 +168,16 @@ export function PlaylistsPanel() {
                 />
               )
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">Playlist menu…</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem disabled={library.busy || dirty || stageBusy || library.playlistPlaying} onSelect={() => setUpgrade(true)}>
+                  Bring this set up to date…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" disabled={library.busy} onClick={() => setConfirm("playlist:" + playlist.id)}>
               Delete playlist…
             </Button>
@@ -210,6 +226,14 @@ export function PlaylistsPanel() {
             )
           )}
         </>
+      )}
+      {upgrade && playlist && (
+        <SetUpgradeDialog
+          key={playlist.id}
+          name={playlist.name}
+          ids={playlist.smart ? evaluateSmart(songs, library.index.folders, playlist.smart).songs.map((song) => song.id) : playlist.songs}
+          onClose={() => setUpgrade(false)}
+        />
       )}
       <AlertDialog open={!!pending} onOpenChange={(open) => !open && setPending("")}>
         <AlertDialogContent>

@@ -263,9 +263,10 @@ function BandBody({
     () => (grid ? bandHarmony({ grid, cues, chords, songEnd, settings, bassLine }) : []),
     [grid, cues, chords, songEnd, settings, bassLine],
   );
+  const libraryBusy = useSongLibrary((state) => state.busy);
   const busy = work !== null;
   // With no song there is nothing to find a beat in or to render, so every action waits for one.
-  const blocked = busy || playing || source === null;
+  const blocked = busy || libraryBusy || playing || source === null;
   // Audio bookkeeping changes after Generate are not musical edits. Everything that determines the notes belongs to this key.
   const generationInputs = (using: BandSettings) => {
     // What a part was rendered with is a result of Generate, not an input to it.
@@ -535,6 +536,14 @@ function BandBody({
     }
     if (JSON.stringify(latest.grid) !== JSON.stringify(grid)) setGrid(latest.grid);
     setOutOfDate(latest.outOfDate);
+    // A background set upgrade has already rendered these inputs. Adopt its notes without starting a second render.
+    if (latest.notes && JSON.stringify(latest.notes) !== JSON.stringify(savedNotes)) {
+      setSavedNotes(latest.notes);
+      if (!latest.outOfDate) {
+        appliedInputs.current = generationInputs(latest.settings);
+        hydratedInputs.current = appliedInputs.current;
+      }
+    }
   }, [songKey, settingsVersion]);
   useEffect(() => {
     const previous = musicalTempo.current;
@@ -557,7 +566,7 @@ function BandBody({
     if (automaticPromise.current) return automaticPromise.current;
     if (!source || !generated || (!outOfDate && appliedInputs.current === musicalInputs && !needsSnapshot)) return;
     if (playingNow.current) throw new Error("Generated parts are waiting to update when playback stops.");
-    if (busy) throw new Error("The band parts are still updating. Wait for the update to finish.");
+    if (busy || libraryBusy) throw new Error("The band parts are still updating. Wait for the update to finish.");
     const kinds = RENDERED_KINDS.filter((kind) => settings.parts[kind] && !settings.rendered[kind]);
     if (!kinds.length) {
       if (!settings.parts.drums && !settings.parts.bass) {
@@ -597,6 +606,7 @@ function BandBody({
   useEffect(() => {
     if (
       audioPlaying ||
+      libraryBusy ||
       busy ||
       !generated ||
       failedInputs.current === musicalInputs ||
@@ -610,7 +620,7 @@ function BandBody({
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [musicalInputs, outOfDate, audioPlaying, busy, generated, needsSnapshot]);
+  }, [musicalInputs, outOfDate, audioPlaying, libraryBusy, busy, generated, needsSnapshot]);
 
   /** Generate replaces a part that is the performer's rendered audio, so it asks first. */
   const generateOrAsk = async (next: BandSettings) => {
