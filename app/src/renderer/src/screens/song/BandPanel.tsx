@@ -1,3 +1,4 @@
+import { regenerateSong, regeneratedSettings } from "@/song/band/regenerate";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,7 +25,6 @@ import {
   type SectionBandHint,
   type SectionOverride,
 } from "@/song/band/arrangement";
-import { hasExtras, type ExitAudio } from "@/song/band/extras";
 import { GENERATED_PART_NAMES } from "@/song/band/generated-names";
 import type { NoteEvent } from "@/song/band/note";
 import { encodeSmf } from "@/song/performance/smf";
@@ -32,11 +32,10 @@ import type { RhythmSnapshot } from "@/song/band/rhythm-export";
 import { RhythmExportDialog } from "./RhythmExportDialog";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { chordChangeTimesOf, fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
-import { bandSampleUrls, renderPreview, startBandRender, type BandJob } from "@/song/band/band-client";
+import { bandSampleUrls, renderPreview, type BandJob } from "@/song/band/band-client";
 import type { ChordAtBeat } from "@/song/band/harmony";
 import type { BassOverride } from "@/song/band/bass-overrides";
 import {
-  THREE_FOUR_NOTE,
   bandHarmony,
   bandRequest,
   beatSources,
@@ -44,9 +43,7 @@ import {
   followFor,
   followSourcesIn,
   levelStems,
-  extendedRangeNote,
   keysFromOptions,
-  playsThreeFourDefault,
   previewMix,
 } from "@/song/band/request";
 import type { BassLineBeat } from "@/song/analysis/bass-line";
@@ -55,8 +52,6 @@ import { automaticUpdateBlock, cleanFallbackQuestion, generatedLabel, missingTon
 import { storedShape } from "@/song/performance/song-shape";
 import { renderPartChain } from "@/song/band/bass-chain";
 import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
-import { followStatus } from "@/song/band/feel";
-import { levelStatus } from "@/song/band/level";
 import { startChordDetection } from "@/song/band/chord-detect-client";
 import { barBeats } from "@/song/band/timing";
 import { findStyle, type StyleId } from "@/song/band/styles";
@@ -89,7 +84,6 @@ import {
   pendingLineUp,
   playOnce,
   replaceTitle,
-  stageText,
   type PendingRendered,
 } from "./band-panel-helpers";
 import { BAND_TAB_LABELS, BAND_TABS, isBandTab, useBandPanel } from "./band-panel-state";
@@ -463,79 +457,23 @@ function BandBody({
         hints: sectionHints,
         ...keysFromOptions(readOptions<Record<string, unknown>>(songKey, {}), libraryKey),
       };
-      let request = bandRequest(input);
-      const notes: (string | BandNotice)[] = [];
-      if (playsThreeFourDefault(request)) notes.push(info(THREE_FOUR_NOTE));
-      const lowKeyNote = using.parts.bass ? extendedRangeNote(request) : null;
-      if (lowKeyNote) notes.push(info(lowKeyNote));
-      if (using.parts.bass && !request.harmony.some((entry) => entry.chord)) {
-        // Neither the chart nor the screen's analysis has chords, so the bass would rest all song. Detect them from the audio first.
-        let found: Chord[] | null = [];
-        try {
-          found = await detectChords(current.audio);
-        } catch (error) {
-          notes.push(error instanceof Error ? error.message : String(error));
-        }
-        if (found === null) return setNotices(["Generating the parts was cancelled. The tracks were not changed."]);
-        if (found.length) request = bandRequest({ ...input, chords: found });
-        if (!request.harmony.some((entry) => entry.chord)) {
-          notes.push("No chords were found in the chart or the audio, so the bass will rest. Add chords to the chart, then generate again.");
-        }
-      }
-      setNotices(notes);
-      setWork(stageText("loading"));
-      const rendering: BandJob = startBandRender(request);
-      job.current = rendering;
-      rendering.onProgress((stage) => setWork(stageText(stage)));
-      const result = await rendering.done;
+      const prepared = await regenerateSong(songKey, {
+        input,
+        explicit: true,
+        detectChords: () => detectChords(current.audio),
+        onWork: setWork,
+        onNotices: setNotices,
+        onJob: (rendering) => { job.current = rendering; },
+      });
+      const { request, result, drums, bass, notes } = prepared;
       if (!active.current || useSong.getState().source !== current) return;
       setLastNotes(result.notes);
-      // The bass tone is applied before the bass is saved, so the saved bass is the one Generate made. A tone that can't be used
-      // leaves the clean bass and a notice.
-      let bass = result.bass;
-      let drums = result.drums;
-      let countIn = result.countIn;
-      const renderedTone: BandSettings["renderedTone"] = {};
-      if (drums && using.drumTone.kind === "chain") {
-        setWork(DRUM_TONE_TEXT);
-        const toned = await applyPartTone(drums, using.drumTone, host.tones, renderPartChain, "drums");
-        drums = toned.audio;
-        renderedTone.drums = toned.tone;
-        if (toned.notice) notes.push(toned.notice);
-        // The drummer's count goes through the same kit tone, so it sounds like the drums it leads into.
-        if (countIn && toned.tone === "chain") countIn = { ...countIn, audio: (await applyPartTone(countIn.audio, using.drumTone, host.tones, renderPartChain, "drums")).audio };
-      }
-      if (bass && using.bassTone.kind !== "clean") {
-        setWork(BASS_TONE_TEXT);
-        const toned = await applyPartTone(bass, using.bassTone, host.tones, renderPartChain, "bass");
-        bass = toned.audio;
-        renderedTone.bass = toned.tone;
-        if (toned.notice) notes.push(toned.notice);
-      }
-      // A vamp's exit bar goes through the same tone as its part, so the swap on the last pass has no change of sound.
-      const exits: Record<"drums" | "bass", Record<string, ExitAudio>> = { drums: {}, bass: {} };
-      for (const [id, exit] of Object.entries(result.exits ?? {})) {
-        for (const kind of ["drums", "bass"] as const) {
-          let audio = exit[kind];
-          if (!audio) continue;
-          const tone = kind === "drums" ? using.drumTone : using.bassTone;
-          if (tone.kind !== "clean" && renderedTone[kind] === "chain") audio = (await applyPartTone(audio, tone, host.tones, renderPartChain, kind)).audio;
-          exits[kind][id] = { audio, from: exit.from, to: exit.to };
-        }
-      }
-      if (result.follow) notes.push(info(followStatus(result.follow)));
-      const levels = levelStatus(result.levels);
-      if (levels) notes.push(info(levels));
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       if (!active.current || useSong.getState().source !== current) return;
       if (requestedInputs.current !== null && requestedInputs.current !== startedInputs) return;
       const turnedOff = only ? [] : (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
       // The drummer's count and the vamps' exit bars travel with their part. Nothing is passed for a song that has none.
-      const partExtras = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass } };
-      const withExtras = {
-        ...(drums && hasExtras(partExtras.drums) ? { drums: partExtras.drums } : {}),
-        ...(bass && hasExtras(partExtras.bass) ? { bass: partExtras.bass } : {}),
-      };
+      const withExtras = prepared.extras;
       const applied = useSong
         .getState()
         .applyGeneratedParts({ drums, bass, ...(Object.keys(withExtras).length > 0 ? { extras: withExtras } : {}) }, { playing: playingNow.current, remove: turnedOff });
@@ -559,21 +497,7 @@ function BandBody({
       // Each generated part's first note is kept, so a rendered file can be lined up with it. A part that was replaced or removed is no
       // longer rendered, unless the generation was refused.
       const latest = settingsRef.current;
-      const firstNote = { ...latest.firstNote };
-      const rendered = { ...latest.rendered };
-      // What each generated part was rendered with, so the Sound tab can say when a part is clean because its tone files were missing.
-      const toneNow: BandSettings["renderedTone"] = { ...latest.renderedTone };
-      for (const part of ["drums", "bass"] as const) {
-        if (!using.parts[part]) continue;
-        toneNow[part] = renderedTone[part] ?? "clean";
-      }
-      for (const kind of RENDERED_KINDS) {
-        const times = (result.notes[kind] ?? []).map((note) => note.time);
-        if (using.parts[kind] && times.length) firstNote[kind] = Math.min(...times);
-        else if (using.parts[kind]) delete firstNote[kind];
-        if (applied.length === 0 && (using.parts[kind] || turnedOff.includes(kind))) delete rendered[kind];
-      }
-      commitBand({ ...latest, firstNote, rendered, ...(applied.length === 0 ? { renderedTone: toneNow } : {}) });
+      commitBand(regeneratedSettings(latest, using, prepared, turnedOff, applied.length === 0));
       if (applied.length === 0) {
         const bandNotes = updatedBandNotes(savedNotes, result.notes, using.parts, latest.parts, using.engine, using.seed);
         setSavedNotes(bandNotes);
