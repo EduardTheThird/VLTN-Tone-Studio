@@ -79,7 +79,7 @@ it("requires a backup or explicit tick; a cancelled backup picker does not unloc
   expect(screen.getByRole("button", { name: "Start" }).hasAttribute("disabled")).toBe(false);
 });
 it("shows the completed backup location and enables Start", async () => {
-  mocks.backup.mockResolvedValue({ fileName: "/copies/before-upgrade.vltn", songs: 4, playlists: 1 });
+  mocks.backup.mockResolvedValue({ fileName: "before-upgrade.vltn", filePath: "/copies/before-upgrade.vltn", songs: 4, playlists: 1 });
   open();
   fireEvent.click(screen.getByRole("button", { name: "Back up the library first" }));
   await screen.findByText("Backup saved to /copies/before-upgrade.vltn");

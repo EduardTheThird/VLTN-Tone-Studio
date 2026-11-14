@@ -170,6 +170,8 @@ export interface LibraryTransferProgress {
 export const CONVERTING_PHASE = "Converting saved songs";
 export const CONVERTED_PHASE = "Conversion complete";
 export interface LibraryTransferResult {
+  /** The chosen export destination, returned only after a successful library backup. */
+  filePath?: string;
   songs: number;
   playlists: number;
   fileName: string;

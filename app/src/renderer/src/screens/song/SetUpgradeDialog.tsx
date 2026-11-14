@@ -43,7 +43,7 @@ export function SetUpgradeDialog({ ids, name, onClose }: { ids: string[]; name: 
       await flushSettings();
       const result = await host.song.library!.exportBackup();
       if (result) {
-        setBackup(result.fileName);
+        setBackup(result.filePath ?? result.fileName);
         setHasBackup(true);
       }
     } catch (reason) {

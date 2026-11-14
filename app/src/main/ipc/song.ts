@@ -117,7 +117,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     });
     if (selection.canceled || !selection.filePath) return null;
     const result = await library.exportBackup(selection.filePath, transferProgress);
-    return { ...result, fileName: basename(selection.filePath) };
+    return { ...result, fileName: basename(selection.filePath), filePath: selection.filePath };
   });
   // The renderer never names a path: the backup it inspected is the one it restores.
   let chosenBackup: string | null = null;
