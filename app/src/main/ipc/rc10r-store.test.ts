@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { Rc10rStore, type Rc10rStoreOptions } from "./rc10r-store";
 import { readRc10rBank } from "@shared/rc10r-bank";
@@ -10,6 +11,8 @@ import { testRc10rBank, testRc10rMemory, testRc10rRecord } from "@shared/rc10r-t
 vi.setConfig({ testTimeout: 20000 });
 let base: string, volume: string, backups: string;
 const memory = testRc10rMemory();
+const digest = (bytes: Uint8Array | undefined) => bytes && createHash("sha256").update(bytes).digest("hex");
+const hashes = (files: Map<string, Uint8Array>) => new Map([...files].map(([name, bytes]) => [name, digest(bytes)]));
 let eject: Mock<Rc10rStoreOptions["eject"]>;
 const data = (name: string) => join(volume, "ROLAND", "DATA", name);
 const original = async () =>
@@ -46,7 +49,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     const view = await store.inspect(id, 1);
     expect(view.patterns.map((p) => p.name)).toEqual(["User1", "User2"]);
     const plan = await store.plan(id, 1, testRc10rRecord("New"), 2, 99);
-    expect(await original()).toEqual(before);
+    expect(hashes(await original())).toEqual(hashes(before));
     expect(await readFile(join(plan.backupPath, "ROLAND/WAVE/loop.WAV"), "utf8")).toBe("keep the recorded loop");
     expect(await readdir(join(plan.backupPath, "ROLAND/WAVE/empty"))).toEqual([]);
     const journal = JSON.parse(await readFile(join(plan.backupPath, "journal.json"), "utf8"));
@@ -73,7 +76,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     await store.plan(id, 1, testRc10rRecord("Added"), 3, null);
     await store.write(id, 1);
     expect(touched).toEqual(["RC10R.RC0"]);
-    expect(await readFile(data("MEMORY1.RC0"))).toEqual(before.get("MEMORY1.RC0"));
+    expect(digest(await readFile(data("MEMORY1.RC0")))).toBe(digest(before.get("MEMORY1.RC0")));
   });
   it("refuses overlapping leases, foreign owners, unreviewed writes and stale pedal content", async () => {
     const store = storeFor(),
@@ -96,7 +99,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     const before = await original();
     await store.inspect(id, 1);
     await expect(store.plan(id, 1, testRc10rRecord("New"), 1, 1)).rejects.toThrow(/cancelled/);
-    expect(await original()).toEqual(before);
+    expect(hashes(await original())).toEqual(hashes(before));
     await store.eject(id, 1);
     await store.release(id, 1);
   });
@@ -132,7 +135,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     expect(view.recoveries.some((r) => r.id === nextId)).toBe(true);
     await expect(afterCrash.plan(recoveryId, 3, record, 1, null)).rejects.toThrow(/Inspect/);
     await afterCrash.recover(recoveryId, 3, nextId);
-    expect(await original()).toEqual(before);
+    expect(hashes(await original())).toEqual(hashes(before));
     const kept = await readdir(join(backups, nextId));
     expect(kept.some((name) => name.startsWith("before-recovery-"))).toBe(true);
   });
@@ -178,7 +181,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     await expect(store.write(id, 1)).rejects.toThrow(/cancelled/);
     interrupt = false;
     await store.recover(id, 1, id);
-    expect(await original()).toEqual(before);
+    expect(hashes(await original())).toEqual(hashes(before));
     await store.eject(id, 1);
     await store.release(id, 1);
     const journal = JSON.parse(await readFile(join(backups, id, "journal.json"), "utf8"));
@@ -199,7 +202,7 @@ describe("RC-10R copied-filesystem transactions", () => {
     const before = await original();
     await writeFile(join(plan.backupPath, "ROLAND/DATA/RC10R.RC0"), "damaged backup");
     await expect(store.recover(id, 1, id)).rejects.toThrow(/Backup verification failed/);
-    expect(await original()).toEqual(before);
+    expect(hashes(await original())).toEqual(hashes(before));
     const journalPath = join(plan.backupPath, "journal.json");
     const journal = JSON.parse(await readFile(journalPath, "utf8"));
     await writeFile(journalPath, JSON.stringify({ ...journal, date: 123 }));
