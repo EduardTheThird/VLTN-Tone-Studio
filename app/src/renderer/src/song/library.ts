@@ -21,14 +21,7 @@ import {
 } from "@shared/song-library";
 import { songsFromHistory } from "@shared/library-history";
 import type { TimecodeTail } from "./performance/midi-scheduler";
-import {
-  playNext,
-  addToQueue as queueAdd,
-  removeFromQueue as queueRemove,
-  moveInQueue as queueMove,
-  setEntryOverride as queueOverride,
-  type QueueEdit,
-} from "./queue";
+import { playNext, addToQueue as queueAdd, removeFromQueue as queueRemove, moveInQueue as queueMove, setEntryOverride as queueOverride, type QueueEdit } from "./queue";
 import { overridesFor, type EntryOverride } from "@shared/entry-overrides";
 import { decodeTrack, encodeTrack } from "./codec/flac-client";
 import { storedBits } from "@shared/flac";
@@ -239,11 +232,7 @@ function libraryAudioUnsaved(): boolean {
   const state = useSong.getState(),
     { source } = state,
     stems = selectWholeSongStems(state);
-  return audioUnsaved(
-    source,
-    stems,
-    useSongLibrary.getState().index.songs.find((song) => song.id === source?.libraryId),
-  );
+  return audioUnsaved(source, stems, useSongLibrary.getState().index.songs.find((song) => song.id === source?.libraryId));
 }
 
 /**
@@ -256,10 +245,7 @@ export async function confirmLeave(): Promise<boolean> {
   const { source } = useSong.getState();
   const saved = library.index.songs.find((song) => song.id === source?.libraryId);
   const title = saved?.title ?? source?.name.replace(/\.[^.]+$/, "") ?? "this song";
-  const choice = await askLeave(
-    `Save ${title} first?`,
-    "The audio changes for this song, such as generated drums and bass or imported tracks, aren't saved yet.",
-  );
+  const choice = await askLeave(`Save ${title} first?`, "The audio changes for this song, such as generated drums and bass or imported tracks, aren't saved yet.");
   if (choice === "cancel") return false;
   if (choice === "discard") return true;
   await library.save(title, saved?.artist ?? "");
@@ -336,10 +322,7 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
     }),
   );
   const found = loaded.filter((entry) => entry !== null);
-  unreadTracks.set(
-    id,
-    song.audio.filter((track) => !found.some(([read]) => read === track)),
-  );
+  unreadTracks.set(id, song.audio.filter((track) => !found.some(([read]) => read === track)));
   const sourceEntry = found.find(([track]) => trackKindOf(track) === "source");
   const playable = found.filter(([track]) => trackKindOf(track) !== "source");
   if (!sourceEntry && !playable.length) throw new Error("Missing or damaged audio: none of this song's tracks can be read.");
@@ -347,13 +330,7 @@ async function fetchSong(index: SongLibrary, id: string): Promise<Omit<PreparedS
   if (sourceEntry) source = sourceEntry[1];
   else {
     const frames = Math.max(...playable.map(([, pcm]) => pcm.channels[0].length));
-    source = {
-      sampleRate: playable[0][1].sampleRate,
-      channels: mixDown(
-        playable.map(([, pcm]) => pcm.channels),
-        frames,
-      ),
-    };
+    source = { sampleRate: playable[0][1].sampleRate, channels: mixDown(playable.map(([, pcm]) => pcm.channels), frames) };
   }
   const stems: Record<string, PcmAudio> = {};
   const tracks: Record<string, TrackInfo> = {};
@@ -830,15 +807,6 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     },
     preparedNext: () => {
       const { prepared, queue, position, playlistPlaying } = get();
-      if (prepared) {
-        try {
-          const options = JSON.parse(prepared.settings[":options"] || "{}");
-          // A band update happens stopped, before Play. Do not start its old audio early in a gapless handover.
-          if (options.bandOutOfDate === true && Object.keys(options.generatedParts ?? {}).length) return null;
-        } catch {
-          return null;
-        }
-      }
       return playlistPlaying && prepared && queue[position + 1] === prepared.id ? prepared : null;
     },
     advanceToPrepared: (id) => {
@@ -1067,9 +1035,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const changed = await api().applyTrackSettings(id);
         set({
           index: await api().index(),
-          notice: changed
-            ? `Applied the track settings to ${changed} similar song${changed === 1 ? "" : "s"}.`
-            : "No other saved song has the same imported tracks.",
+          notice: changed ? `Applied the track settings to ${changed} similar song${changed === 1 ? "" : "s"}.` : "No other saved song has the same imported tracks.",
         });
       }),
     remove: (id) =>
