@@ -22,6 +22,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Send drums to your RC-10R",
+    text: "On macOS, open the Band panel’s RC-10R export dialog and connect the pedal by USB. Tone Studio detects it and enables Send to RC-10R… (beta). Choose a User rhythm, back up the complete pedal, review the replacement and send. Other rhythms stay intact. Kit and tempo can also be saved for one phrase memory. Interrupted transfers have backup recovery. Check the pedal’s six parts and save its phrase memory before confirming the transfer; pedal and listening checks are still pending.",
+    image: band,
+  },
+  {
     title: "Bring your set up to date",
     text: "In Songs & playlists, select a playlist and open Playlist menu… → Bring this set up to date…. Back up first, then update older generated drums and bass in one run. You can switch clean bass to Warm and add the pedal's names to GP-150/GP-180 cue labels. Your rendered parts, bass notes and bar marks stay yours. Each song is saved before moving on; a missing tone skips the song. The playlist check and per-song reminders help you choose the musical details before rehearsal.",
     image: band,
@@ -62,7 +67,11 @@ function SlideCredit({ credit }: { credit: NonNullable<Slide["credit"]> }) {
   return (
     <p className="text-[12px] text-pretty text-silkscreen-3">
       Contributed by{" "}
-      <button type="button" className="text-silkscreen underline underline-offset-2" onClick={() => void host.app.openExternal(`https://github.com/${credit.handle}`)}>
+      <button
+        type="button"
+        className="text-silkscreen underline underline-offset-2"
+        onClick={() => void host.app.openExternal(`https://github.com/${credit.handle}`)}
+      >
         @{credit.handle}
       </button>
       , {credit.note}.
@@ -94,10 +103,19 @@ export function WhatsNewDialog() {
         <DialogTitle className="text-lg font-semibold tracking-[-0.012em]">What's new in {WHATS_NEW_VERSION}</DialogTitle>
         <DialogDescription className="sr-only">Highlights of this release.</DialogDescription>
         <div className="relative">
-          <div ref={track} onScroll={onScroll} className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={track}
+            onScroll={onScroll}
+            className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {SLIDES.map((s, i) => (
               <section key={s.title} aria-label={`${i + 1} of ${SLIDES.length}`} className="flex w-full shrink-0 snap-start flex-col gap-3">
-                <img src={s.image} alt="" draggable={false} className="aspect-[3/2] max-h-[max(120px,calc(100vh-270px))] w-full rounded-sm border border-white/10 object-cover object-top" />
+                <img
+                  src={s.image}
+                  alt=""
+                  draggable={false}
+                  className="aspect-[3/2] max-h-[max(120px,calc(100vh-270px))] w-full rounded-sm border border-white/10 object-cover object-top"
+                />
                 <h3 className="text-[15px] font-semibold">{s.title}</h3>
                 <p className="text-[13px] text-pretty text-silkscreen-2">{s.text}</p>
                 {s.credit && <SlideCredit credit={s.credit} />}
@@ -111,7 +129,14 @@ export function WhatsNewDialog() {
               <ChevronLeft />
             </Button>
             {SLIDES.map((s, i) => (
-              <button key={s.title} type="button" aria-label={`Slide ${i + 1}`} aria-current={i === index} onClick={() => goTo(i)} className="grid size-5 place-items-center">
+              <button
+                key={s.title}
+                type="button"
+                aria-label={`Slide ${i + 1}`}
+                aria-current={i === index}
+                onClick={() => goTo(i)}
+                className="grid size-5 place-items-center"
+              >
                 <span className={`size-2 rounded-full ${i === index ? "bg-brand" : "bg-white/25"}`} />
               </button>
             ))}

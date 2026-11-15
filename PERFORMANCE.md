@@ -267,7 +267,7 @@ After a mid-song pause, seek or MIDI reconnect, use **Play from beginning**. Man
 
 **Pedal rhythm status** shows the song pulse BPM, quarter-note clock target, output/channel and last queued tempo command. These values are not measured pedal BPM. **Use pedal drums in every song** silences the app’s drum stems and generated drum tracks across the set, including the next prepared song, without changing saved mixes. It cannot remove drums from an unsplit mixed recording.
 
-**RC-10R transfer status** distinguishes **Needs export**, **Needs transfer confirmation** and **Transfer confirmed**. Musical input or export-choice changes invalidate the exported revision; mixer and trim-only changes do not alter its full-length passages. After exporting, import and Apply in Rhythm Converter, select the User rhythm on the pedal and save its phrase memory, then use **Confirm transferred rhythm** with the phrase memory and User slot. This records a performer confirmation, not a device readback. Older exports have no revision record and start unverified.
+**RC-10R transfer status** distinguishes **Needs export**, **Needs transfer confirmation** and **Transfer confirmed**. Musical input or export-choice changes invalidate the exported revision; mixer and trim-only changes do not alter its full-length passages. Send with the macOS native beta below, or export and transfer the file. Select the User rhythm on the pedal and save its phrase memory, then use **Confirm transferred rhythm** with the phrase memory and User slot. This records your pedal check. A successful native file readback still needs that performer confirmation. Older exports have no revision record and start unverified.
 
 **Test RC-10R connection** provides explicit memory, Start, Fill, pattern-change, Ending/Stop and 100/180 BPM checks while song playback is stopped and MIDI is armed. Restore stops the test and sends the song’s target tempo. Starting playback or leaving the test view also cleans up the test on the same connection; it never sends cleanup to a replacement output. Song BPM and saved cues are not changed by these tests.
 
@@ -504,6 +504,16 @@ If the grid is wrong, correct it:
 - **Export for BOSS RC-10R…** opens a six-part drum export after Generate. It saves a complete native rhythm, a drum-only MIDI file and an import guide for RC-10R Rhythm Converter. See below.
 
 **Export drums for the RC-10R.**
+
+**Native sending — macOS beta.** Generate the drums first, then open **Export for BOSS RC-10R…** in the Band panel. Connect one RC-10R by USB; the dialog detects its MIDI input and output and enables **Send to RC-10R… (beta)**. Close other pedal editors and stop playback. Acknowledge the beta notice, then connect. Choose an existing **User rhythm (1–50)** or the next empty slot; replacing an occupied slot needs its checkbox. Existing names are shown, and every other rhythm record is preserved.
+
+By default only the shared rhythm bank changes. **Also set this rhythm’s kit and tempo in one phrase memory** optionally changes that User rhythm’s entry in the chosen **phrase memory (1–99)**. User rhythms and phrase memories are different destinations. Sending does not select the rhythm in that memory or alter its looper tracks. Select the User rhythm and save its phrase memory on the pedal afterward.
+
+**Back up and review…** copies and verifies the complete `ROLAND` folder, including recorded loops and settings, into Tone Studio’s data folder under `rc10r-backups`. The review shows the full backup path and **Show backup**. Large recordings can take several minutes. Review the replacement, then press **Send User N**. Tone Studio checks the files after writing, ejects the storage drive and leaves editor mode before reporting success. Keep USB connected until it finishes. Playback and performance MIDI stay blocked throughout that connection.
+
+If interrupted, keep the backup and use **Disconnect and close**. Reconnecting offers matching unfinished transfer backups, even if memory copies disagree. **Restore from transfer backup** restores only the bank and/or memory files that operation changed, after checking the backup and preserving their current contents. It does not replace system files or recordings. If USB is disconnected, eject any remaining drive in Finder and press EXIT on the pedal before using **Release disconnected pedal**. If the pedal reports damaged data, stop and keep the backup for recovery. Pedal playback/listening checks for this beta are pending; check all six parts, reload the rhythm and confirm only after your check.
+
+**File export — all platforms.**
 
 1. Stop playback and **Generate** with drums enabled. Open **Export for BOSS RC-10R…**. Existing generated parts update automatically after musical changes; opening the panel also prepares the note data needed for export.
 2. Choose the **Meter** and **BPM**. The exporter removes recording tempo drift and keeps the selected notes' swing and velocities. In 6/8, BPM counts dotted quarters and the source grid must have two beats per bar. In 2/4, 3/4 and 4/4, BPM counts quarter notes. Irregular bars cannot be exported as a fixed-meter pattern.

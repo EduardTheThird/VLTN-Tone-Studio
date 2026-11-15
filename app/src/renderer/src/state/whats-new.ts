@@ -2,7 +2,7 @@
 import { loadDevice, loadLastConnected } from "./device-storage";
 
 /** Release the notes in WhatsNewDialog describe. Bump it with the notes, not with package.json. */
-export const WHATS_NEW_VERSION = "0.9.42";
+export const WHATS_NEW_VERSION = "0.9.44";
 const SEEN_KEY = "gp5.whatsNewSeen.v1";
 
 export const loadWhatsNewSeen = (): string | null => {
@@ -22,6 +22,6 @@ export function saveWhatsNewSeen(version = WHATS_NEW_VERSION) {
 }
 
 /** Open on the first launch after an upgrade. A first-time user (never connected a pedal) has nothing to compare with. */
-export const shouldShowWhatsNew = (seen: string | null, returning: boolean): boolean => seen === WHATS_NEW_VERSION ? false : seen !== null || returning;
+export const shouldShowWhatsNew = (seen: string | null, returning: boolean): boolean => (seen === WHATS_NEW_VERSION ? false : seen !== null || returning);
 
 export const isReturningUser = () => loadDevice() !== null || loadLastConnected() !== null;
