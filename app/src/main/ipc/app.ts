@@ -64,7 +64,16 @@ const watchedSenders = new WeakSet<object>();
 export const isShowRunning = () => showRunning;
 
 /** What closing the window should do: ask about a pedal job first, then about a running show, else close. */
-export function closeDecision({ job, show }: { job: boolean; show: boolean }): "job-prompt" | "show-prompt" | "close" {
+export function closeDecision({
+  job,
+  show,
+  rc10r = false,
+}: {
+  job: boolean;
+  show: boolean;
+  rc10r?: boolean;
+}): "rc10r-prompt" | "job-prompt" | "show-prompt" | "close" {
+  if (rc10r) return "rc10r-prompt";
   if (job) return "job-prompt";
   return show ? "show-prompt" : "close";
 }

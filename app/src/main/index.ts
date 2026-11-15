@@ -17,7 +17,7 @@ import { CHART_ANNOTATIONS_FILE, CHART_FILE } from "@shared/song-library";
 import { registerUpdateIpc } from "./ipc/update";
 import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
 import { registerLogIpc } from "./ipc/log";
-import { registerRc10rIpc } from "./ipc/rc10r";
+import { isRc10rBusy, registerRc10rIpc } from "./ipc/rc10r";
 import { registerClickSamplesIpc } from "./ipc/click-samples";
 import type { AppEvent } from "@shared/ipc";
 import { registerBluetoothSetupIpc } from "./bluetooth-setup";
@@ -205,7 +205,11 @@ async function createWindow() {
   win.on("close", (e) => {
     if (!win) return;
     // overlays.md › Electron notes: don't drop a backup or write by closing the window by accident.
-    const decision = closeDecision({ job: isJobRunning(), show: isShowRunning() && !quitConfirmed });
+    const decision = closeDecision({ job: isJobRunning(), show: isShowRunning() && !quitConfirmed, rc10r: isRc10rBusy() });
+    if (decision === "rc10r-prompt") {
+      keepNativeTransferOpen(win);
+      return e.preventDefault();
+    }
     if (decision === "job-prompt") {
       const choice = dialog.showMessageBoxSync(win, {
         type: "warning",
@@ -327,10 +331,24 @@ function watchRenderer(w: BrowserWindow): void {
 let quitConfirmed = false;
 app.on("before-quit", (e) => {
   const win = getWindow();
+  if (win && !win.isDestroyed() && isRc10rBusy()) {
+    keepNativeTransferOpen(win);
+    return e.preventDefault();
+  }
   if (quitConfirmed || !win || win.isDestroyed() || !isShowRunning()) return;
   if (askKeepPlaying(win) === 0) return e.preventDefault();
   quitConfirmed = true;
 });
+
+function keepNativeTransferOpen(win: BrowserWindow): void {
+  dialog.showMessageBoxSync(win, {
+    type: "warning",
+    buttons: ["Keep open"],
+    message: "An RC-10R storage connection is open",
+    detail:
+      "Use Disconnect and close in the native transfer dialog before quitting. Keep USB connected until storage is ejected and editor mode ends. An interrupted write may require restoring the transfer backup.",
+  });
+}
 
 function askKeepPlaying(win: BrowserWindow): number {
   return dialog.showMessageBoxSync(win, {

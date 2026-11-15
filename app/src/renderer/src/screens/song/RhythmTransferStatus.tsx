@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { confirmRhythmTransfer, rhythmTransferRecord, rhythmTransferStatus } from "@/song/band/rhythm-transfer";
 import { readSettings, setSetting, flushSettings } from "@/song/performance/settings";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
-/** A file save does not prove what is stored on the pedal. Only the performer can confirm the converter transfer. */
+/** File readback does not establish the pedal's selected rhythm or playback. Only the performer can confirm those. */
 export function RhythmTransferStatus({ songKey, locked = false }: { songKey: string; locked?: boolean }) {
   useSongSettingsRevision(songKey);
   const settings = readSettings(songKey);
@@ -46,8 +46,8 @@ export function RhythmTransferStatus({ songKey, locked = false }: { songKey: str
         {status === "Transfer confirmed" ? ` · phrase memory ${memory}, User rhythm ${record?.confirmed?.userSlot}` : ""}.
       </p>
       <p>
-        Exported notes are separate from the pedal’s stored rhythm. After Import → Apply in Rhythm Converter, select the User rhythm and save its phrase memory
-        on the pedal, then confirm here.
+        After native sending or transferring an exported file, select the User rhythm and save its phrase memory on the pedal, check its parts, then confirm
+        here.
       </p>
       <fieldset disabled={locked || saving || status === "Needs export"} className="flex flex-wrap items-end gap-3">
         <label>
@@ -79,7 +79,7 @@ export function RhythmTransferStatus({ songKey, locked = false }: { songKey: str
           Confirm transferred rhythm
         </Button>
       </fieldset>
-      <p>Confirmation records your check; the app cannot read back the pedal’s stored rhythm.</p>
+      <p>Confirmation records your check of the selected rhythm and phrase memory, including playback.</p>
       {error && <p role="alert">{error}</p>}
     </section>
   );

@@ -9,6 +9,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Added
 - **Send generated drum rhythms directly to the RC-10R (macOS beta).** The rhythm export dialog detects the connected USB MIDI pair and enables native sending. Choose User rhythm 1–50, acknowledge an occupied slot, and review a complete verified pedal backup before writing. Other rhythm records keep their bytes. Optional kit and tempo settings target a separate phrase memory, 1–99.
 - Native sending checks file readback, ejects storage before leaving editor mode, blocks performance MIDI during the connection, and offers recovery for interrupted transfers. Pedal playback and listening checks remain pending. Windows and browser builds keep file export.
+- Stop the pedal’s rhythm/looper and save any unsaved phrase before connecting. Bounded state queries verify editor and mount transitions, control messages enter the session log, and quitting waits for native disconnect.
 
 ## [0.9.43] — 2026-11-14
 

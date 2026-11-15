@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { host } from "@/host";
 import type { Rc10rStorageView, Rc10rWritePlan } from "@shared/host/rc10r";
 import { Rc10rConnection } from "@/song/band/rc10r-connection";
+import { sessionLog } from "@/state/session-log";
 
 // A failed disconnect remains reachable when the song screen is reopened.
 let retainedConnection: Rc10rConnection | undefined;
@@ -69,7 +70,11 @@ export function useRc10rTransfer({ record, onSent, onClose }: Rc10rTransferProps
   const connect = () =>
     run("connecting", async () => {
       if (!host.rc10r) throw new Error("Native transfer requires the macOS desktop app.");
-      const next = new Rc10rConnection({ api: host.rc10r, access: () => navigator.requestMIDIAccess({ sysex: true }) });
+      const next = new Rc10rConnection({
+        api: host.rc10r,
+        access: () => navigator.requestMIDIAccess({ sysex: true }),
+        log: (line) => sessionLog("RC10R", line),
+      });
       connection.current = retainedConnection = next;
       const result = await next.open();
       if (alive.current) {

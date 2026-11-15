@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Rc10rConnection, rc10rControl, rc10rState } from "./rc10r-connection";
 import type { Rc10rApi } from "@shared/host/rc10r";
 
-function fixture(options: { occupied?: boolean; extra?: boolean; noAck?: boolean } = {}) {
+function fixture(options: { occupied?: boolean; extra?: boolean; noAck?: boolean; silentWrites?: boolean; ignoreWrites?: boolean } = {}) {
   const input = new EventTarget();
   const log: string[] = [];
   const open = vi.fn(async () => ({}));
+  const wait = vi.fn(async (_ms: number) => {}),
+    trace = vi.fn();
+  const states = [Number(options.occupied ?? false), 0];
   Object.assign(input, { id: "in", name: "BOSS_RC-10R", state: "connected", open });
   const output = {
     id: "out",
@@ -15,7 +18,11 @@ function fixture(options: { occupied?: boolean; extra?: boolean; noAck?: boolean
     send: vi.fn((bytes: number[]) => {
       log.push(`midi:${bytes[7]}:${bytes[11]}:${bytes[12]}`);
       if (options.noAck) return;
-      const value = bytes[7] === 0x11 ? Number(options.occupied ?? false) : bytes[12];
+      if (bytes[7] === 0x12) {
+        if (!options.ignoreWrites) states[bytes[11]] = bytes[12];
+        if (options.silentWrites) return;
+      }
+      const value = states[bytes[11]];
       const event = new Event("midimessage");
       Object.assign(event, { data: new Uint8Array(rc10rControl("write", bytes[11] as 0 | 1, value)) });
       input.dispatchEvent(event);
@@ -47,13 +54,56 @@ function fixture(options: { occupied?: boolean; extra?: boolean; noAck?: boolean
     api,
     access: async () => access as unknown as MIDIAccess,
     claim: () => release,
-    wait: async () => {},
+    wait,
+    log: trace,
     timeoutMs: 50,
+    pollMs: 10,
   });
-  return { connection, output, input, api, log, release };
+  return { connection, output, input, api, log, release, wait, trace };
 }
 afterEach(() => vi.useRealTimers());
 describe("RC-10R MIDI and storage ownership", () => {
+  it("keeps connection and cleanup working if diagnostic logging fails", async () => {
+    const f = fixture();
+    f.trace.mockImplementation(() => {
+      throw new Error("log unavailable");
+    });
+    await f.connection.open();
+    await f.connection.close();
+    expect(f.connection.active).toBe(false);
+    expect(f.release).toHaveBeenCalledOnce();
+  });
+  it("polls editor-on, mount and editor-off state when writes have no unsolicited echo", async () => {
+    vi.useFakeTimers();
+    const f = fixture({ silentWrites: true });
+    const opening = f.connection.open();
+    await vi.advanceTimersByTimeAsync(30);
+    await opening;
+    expect(f.api.inspect).toHaveBeenCalledOnce();
+    expect(f.output.send.mock.calls.map(([bytes]) => [bytes[7], bytes[11], bytes[12]])).toEqual([
+      [0x11, 0, 0],
+      [0x12, 0, 1],
+      [0x11, 0, 0],
+      [0x12, 1, 1],
+      [0x11, 1, 0],
+    ]);
+    const closing = f.connection.close();
+    await vi.advanceTimersByTimeAsync(20);
+    await closing;
+    expect(f.log.slice(-4)).toEqual(["eject", "midi:18:0:0", "midi:17:0:0", "release"]);
+    const count = f.output.send.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.output.send).toHaveBeenCalledTimes(count);
+  });
+  it("refuses a wrong polled state at the deadline and never reaches filesystem inspection", async () => {
+    vi.useFakeTimers();
+    const f = fixture({ silentWrites: true, ignoreWrites: true });
+    const opening = f.connection.open().catch((error) => error);
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await opening).message).toContain("write editor state 1");
+    expect(f.api.inspect).not.toHaveBeenCalled();
+    expect(f.release).toHaveBeenCalledOnce();
+  });
   it("matches captured connection frames and refuses corrupt or unrelated state replies", () => {
     expect(rc10rControl("read", 0)).toEqual([240, 65, 16, 0, 0, 0, 95, 17, 127, 112, 0, 0, 0, 0, 0, 1, 16, 247]);
     const bytes = new Uint8Array(rc10rControl("write", 0, 1));
@@ -71,6 +121,9 @@ describe("RC-10R MIDI and storage ownership", () => {
     expect(f.log.slice(-3)).toEqual(["eject", "midi:18:0:0", "release"]);
     expect(f.release).toHaveBeenCalledOnce();
     expect(f.connection.active).toBe(false);
+    expect(f.wait.mock.calls).toEqual([[1000], [1000], [1000]]);
+    expect(f.trace).toHaveBeenCalledWith("OUT f0 41 10 00 00 00 5f 12 7f 70 00 00 01 10 f7");
+    expect(f.trace).toHaveBeenCalledWith("IN f0 41 10 00 00 00 5f 12 7f 70 00 00 01 10 f7");
   });
   it("never writes editor-off or ejects a session already owned by somebody else", async () => {
     const f = fixture({ occupied: true });

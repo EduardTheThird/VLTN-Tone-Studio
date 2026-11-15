@@ -505,7 +505,7 @@ If the grid is wrong, correct it:
 
 **Export drums for the RC-10R.**
 
-**Native sending — macOS beta.** Generate the drums first, then open **Export for BOSS RC-10R…** in the Band panel. Connect one RC-10R by USB; the dialog detects its MIDI input and output and enables **Send to RC-10R… (beta)**. Close other pedal editors and stop playback. Acknowledge the beta notice, then connect. Choose an existing **User rhythm (1–50)** or the next empty slot; replacing an occupied slot needs its checkbox. Existing names are shown, and every other rhythm record is preserved.
+**Native sending — macOS beta.** Generate the drums first, then open **Export for BOSS RC-10R…** in the Band panel. Connect one RC-10R by USB; the dialog detects its MIDI input and output and enables **Send to RC-10R… (beta)**. Close other pedal editors and stop both the app and the pedal’s rhythm/looper. Save any unsaved phrase on the pedal before connecting; the pedal can refuse storage mode otherwise. Acknowledge the beta notice, then connect. Choose an existing **User rhythm (1–50)** or the next empty slot; replacing an occupied slot needs its checkbox. Existing names are shown, and every other rhythm record is preserved.
 
 By default only the shared rhythm bank changes. **Also set this rhythm’s kit and tempo in one phrase memory** optionally changes that User rhythm’s entry in the chosen **phrase memory (1–99)**. User rhythms and phrase memories are different destinations. Sending does not select the rhythm in that memory or alter its looper tracks. Select the User rhythm and save its phrase memory on the pedal afterward.
 

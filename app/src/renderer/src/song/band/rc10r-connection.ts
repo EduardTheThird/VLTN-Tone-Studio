@@ -36,6 +36,8 @@ export interface Rc10rConnectionOptions {
   claim?: (owner: object) => () => void;
   wait?: (ms: number) => Promise<void>;
   timeoutMs?: number;
+  pollMs?: number;
+  log?: (line: string) => void;
 }
 
 /** Owns one paired MIDI link and one opaque storage lease through disconnect, including on failures. */
@@ -50,6 +52,7 @@ export class Rc10rConnection {
   private cancelled = false;
   private pending?: { offset: number; expected?: number; resolve(value: number): void };
   private readonly receive = (event: MIDIMessageEvent) => {
+    if (event.data && event.data.length <= 64 && HEADER.every((byte, i) => event.data?.[i] === byte)) this.trace("IN", event.data);
     if (!this.pending || !event.data) return;
     const state = rc10rState(event.data, this.pending.offset);
     if (state !== null && (this.pending.expected === undefined || state === this.pending.expected)) this.pending.resolve(state);
@@ -61,27 +64,61 @@ export class Rc10rConnection {
   private check(): void {
     if (this.cancelled) throw new Error("Transfer cancelled. Close the connection before using the pedal.");
   }
+  private trace(direction: string, bytes: ArrayLike<number>): void {
+    try {
+      this.options.log?.(`${direction} ${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ")}`);
+    } catch {
+      /* Diagnostic storage must never interrupt MIDI cleanup. */
+    }
+  }
+  private send(command: "read" | "write", offset: 0 | 1, value = 0): void {
+    const bytes = rc10rControl(command, offset, value);
+    this.trace("OUT", bytes);
+    this.output!.send(bytes);
+  }
+  private wait(): Promise<void> {
+    return (this.options.wait ?? ((ms) => new Promise((done) => setTimeout(done, ms))))(1000);
+  }
   private exchange(command: "read" | "write", offset: 0 | 1, value = 0, expected?: number): Promise<number> {
     if (this.pending) return Promise.reject(new Error("An RC-10R acknowledgement is already pending."));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let poll: ReturnType<typeof setInterval> | undefined;
+      const clear = () => {
+        clearTimeout(timer);
+        clearInterval(poll);
         this.pending = undefined;
-        reject(new Error("The RC-10R did not acknowledge the storage command. Check USB and retry closing the connection."));
+      };
+      const label = `${command} ${offset === 0 ? "editor" : "mount"} state${command === "write" ? ` ${value}` : ""}`;
+      const timer = setTimeout(() => {
+        clear();
+        reject(
+          new Error(
+            `The RC-10R did not acknowledge ${label}. Stop its rhythm and looper, save any unsaved phrase, and check USB before retrying. Close the connection before using the pedal.`,
+          ),
+        );
       }, this.options.timeoutMs ?? 5000);
       this.pending = {
         offset,
         expected,
         resolve: (state) => {
-          clearTimeout(timer);
-          this.pending = undefined;
+          clear();
           resolve(state);
         },
       };
       try {
-        this.output!.send(rc10rControl(command, offset, value));
+        // Explicit RQ1 verifies the observed control address even when a DT1 echo is absent. Stop at the acknowledgement deadline.
+        if (command === "write")
+          poll = setInterval(() => {
+            try {
+              this.send("read", offset);
+            } catch (error) {
+              clear();
+              reject(error);
+            }
+          }, this.options.pollMs ?? 1000);
+        this.send(command, offset, value);
       } catch (error) {
-        clearTimeout(timer);
-        this.pending = undefined;
+        clear();
         reject(error);
       }
     });
@@ -104,10 +141,13 @@ export class Rc10rConnection {
       this.input.addEventListener("midimessage", this.receive);
       this.check();
       if ((await this.exchange("read", 0)) !== 0) throw new Error("Another editor owns the RC-10R. Close it before opening native transfer.");
+      // The observed editor lifecycle waits one second between these state transitions.
+      await this.wait();
       this.check();
       // Mark ownership before sending: an acknowledgement can be lost after the pedal has accepted the request.
       this.ownsEditor = true;
       await this.exchange("write", 0, 1, 1);
+      await this.wait();
       this.check();
       await this.exchange("write", 1, 1, 1);
       for (let attempt = 0; ; attempt++) {
@@ -117,7 +157,7 @@ export class Rc10rConnection {
           return this.inspection;
         } catch (error) {
           if (attempt >= 9 || !(error instanceof Error) || !error.message.startsWith("Waiting for RC-10R storage")) throw error;
-          await (this.options.wait ?? ((ms) => new Promise((done) => setTimeout(done, ms))))(1000);
+          await this.wait();
         }
       }
     } catch (error) {
@@ -167,6 +207,7 @@ export class Rc10rConnection {
       if (this.ownsEditor) {
         // Never exit editor mode while the filesystem is mounted, even after a cancelled or failed write.
         await this.options.api.eject(this.id);
+        await this.wait();
         await this.exchange("write", 0, 0, 0);
         this.ownsEditor = false;
       }

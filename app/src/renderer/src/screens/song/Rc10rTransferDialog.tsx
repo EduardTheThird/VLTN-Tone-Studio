@@ -61,7 +61,10 @@ export function Rc10rTransferDialog(props: Rc10rTransferProps) {
           <DialogDescription>Keep every other User rhythm. Back up the whole pedal, review one replacement, then send and disconnect.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 space-y-3 overflow-y-auto text-sm">
-          <p>Pedal and listening checks are pending. A storage session temporarily takes the pedal out of performance mode. Close other editors first.</p>
+          <p>
+            Pedal and listening checks are pending. Stop the pedal’s rhythm and looper, save any unsaved phrase, and close other editors before connecting. A
+            storage session temporarily takes the pedal out of performance mode.
+          </p>
           {!view && !connection.current?.active && (
             <label className="flex items-center gap-2">
               <Checkbox checked={beta} onCheckedChange={(checked) => setBeta(checked === true)} disabled={busy} />I understand this is a beta transfer and will

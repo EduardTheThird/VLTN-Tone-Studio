@@ -195,6 +195,8 @@ describe("closeDecision", () => {
     expect(closeDecision({ job: true, show: true })).toBe("job-prompt");
     expect(closeDecision({ job: false, show: true })).toBe("show-prompt");
     expect(closeDecision({ job: false, show: false })).toBe("close");
+    expect(closeDecision({ job: true, show: true, rc10r: true })).toBe("rc10r-prompt");
+    expect(closeDecision({ job: false, show: false, rc10r: true })).toBe("rc10r-prompt");
   });
 });
 
