@@ -1,3 +1,4 @@
+import { isRc10rBusy } from "./rc10r";
 import { app, BrowserWindow, shell } from "electron";
 import { readFile, rename, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -55,7 +56,7 @@ export function chooseSuitePath(path: string): Promise<AppSettings> {
 
 /** A backup or write is running (the renderer reports its progress); window close asks first. */
 let jobProgress: number | null = null;
-export const isJobRunning = () => jobProgress !== null;
+export const isJobRunning = () => jobProgress !== null || isRc10rBusy();
 
 /** A song or playlist is playing (the renderer reports it); quitting and "Restart to update" ask first. */
 let showRunning = false;
@@ -94,7 +95,8 @@ const isHttp = (url: string) => /^https?:\/\//i.test(url);
 
 /** Checks a renderer-supplied path against what main handed out; returns the absolute path to pass to shell. */
 async function allowedShellPath(path: unknown): Promise<string> {
-  if (typeof path !== "string" || !(await shellPaths.isAllowed(path))) throw new HostError("invalid", "Tone Studio only opens its own folders and files you chose");
+  if (typeof path !== "string" || !(await shellPaths.isAllowed(path)))
+    throw new HostError("invalid", "Tone Studio only opens its own folders and files you chose");
   return resolve(path);
 }
 

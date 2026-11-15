@@ -17,7 +17,11 @@ import type { AudienceHostApi } from "./host/audience";
 import type { BandSyncHostApi } from "./host/band-sync";
 import type { ClickSamplesApi } from "./host/click-samples";
 
+import type { Rc10rApi } from "./host/rc10r";
+
 export interface HostApi {
+  /** Native RC-10R storage transfer is available in the macOS desktop beta. */
+  rc10r?: Rc10rApi;
   kind: "electron" | "web";
   platform: "darwin" | "win32" | "linux" | "web";
   app: AppApi;

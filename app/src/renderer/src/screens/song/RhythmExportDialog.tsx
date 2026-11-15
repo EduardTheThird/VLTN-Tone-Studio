@@ -13,6 +13,7 @@ import {
   RHYTHM_ROLES,
   MAX_RHYTHM_BARS,
   rhythmExportFiles,
+  rhythmBankPattern,
   rhythmPreview,
   rhythmSources,
   type RhythmMeter,
@@ -24,6 +25,10 @@ import { currentRhythmAutomation } from "@/song/performance/rhythm-automation";
 import { recordRhythmExport } from "@/song/band/rhythm-transfer";
 import { readSettings } from "@/song/performance/settings";
 import { RhythmTransferStatus } from "./RhythmTransferStatus";
+import { Rc10rTransferDialog } from "./Rc10rTransferDialog";
+import { hasRetainedRc10rConnection } from "./use-rc10r-transfer";
+import { useRc10rDevice } from "@/song/band/rc10r-device";
+import { encodeRhythmBank } from "@/song/band/rhythm-bank";
 import { playRhythmPreview } from "@/song/band/rhythm-preview";
 
 interface RhythmExportDialogProps {
@@ -35,6 +40,7 @@ interface RhythmExportDialogProps {
 
 /** A setup is kept separately from generation settings, so export choices do not invalidate the song's generated audio. */
 export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: RhythmExportDialogProps) {
+  const device = useRc10rDevice(!!host.rc10r);
   const [setup, setSetup] = useState(() => {
     const setup = parseRhythmSetup(readOptions<Record<string, unknown>>(songKey, {}).rhythmExport, snapshot);
     const plan = currentRhythmAutomation({ key: songKey, title: snapshot.name, duration: snapshot.duration, settings: readSettings(songKey) });
@@ -43,6 +49,7 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
   });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [native, setNative] = useState<{ record: Uint8Array; exported: ReturnType<typeof recordRhythmExport> } | null>(null);
   const [previewing, setPreviewing] = useState<RhythmRole | null>(null);
   const stopPreview = useRef<(() => void) | null>(null);
   const previewRequest = useRef(0);
@@ -74,7 +81,7 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
       return { role, part: null, error: error instanceof Error ? error.message : String(error) };
     }
   });
-  const blocked = disabled || saving;
+  const blocked = disabled || saving || native !== null;
 
   const update = (next: RhythmSetup) => {
     stopCurrentPreview();
@@ -138,13 +145,13 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !saving) onClose();
+        if (!open && !saving && !native) onClose();
       }}
     >
       <DialogContent
         className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-4xl"
         onEscapeKeyDown={(event) => {
-          if (saving) event.preventDefault();
+          if (saving || native) event.preventDefault();
         }}
       >
         <DialogHeader>
@@ -283,6 +290,7 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
             Pattern 2 during your performance.
           </p>
           <RhythmTransferStatus songKey={songKey} locked={blocked} />
+          {host.rc10r && <p role="status">{device.message}</p>}
           {disabled && <p role="alert">Stop playback and generate drums again if the song or beat grid changed.</p>}
           {message && <p role="status">{message}</p>}
         </div>
@@ -295,14 +303,46 @@ export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: Rhy
               </Button>
             </>
           )}
-          <Button variant="outline" disabled={saving} onClick={onClose}>
+          <Button variant="outline" disabled={saving || native !== null} onClick={onClose}>
             Close export
           </Button>
+          {host.rc10r && (
+            <Button
+              variant="outline"
+              disabled={blocked || rows.some((row) => !row.part) || (!device.connected && !hasRetainedRc10rConnection())}
+              onClick={() => {
+                stopCurrentPreview();
+                try {
+                  const bank = encodeRhythmBank([rhythmBankPattern(snapshot, setup)]);
+                  const starting = { ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup };
+                  setNative({
+                    record: bank.slice(12, 40_128),
+                    exported: recordRhythmExport({ ...readSettings(songKey), ":options": JSON.stringify(starting) }),
+                  });
+                } catch (error) {
+                  setMessage(error instanceof Error ? error.message : String(error));
+                }
+              }}
+            >
+              Send to RC-10R… (beta)
+            </Button>
+          )}
           <Button disabled={blocked || rows.some((row) => !row.part)} onClick={() => void exportFiles()}>
             {saving ? "Saving…" : "Export rhythm files…"}
           </Button>
         </div>
       </DialogContent>
+      {native && (
+        <Rc10rTransferDialog
+          record={native.record}
+          onClose={() => setNative(null)}
+          onSent={() => {
+            const value = { ...readOptions<Record<string, unknown>>(songKey, {}), rhythmExport: setup, rhythmTransfer: native.exported };
+            setSetting(songKey, ":options", JSON.stringify(value));
+            setMessage("Native rhythm files checked and disconnected. Confirm the transfer after checking the pedal.");
+          }}
+        />
+      )}
     </Dialog>
   );
 }

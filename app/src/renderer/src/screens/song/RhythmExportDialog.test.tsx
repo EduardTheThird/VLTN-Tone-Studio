@@ -4,12 +4,39 @@ import { RhythmExportDialog } from "./RhythmExportDialog";
 import { fixedBeatGrid } from "@/song/band/beat-grid";
 import { assembleRhythmPart, RHYTHM_ROLES, rhythmPreview, suggestRhythmSetup, type RhythmSnapshot } from "@/song/band/rhythm-export";
 import { parseSmf } from "@/song/performance/smf";
+import { readRc10rRecord } from "@shared/rc10r-bank";
 
 const mocks = vi.hoisted(() => ({
   save: vi.fn(async (_files: { name: string; bytes: Uint8Array }[], _title: string): Promise<string | null> => "/exports"),
   preview: vi.fn((_notes: unknown, _duration: number, _done: () => void) => ({ ready: Promise.resolve(), stop: vi.fn() })),
+  native: undefined as object | undefined,
+  device: { connected: false, message: "Connect the RC-10R by USB to enable native sending." },
+  nativeRecord: null as Uint8Array | null,
 }));
-vi.mock("@/host", () => ({ host: { song: { saveFiles: mocks.save } } }));
+vi.mock("@/host", () => ({
+  host: {
+    song: { saveFiles: mocks.save },
+    get rc10r() {
+      return mocks.native;
+    },
+  },
+}));
+vi.mock("@/song/band/rc10r-device", () => ({ useRc10rDevice: () => mocks.device }));
+vi.mock("./Rc10rTransferDialog", () => ({
+  Rc10rTransferDialog: ({ record, onSent, onClose }: { record: Uint8Array; onSent(): void; onClose(): void }) => {
+    mocks.nativeRecord = record;
+    return (
+      <button
+        onClick={() => {
+          onSent();
+          onClose();
+        }}
+      >
+        Complete native send
+      </button>
+    );
+  },
+}));
 vi.mock("@/song/band/rhythm-preview", () => ({ playRhythmPreview: mocks.preview }));
 const key = "vltn.performance.v1:rhythm-dialog";
 const snapshot: RhythmSnapshot = {
@@ -35,6 +62,9 @@ beforeEach(() => {
   localStorage.clear();
   mocks.save.mockReset().mockResolvedValue("/exports");
   mocks.preview.mockClear();
+  mocks.native = undefined;
+  mocks.nativeRecord = null;
+  mocks.device.connected = false;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -49,6 +79,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("rhythm export dialog", () => {
+  it("offers native sending only on a supported host and enables it for a detected RC-10R", async () => {
+    const setup = completeSetup();
+    const view = open();
+    expect(screen.queryByRole("button", { name: "Send to RC-10R… (beta)" })).toBeNull();
+    mocks.native = {};
+    view.rerender(<RhythmExportDialog snapshot={snapshot} songKey={key} disabled={false} onClose={vi.fn()} />);
+    const send = screen.getByRole("button", { name: "Send to RC-10R… (beta)" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    mocks.device.connected = true;
+    view.rerender(<RhythmExportDialog snapshot={snapshot} songKey={key} disabled={false} onClose={vi.fn()} />);
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(readRc10rRecord(mocks.nativeRecord!)).toMatchObject({ bpm: setup.bpm });
+    // Newer unrelated settings survive the asynchronous native operation too.
+    localStorage.setItem(`${key}:options`, JSON.stringify({ other: "newer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete native send", hidden: true }));
+    const options = JSON.parse(localStorage.getItem(`${key}:options`)!);
+    expect(options.other).toBe("newer");
+    expect(options.rhythmTransfer.exported).toBeTruthy();
+    expect(options.rhythmTransfer.confirmed).toBeUndefined();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
   it("requires all six passages before exporting and surfaces deleted sources", () => {
     const choices = completeSetup();
     choices.parts.fill1.source = "deleted";

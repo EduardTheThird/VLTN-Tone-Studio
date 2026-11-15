@@ -15,7 +15,10 @@ import { bandSyncApi } from "./band-sync";
 import { invoke } from "./invoke";
 import { clickSamplesApi } from "./click-samples";
 
+import { rc10rApi } from "./rc10r";
+
 const host: HostApi = {
+  ...(process.platform === "darwin" ? { rc10r: rc10rApi } : {}),
   kind: "electron",
   platform: process.platform as HostApi["platform"],
   app: appApi,

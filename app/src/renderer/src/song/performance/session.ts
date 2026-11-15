@@ -13,6 +13,7 @@ import { parseBandSettings } from "@/song/band/arrangement";
 import { countLeadSeconds, type DrummerCount } from "@/song/performance/drummer-count";
 import { useNav } from "@/state/nav";
 import { setStageBusy } from "@/state/stage-activity";
+import { stageOperationActive } from "@/state/stage-operation";
 import { clearResumePoint, saveResumePoint } from "./resume-point";
 import { useResumeOffer } from "./resume-offer";
 import { useOutputSettings } from "@/song/audio/output-settings";
@@ -1077,7 +1078,7 @@ export class PerformanceSession {
     this.scheduler?.stop();
     this.scheduler = null;
     const { output, armed, clock } = context;
-    if (!output || this.clearedOutput === output) return;
+    if (stageOperationActive() || !output || this.clearedOutput === output) return;
     // Pause handlers and lifecycle cleanup can both run for one stop.
     // A second clear would cancel the BLE note releases queued by the first.
     this.clearedOutput = output;
@@ -1130,6 +1131,7 @@ export class PerformanceSession {
   }
 
   sendPerformance = (bytes: number[], timestamp?: number, label = "Manual / transport") => {
+    if (stageOperationActive()) return;
     if (!this.playPending) this.invalidatePreparation();
     this.clearedOutput = undefined;
     if (this.state.armedOutput && portIsDead(this.output)) {
@@ -1252,6 +1254,10 @@ export class PerformanceSession {
   };
 
   private start = async (prepareOnly: boolean) => {
+    if (stageOperationActive()) {
+      this.fail("Close native pedal transfer before starting playback.");
+      return;
+    }
     const loopPass = this.restartingLoop;
     this.restartingLoop = false;
     let { player } = this.state;
@@ -1282,11 +1288,7 @@ export class PerformanceSession {
         await refreshBandBeforePlay(this.songSettingsKey, {
           owner: this,
           stopped: () =>
-            request === this.playRequest &&
-            this.state.starting &&
-            !this.state.playing &&
-            !this.state.player?.isPlaying &&
-            this.state.preparing === null,
+            request === this.playRequest && this.state.starting && !this.state.playing && !this.state.player?.isPlaying && this.state.preparing === null,
         });
       } finally {
         this.bandPreparationKey = null;
@@ -1400,7 +1402,13 @@ export class PerformanceSession {
       const clockLead = armed && this.state.clock && !this.state.timecode.enabled && countIn === 0 && drummerMs === 0 ? CLOCK_LEAD_MS : 0;
       const lead = Math.max(chaseLead, clockLead) / 1000;
       this.transportAt = lead ? midiNow() + lead * 1000 : null;
-      await player.play({ bpm, countInBeats: countIn, preRollBeats: timing.preRollBeats, ...(lead ? { startDelay: lead } : {}), ...(drummer ? { drummer } : {}) });
+      await player.play({
+        bpm,
+        countInBeats: countIn,
+        preRollBeats: timing.preRollBeats,
+        ...(lead ? { startDelay: lead } : {}),
+        ...(drummer ? { drummer } : {}),
+      });
       if (request !== this.playRequest) {
         player.pause();
         this.terminateWorker();
@@ -1456,6 +1464,10 @@ export class PerformanceSession {
 
   /** Play, or start the whole playlist when the queue is at its end. */
   startPlayback = () => {
+    if (stageOperationActive()) {
+      this.fail("Close native pedal transfer before starting playback.");
+      return;
+    }
     const library = useSongLibrary.getState();
     const { player, queued } = this.state;
     // A set of one song is still a set: it resumes as the set, so a play counted afterwards records it.

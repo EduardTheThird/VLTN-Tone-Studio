@@ -17,6 +17,7 @@ import { CHART_ANNOTATIONS_FILE, CHART_FILE } from "@shared/song-library";
 import { registerUpdateIpc } from "./ipc/update";
 import { registerGp200CatalogIpc } from "./ipc/gp200-catalog";
 import { registerLogIpc } from "./ipc/log";
+import { registerRc10rIpc } from "./ipc/rc10r";
 import { registerClickSamplesIpc } from "./ipc/click-samples";
 import type { AppEvent } from "@shared/ipc";
 import { registerBluetoothSetupIpc } from "./bluetooth-setup";
@@ -261,7 +262,9 @@ async function createWindow() {
 function reloadAfterCrash(w: BrowserWindow): void {
   if (w.isDestroyed()) return;
   const fallback = process.env.ELECTRON_RENDERER_URL ?? RENDERER_URL;
-  void w.webContents.loadURL(recoveredUrl(w.webContents.getURL(), fallback)).catch((e) => logMain("Crash", `reload failed: ${e instanceof Error ? e.message : e}`));
+  void w.webContents
+    .loadURL(recoveredUrl(w.webContents.getURL(), fallback))
+    .catch((e) => logMain("Crash", `reload failed: ${e instanceof Error ? e.message : e}`));
 }
 
 /**
@@ -408,6 +411,7 @@ app.whenReady().then(async () => {
   const bluetoothSetup = registerBluetoothSetupIpc(getWindow);
   registerLogIpc(getWindow);
   registerClickSamplesIpc();
+  registerRc10rIpc(getWindow);
   registerAppIpc(getWindow);
   registerFilesIpc(getWindow);
   registerTonesIpc(getWindow);

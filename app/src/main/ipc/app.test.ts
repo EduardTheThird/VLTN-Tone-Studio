@@ -10,8 +10,10 @@ const electron = vi.hoisted(() => ({
   userData: "",
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
   metrics: vi.fn((): unknown[] => []),
+  nativeTransfer: false,
   shell: { openPath: vi.fn(async () => ""), showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) },
 }));
+vi.mock("./rc10r", () => ({ isRc10rBusy: () => electron.nativeTransfer }));
 
 vi.mock("electron", () => ({
   app: { getPath: () => electron.userData, getVersion: () => "0.0.0-test", getAppMetrics: () => electron.metrics() },
@@ -23,7 +25,11 @@ vi.mock("electron", () => ({
 
 /** Invoke a registered channel the way the preload does and return its Result. */
 async function call(channel: string, ...args: unknown[]) {
-  return electron.handlers.get(channel)!({ sender: new EventEmitter() }, ...args) as Promise<{ ok: boolean; data?: unknown; error?: { code: string; message: string } }>;
+  return electron.handlers.get(channel)!({ sender: new EventEmitter() }, ...args) as Promise<{
+    ok: boolean;
+    data?: unknown;
+    error?: { code: string; message: string };
+  }>;
 }
 
 let base: string;
@@ -32,6 +38,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   electron.handlers.clear();
+  electron.nativeTransfer = false;
   base = await mkdtemp(join(tmpdir(), "app-ipc-"));
   electron.userData = join(base, "userData");
   await mkdir(join(electron.userData, "logs"), { recursive: true });
@@ -175,6 +182,14 @@ describe("app:setShowRunning", () => {
 });
 
 describe("closeDecision", () => {
+  it("keeps close and update guards active for a native storage connection", async () => {
+    const { isJobRunning } = await import("./app");
+    expect(isJobRunning()).toBe(false);
+    electron.nativeTransfer = true;
+    expect(isJobRunning()).toBe(true);
+    electron.nativeTransfer = false;
+    expect(isJobRunning()).toBe(false);
+  });
   it("asks about a pedal job first, then a show, else closes", async () => {
     const { closeDecision } = await import("./app");
     expect(closeDecision({ job: true, show: true })).toBe("job-prompt");

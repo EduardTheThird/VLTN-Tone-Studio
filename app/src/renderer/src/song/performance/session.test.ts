@@ -21,6 +21,7 @@ import { registerBandRefresh } from "@/song/band/refresh";
 import { clearSettingsCache, performanceKey, setSetting } from "./settings";
 import { packExtras } from "@/song/band/extras";
 import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
+import { claimStageOperation } from "@/state/stage-operation";
 
 const mocks = vi.hoisted(() => ({
   bandRender: vi.fn(),
@@ -1060,7 +1061,10 @@ it("starts a song with the drummer's count through the drums' track, and the cou
 
 it("plays no count when the song's settings no longer ask for one, or when the song has none", async () => {
   vi.useFakeTimers();
-  for (const [bars, withStems] of [[0, true], [1, false]] as const) {
+  for (const [bars, withStems] of [
+    [0, true],
+    [1, false],
+  ] as const) {
     mocks.lead = undefined;
     const { own, stems } = songWithCount(bars);
     const session = new PerformanceSession({ initial: inputs({ bpm: 120 }), carried: null, initialClock: false });
@@ -3056,6 +3060,27 @@ describe("resume point", () => {
   });
 });
 
+it("keeps playback and all performance MIDI silent while native transfer owns the stage", async () => {
+  const { session, out, unload } = armedSession();
+  resetStageActivity();
+  const release = claimStageOperation({});
+  try {
+    await session.play();
+    session.startPlayback();
+    session.sendPerformance([0xb0, 80, 127]);
+    session.panic();
+    expect(session.state.player?.isPlaying).toBe(false);
+    expect(session.state.error).toContain("Close native pedal transfer");
+    expect(out.send).not.toHaveBeenCalled();
+    expect(out.clear).not.toHaveBeenCalled();
+    expect(mocks.configs).toHaveLength(0);
+  } finally {
+    release();
+    unload();
+    session.dispose();
+    resetStageActivity();
+  }
+});
 
 it("Play refreshes its band through the real render guard while its own stage owner is starting", async () => {
   const { regenerateSong } = await import("@/song/band/regenerate");
