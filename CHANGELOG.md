@@ -4,6 +4,15 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.45] — 2026-11-15
+
+### Fixed
+- Opening a song or the Band panel preserves its saved drummer grid and generated parts, including deliberately stale parts. BPM edits commit on Enter or leaving the field. Musical edits still update generated parts in the background while stopped.
+- Play uses existing band audio without waiting for regeneration or a library save. A failed background render warns without blocking playback; an unfinished render cannot replace parts during playback.
+- Before song preparation defaults off when no choice is saved. Explicit settings are preserved. Disabled custom commands are skipped with a warning, and songs without setup commands can chain or crossfade even when preparation is enabled. RC-10R memory settling and native-transfer guards remain in place.
+- Drum and bass velocity layers use linear blends to avoid boosting correlated recordings. Kits share decoded source samples, including concurrent loads; failed loads can retry. Older saved band settings without Room stay dry. Existing rendered audio changes only when regenerated.
+- A timed-out GP-150/GP-180 stored preset read retries once and validates the returned preset slot before returning data or writing. Wrong-slot replies are rejected; hardware compatibility still needs verification.
+
 ## [0.9.44] — 2026-11-15
 
 ### Added

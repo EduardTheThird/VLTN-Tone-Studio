@@ -22,6 +22,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Reliable starts and saved band parts",
+    text: "Opening a song keeps its saved drums, bass and drummer grid. Play uses the existing parts without waiting for a band render or save; musical edits update parts in the background while stopped. Before song preparation is off unless enabled, and songs with no setup commands can keep gapless transitions. Drum kits share decoded samples, layer blends avoid unintended boosts, and older dry settings stay dry. Existing rendered audio stays as saved until regenerated.",
+    image: band,
+  },
+  {
     title: "Send drums to your RC-10R",
     text: "On macOS, open the Band panel’s RC-10R export dialog and connect the pedal by USB. Tone Studio detects it and enables Send to RC-10R… (beta). Choose a User rhythm, back up the complete pedal, review the replacement and send. Other rhythms stay intact. Kit and tempo can also be saved for one phrase memory. Interrupted transfers have backup recovery. Check the pedal’s six parts and save its phrase memory before confirming the transfer; pedal and listening checks are still pending.",
     image: band,
