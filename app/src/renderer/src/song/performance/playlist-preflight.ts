@@ -196,6 +196,7 @@ export function playlistPreflight(
             pedalChannel: config.tempoChannel,
             tempo,
           });
+          if (!settings.enabled && plan.skipped.length) warnings.push("Before song preparation is disabled; its commands will be skipped.");
           if (settings.enabled) {
             preparation = plan;
             warnings.push(...preparationPreflight(plan, config.pedals).map((issue) => issue.text));
