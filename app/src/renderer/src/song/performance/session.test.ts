@@ -8,6 +8,7 @@ import { usePracticeMute } from "./practice-mute";
 import { defaultBindings, startLearn, stopLearn, useRemoteLearn, type Binding } from "./bindings";
 import { useMidiConfiguration } from "./midi-configuration";
 import { parseChart } from "./chart";
+import { encodeMidiFile } from "./smf";
 import type { Section } from "./sections";
 import { useMidiDiagnostics } from "./midi-diagnostics";
 import { useOutputSettings } from "@/song/audio/output-settings";
@@ -81,6 +82,7 @@ const mocks = vi.hoisted(() => ({
     advancePlaylist: vi.fn(),
     skipPlaylist: vi.fn(async () => {}),
     busy: false,
+    saveBeforePlayback: vi.fn(async () => {}),
     notice: "",
     index: { songs: [] as { id: string; title: string; settings: Record<string, string> }[] },
     load: vi.fn(async () => {}),
@@ -430,35 +432,21 @@ it("restores arming handed over by the previous song only for the same output ob
   expect(selectArmed(replaced.state)).toBe(false);
   expect(out.send).not.toHaveBeenCalled();
 });
-it("keeps the Play request through an automatic band buffer replacement, while Pause cancels a waiting Play", async () => {
+it("starts immediately even when a background band update has not finished", async () => {
+  const refresh = vi.fn(() => new Promise<void>(() => {}));
+  const unregister = registerBandRefresh("vltn.performance.library:a", refresh);
   const { session, unload } = armedSession();
-  let finish: () => void = () => {};
-  const unregister = registerBandRefresh(
-    performanceKey(source),
-    () =>
-      new Promise<void>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  const playing = session.play();
-  await Promise.resolve();
-  const old = session.state.player;
-  unload();
-  const unloadNew = session.loadSong(source, null);
-  finish();
-  await playing;
-  expect(session.state.player).not.toBe(old);
-  expect(session.state.player?.isPlaying).toBe(true);
-  session.pause();
-  const cancelled = session.play();
-  await Promise.resolve();
-  session.pause();
-  finish();
-  await cancelled;
-  expect(session.state.player?.isPlaying).toBe(false);
-  unregister();
-  unloadNew();
-  session.dispose();
+  try {
+    await session.play();
+    expect(session.state.playing).toBe(true);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(mocks.library.saveBeforePlayback).not.toHaveBeenCalled();
+    expect(session.armed).toBe(true);
+  } finally {
+    unregister();
+    unload();
+    session.dispose();
+  }
 });
 
 it("releases only the channels that played notes and sends Stop once when paused with clock on", async () => {
@@ -2587,6 +2575,76 @@ describe("Before song preparation", () => {
   });
   afterEach(() => vi.useRealTimers());
   const preparationSettings = { enabled: true, settleMs: 1000, openingPresets: true };
+  it("skips disabled Before song commands with a warning while retaining Send cues and playlist playback", async () => {
+    const { session, out, unload } = armedSession(output(), {
+      cues: parseChart("{midi@prepare:pc 1 99}"),
+      preparationSettings: { ...preparationSettings, enabled: false },
+      playlistPlaying: true,
+    });
+    try {
+      await session.play();
+      expect(session.state.playing).toBe(true);
+      expect(session.armed).toBe(true);
+      expect(out.send.mock.calls.map(([bytes]) => bytes)).not.toContainEqual([0xc0, 99]);
+      expect(mocks.toasts).toContainEqual(expect.objectContaining({ title: "Before song commands skipped" }));
+    } finally {
+      unload();
+      session.dispose();
+    }
+  });
+
+  const midiPreset = encodeMidiFile(
+    "opening.mid",
+    new Uint8Array([77, 84, 104, 100, 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 77, 84, 114, 107, 0, 0, 0, 7, 0, 0xc0, 4, 0, 0xff, 0x2f, 0]),
+  );
+  it.each(
+    [
+      { enabled: true, chart: "", shouldChain: true, options: {} },
+      { enabled: false, chart: "{midi@prepare:pc 1 99}", shouldChain: true, options: {} },
+      { enabled: true, chart: "{midi@prepare:pc 1 99}", shouldChain: false, options: {} },
+      { enabled: true, chart: "[00:00] {midi:pc 1 99}", shouldChain: false, options: {} },
+      { enabled: true, chart: "", shouldChain: false, options: { midiFile: midiPreset } },
+      { enabled: true, chart: "{midi@prepare-once:pc 1 99}", shouldChain: true, options: {}, used: true },
+    ].flatMap((example) => ["automatic", "manual"].map((mode) => ({ ...example, mode }))),
+  )("chains according to incoming commands: %j", async ({ enabled, chart, shouldChain, options, used, mode }) => {
+    const incoming = new StemPlayer({} as Stems);
+    const next = {
+      id: "b",
+      title: "B",
+      source: { ...source, audio: { ...source.audio }, libraryId: "b" },
+      stems: {},
+      player: incoming,
+      settings: { "": chart, ":options": JSON.stringify({ ...options, preparation: { ...preparationSettings, enabled } }) },
+    };
+    const { preparationHistoryFor } = await import("./preparation-repeat");
+    const history = preparationHistoryFor(next.source.audio);
+    if (used) history.started(history.commands(parseChart(chart), true)[0].onceKey);
+    const previousUses = history.size;
+    mocks.library.playlistPlaying = true;
+    mocks.library.queue = ["a", "b"];
+    mocks.library.preparedNext = () => next;
+    const { session, unload } = armedSession(output(), { queued: true, playlistPlaying: true, preparationSettings });
+    try {
+      await vi.advanceTimersByTimeAsync(10);
+      const chain = vi.spyOn(session.state.player!, "chainNext");
+      if (mode === "manual") expect(session.crossfadeNext()).toBe(shouldChain);
+      else {
+        mocks.position = 56;
+        mocks.audioNow = 16;
+        await vi.advanceTimersByTimeAsync(250);
+      }
+      expect(chain).toHaveBeenCalledTimes(shouldChain ? 1 : 0);
+      expect(history.size).toBe(previousUses);
+      if (!shouldChain) {
+        expect(session.crossfadeNext()).toBe(false);
+        expect(session.armed).toBe(true);
+        expect(session.state.playing).toBe(true);
+      }
+    } finally {
+      unload();
+      session.dispose();
+    }
+  });
   const setup = () => {
     const cues = parseChart("[00:00] {midi:cc 16 0 0} {midi:pc 16 6}\n{midi@prepare:$READY}", [
       { code: "READY", label: "Ready", commands: ["cc 3 12 0", "pc 3 7"] },
@@ -3082,41 +3140,21 @@ it("keeps playback and all performance MIDI silent while native transfer owns th
   }
 });
 
-it("Play refreshes its band through the real render guard while its own stage owner is starting", async () => {
-  const { regenerateSong } = await import("@/song/band/regenerate");
-  const { fixedBeatGrid } = await import("@/song/band/beat-grid");
-  const { session, out, unload } = armedSession();
-  mocks.bandRender.mockReturnValue({ done: Promise.resolve({ notes: { drums: [], bass: [] } }), onProgress: vi.fn(), cancel: vi.fn() });
-  const unregister = registerBandRefresh(performanceKey(source), async (preparation) => {
-    expect(session.state.starting).toBe(true);
-    expect(session.state.player?.isPlaying).toBe(false);
-    expect(useStageActivity.getState().busy).toBe(true);
-    await regenerateSong(performanceKey(source), {
-      input: {
-        grid: fixedBeatGrid(120, 0, 4, 8),
-        cues: [],
-        chords: [],
-        sections: [],
-        settings: structuredClone(DEFAULT_BAND_SETTINGS),
-        songEnd: 8,
-        lengthFrames: 352800,
-        sampleUrls: {},
-      },
-      detectChords: async () => [],
-      explicit: true,
-      preparation: () => preparation,
-    });
-    expect(session.state.player?.isPlaying).toBe(false);
-    expect(out.send).not.toHaveBeenCalled();
+it("Play remains armed and silent to background renders even if the registered refresh would fail", async () => {
+  const { session, unload } = armedSession();
+  const refresh = vi.fn(async () => {
+    throw new Error("render/save failed");
   });
+  const unregister = registerBandRefresh(performanceKey(source), refresh);
   try {
     await session.play();
-    expect(mocks.bandRender).toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(mocks.bandRender).not.toHaveBeenCalled();
+    expect(session.armed).toBe(true);
     expect(session.state.error).toBe("");
-    expect(session.state.player?.isPlaying).toBe(true);
+    expect(session.state.playing).toBe(true);
   } finally {
     unregister();
-    session.pause();
     unload();
     session.dispose();
   }

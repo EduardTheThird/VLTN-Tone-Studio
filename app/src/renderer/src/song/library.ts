@@ -851,15 +851,6 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     },
     preparedNext: () => {
       const { prepared, queue, position, playlistPlaying } = get();
-      if (prepared) {
-        try {
-          const options = JSON.parse(prepared.settings[":options"] || "{}");
-          // A band update happens stopped, before Play. Do not start its old audio early in a gapless handover.
-          if (options.bandOutOfDate === true && Object.keys(options.generatedParts ?? {}).length) return null;
-        } catch {
-          return null;
-        }
-      }
       return playlistPlaying && prepared && queue[position + 1] === prepared.id ? prepared : null;
     },
     advanceToPrepared: (id) => {

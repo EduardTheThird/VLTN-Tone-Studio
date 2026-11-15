@@ -123,3 +123,15 @@ it("uses requested trimmed-start position even when pre-roll starts before it", 
     }).totalWaitMs,
   ).toBe(400);
 });
+
+it("reports disabled custom commands without consuming repeat history or planning MIDI", () => {
+  const cues = parseChart("{label:Once} {midi@prepare-once:pc 3 4}");
+  const history = new PreparationHistory();
+  const plan = preparationSequence({ cues, position: 0, start: 0, settings: { ...settings, enabled: false }, pedalChannel: 16, history, tempo: [[0xc0, 5]] });
+  expect(plan.steps).toEqual([]);
+  expect(plan.suppressed).toEqual([]);
+  expect(plan.totalWaitMs).toBe(0);
+  expect(plan.skipped).toEqual([{ label: "Once", reason: "Before song preparation is disabled; commands skipped" }]);
+  expect(history.size).toBe(0);
+  expect(history.commands(cues, true)).toHaveLength(1);
+});

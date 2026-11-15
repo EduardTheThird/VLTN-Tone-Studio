@@ -74,11 +74,11 @@ it("loads a saved song's audio for an analysis without opening it or changing th
 it("refuses to load audio for a song that is not in the library", async () => {
   await expect(loadSongAudio("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow("Song is missing from the library.");
 });
-it("discards a prepared playlist player when its trim or tempo settings change", () => {
+it("retains deliberately stale prepared audio but discards it when trim or tempo settings change", () => {
   const dispose = vi.fn();
   const nextId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
   const next = { ...saved, id: nextId };
-  const prepared = { id: nextId, settings: {}, player: { dispose } } as unknown as PreparedSong;
+  const prepared = { id: nextId, settings: { ":options": JSON.stringify({ bandOutOfDate: true, generatedParts: { drums: "track0" } }) }, player: { dispose } } as unknown as PreparedSong;
   useSongLibrary.setState({ index: { ...emptyLibrary(), songs: [saved, next] }, queue: [saved.id, nextId], position: 0, playlistPlaying: true, prepared });
   api.audioUrls.mockReturnValueOnce(new Promise(() => {}));
   expect(useSongLibrary.getState().preparedNext()).toBe(prepared);

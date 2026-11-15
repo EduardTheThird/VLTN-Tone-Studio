@@ -1,5 +1,5 @@
-import { usePreparationDefaults } from "@/song/performance/start-preparation";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { usePreparationDefaults, PREPARATION_DEFAULTS } from "@/song/performance/start-preparation";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { usePracticeMute } from "@/song/performance/practice-mute";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearSettingsCache, setSetting } from "@/song/performance/settings";
@@ -43,7 +43,7 @@ vi.mock("@/song/performance/midi-scheduler-client", async () => {
   };
 });
 beforeEach(() => {
-  usePreparationDefaults.setState({ settings: { enabled: false, settleMs: 1000, openingPresets: true } });
+  usePreparationDefaults.setState({ settings: { ...PREPARATION_DEFAULTS } });
   localStorage.clear();
   clearSettingsCache();
   useMidiConfiguration.setState(readMidiConfiguration());
@@ -259,6 +259,7 @@ vi.mock("@/song/stems/player", () => ({
   },
 }));
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   playlist.active = false;
   mocks.source.libraryId = undefined;
@@ -762,6 +763,7 @@ it("uses the latest song tempo and channel when remote MIDI starts playback", as
   fireEvent.click(screen.getByLabelText("Send cues"));
   fireEvent.click(screen.getByLabelText("Send song BPM to GP-150 / GP-180 on playback start"));
   fireEvent.change(screen.getByLabelText("BPM"), { target: { value: "141" } });
+  fireEvent.blur(screen.getByLabelText("BPM"));
   fireEvent.change(screen.getByLabelText("GP-150 / GP-180 tempo channel"), { target: { value: "15" } });
   mocks.send.mockClear();
   await act(async () => {
@@ -797,6 +799,7 @@ it("preserves the song key when mixer, tempo and metronome options are saved", (
   fireEvent.change(screen.getByLabelText("Song key override"), { target: { value: "D minor" } });
   fireEvent.change(screen.getByLabelText("Song volume"), { target: { value: "0.35" } });
   fireEvent.change(screen.getByLabelText("BPM"), { target: { value: "100" } });
+  fireEvent.blur(screen.getByLabelText("BPM"));
   fireEvent.change(screen.getByLabelText("Metronome mode"), { target: { value: "playing" } });
   view.unmount();
   render(<PerformancePanel />);
@@ -951,6 +954,7 @@ it("saves a tempo the performer types, with its source", () => {
   localStorage.clear();
   render(<PerformancePanel />);
   fireEvent.change(screen.getByLabelText("BPM"), { target: { value: "98" } });
+  fireEvent.blur(screen.getByLabelText("BPM"));
   const bpmKey = Object.keys(localStorage).find((k) => k.endsWith(":bpm"));
   expect(bpmKey && localStorage.getItem(bpmKey)).toBe("98");
   const optionsKey = Object.keys(localStorage).find((k) => k.endsWith(":options"));
@@ -1010,12 +1014,12 @@ it("uses a managed 6/8 plan's quarter-note tempo in the rendered panel and actua
     render(<PerformancePanel />);
     expect(screen.getByText(/Clock target: 135 quarter-note BPM/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Send cues"));
-    await act(async () => {
-      fireEvent.click(screen.getByText("Play song"));
-      await new Promise((resolve) => setTimeout(resolve, 220));
-    });
-    expect(mocks.send.mock.calls.map((call) => call[0])).toContainEqual([0xbf, 73, 1]);
-    expect(mocks.send.mock.calls.map((call) => call[0])).toContainEqual([0xbf, 74, 7]);
+    fireEvent.click(screen.getByText("Play song"));
+    await waitFor(() => {
+      const sent = mocks.send.mock.calls.map((call) => call[0]);
+      expect(sent).toContainEqual([0xbf, 73, 1]);
+      expect(sent).toContainEqual([0xbf, 74, 7]);
+    }, { timeout: 3000 });
   } finally {
     cleanup();
     mocks.source.audio.channels[0] = original;
@@ -1023,6 +1027,7 @@ it("uses a managed 6/8 plan's quarter-note tempo in the rendered panel and actua
 });
 
 it("prepares an opening preset before audio and does not repeat it at song time zero", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   localStorage.setItem(key, "[00:00] {midi:pc 1 5}");
   localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, openingPresets: true } }));
@@ -1031,19 +1036,20 @@ it("prepares an opening preset before audio and does not repeat it at song time 
   fireEvent.click(screen.getByLabelText("Send cues"));
   await act(async () => {
     fireEvent.click(screen.getByText("Play song"));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(20);
   });
   expect(screen.getByText("Cancel start")).toBeTruthy();
   expect(screen.getByText(/Preparing pedals:/)).toBeTruthy();
   expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 5]]);
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 230));
+    await vi.advanceTimersByTimeAsync(230);
   });
   expect(screen.getByText("Pause")).toBeTruthy();
   expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 5]]);
 });
 
 it("shows preparation in stage mode and allows cancelling before the music starts", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   localStorage.setItem(key, "{midi@prepare:pc 1 7}");
   localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, openingPresets: true } }));
@@ -1054,13 +1060,13 @@ it("shows preparation in stage mode and allows cancelling before the music start
   const stage = within(screen.getByRole("dialog", { name: "Stage mode" }));
   await act(async () => {
     fireEvent.click(stage.getByText("Play song"));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(20);
   });
   expect(stage.getByText(/Preparing pedals:/)).toBeTruthy();
   expect(mocks.send.mock.calls.map((call) => call[0])).toEqual([[0xc0, 7]]);
   await act(async () => {
     fireEvent.click(stage.getByText("Cancel start"));
-    await new Promise((resolve) => setTimeout(resolve, 230));
+    await vi.advanceTimersByTimeAsync(230);
   });
   expect(stage.getByText("Play song")).toBeTruthy();
   expect(stage.queryByText(/Preparing pedals:/)).toBeNull();
@@ -1068,6 +1074,7 @@ it("shows preparation in stage mode and allows cancelling before the music start
 });
 
 it("prepares in stage mode, shows Ready, and Play starts without repeating the custom command", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   localStorage.setItem(key, "{midi@prepare:pc 1 7}");
   localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 100, openingPresets: true } }));
@@ -1078,7 +1085,7 @@ it("prepares in stage mode, shows Ready, and Play starts without repeating the c
   const stage = within(screen.getByRole("dialog", { name: "Stage mode" }));
   await act(async () => {
     fireEvent.click(stage.getByText("Prepare pedals"));
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await vi.advanceTimersByTimeAsync(150);
   });
   expect(stage.getByText(/Ready to play/)).toBeTruthy();
   expect(stage.getByText("Play song")).toBeTruthy();
@@ -1092,6 +1099,7 @@ it("prepares in stage mode, shows Ready, and Play starts without repeating the c
 });
 
 it("clears Ready when the song trim changes while stopped", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   const preparation = { enabled: true, settleMs: 100, openingPresets: true };
   localStorage.setItem(key, "{midi@prepare:pc 1 7}");
@@ -1101,7 +1109,7 @@ it("clears Ready when the song trim changes while stopped", async () => {
   fireEvent.click(screen.getByLabelText("Send cues"));
   await act(async () => {
     fireEvent.click(screen.getByText("Prepare pedals"));
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await vi.advanceTimersByTimeAsync(150);
   });
   expect(screen.getByText(/Ready to play/)).toBeTruthy();
   await act(async () => setSetting(key, ":options", JSON.stringify({ preparation, trimStart: 0.2 })));
@@ -1111,6 +1119,7 @@ it("clears Ready when the song trim changes while stopped", async () => {
 });
 
 it("respects once commands on Prepare again and exposes an explicit reset without sending MIDI", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   localStorage.setItem(key, "{midi@prepare-once:pc 1 99}");
   localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 0, openingPresets: true } }));
@@ -1133,6 +1142,7 @@ it("respects once commands on Prepare again and exposes an explicit reset withou
 });
 
 it("previews automatic/custom command order and total waits without sending, and updates when a wait changes", async () => {
+  vi.useFakeTimers();
   const key = "vltn.performance.v1:clock-test.wav:44100:44100";
   localStorage.setItem(key, "[00:00] {midi:cc 16 0 0} {midi:pc 16 6}\n{label:Effect} {midi@prepare wait=0.5:cc 3 20 64}");
   localStorage.setItem(key + ":options", JSON.stringify({ preparation: { enabled: true, settleMs: 200, commandGapMs: 100, openingPresets: true } }));
