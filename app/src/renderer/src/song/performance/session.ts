@@ -617,6 +617,7 @@ export class PerformanceSession {
       this.speedPreparation = !isPlainSpeed(speed) ? this.renderSpeed(speed) : null;
     }
     this.playedTimer = setInterval(this.checkPlayed, PLAYED_CHECK_MS);
+    const id = source.libraryId;
     return () => {
       this.dropChained();
       if (this.playedTimer) clearInterval(this.playedTimer);
@@ -628,9 +629,20 @@ export class PerformanceSession {
         this.terminateWorker();
       }
       void player.dispose();
+      // React callbacks and a consumed handover can outlive this song. They may keep the session object, but must not keep its audio.
+      if (this.state.player === player) {
+        this.baseStems = null;
+        this.bandExtras = {};
+        this.exitBars = {};
+        this.renders.clear();
+        this.renderRequest++;
+        this.pendingRender = null;
+        this.renderSwap = null;
+        this.speedPreparation = null;
+        this.set({ player: null, playing: false, rendering: null });
+      }
       // Leaving Performance pauses the set. Checked later, so that a remount on the same screen (StrictMode's re-run, an advance) is not
       // taken for leaving: the screen is still Performance, and the set is still on this song or has moved on.
-      const id = source.libraryId;
       setTimeout(() => {
         const library = useSongLibrary.getState();
         if (!leftPerformance()) return;
@@ -1541,10 +1553,7 @@ export class PerformanceSession {
       });
       if (loaded.error) return true;
       const cues = expandSectionCues(loaded.cues, parseSections(options.sections));
-      const lead = resolveLeadIn(
-        { countInBars: "", startDelay: "", preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats) },
-        readLeadInDefaults(),
-      );
+      const lead = resolveLeadIn({ countInBars: "", startDelay: "", preRollBeats: ownLeadIn("preRollBeats", options.preRollBeats) }, readLeadInDefaults());
       const plan = preparationSequence({
         cues,
         position: preRollStart(next.player.start, lead.preRollBeats, timing.bpm),
@@ -1644,12 +1653,7 @@ export class PerformanceSession {
     const { player } = this.state;
     if (!player) return;
     // The next song's buffers were built when it was prepared, so the join only starts them.
-    if (
-      hasPedalRhythm(this.state.cues) ||
-      hasSavedPedalRhythm(next.settings) ||
-      this.nextNeedsPreparation(next)
-    )
-      return;
+    if (hasPedalRhythm(this.state.cues) || hasSavedPedalRhythm(next.settings) || this.nextNeedsPreparation(next)) return;
     const incoming = next.player;
     const unwire = this.wirePlayer(incoming, next.source);
     const countInBeatsNow = plan.kind === "countIn" ? countInBeats(timing.countInBars, timing.beatsPerBar) : 0;
