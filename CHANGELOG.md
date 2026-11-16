@@ -4,6 +4,13 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.47] — 2026-11-16
+
+### Added
+- GP-150/GP-180: Tones lists the pedal's 100 NAM slots and can rename them with readback verification. NAM slots are separate from SnapTones; file upload is not available.
+- The NAM panel shows the active preset's SnapTone/NAM mode and can switch it live. Save the preset to keep the change. Mode changes appear in the unsaved-changes review; NAM management is disabled during a performance.
+
+
 ## [0.9.46] — 2026-11-16
 
 ### Fixed

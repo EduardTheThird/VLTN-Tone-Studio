@@ -7,6 +7,7 @@ import { WHATS_NEW_VERSION, saveWhatsNewSeen } from "@/state/whats-new";
 import songLibrary from "@/assets/whats-new/song-library.webp";
 import stemMixer from "@/assets/whats-new/stem-mixer.webp";
 import band from "@/assets/whats-new/band.webp";
+import rigTools from "@/assets/whats-new/rig-tools.webp";
 import midiCues from "@/assets/whats-new/midi-cues.webp";
 import stageMode from "@/assets/whats-new/stage-mode.webp";
 import soloScales from "@/assets/whats-new/solo-scales.webp";
@@ -21,6 +22,11 @@ interface Slide {
 }
 
 const SLIDES: Slide[] = [
+  {
+    title: "Manage your GP-150/GP-180 NAM slots",
+    text: "In Tones, read the NAM slots from your pedal and rename a slot. NAM models have their own list, separate from SnapTones. The panel shows which mode the active preset uses and lets you switch between SnapTone and NAM. Save the preset to keep its mode. NAM file upload is not available.",
+    image: rigTools,
+  },
   {
     title: "Less memory across your set",
     text: "Long sets release unused preloaded audio after transitions and keep fewer duplicate copies of each track. Song loading has lower memory peaks. Per-track mixing, practice mute, speed and pitch changes remain available, and the next song still prepares ahead for crossfades.",
