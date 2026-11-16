@@ -22,6 +22,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Less memory across your set",
+    text: "Long sets release unused preloaded audio after transitions and keep fewer duplicate copies of each track. Song loading has lower memory peaks. Per-track mixing, practice mute, speed and pitch changes remain available, and the next song still prepares ahead for crossfades.",
+    image: band,
+  },
+  {
     title: "Reliable starts and saved band parts",
     text: "Opening a song keeps its saved drums, bass and drummer grid. Play uses the existing parts without waiting for a band render or save; musical edits update parts in the background while stopped. Before song preparation is off unless enabled, and songs with no setup commands can keep gapless transitions. Drum kits share decoded samples, layer blends avoid unintended boosts, and older dry settings stay dry. Existing rendered audio stays as saved until regenerated.",
     image: band,

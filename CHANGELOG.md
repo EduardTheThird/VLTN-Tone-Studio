@@ -4,6 +4,13 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.46] — 2026-11-16
+
+### Fixed
+- Long sets release unused preloaded players when a song starts after a gap, fixing audio retained across playlist entries. Gapless transitions keep the player they take over.
+- Playback, library preloading and speed renders can share sample storage with the song instead of retaining a separate decoded copy. Saved-track identity, sample access for analysis/editing and per-track mixing are preserved.
+- Library loading decodes at most two tracks concurrently per song, reducing temporary decoder heaps while preserving track order and allowing the remaining tracks to load if one fails. Preloading still starts immediately for manual crossfades.
+
 ## [0.9.45] — 2026-11-15
 
 ### Fixed

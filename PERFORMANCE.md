@@ -183,6 +183,10 @@ To send cues, pick an output, then switch on **Send cues**. This is called armin
 
 **MIDI preflight & timing** (collapsible) lists cues beyond the audio, conflicting or dense commands, missing note-offs and channel clashes. Warnings are advice; they never change or disable a cue. The app cannot read a pedal's receive channel, so check those yourself.
 
+### Memory during a set
+
+MIDI health shows the app’s measured memory and an estimate of the audio held by the current song, the next song and speed renders. Shared audio is counted once; the measured app memory also includes decoder and browser caches. Playback can share sample storage with the song, and unused preloaded players are released after transitions that wait between songs. Track loading limits concurrent decodes to reduce loading peaks. Per-track mixing, practice mute, analysis and speed/pitch changes remain available.
+
 ### Before song preparation
 
 **Prepare pedals** runs setup and stops at **Ready to play**, without starting the count-in, music or Play triggers. Press **Play** when you are ready; the app reuses the setup without resending presets or repeating the loading wait. **Prepare again** runs setup again while respecting each command’s Repeat rule. Ready means the commands were sent and the wait finished; it does not confirm the pedal’s received settings. Tempo, cue, trim, speed, output or arming changes clear Ready, as do seeking, Stop/Panic and sending a manual MIDI command. Prepare is available in stage mode and as a remote-control action.
