@@ -351,6 +351,7 @@ export class PerformanceSession {
   private batchDepth = 0;
   /** Stop and end messages waiting for the effects that the stop caused to finish (see `sendTriggers`). */
   private heldTriggers: { bytes: number[]; kind: MidiTrigger }[] = [];
+  private unloadCurrentSong: (() => void) | null = null;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeResume: (() => void) | null = null;
   /** Set when the remembered system port was lost while armed. Its return re-acquires it, since the object from before is not trusted. */
@@ -618,7 +619,11 @@ export class PerformanceSession {
     }
     this.playedTimer = setInterval(this.checkPlayed, PLAYED_CHECK_MS);
     const id = source.libraryId;
-    return () => {
+    let unloaded = false;
+    const unload = () => {
+      if (unloaded) return;
+      unloaded = true;
+      if (this.unloadCurrentSong === unload) this.unloadCurrentSong = null;
       this.dropChained();
       if (this.playedTimer) clearInterval(this.playedTimer);
       this.playedTimer = null;
@@ -652,6 +657,8 @@ export class PerformanceSession {
         if (!useResumeOffer.getState().point) clearResumePoint();
       }, 0);
     };
+    this.unloadCurrentSong = unload;
+    return unload;
   }
 
   /** Connects a song's player to the outputs and to the session. Returns the function that disconnects it. */
@@ -1702,7 +1709,8 @@ export class PerformanceSession {
     });
     // The outgoing scheduler is torn down with this view, so its quarter frames are carried to the join by the incoming scheduler.
     library.setHandover({ ...chained, timecodeTail: this.outgoingTimecode(chained.join) });
-
+    // End this owner before the library starts allocating the following song. The player preserves any outgoing audio tail.
+    this.unloadCurrentSong?.();
     library.advanceToPrepared(chained.id);
   };
 
