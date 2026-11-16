@@ -1,3 +1,4 @@
+import { pcmMemoryShape } from "./audio/playback-pcm";
 import { create } from "zustand";
 import { clearResumePoint } from "./performance/resume-point";
 import { pedalDrumMix, usePedalDrums } from "./performance/pedal-drums";
@@ -300,7 +301,8 @@ async function loadTrack(url: string, track: LibraryAudio, songId: string): Prom
   const file = await response.arrayBuffer();
   if (track.bytes !== undefined && file.byteLength !== track.bytes) throw new Error(`Missing or damaged ${track.name} audio.`);
   const audio = await decodeTrack(file, { playback: track });
-  if (audio.channels.length !== track.channels || audio.channels[0].length !== track.frames || audio.sampleRate !== track.sampleRate)
+  const shape = pcmMemoryShape(audio);
+  if (shape.channels !== track.channels || shape.frames !== track.frames || audio.sampleRate !== track.sampleRate)
     throw new Error(`Missing or damaged ${track.name} audio.`);
   storedTrack.set(audio, { songId, track });
   return audio;
@@ -415,7 +417,7 @@ export function acceptUpgradedSong(song: LibrarySong, replacements: Record<strin
   renderedAhead.delete(song.id);
   seedSettings(song.id, song.settings);
   const library = useSongLibrary.getState();
-  useSongLibrary.setState({ index: { ...library.index, songs: library.index.songs.map((entry) => entry.id === song.id ? song : entry) } });
+  useSongLibrary.setState({ index: { ...library.index, songs: library.index.songs.map((entry) => (entry.id === song.id ? song : entry)) } });
 }
 
 /** Reads the index after moving any settings an earlier version left in localStorage into the library. */

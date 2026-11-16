@@ -1,3 +1,4 @@
+import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { regenerateSong, regeneratedSettings } from "@/song/band/regenerate";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -256,7 +257,7 @@ function BandBody({
       return [];
     }
   }, [chart]);
-  const songEnd = source ? source.audio.channels[0].length / source.audio.sampleRate : 0;
+  const songEnd = source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0;
   const plans = useMemo(() => planSections(sections, songEnd, settings, sectionHints), [sections, songEnd, settings, sectionHints]);
   const harmony = useMemo<ChordAtBeat[]>(
     () => (grid ? bandHarmony({ grid, cues, chords, songEnd, settings, bassLine }) : []),
@@ -448,7 +449,7 @@ function BandBody({
         settings: using,
         songEnd,
         trimEnd: savedTrimEnd(),
-        lengthFrames: current.audio.channels[0].length,
+        lengthFrames: pcmMemoryShape(current.audio).frames,
         sampleUrls: bandSampleUrls(),
         follow: followFor(using, selectWholeSongStems(useSong.getState()), current.audio),
         mix: current.audio,
@@ -463,7 +464,9 @@ function BandBody({
         detectChords: () => detectChords(current.audio),
         onWork: setWork,
         onNotices: setNotices,
-        onJob: (rendering) => { job.current = rendering; },
+        onJob: (rendering) => {
+          job.current = rendering;
+        },
       });
       const { request, result, drums, bass, notes } = prepared;
       if (!active.current || playingNow.current || useSong.getState().source !== current) return;
@@ -476,7 +479,10 @@ function BandBody({
       const withExtras = prepared.extras;
       const applied = useSong
         .getState()
-        .applyGeneratedParts({ drums, bass, ...(Object.keys(withExtras).length > 0 ? { extras: withExtras } : {}) }, { playing: playingNow.current, remove: turnedOff });
+        .applyGeneratedParts(
+          { drums, bass, ...(Object.keys(withExtras).length > 0 ? { extras: withExtras } : {}) },
+          { playing: playingNow.current, remove: turnedOff },
+        );
       if (applied.length === 0) {
         if (current.libraryId) await useSongLibrary.getState().saveBeforePlayback(true);
         if (!active.current || useSong.getState().source !== current || requestedInputs.current !== startedInputs) return;
@@ -593,15 +599,7 @@ function BandBody({
   };
   useEffect(() => registerBandRefresh(songKey, () => refreshNow.current()), [songKey]);
   useEffect(() => {
-    if (
-      audioPlaying ||
-      libraryBusy ||
-      busy ||
-      !generated ||
-      failedInputs.current === musicalInputs ||
-      appliedInputs.current === musicalInputs
-    )
-      return;
+    if (audioPlaying || libraryBusy || busy || !generated || failedInputs.current === musicalInputs || appliedInputs.current === musicalInputs) return;
     const timer = setTimeout(() => {
       void refreshNow.current().catch((error) => {
         failedInputs.current = musicalInputs;
@@ -652,7 +650,7 @@ function BandBody({
     setWork(`Reading ${file.name}…`);
     try {
       const decoded = await decodeAudioFile(file, MAX_IMPORT_SECONDS);
-      const frames = current.audio.channels[0].length;
+      const frames = pcmMemoryShape(current.audio).frames;
       const check = checkRenderedLength(file.name, decoded.channels[0].length / decoded.sampleRate, frames / current.audio.sampleRate);
       if (!check.accepted) return setNotices([check.notice ?? `${file.name} was not used.`]);
       const notices: BandNotice[] = check.notice ? [asNotice(check.notice)] : [];
@@ -709,7 +707,7 @@ function BandBody({
         settings: using,
         songEnd,
         trimEnd: savedTrimEnd(),
-        lengthFrames: current.audio.channels[0].length,
+        lengthFrames: pcmMemoryShape(current.audio).frames,
         sampleUrls: bandSampleUrls(),
         follow: followFor(using, selectWholeSongStems(useSong.getState()), current.audio),
         mix: current.audio,
@@ -927,7 +925,7 @@ function BandBody({
               busy={busy}
               blocked={blocked}
               pendingLineUp={(kind) =>
-                source && pendingLineUp(pendingRendered, kind, () => setPendingRendered(null), applyRendered, source.audio.channels[0].length)
+                source && pendingLineUp(pendingRendered, kind, () => setPendingRendered(null), applyRendered, pcmMemoryShape(source.audio).frames)
               }
               onFile={(kind, file) => void importRendered(kind, file)}
               onBack={(kind) => void backToGenerated(kind)}

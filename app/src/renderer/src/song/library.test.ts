@@ -1,3 +1,4 @@
+import { sharePlaybackPcm } from "./audio/playback-pcm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyLibrary, type LibrarySong } from "@shared/song-library";
 import { useSong } from "./store";
@@ -150,7 +151,11 @@ it("retains deliberately stale prepared audio but discards it when trim or tempo
   const dispose = vi.fn();
   const nextId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
   const next = { ...saved, id: nextId };
-  const prepared = { id: nextId, settings: { ":options": JSON.stringify({ bandOutOfDate: true, generatedParts: { drums: "track0" } }) }, player: { dispose } } as unknown as PreparedSong;
+  const prepared = {
+    id: nextId,
+    settings: { ":options": JSON.stringify({ bandOutOfDate: true, generatedParts: { drums: "track0" } }) },
+    player: { dispose },
+  } as unknown as PreparedSong;
   useSongLibrary.setState({ index: { ...emptyLibrary(), songs: [saved, next] }, queue: [saved.id, nextId], position: 0, playlistPlaying: true, prepared });
   api.audioUrls.mockReturnValueOnce(new Promise(() => {}));
   expect(useSongLibrary.getState().preparedNext()).toBe(prepared);
@@ -299,7 +304,18 @@ it("forgets the resume point when the set runs to its end", async () => {
   const second = { ...saved, id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", title: "Second song" };
   api.index.mockResolvedValue({ ...emptyLibrary(), songs: [saved, second] });
   await useSongLibrary.getState().playPlaylist([saved.id, second.id]);
-  saveResumePoint({ version: 1, savedAt: Date.now(), playlistId: null, queue: [saved.id, second.id], position: 1, songId: second.id, songTime: 10, playing: true, sendCues: false, stageMode: false });
+  saveResumePoint({
+    version: 1,
+    savedAt: Date.now(),
+    playlistId: null,
+    queue: [saved.id, second.id],
+    position: 1,
+    songId: second.id,
+    songTime: 10,
+    playing: true,
+    sendCues: false,
+    stageMode: false,
+  });
   await useSongLibrary.getState().advancePlaylist();
   await useSongLibrary.getState().advancePlaylist();
   expect(loadResumePoint(Date.now())).toBeNull();
@@ -1036,9 +1052,8 @@ describe("the practice mute on a prepared song", () => {
   });
 });
 
-
 it("strict background audio loads refuse a missing track without changing the open song", async () => {
-  fetchFile.mockImplementation(async (url: string) => url.endsWith("guitar.flac") ? new Response(null, { status: 404 }) : file());
+  fetchFile.mockImplementation(async (url: string) => (url.endsWith("guitar.flac") ? new Response(null, { status: 404 }) : file()));
   await expect(loadSongAudio(saved.id, true)).rejects.toThrow("Missing or damaged audio: guitar.");
   expect(useSong.getState().source).toBeNull();
   expect(api.save).not.toHaveBeenCalled();
@@ -1050,7 +1065,11 @@ it("accepts a background upgrade without navigating, replacing owned tracks or l
   const guitar = useSong.getState().stems!.guitar;
   const bandAudio = { sampleRate: 44100, channels: [new Float32Array([0.2, 0.3, 0.4])] };
   const bandTrack = { ...saved.audio[1], name: "Bass (generated)", file: "track0.flac", kind: "user" as const, transpose: true };
-  const next = { ...saved, audio: [...saved.audio, bandTrack], settings: { ...saved.settings, ":options": '{"bandOutOfDate":false,"generatedParts":{"bass":"track0"}}' } };
+  const next = {
+    ...saved,
+    audio: [...saved.audio, bandTrack],
+    settings: { ...saved.settings, ":options": '{"bandOutOfDate":false,"generatedParts":{"bass":"track0"}}' },
+  };
   acceptUpgradedSong(next, { track0: bandAudio });
   expect(useSong.getState().source).toBe(original);
   expect(useSong.getState().stems!.guitar).toBe(guitar);
@@ -1060,4 +1079,16 @@ it("accepts a background upgrade without navigating, replacing owned tracks or l
   expect(useSongLibrary.getState().index.songs[0]).toEqual(next);
   await useSongLibrary.getState().saveBeforePlayback();
   expect(api.save).not.toHaveBeenCalled();
+});
+
+it("validates canonical saved-track metadata without materializing sample arrays", async () => {
+  const getChannelData = vi.fn(() => {
+    throw new Error("metadata requested samples");
+  });
+  const pcm = { sampleRate: 44100, channels: [] as Float32Array[] };
+  sharePlaybackPcm(pcm, { numberOfChannels: 1, length: 3, sampleRate: 44100, getChannelData } as unknown as AudioBuffer);
+  codec.decodeTrack.mockResolvedValue(pcm);
+  const loaded = await loadSongAudio(saved.id);
+  expect(loaded.source).toBe(pcm);
+  expect(getChannelData).not.toHaveBeenCalled();
 });

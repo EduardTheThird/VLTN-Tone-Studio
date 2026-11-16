@@ -1,3 +1,4 @@
+import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { partSplitNote, selectWholeSongStems, useSong } from "@/song/store";
@@ -291,7 +292,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       ":options": JSON.stringify({ ...readOptions(key, {}), sections: sectionList, beats, firstBeat }),
     };
     const cued = songCues(chart, midiConfig.macros, midiFile, {
-      duration: source ? source.audio.channels[0].length / source.audio.sampleRate : 0,
+      duration: source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0,
       settings,
       rhythmControls,
     });
@@ -300,8 +301,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       error: cued.error,
       rhythmTempo: cued.error
         ? null
-        : (currentRhythmAutomation({ key, title: "", duration: source ? source.audio.channels[0].length / source.audio.sampleRate : 0, settings })?.draft.bpm ??
-          null),
+        : (currentRhythmAutomation({ key, title: "", duration: source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0, settings })?.draft
+            .bpm ?? null),
     };
   }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature]);
   // The song's MIDI timecode offset, saved with its options. Empty means 00:00:00:00.
@@ -829,7 +830,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             libraryId={source?.libraryId}
             playing={playing || library.playlistPlaying}
             title={savedSong?.title || source?.name || ""}
-            durationSeconds={source ? source.audio.channels[0].length / source.audio.sampleRate : 0}
+            durationSeconds={source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0}
           />
           <TrackImport playing={playing || library.playlistPlaying} />
           <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
@@ -895,7 +896,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               current={{
                 key,
                 title: source.name.replace(/\.[^.]+$/, ""),
-                duration: source.audio.channels[0].length / source.audio.sampleRate,
+                duration: pcmMemoryShape(source.audio).frames / source.audio.sampleRate,
                 settings: { ...readSettings(key), "": chart },
               }}
               locked={playing || library.playlistPlaying}

@@ -1,3 +1,4 @@
+import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { PcmAudio } from "@/song/types";
@@ -47,7 +48,7 @@ export function SongShapeControls({
     setNote("");
     save({ trimStart: range.start, trimEnd: range.end });
   };
-  const duration = audio ? (audio.channels[0]?.length ?? 0) / audio.sampleRate : 0;
+  const duration = audio ? pcmMemoryShape(audio).frames / audio.sampleRate : 0;
   const trailing = silence ? duration - silence.end : 0;
   const offer = silence && trailing > 0 && shape.trimEnd === undefined ? silence : null;
   const fade = (value: number | undefined) => Math.max(0, Math.min(CROSSFADE_MAX_S, value ?? 0));
