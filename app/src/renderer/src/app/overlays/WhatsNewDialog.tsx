@@ -23,6 +23,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Tighter repeat cues and lighter loading",
+    text: "Repeat and jump destination MIDI state is queued ahead with the audio boundary’s timestamp. The scheduler measures its clock alignment before use. Library tracks decode straight into playback storage in reusable chunks, reducing temporary audio copies while keeping per-track mixing, sample access and early preparation for the next song.",
+    image: midiCues,
+  },
+  {
     title: "The correct native NAM slot count",
     text: "GP-150/GP-180 native NAM management has 20 selectable slots, separate from the converted SnapTone bank. Tones now excludes the extra empty records in the pedal’s name reply and refuses renames outside slots 1–20. Read and rename NAM slots or switch the preset’s mode in Tones. Save the preset to keep its mode. NAM file upload remains unavailable.",
     image: rigTools,
