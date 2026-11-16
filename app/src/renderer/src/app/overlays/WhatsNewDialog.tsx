@@ -23,8 +23,8 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
-    title: "Manage your GP-150/GP-180 NAM slots",
-    text: "In Tones, read the NAM slots from your pedal and rename a slot. NAM models have their own list, separate from SnapTones. The panel shows which mode the active preset uses and lets you switch between SnapTone and NAM. Save the preset to keep its mode. NAM file upload is not available.",
+    title: "The correct native NAM slot count",
+    text: "GP-150/GP-180 native NAM management has 20 selectable slots, separate from the converted SnapTone bank. Tones now excludes the extra empty records in the pedal’s name reply and refuses renames outside slots 1–20. Read and rename NAM slots or switch the preset’s mode in Tones. Save the preset to keep its mode. NAM file upload remains unavailable.",
     image: rigTools,
   },
   {

@@ -23,7 +23,7 @@ Then play your set: stems, lyrics and chords, a generated band, and MIDI cues th
 
 This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-Studio) by grzmol. Every editor and librarian feature of the original is still here, and the fork adds a live-performance layer: a saved song library with playlists and backups, a stems player with metronome, lyrics and chords with a stage mode, timed MIDI cues over USB or Bluetooth, key and chord analysis, and generated drums and bass.<br>
 **Releases come from this fork:** [download them here](https://github.com/EduardTheThird/VLTN-Tone-Studio/releases).
-**New in v0.9.47:** list and rename GP-150/GP-180 NAM slots from Tones, and switch the active preset between SnapTone and NAM mode. Save the preset to keep its mode; NAM file upload is not available.
+**New in v0.9.48:** GP-150/GP-180 NAM management correctly uses the 20 native NAM slots. The extra empty records in a name reply are excluded from the editable bank. List and rename slots in Tones; NAM file upload remains unavailable.
 
 <br>
 
@@ -32,11 +32,11 @@ This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-
 <br>
 <br>
 
-### Download v0.9.47
+### Download v0.9.48
 
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.47/vltn-tone-studio-0.9.47-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.47/vltn-tone-studio-0.9.47-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.47/vltn-tone-studio-0.9.47-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.48/vltn-tone-studio-0.9.48-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.48/vltn-tone-studio-0.9.48-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.48/vltn-tone-studio-0.9.48-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 
 <sub>Linux users can <a href="#build-it-yourself">build it themselves</a>.</sub>
 

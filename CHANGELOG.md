@@ -4,6 +4,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.48] — 2026-11-16
+
+### Fixed
+- GP-150/GP-180 native NAM management uses the 20 selectable slots. Additional empty records in the pedal's name reply are not exposed as usable slots, and renames outside 1–20 are refused before sending. SnapTone and User IR capacity are unchanged.
+
 ## [0.9.47] — 2026-11-16
 
 ### Added
