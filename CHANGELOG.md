@@ -4,7 +4,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
-## [0.9.49] — 2026-11-16
+## [0.9.49] — 2026-11-18
 
 ### Fixed
 - MIDI scheduler clocks use measured monotonic alignment, so delivery of the start request cannot introduce a permanent timing offset. Repeat and jump destination state is queued ahead with its exact audio-boundary timestamp.
