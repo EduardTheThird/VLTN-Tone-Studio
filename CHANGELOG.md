@@ -8,7 +8,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Fixed
 - MIDI scheduler clocks use measured monotonic alignment, so delivery of the start request cannot introduce a permanent timing offset. Repeat and jump destination state is queued ahead with its exact audio-boundary timestamp.
-- Library FLAC loading fills playback storage directly in bounded, recycled chunks, removing a full intermediate decoded track and its playback copy. Metadata reads avoid materializing sample arrays. Playlist handovers release outgoing session ownership before the following preload, and ended buffer sources release native references after their audio tail. Independent track controls, sample readers and immediate preloading remain available.
+- Library FLAC loading fills playback storage directly in bounded, recycled chunks, removing a full intermediate decoded track and its playback copy. Metadata reads avoid materializing sample arrays. Playlist handovers release outgoing session ownership before the following preload, and ended buffer sources release native references after their audio tail. Simultaneous key and chord estimates share one worker copy of the harmony audio. Independent track controls, sample readers and immediate preloading remain available.
 
 ## [0.9.48] — 2026-11-16
 
