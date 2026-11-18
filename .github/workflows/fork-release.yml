@@ -27,6 +27,8 @@ permissions:
 env:
   # Node 24, as on the development Mac: under Node 26 its built-in localStorage hides the test one and library tests fail.
   NODE_VERSION: "24"
+  # onnxruntime-node (through transformers) downloads optional Linux CUDA binaries on install; the 1.21.0 archive now returns 404 and the app never uses CUDA.
+  npm_config_onnxruntime_node_install_cuda: skip
 
 jobs:
   version:
