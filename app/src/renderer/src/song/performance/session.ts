@@ -1,16 +1,13 @@
-import { pedalTempoMessages } from "./pedal-tempo";
-import { preparationSequence, type PreparationSequence } from "./preparation-sequence";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { type ExitBar, type RenderedBuffers, StemPlayer } from "@/song/stems/player";
 import { isPlainSpeed, RenderQueue } from "@/song/audio/render-queue";
-import { DEFAULT_SPEED, effectiveBpm, speedFromOptions, type SpeedSettings } from "./speed";
+import { DEFAULT_SPEED, speedFromOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { type HandedOverSong, useSongLibrary } from "@/song/library";
 import { playableStems } from "@/song/stems/playable";
 import { extraKeysIn, type ExtrasPart, type LoadedExtras, loadExtras } from "@/song/band/extras";
 import { parseBandSettings } from "@/song/band/arrangement";
-import { countLeadSeconds, type DrummerCount } from "@/song/performance/drummer-count";
 import { useNav } from "@/state/nav";
 import { setStageBusy } from "@/state/stage-activity";
 import { stageOperationActive } from "@/state/stage-operation";
@@ -22,12 +19,10 @@ import { host } from "@/host";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue, MidiTrigger } from "@/song/performance/chart";
 import { clockPosition, setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
-import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhythm";
 import { getSetting, performanceKey } from "@/song/performance/settings";
 import { playerShapeFromOptions } from "@/song/performance/song-shape";
 import { midiNow, prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
-import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState } from "@/song/performance/midi-chase";
-import { canStartRhythm, hasPedalRhythm, RHYTHM_MEMORY_SETTLE_MS, RHYTHM_RESTART, rhythmMemory, rhythmMemoryKey } from "./rhythm-runtime";
+import { canStartRhythm, hasPedalRhythm, rhythmMemory, rhythmMemoryKey } from "./rhythm-runtime";
 import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
 import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type TimecodeTail } from "@/song/performance/midi-scheduler";
 import { NO_TIMECODE, timecodeOffsetFrames } from "@/song/performance/timecode";
@@ -59,6 +54,7 @@ import { SessionOutput } from "./session-output";
 import { SessionRemote } from "./session-remote";
 import { SessionSections } from "./session-sections";
 import { SessionPlaylist } from "./session-playlist";
+import { SessionStart } from "./session-start";
 export { BLUETOOTH_PORT_ID, NO_TIMING, carriedInto, selectArmed, selectOutput } from "./session-core";
 export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, SessionOptions, SessionState, Timing } from "./session-core";
 
@@ -90,13 +86,6 @@ const NO_VIEW: ViewHost = {
   tap: NOT_ON_SCREEN,
 };
 
-/**
- * A start with app clock and no count-in holds the audio back this long, so Start and the first clock pulses go out before it. The
- * scheduler starts about 100 ms after Play and anchors the pulses on the audio start. Without the hold, the pulses for that first
- * 100 ms are already overdue when it starts, and go out in one burst. With the hold they are due on time.
- */
-const CLOCK_LEAD_MS = 150;
-
 /** The exit bars of a song's generated parts, joined by section: one bar with each part's audio on the track that part plays on. */
 function exitBarsOf(extras: Partial<Record<ExtrasPart, LoadedExtras>>): Record<string, ExitBar> {
   const bars: Record<string, ExitBar> = {};
@@ -125,6 +114,7 @@ export class PerformanceSession {
   private readonly remotePart = new SessionRemote(this);
   private readonly sectionsPart = new SessionSections(this);
   private readonly playlistPart = new SessionPlaylist(this);
+  private readonly startPart = new SessionStart(this);
   private effects: Effect[];
   /** Stage mode: seeking is refused however it is requested. */
   locked = false;
@@ -156,7 +146,6 @@ export class PerformanceSession {
   countInMs = 0;
   /** Epoch ms when the audio of a delayed start begins. Set only while a chase leads the audio; the transport byte goes out then. */
   transportAt: number | null = null;
-  private cancelDelay: (() => void) | null = null;
   previousBluetooth: BleMidiConnection | null;
   section: SectionPlan | null = null;
   /** The next playlist song, once it has been started on this song's clock */
@@ -201,7 +190,6 @@ export class PerformanceSession {
   /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
   private loadedPlayer: StemPlayer | null = null;
   private loadedRhythmKey = "";
-  private rhythmTestCleanup: (() => void) | null = null;
   /** The library id of the song loaded, when it is saved. A song trigger for this song does nothing. */
   loadedSongId: string | undefined;
   /** Set when a MIDI trigger asked for the loaded song to start: it starts once its player is ready and the library is idle */
@@ -541,57 +529,15 @@ export class PerformanceSession {
 
   // ---- state helpers -------------------------------------------------------------------------------------------
 
-  private preparationKey(state = this.state): string {
-    const player = state.player;
-    return JSON.stringify({
-      song: this.songSettingsKey,
-      position: player?.position,
-      start: player?.start,
-      end: player?.duration,
-      rate: player?.playbackRate,
-      cues: this.playCues(state),
-      parseError: state.parseError,
-      bpm: state.bpm,
-      rhythmTempo: state.rhythmTempo,
-      preparation: state.preparationSettings,
-      timing: state.timing,
-      tempo: state.tempoOnStart,
-      channel: state.tempoChannel,
-      clock: state.clock,
-      timecode: state.timecode,
-      speed: state.speed,
-    });
-  }
-
-  private readyFor(state = this.state): boolean {
-    return (
-      !!this.readySetup &&
-      this.readySetup.player === state.player &&
-      this.readySetup.output === selectOutput(state) &&
-      selectArmed(state) &&
-      selectOutput(state)?.state === "connected" &&
-      this.readySetup.key === this.preparationKey(state)
-    );
+  private readyFor(state?: SessionState) {
+    return this.startPart.readyFor(state);
   }
 
   /** Readiness describes what we sent on this connection, never a hardware acknowledgement. */
-  invalidatePreparation = () => {
-    if (!this.readySetup && !this.state.pedalsReady) return;
-    this.readySetup = null;
-    this.openingPrepared = undefined;
-    this.store.setState({ pedalsReady: false });
-  };
+  invalidatePreparation = () => this.startPart.invalidatePreparation();
 
   /** Explicitly allows once commands again. It sends nothing until the next Prepare or Play. */
-  resetPreparationCommands = () => {
-    if (this.playPending || this.state.playing) {
-      this.fail("Stop playback or cancel preparation before resetting once commands.");
-      return;
-    }
-    this.preparationHistory.reset();
-    this.invalidatePreparation();
-    this.set({ preparationOnceUsed: 0 });
-  };
+  resetPreparationCommands = () => this.startPart.resetPreparationCommands();
 
   set(patch: Partial<SessionState>) {
     if (this.readySetup && (!this.readyFor({ ...this.state, ...patch }) || patch.playing)) {
@@ -685,48 +631,13 @@ export class PerformanceSession {
     return this.outputPart.armRemembered();
   }
 
-  /** Waits out the start delay. Cancelling resolves the wait at once. */
-  /**
-   * The drummer's count for a start, or undefined when the song has none or its settings no longer ask for one. It plays through the
-   * generated drums' track, and only from stopped: a join into the next song passes no count (a count under a crossfade makes no sense).
-   */
-  private drummerCount(): DrummerCount | undefined {
-    const drums = this.bandExtras.drums;
-    const count = drums?.extras.countIn;
-    if (!drums || !count || !this.drummerCounts) return undefined;
-    return { track: drums.track, audio: count.audio, start: count.start };
-  }
-
-  private waitStartDelay(seconds: number): Promise<void> {
-    if (seconds <= 0) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        this.cancelDelay = null;
-        resolve();
-      }, seconds * 1000);
-      this.cancelDelay = () => {
-        clearTimeout(timer);
-        this.cancelDelay = null;
-        resolve();
-      };
-    });
-  }
-
   /** Invalidates the pending start (if any) so it does nothing when it resumes. */
   cancelPendingStart() {
-    this.invalidatePreparation();
-    this.playRequest++;
-    this.playPending = false;
-    this.set({ starting: false, preparing: null, preparationPlan: null });
-    const cancel = this.cancelDelay;
-    this.cancelDelay = null;
-    cancel?.();
+    return this.startPart.cancelPendingStart();
   }
 
   /** Cancels a start that is still waiting (the start delay, or a worker). A second Play press does this. Once audio has begun it does nothing. */
-  cancelStart = () => {
-    if (this.playPending) this.pause();
-  };
+  cancelStart = () => this.startPart.cancelStart();
 
   /** Stops the scheduler and releases anything this session started. A second call for one stop does nothing. */
   panic = (context?: PanicContext) => this.outputPart.panic(context);
@@ -741,11 +652,8 @@ export class PerformanceSession {
   degraded = (event: SchedulerDegraded) => this.outputPart.degraded(event);
 
   /** Hardware checks restore their temporary tempo before the transport can start. */
-  registerRhythmTestCleanup(cleanup: () => void): () => void {
-    this.rhythmTestCleanup = cleanup;
-    return () => {
-      if (this.rhythmTestCleanup === cleanup) this.rhythmTestCleanup = null;
-    };
+  registerRhythmTestCleanup(cleanup: () => void) {
+    return this.startPart.registerRhythmTestCleanup(cleanup);
   }
 
   // ---- transport -----------------------------------------------------------------------------------------------
@@ -802,187 +710,7 @@ export class PerformanceSession {
     });
   };
 
-  private start = async (prepareOnly: boolean) => {
-    if (stageOperationActive()) {
-      this.fail("Close native pedal transfer before starting playback.");
-      return;
-    }
-    const loopPass = this.restartingLoop;
-    this.restartingLoop = false;
-    let { player } = this.state;
-    if (!player || this.state.parseError || this.playPending || player.isPlaying) return;
-    if (this.armed && hasPedalRhythm(this.state.cues) && !canStartRhythm(this.state.cues, player.position)) {
-      this.set({ rhythmRestart: true });
-      this.fail(RHYTHM_RESTART);
-      return;
-    }
-    if (this.armed && hasPedalRhythm(this.state.cues) && this.behaviourOf(player) === "loop") {
-      this.fail("Turn off the playlist entry’s whole-song loop before using automatic RC-10R drums.");
-      return;
-    }
-    if (prepareOnly && (!this.armed || this.output?.state !== "connected" || !this.state.preparationSettings?.enabled)) {
-      this.fail("Connect a MIDI output, enable Send cues and Before song preparation, then prepare again.");
-      return;
-    }
-    if (prepareOnly && this.readyFor()) return;
-    this.rhythmTestCleanup?.();
-    const request = ++this.playRequest;
-    this.playPending = true;
-    this.set({ starting: true, error: "" });
-    let armed = this.armed,
-      output = this.output;
-    try {
-      let speedPreparation: Promise<void> | null;
-      do {
-        speedPreparation = this.speedPreparation;
-        if (speedPreparation) await speedPreparation;
-      } while (speedPreparation !== this.speedPreparation);
-      if (request !== this.playRequest) return;
-      player = this.state.player;
-      if (!player || this.state.parseError) return;
-      armed = this.armed;
-      output = this.output;
-      const cached = this.readyFor() ? this.readySetup : null;
-      if (armed && !cached && !this.state.preparationSettings?.enabled && hasPedalRhythm(this.state.cues)) {
-        if (!canStartRhythm(this.state.cues, player.position)) {
-          this.set({ rhythmRestart: true });
-          throw new Error(RHYTHM_RESTART);
-        }
-        let preparedKey: string;
-        do {
-          preparedKey = rhythmMemoryKey(this.state.cues);
-          for (const bytes of rhythmMemory(this.state.cues)) this.sendPerformance(bytes, undefined, "RC-10R memory preparation");
-          await this.waitStartDelay(RHYTHM_MEMORY_SETTLE_MS / 1000);
-          if (request !== this.playRequest) return;
-          if (!this.armed || this.output !== output) throw new Error("MIDI output changed while preparing the RC-10R. Play from beginning again.");
-        } while (preparedKey !== rhythmMemoryKey(this.state.cues));
-        this.set({ rhythmRestart: false });
-      }
-      // An offset that is not valid at the rate stops the start, rather than sending the wrong position.
-      if (armed) timecodeOffsetFrames(this.state.timecode);
-      if (armed && !this.readyWorker) {
-        const warm = this.prepared ?? prepareMidiScheduler();
-        this.prepared = warm;
-        await warm.ready;
-        if (request !== this.playRequest) return;
-        this.readyWorker = warm.worker;
-        this.prepared = null;
-      }
-      armed = this.armed;
-      output = this.output;
-      const { bpm, timing } = this.state;
-      const tempoMessages = this.tempoMessages(armed, output);
-      const requestedPosition = player.position >= player.duration ? player.start : Math.max(0, player.position);
-      const preparationPosition = preRollStart(requestedPosition, timing.preRollBeats, bpm);
-      const preparation = loopPass ? null : this.state.preparationSettings;
-      let prepared = !!cached;
-      if (cached) this.openingPrepared = cached.opening;
-      if (armed && preparation && !cached) {
-        const sequence = preparationSequence({
-          cues: this.playCues(this.state),
-          position: preparationPosition,
-          requestedPosition,
-          start: player.start,
-          settings: preparation,
-          triggers: chaseTriggers(),
-          history: this.preparationHistory,
-          pedalChannel: this.state.tempoChannel,
-          tempo: tempoMessages,
-        });
-        if (!preparation.enabled && sequence.skipped.length) {
-          const warning = "Before song preparation is disabled. Its commands were skipped; playback continues.";
-          this.setMidiStatus(warning);
-          showToast({ tone: "info", title: "Before song commands skipped", body: warning });
-        }
-        if (preparation.enabled) {
-          prepared = true;
-          const check = () => request === this.playRequest && this.armed && this.output === output && output?.state === "connected";
-          const commands = sequence.steps.reduce((total, step) => total + (step.kind === "send" ? step.commands.length : 0), 0);
-          this.set({ preparationPlan: sequence });
-          for (const [index, step] of sequence.steps.entries()) {
-            this.set({ preparing: { label: step.label, until: performance.now() + (step.kind === "wait" ? step.durationMs : 0), commands, step: index } });
-            if (step.kind === "wait") {
-              await this.waitStartDelay(step.durationMs / 1000);
-              if (request !== this.playRequest) return;
-            } else
-              for (const command of step.commands) {
-                if (!check()) throw new Error("MIDI preparation was interrupted. Check the output and press Play again.");
-                // A failed send may still have reached a pedal, so once commands are consumed before the first attempt.
-                if (this.preparationHistory.started(command.onceKey)) this.set({ preparationOnceUsed: this.preparationHistory.size });
-                this.sendPerformance(command.bytes, undefined, step.origin === "tempo" ? "Song tempo" : `Before song: ${step.label}`);
-              }
-            if (!check()) throw new Error("MIDI output changed during preparation. Check it and press Play again.");
-          }
-          this.openingPrepared = { position: preparationPosition, messages: sequence.suppressed };
-          this.set({ rhythmRestart: false });
-        }
-      }
-      if (prepareOnly) {
-        if (!armed || !this.openingPrepared || !this.output || !this.armed) throw new Error("MIDI preparation is no longer valid. Prepare again.");
-        this.readySetup = { player, output: this.output, key: this.preparationKey(), opening: this.openingPrepared };
-        this.set({ pedalsReady: true, preparing: null });
-        return;
-      }
-      await this.waitStartDelay(timing.startDelay);
-      if (request !== this.playRequest) return;
-      // The count-in is clicked before the audio starts, so it begins with the tempo message.
-      const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
-      // The count-in is as long as the audio it leads: beats at the song tempo times the rate. The drummer's count, when it plays, leads the
-      // song too, and the longer of the two is what the tempo message and the cues wait for.
-      const chaseStart = preRollStart(requestedPosition, timing.preRollBeats, bpm);
-      const drummer = this.drummerCount();
-      const drummerMs = countLeadSeconds(drummer, chaseStart, player.playbackRate) * 1000;
-      this.countInMs = Math.max(bpm > 0 ? (countIn * beatSeconds(bpm) * 1000) / player.playbackRate : 0, drummerMs);
-      // A chase that the pedals need before the song begins holds the audio back by CHASE_LEAD_MS, so it goes out first. Nothing is held
-      // when the output is not armed, or when there is no state to chase (a start from the beginning, or no cues before the position).
-      const settled = new Set(this.openingPrepared?.messages.map((bytes) => bytes.join(",")));
-      const chaseLead =
-        armed &&
-        computeChaseState(this.playCues(this.state), chaseStart, chaseTriggerSet(chaseTriggers())).some((message) => !settled.has(message.bytes.join(",")))
-          ? CHASE_LEAD_MS
-          : 0;
-      // Clock without a count-in has no lead-in to cover the scheduler's start, so the hold is CLOCK_LEAD_MS.
-      const clockLead = armed && this.state.clock && !this.state.timecode.enabled && countIn === 0 && drummerMs === 0 ? CLOCK_LEAD_MS : 0;
-      const lead = Math.max(chaseLead, clockLead) / 1000;
-      this.transportAt = lead ? midiNow() + lead * 1000 : null;
-      await player.play({
-        bpm,
-        countInBeats: countIn,
-        preRollBeats: timing.preRollBeats,
-        ...(lead ? { startDelay: lead } : {}),
-        ...(drummer ? { drummer } : {}),
-      });
-      if (request !== this.playRequest) {
-        player.pause();
-        this.terminateWorker();
-        return;
-      }
-      this.startTempo = prepared ? null : tempoMessages;
-      // Every start and resume sends the play trigger, except a loop pass, which is not a new play press.
-      this.startPlay = loopPass ? null : this.triggerBytes("play");
-      // Cues start from where the audio really starts: a pre-roll puts that before the requested position.
-      this.startPosition = armed ? preRollStart(requestedPosition, timing.preRollBeats, bpm) : null;
-      this.set({ playing: true, preparing: null });
-    } catch (e) {
-      this.terminateWorker();
-      if (request === this.playRequest) {
-        this.batch(() => {
-          if (armed) {
-            useMidiDiagnostics.getState().fault(String(e));
-            this.setArmed(false);
-            if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
-          }
-          this.fail(e);
-          if (this.state.playlistPlaying) useSongLibrary.getState().pausePlaylist();
-        });
-      }
-    } finally {
-      if (request === this.playRequest) {
-        this.playPending = false;
-        this.set({ starting: false, preparing: null, preparationPlan: null });
-      }
-    }
-  };
+  private start = (prepareOnly: boolean) => this.startPart.start(prepareOnly);
 
   seek = async (value: number) => {
     if (this.locked) return;
@@ -1043,36 +771,13 @@ export class PerformanceSession {
   };
 
   /** The one-time tempo message a start sends, or null when it sends none. Throws when the tempo is out of range. */
-  tempoMessages(armed: boolean, output: MidiOutput | undefined, rate = this.state.player?.playbackRate ?? 1): number[][] | null {
-    const { tempoOnStart } = this.state;
-    if (!armed || !tempoOnStart || output?.state !== "connected") return null;
-    // The pedal is sent the tempo the song plays at, so the range is checked on the effective BPM.
-    return this.configuredTempoMessages(rate);
-  }
-
-  private configuredTempoMessages(rate = this.state.player?.playbackRate ?? 1): number[][] {
-    const { tempoChannel, bpm } = this.state;
-    const tempoBpm = effectiveBpm(this.state.rhythmTempo ?? bpm, rate);
-    return pedalTempoMessages(tempoBpm, tempoChannel);
+  tempoMessages(armed: boolean, output: MidiOutput | undefined, rate?: number) {
+    return this.startPart.tempoMessages(armed, output, rate);
   }
 
   /** Read-only: this never consumes repeat rules or sends MIDI. */
-  preparationPreview(): PreparationSequence | null {
-    if (this.state.preparationPlan) return this.state.preparationPlan;
-    const { player, preparationSettings: settings, bpm, timing } = this.state;
-    if (!player || !settings?.enabled) return null;
-    const requestedPosition = player.position >= player.duration ? player.start : Math.max(0, player.position);
-    return preparationSequence({
-      cues: this.playCues(this.state),
-      position: preRollStart(requestedPosition, timing.preRollBeats, bpm),
-      requestedPosition,
-      start: player.start,
-      settings,
-      triggers: chaseTriggers(),
-      history: this.preparationHistory,
-      pedalChannel: this.state.tempoChannel,
-      tempo: this.state.tempoOnStart ? this.configuredTempoMessages() : null,
-    });
+  preparationPreview() {
+    return this.startPart.preparationPreview();
   }
 
   /** Crossfades into the next playlist song now. Returns false when no next song is ready, or a join is already planned. */
