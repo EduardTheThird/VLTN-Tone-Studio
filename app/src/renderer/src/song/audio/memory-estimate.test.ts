@@ -25,13 +25,20 @@ describe("songFootprint", () => {
 describe("memoryLines", () => {
   const footprint = songFootprint({ store: [{ channels: 2, frames: 44100 * 60 * 5 }], player: [], prepared: [], renders: [] });
   it("reads as one sentence with no warning when there is room", () => {
-    const { text, warning } = memoryLines({ workingSetKb: 2 * 1048576, peakWorkingSetKb: 2.5 * 1048576, totalKb: 16 * 1048576, freeKb: 8 * 1048576 }, footprint);
+    const { text, warning } = memoryLines(
+      { workingSetKb: 2 * 1048576, peakWorkingSetKb: 2.5 * 1048576, totalKb: 16 * 1048576, freeKb: 8 * 1048576 },
+      footprint,
+    );
     expect(text).toBe("Memory: app 2.0 GB (peak 2.5 GB), this song's audio 0.1 GB, free on this Mac 8.0 GB");
     expect(warning).toBe("");
   });
   it("warns when free memory is under 1.5 GB or the app is over 3.5 GB", () => {
-    expect(memoryLines({ workingSetKb: 1048576, peakWorkingSetKb: 1048576, totalKb: 8 * 1048576, freeKb: 1048576 }, footprint).warning).toContain("Free memory is low");
-    expect(memoryLines({ workingSetKb: 4 * 1048576, peakWorkingSetKb: 4 * 1048576, totalKb: 16 * 1048576, freeKb: 8 * 1048576 }, footprint).warning).toContain("a lot of memory");
+    expect(memoryLines({ workingSetKb: 1048576, peakWorkingSetKb: 1048576, totalKb: 8 * 1048576, freeKb: 1048576 }, footprint).warning).toContain(
+      "Free memory is low",
+    );
+    expect(memoryLines({ workingSetKb: 4 * 1048576, peakWorkingSetKb: 4 * 1048576, totalKb: 16 * 1048576, freeKb: 8 * 1048576 }, footprint).warning).toContain(
+      "a lot of memory",
+    );
   });
   it("still shows the song's audio when the host cannot measure", () => {
     expect(memoryLines(null, footprint)).toEqual({ text: "Memory: this song's audio 0.1 GB", warning: "" });

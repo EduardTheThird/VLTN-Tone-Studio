@@ -8,8 +8,7 @@ import type { PcmAudio, Stems } from "../types";
 import { pcmMemoryShape } from "./playback-pcm";
 import { bytesText, songFootprint, type Footprint, type HeldTrack } from "./memory-estimate";
 
-const pcmTracks = (audio: PcmAudio[]): HeldTrack[] =>
-  audio.map(pcmMemoryShape).filter((track) => track.channels > 0);
+const pcmTracks = (audio: PcmAudio[]): HeldTrack[] => audio.map(pcmMemoryShape).filter((track) => track.channels > 0);
 const stemList = (stems: Stems | null) => Object.values(stems ?? {}).filter((a): a is NonNullable<typeof a> => !!a);
 
 /** The footprint right now. Reads array lengths only: it allocates no audio and cannot disturb playback. */
@@ -39,7 +38,8 @@ export function watchMemory(): void {
       if (!f.total) return;
       const audio = `audio ${bytesText(f.total)} (store ${mb(f.store)}, player ${mb(f.player)}, next ${mb(f.prepared)}, renders ${mb(f.renders)})`;
       void host.app.memory().then(
-        (m) => sessionLog("Memory", m ? `${audio}; app ${mb(m.workingSetKb * 1024)} (peak ${mb(m.peakWorkingSetKb * 1024)}), free ${mb(m.freeKb * 1024)}` : audio),
+        (m) =>
+          sessionLog("Memory", m ? `${audio}; app ${mb(m.workingSetKb * 1024)} (peak ${mb(m.peakWorkingSetKb * 1024)}), free ${mb(m.freeKb * 1024)}` : audio),
         () => sessionLog("Memory", audio),
       );
     } catch {

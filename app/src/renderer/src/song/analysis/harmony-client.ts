@@ -17,7 +17,9 @@ interface Reader {
   /** The audios this worker holds a copy of, and the index each was sent under. */
   copies: Map<PcmAudio, number>;
 }
-type JobRequest = { kind: "key"; id: number; harmony: number; input: Omit<KeyInput, "harmony"> } | { kind: "chords"; id: number; harmony: number[]; input: Omit<ChordsInput, "harmony" | "harmonyParts"> };
+type JobRequest =
+  | { kind: "key"; id: number; harmony: number; input: Omit<KeyInput, "harmony"> }
+  | { kind: "chords"; id: number; harmony: number[]; input: Omit<ChordsInput, "harmony" | "harmonyParts"> };
 
 const readers = new WeakMap<PcmAudio, Reader>();
 let nextId = 0;

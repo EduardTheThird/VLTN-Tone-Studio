@@ -183,7 +183,11 @@ export class SessionOutput {
       if (bytes[1] === 73) this.tempoMsb.set(bytes[0], bytes[2]);
       if (bytes[1] === 74 && this.tempoMsb.has(bytes[0]))
         this.core.set({
-          lastTempo: { bpm: this.tempoMsb.get(bytes[0])! * 128 + bytes[2], channel: this.core.state.tempoChannel, output: this.core.output?.name ?? "MIDI output" },
+          lastTempo: {
+            bpm: this.tempoMsb.get(bytes[0])! * 128 + bytes[2],
+            channel: this.core.state.tempoChannel,
+            output: this.core.output?.name ?? "MIDI output",
+          },
         });
     }
     const queued = midiNow(),

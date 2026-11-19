@@ -246,7 +246,8 @@ export class SessionStart {
         }
       }
       if (prepareOnly) {
-        if (!armed || !this.core.openingPrepared || !this.core.output || !this.core.armed) throw new Error("MIDI preparation is no longer valid. Prepare again.");
+        if (!armed || !this.core.openingPrepared || !this.core.output || !this.core.armed)
+          throw new Error("MIDI preparation is no longer valid. Prepare again.");
         this.core.readySetup = { player, output: this.core.output, key: this.preparationKey(), opening: this.core.openingPrepared };
         this.core.set({ pedalsReady: true, preparing: null });
         return;
@@ -266,7 +267,9 @@ export class SessionStart {
       const settled = new Set(this.core.openingPrepared?.messages.map((bytes) => bytes.join(",")));
       const chaseLead =
         armed &&
-        computeChaseState(this.core.playCues(this.core.state), chaseStart, chaseTriggerSet(chaseTriggers())).some((message) => !settled.has(message.bytes.join(",")))
+        computeChaseState(this.core.playCues(this.core.state), chaseStart, chaseTriggerSet(chaseTriggers())).some(
+          (message) => !settled.has(message.bytes.join(",")),
+        )
           ? CHASE_LEAD_MS
           : 0;
       // Clock without a count-in has no lead-in to cover the scheduler's start, so the hold is CLOCK_LEAD_MS.

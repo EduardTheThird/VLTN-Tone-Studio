@@ -35,7 +35,8 @@ it("derives the key stem and the summed chord harmony from stems posted once", a
   vi.resetModules();
   try {
     await import("./harmony-worker");
-    const tone = (hz: number[]) => Float32Array.from({ length: 16000 }, (_, i) => hz.reduce((sum, f) => sum + 0.15 * Math.sin((2 * Math.PI * f * i) / 8000), 0));
+    const tone = (hz: number[]) =>
+      Float32Array.from({ length: 16000 }, (_, i) => hz.reduce((sum, f) => sum + 0.15 * Math.sin((2 * Math.PI * f * i) / 8000), 0));
     const guitar = { sampleRate: 8000, channels: [tone([261.6256, 329.6276])] };
     const other = { sampleRate: 8000, channels: [tone([391.9954])] };
     const keyInput = { bass: null, chords: [], sections: [{ start: 0, end: 2 }] };

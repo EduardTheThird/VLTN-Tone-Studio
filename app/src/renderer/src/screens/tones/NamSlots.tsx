@@ -171,8 +171,8 @@ function NamSlotsPanel() {
             <DialogTitle>Upload NAM to slot {upload?.slot.slot}</DialogTitle>
             <DialogDescription>
               This replaces the model in slot {upload?.slot.slot}
-              {upload?.slot.kind !== "empty" && upload?.slot.name ? ` ("${upload.slot.name}")` : ""}. The replaced model cannot be read back from the pedal, so keep your own copy of it
-              first.
+              {upload?.slot.kind !== "empty" && upload?.slot.name ? ` ("${upload.slot.name}")` : ""}. The replaced model cannot be read back from the pedal, so
+              keep your own copy of it first.
             </DialogDescription>
           </DialogHeader>
           <form

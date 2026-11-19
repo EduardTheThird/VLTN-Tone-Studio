@@ -1,11 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_BAND_SETTINGS,
-  planSections,
-  type BandSettings,
-} from "./arrangement";
+import { DEFAULT_BAND_SETTINGS, planSections, type BandSettings } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { generateDrums } from "./drums";
 import type { StyleId } from "./styles/types";
@@ -48,11 +44,7 @@ const sections: Section[] = [
   },
 ];
 
-function notesFor(
-  style: StyleId,
-  engine: number,
-  extra: Partial<BandSettings> = {},
-) {
+function notesFor(style: StyleId, engine: number, extra: Partial<BandSettings> = {}) {
   const settings: BandSettings = {
     ...DEFAULT_BAND_SETTINGS,
     engine,
@@ -64,12 +56,7 @@ function notesFor(
     sections: { b: { fill: true }, d: { energy: 5 } },
     ...extra,
   };
-  return generateDrums(
-    grid,
-    planSections(sections, BARS * BAR, settings),
-    settings,
-    7,
-  );
+  return generateDrums(grid, planSections(sections, BARS * BAR, settings), settings, 7);
 }
 
 const CASES: [StyleId, number, Partial<BandSettings>][] = [
@@ -91,19 +78,10 @@ const CASES: [StyleId, number, Partial<BandSettings>][] = [
 ];
 
 describe("drums of songs on an earlier engine", () => {
-  const actual = Object.fromEntries(
-    CASES.map(([style, engine, extra], i) => [
-      `${i} ${style} engine ${engine}`,
-      notesFor(style, engine, extra),
-    ]),
-  );
+  const actual = Object.fromEntries(CASES.map(([style, engine, extra], i) => [`${i} ${style} engine ${engine}`, notesFor(style, engine, extra)]));
 
   it("matches the golden notes", () => {
-    if (process.env.UPDATE_GOLDEN)
-      writeFileSync(
-        join(__dirname, "drums-golden.snapshot.json"),
-        JSON.stringify(actual),
-      );
+    if (process.env.UPDATE_GOLDEN) writeFileSync(join(__dirname, "drums-golden.snapshot.json"), JSON.stringify(actual));
     expect(JSON.parse(JSON.stringify(actual))).toEqual(golden);
   });
 });

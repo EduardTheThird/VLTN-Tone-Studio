@@ -104,7 +104,10 @@ describe("drumOnsets", () => {
     }));
     const found = drumOnsets(stem(longHits, 300, 2));
     // Check accuracy across the full stem; wall-clock speed depends on the runner and concurrent test load.
-    near(found.kick, longHits.filter((hit) => hit.kind === "kick").map((hit) => hit.time));
+    near(
+      found.kick,
+      longHits.filter((hit) => hit.kind === "kick").map((hit) => hit.time),
+    );
   }, 15_000);
 });
 
@@ -156,14 +159,14 @@ describe("followDrummer", () => {
   });
 });
 
-it.each([[CLOSED_HAT, CRASH, "high"], [SNARE, HIGH_TOM, "mid"]] as const)(
-  "keeps simultaneous pitches %i and %i together while distinct beats compete",
-  (first, second, band) => {
-    const onsets: DrumOnsets = { kick: [], mid: [], high: [] };
-    onsets[band] = [0.98, 1.035];
-    const drums = [note(1, first), note(1, second), note(1.04, first)];
-    const result = followDrummer(drums, [], onsets).drums;
-    expect(result.map((n) => n.time)).toEqual([0.98, 0.98, 1.035]);
-    expect(drums.map((n) => n.time)).toEqual([1, 1, 1.04]);
-  },
-);
+it.each([
+  [CLOSED_HAT, CRASH, "high"],
+  [SNARE, HIGH_TOM, "mid"],
+] as const)("keeps simultaneous pitches %i and %i together while distinct beats compete", (first, second, band) => {
+  const onsets: DrumOnsets = { kick: [], mid: [], high: [] };
+  onsets[band] = [0.98, 1.035];
+  const drums = [note(1, first), note(1, second), note(1.04, first)];
+  const result = followDrummer(drums, [], onsets).drums;
+  expect(result.map((n) => n.time)).toEqual([0.98, 0.98, 1.035]);
+  expect(drums.map((n) => n.time)).toEqual([1, 1, 1.04]);
+});

@@ -18,7 +18,9 @@ class FakeWorker {
     return this.postMessage.mock.calls.map(([message]) => message).find((message) => message.kind === kind) as Exclude<HarmonyRequest, { kind: "audio" }>;
   }
   audios() {
-    return this.postMessage.mock.calls.map(([message]) => message).filter((message): message is Extract<HarmonyRequest, { kind: "audio" }> => message.kind === "audio");
+    return this.postMessage.mock.calls
+      .map(([message]) => message)
+      .filter((message): message is Extract<HarmonyRequest, { kind: "audio" }> => message.kind === "audio");
   }
 }
 const pcm = () => ({ sampleRate: 44100, channels: [new Float32Array([0.25, -0.5]), new Float32Array([0.5, -0.25])] });

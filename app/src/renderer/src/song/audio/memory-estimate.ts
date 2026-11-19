@@ -51,13 +51,18 @@ const gb = (kb: number) => `${(kb / 1024 / 1024).toFixed(1)} GB`;
 export const bytesText = (bytes: number) => gb(bytes / 1024);
 
 /** The lines MIDI health shows: the memory sentence and, when memory is short, a warning. */
-export function memoryLines(memory: { workingSetKb: number; peakWorkingSetKb: number; totalKb: number; freeKb: number } | null, footprint: Footprint): { text: string; warning: string } {
+export function memoryLines(
+  memory: { workingSetKb: number; peakWorkingSetKb: number; totalKb: number; freeKb: number } | null,
+  footprint: Footprint,
+): { text: string; warning: string } {
   const audio = `this song's audio ${bytesText(footprint.total)}`;
   if (!memory) return { text: `Memory: ${audio}`, warning: "" };
   const text = `Memory: app ${gb(memory.workingSetKb)} (peak ${gb(memory.peakWorkingSetKb)}), ${audio}, free on this Mac ${gb(memory.freeKb)}`;
   const short = memory.freeKb < FREE_WARN_KB;
   const big = memory.workingSetKb > RENDERER_WARN_KB;
   const warning =
-    short || big ? `${short ? "Free memory is low" : "The app is using a lot of memory"}. A long set with big songs may stutter; close other apps or split the set.` : "";
+    short || big
+      ? `${short ? "Free memory is low" : "The app is using a lot of memory"}. A long set with big songs may stutter; close other apps or split the set.`
+      : "";
   return { text, warning };
 }
