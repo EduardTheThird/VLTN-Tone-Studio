@@ -4,6 +4,21 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.50] — 2026-11-19
+
+### Added
+- GP-150/GP-180: upload an A2 Lite `.nam` model into native NAM slots 1–20 from Tones. The app converts the file, asks before replacing the slot, and reads the list back to verify the new name. Other NAM types are refused before anything is sent. Not yet tried on a real pedal.
+- The Band dialog says "Original tracks still fade here" when a hard ending is chosen but the original tracks keep fading.
+
+### Fixed
+- Cancelling a section jump after a vamp's exit bar has started no longer cuts the exit short.
+- If the window fails to reload after a crash, or takes longer than 10 seconds, the app offers Reload or Quit instead of leaving a blank window.
+- On songs with several stems, key and chord detection share one copy of each stem.
+
+### Changed
+- The packaged app no longer carries unused copies of the transcription runtime (about 100 MB smaller).
+- The performance user guide is shorter and Bluetooth setup now lives in it.
+
 ## [0.9.49] — 2026-11-18
 
 ### Fixed

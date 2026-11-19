@@ -23,7 +23,7 @@ Then play your set: stems, lyrics and chords, a generated band, and MIDI cues th
 
 This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-Studio) by grzmol. Every editor and librarian feature of the original is still here, and the fork adds a live-performance layer: a saved song library with playlists and backups, a stems player with metronome, lyrics and chords with a stage mode, timed MIDI cues over USB or Bluetooth, key and chord analysis, and generated drums and bass.<br>
 **Releases come from this fork:** [download them here](https://github.com/EduardTheThird/VLTN-Tone-Studio/releases).
-**New in v0.9.49:** Repeat-boundary MIDI state is scheduled ahead of the audio jump, and scheduler clocks are calibrated before use. Library tracks decode directly into playback storage in reusable chunks, reducing temporary audio copies while keeping per-track controls and early preloading.
+**New in v0.9.50:** upload A2 Lite NAM models to GP-150/GP-180 slots from Tones, a notice when the original tracks still fade under a hard ending, and fixes for vamp exits and crash recovery. [Performance](PERFORMANCE.md).
 
 <br>
 
@@ -32,11 +32,11 @@ This is Eduard's fork of [VLTN Tone Studio](https://github.com/grzmol/VLTN-Tone-
 <br>
 <br>
 
-### Download v0.9.49
+### Download v0.9.50
 
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.49/vltn-tone-studio-0.9.49-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.49/vltn-tone-studio-0.9.49-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
-<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.49/vltn-tone-studio-0.9.49-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.50/vltn-tone-studio-0.9.50-x64.exe"><img src="https://img.shields.io/badge/Windows-x64_installer-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows (x64 installer)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.50/vltn-tone-studio-0.9.50-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Apple silicon)"></a>
+<a href="https://github.com/EduardTheThird/VLTN-Tone-Studio/releases/download/v0.9.50/vltn-tone-studio-0.9.50-x64.dmg"><img src="https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS (Intel)"></a>
 
 <sub>Linux users can <a href="#build-it-yourself">build it themselves</a>.</sub>
 
@@ -54,7 +54,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/EduardTheThird/VLTN-To
 <br>
 <br>
 
-[Download](#download-v0949) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v0950) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -590,6 +590,7 @@ Still stuck? *Copy diagnostic report* gives a short summary without preset conte
 | **App** | Electron 43, React 19, TypeScript, Tailwind CSS v4 |
 | **Presets** | Reads and writes `.prst` files byte for byte: 507 bytes (GP-5), 552 (GP-50), 1224 (GP-200 family) |
 | **SnapTones** | Converts NAM A1 and A2 captures the way Valeton Suite does, in a Web Worker, then uploads them over USB |
+| **NAM slots** | GP-150/GP-180: lists and renames native NAM slots 1–20 and uploads A2 Lite `.nam` models into them, checked by reading the list back |
 | **User IRs** | Prepared like Valeton Suite does it (first channel, 44.1 kHz, 24-bit), 512 or 1024 samples per model |
 | **Stems** | Demucs on your computer: Standard (`htdemucs_6s`), Fine-tuned (`htdemucs_ft`) or Best (both); WebGPU when the graphics card can run it |
 | **Song library** | Lossless FLAC, every save staged and flushed to disk before the library points at it; deleted songs go to the Trash |

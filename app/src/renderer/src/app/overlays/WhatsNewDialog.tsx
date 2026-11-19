@@ -23,6 +23,16 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Upload NAM models to your GP-150/GP-180",
+    text: "In Tones, open the NAM slots and choose Upload NAM on a slot to put an A2 Lite .nam file on the pedal. The app converts it, asks before it replaces the slot, and reads the list back to check the new name. The model you replace can't be read back from the pedal, so keep your own copy. Other NAM types are refused before anything is sent.",
+    image: rigTools,
+  },
+  {
+    title: "Small fixes for the stage",
+    text: "If a hard ending is chosen while the original tracks still fade out, the Band dialog now tells you. Cancelling a jump after a vamp's exit bar has started lets the exit finish. If the window can't reload after a crash, you get Reload or Quit instead of a blank window.",
+    image: band,
+  },
+  {
     title: "Tighter repeat cues and lighter loading",
     text: "Repeat and jump destination MIDI state is queued ahead with the audio boundary’s timestamp. The scheduler measures its clock alignment before use. Library tracks decode straight into playback storage in reusable chunks, reducing temporary audio copies while keeping per-track mixing, sample access and early preparation for the next song.",
     image: midiCues,
