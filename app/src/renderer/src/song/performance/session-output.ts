@@ -93,7 +93,7 @@ export class SessionOutput {
     return { output: this.core.output, armed: this.core.armed, clock: this.core.state.clock };
   }
 
-  /** Arms or disarms this.core session only. Faults and output changes use it, so they leave the remembered preference alone. */
+  /** Arms or disarms this session only. Faults and output changes use it, so they leave the remembered preference alone. */
   setArmed = (value: boolean) => {
     if (this.core.playPending && this.core.state.preparing) this.core.pause();
     const wasPlaying = this.core.state.playing && hasPedalRhythm(this.core.state.cues);
@@ -117,7 +117,7 @@ export class SessionOutput {
     this.sendCues(false);
   };
 
-  /** Whether the Send cues preference was turned on for this.core port. */
+  /** Whether the Send cues preference was turned on for this port. */
   rememberedFor(portId: string): boolean {
     const { on, outputId } = useMidiConfiguration.getState().sendCues;
     return on && outputId !== "" && outputId === portId;
@@ -131,7 +131,7 @@ export class SessionOutput {
     return true;
   }
 
-  /** Stops the scheduler and releases anything this.core session started. A second call for one stop does nothing. */
+  /** Stops the scheduler and releases anything this session started. A second call for one stop does nothing. */
   panic = (context: PanicContext = this.context()) => {
     this.core.invalidatePreparation();
     this.core.startPosition = null;
@@ -154,7 +154,7 @@ export class SessionOutput {
         this.recordQueued(release.bytes, release.timestamp, "RC-10R control release");
       }
       // CC64 is sustain on synths but looper Stop on the GP-150 / GP-180. Release only
-      // channels where this.core session actually queued note messages.
+      // channels where this session actually queued note messages.
       for (const ch of this.noteChannels)
         for (const bytes of [
           [176 + ch, 64, 0],

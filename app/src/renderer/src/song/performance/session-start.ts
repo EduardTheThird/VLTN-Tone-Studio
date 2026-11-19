@@ -60,7 +60,7 @@ export class SessionStart {
     );
   }
 
-  /** Readiness describes what we sent on this.core connection, never a hardware acknowledgement. */
+  /** Readiness describes what we sent on this connection, never a hardware acknowledgement. */
   invalidatePreparation = () => {
     if (!this.core.readySetup && !this.core.state.pedalsReady) return;
     this.core.readySetup = null;
@@ -326,7 +326,7 @@ export class SessionStart {
     return pedalTempoMessages(tempoBpm, tempoChannel);
   }
 
-  /** Read-only: this.core never consumes repeat rules or sends MIDI. */
+  /** Read-only: this never consumes repeat rules or sends MIDI. */
   preparationPreview(): PreparationSequence | null {
     if (this.core.state.preparationPlan) return this.core.state.preparationPlan;
     const { player, preparationSettings: settings, bpm, timing } = this.core.state;

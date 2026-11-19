@@ -111,7 +111,7 @@ export class SessionEffects {
     };
   }
 
-  /** Chains the next playlist song onto this.core one once its join is close, so that the two play on one clock. */
+  /** Chains the next playlist song onto this one once its join is close, so that the two play on one clock. */
   private chainNextEffect(): Effect {
     return {
       deps: (s) => [s.player, s.playing, s.queued, s.playlistPlaying],
@@ -123,7 +123,7 @@ export class SessionEffects {
     };
   }
 
-  /** Stopping the playlist from elsewhere stops this.core song. */
+  /** Stopping the playlist from elsewhere stops this song. */
   private stopWithPlaylistEffect(): Effect {
     return {
       deps: (s) => [s.playlistPlaying],
@@ -161,7 +161,7 @@ export class SessionEffects {
    * Transport lifecycle is separate from tempo-dependent scheduling.
    * A song that joins a set already running sends no Start: the set's Start went out with its first song.
    * A delayed start sends its Start or Continue when the audio begins, after the chase.
-   * A song handed over stays on the set's transport, so leaving this.core session does not stop it.
+   * A song handed over stays on the set's transport, so leaving this session does not stop it.
    */
   private transportEffect(): Effect {
     return {

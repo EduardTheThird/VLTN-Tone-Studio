@@ -177,7 +177,7 @@ export class SessionSections {
       if (!leaving) player.cancelExit();
       return;
     }
-    // A jump that is waiting means this.core pass does not leave into the next section.
+    // A jump that is waiting means this pass does not leave into the next section.
     if (!leaving || this.core.pendingRelease === section.id || this.core.section?.kind === "jump") return;
     player.scheduleExit(bar);
   }

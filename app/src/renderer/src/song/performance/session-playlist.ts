@@ -34,7 +34,7 @@ export class SessionPlaylist {
 
   /**
    * The song the previous session handed over, when it is `source`: the library holds it until a session takes it up. Any other
-   * held song is released there. The previous session's hook-up is undone here, and this.core session wires the song up again.
+   * held song is released there. The previous session's hook-up is undone here, and this session wires the song up again.
    */
   claimHandover(source: SongSource | null): HandedOverSong | null {
     const handover = useSongLibrary.getState().claimHandover(source?.libraryId);
@@ -42,7 +42,7 @@ export class SessionPlaylist {
     return handover;
   }
 
-  /** Whether a song this.core session handed over is still waiting in the library for the next session to take it up. */
+  /** Whether a song this session handed over is still waiting in the library for the next session to take it up. */
   get passing(): boolean {
     return this.core.handingOver !== null && useSongLibrary.getState().handover?.id === this.core.handingOver;
   }
@@ -111,7 +111,7 @@ export class SessionPlaylist {
       showToast({
         tone: "info",
         title: "Pedal preparation runs between songs",
-        body: "The next song has setup commands. Let this.core song finish before preparing it.",
+        body: "The next song has setup commands. Let this song finish before preparing it.",
       });
       return false;
     }
@@ -131,7 +131,7 @@ export class SessionPlaylist {
     return true;
   };
 
-  /** Chains the next playlist song onto this.core one once its join is close, so the two play on one clock. Checked until it is chained. */
+  /** Chains the next playlist song onto this one once its join is close, so the two play on one clock. Checked until it is chained. */
   planNext(): void {
     const { player, queued, playlistPlaying } = this.core.state;
     // A song set to stop, or to loop, does not hand over to the next one.
@@ -179,7 +179,7 @@ export class SessionPlaylist {
     return library.queueOverrides[library.position]?.endBehaviour ?? player.behaviour;
   }
 
-  /** Starts `next` on this.core song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. `timing` is the next song's. */
+  /** Starts `next` on this song's clock at the join, and arranges the hand-over HANDOVER_LEAD_S before it. `timing` is the next song's. */
   private startChain(next: PreparedSong, plan: Exclude<Transition, { kind: "gap" }>, timing: SongCountIn): void {
     const { player } = this.core.state;
     if (!player) return;
@@ -196,7 +196,7 @@ export class SessionPlaylist {
     const countInMs = timing.bpm > 0 ? (countInBeatsNow * beatSeconds(timing.bpm) * 1000) / incoming.playbackRate : 0;
     const join = this.core.clockOf(plan.startAt);
     this.core.chained = { id: next.id, player: incoming, countInMs, unwire, join };
-    // The library holds the chained song, so a queue edit that changes the next song undoes this.core chain first.
+    // The library holds the chained song, so a queue edit that changes the next song undoes this chain first.
     useSongLibrary.getState().holdChain({ id: next.id, release: () => this.dropChained() });
     // The outgoing song's quarter frames end where the next song joins, and its full frame starts there. The chain is decided several
     // seconds ahead, so no quarter frame past the join is queued yet. Dropping the chain restores them.
@@ -207,7 +207,7 @@ export class SessionPlaylist {
 
   /**
    * Hands the chained song over: the library holds it and moves on, and the view is re-created for the new song. The next session
-   * takes the song up in `loadSong`. The song is already playing, so this.core only moves the playlist and the outgoing song's events on.
+   * takes the song up in `loadSong`. The song is already playing, so this only moves the playlist and the outgoing song's events on.
    */
   handOver = (): void => {
     const chained = this.core.chained;
@@ -229,9 +229,9 @@ export class SessionPlaylist {
       this.core.sendTriggers("end");
       this.core.sendTriggers("stop");
     });
-    // The outgoing scheduler is torn down with this.core view, so its quarter frames are carried to the join by the incoming scheduler.
+    // The outgoing scheduler is torn down with this view, so its quarter frames are carried to the join by the incoming scheduler.
     library.setHandover({ ...chained, timecodeTail: this.outgoingTimecode(chained.join) });
-    // End this.core owner before the library starts allocating the following song. The player preserves any outgoing audio tail.
+    // End this owner before the library starts allocating the following song. The player preserves any outgoing audio tail.
     this.core.unloadCurrentSong?.();
     library.advanceToPrepared(chained.id);
   };
