@@ -8,7 +8,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { type ExitBar, type Lead, type RenderedBuffers, StemPlayer } from "@/song/stems/player";
 import { isPlainSpeed, RenderQueue } from "@/song/audio/render-queue";
-import { clampSpeed, DEFAULT_SPEED, effectiveBpm, speedFromOptions, speedOptions, type SpeedSettings } from "./speed";
+import { DEFAULT_SPEED, effectiveBpm, speedFromOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { type HandedOverSong, type PreparedSong, useSongLibrary } from "@/song/library";
 import { playableStems } from "@/song/stems/playable";
@@ -30,7 +30,7 @@ import { beatSeconds, countInBeats, preRollStart } from "@/song/performance/rhyt
 import { HANDOVER_LEAD_S, planTransition, type Transition } from "@/song/performance/transition";
 import { readCrossfade } from "@/song/performance/crossfade";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, songCountIn, type SongCountIn } from "@/song/performance/lead-in";
-import { getSetting, performanceKey, setSetting } from "@/song/performance/settings";
+import { getSetting, performanceKey } from "@/song/performance/settings";
 import { type EndBehaviour, playerShapeFromOptions } from "@/song/performance/song-shape";
 import { midiNow, prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState } from "@/song/performance/midi-chase";
@@ -38,23 +38,9 @@ import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { canStartRhythm, hasPedalRhythm, hasSavedPedalRhythm, RHYTHM_MEMORY_SETTLE_MS, RHYTHM_RESTART, rhythmMemory, rhythmMemoryKey } from "./rhythm-runtime";
 import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
 import { savedPreparation } from "./start-preparation";
-import { BLUETOOTH_LOOKAHEAD, type SchedulerJump, SYSTEM_LOOKAHEAD, type TimecodeTail } from "@/song/performance/midi-scheduler";
+import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type TimecodeTail } from "@/song/performance/midi-scheduler";
 import { NO_TIMECODE, timecodeOffsetFrames } from "@/song/performance/timecode";
-import {
-  armJump,
-  cancelJump,
-  clampSections,
-  DECISION_LEAD_S,
-  immediateJump,
-  nextBoundary,
-  NO_LIVE,
-  releaseLoop,
-  type Section,
-  type SectionBoundary,
-  sectionIndexAt,
-  sortedSections,
-  startLoop,
-} from "@/song/performance/sections";
+import { NO_LIVE } from "@/song/performance/sections";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
 import { rememberedPort, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
@@ -81,6 +67,7 @@ import {
 } from "./session-core";
 import { SessionOutput } from "./session-output";
 import { SessionRemote } from "./session-remote";
+import { SessionSections } from "./session-sections";
 export { BLUETOOTH_PORT_ID, NO_TIMING, carriedInto, selectArmed, selectOutput } from "./session-core";
 export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, SessionOptions, SessionState, Timing } from "./session-core";
 
@@ -114,21 +101,12 @@ const NO_VIEW: ViewHost = {
   tap: NOT_ON_SCREEN,
 };
 
-/** A render swap waits at least this long (audio seconds) for its beat, so the MIDI schedule hears of it before it takes effect */
-const RENDER_SWAP_LEAD_S = 0.3;
-
 /**
  * A start with app clock and no count-in holds the audio back this long, so Start and the first clock pulses go out before it. The
  * scheduler starts about 100 ms after Play and anchors the pulses on the audio start. Without the hold, the pulses for that first
  * 100 ms are already overdue when it starts, and go out in one burst. With the hold they are due on time.
  */
 const CLOCK_LEAD_MS = 150;
-
-/** A song's options as an object. Anything that is not an object reads as empty. */
-/** An exit bar plays this long before its bar begins at the latest, which is the margin the player needs to place it. */
-const EXIT_LEAD_S = 0.4;
-/** A pass that begins this long before its exit bar can still place it: the tick that does so runs every 50 ms. */
-const EXIT_TICK_MARGIN_S = 0.1;
 
 /** The exit bars of a song's generated parts, joined by section: one bar with each part's audio on the track that part plays on. */
 function exitBarsOf(extras: Partial<Record<ExtrasPart, LoadedExtras>>): Record<string, ExitBar> {
@@ -156,6 +134,7 @@ export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
   private readonly outputPart = new SessionOutput(this);
   private readonly remotePart = new SessionRemote(this);
+  private readonly sectionsPart = new SessionSections(this);
   private effects: Effect[];
   /** Stage mode: seeking is refused however it is requested. */
   locked = false;
@@ -190,8 +169,6 @@ export class PerformanceSession {
   private cancelDelay: (() => void) | null = null;
   previousBluetooth: BleMidiConnection | null;
   section: SectionPlan | null = null;
-  /** Whether the scheduler was last given a hold, so that clearing it is sent once */
-  private planSent = false;
   /** The next playlist song, once it has been started on this song's clock */
   chained: HandedOverSong | null = null;
   /** The outgoing song's quarter frames up to its join, for the next scheduler this session starts. Consumed once. */
@@ -200,7 +177,6 @@ export class PerformanceSession {
   /** Whether the playing song has been counted as played. Counted once per song, at its halfway point. */
   playedRecorded = false;
   private playedTimer: ReturnType<typeof setInterval> | null = null;
-  private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
   /** The id of the song being handed over to, from the moment the library moves on until the session that takes it over is set up */
   handingOver: string | null = null;
   /** Set when a hand-over starts this session's song on a set that is already running: the set's Start went out with its first song */
@@ -1340,346 +1316,59 @@ export class PerformanceSession {
 
   // ---- sections ------------------------------------------------------------------------------------------------
 
-  private lookahead(): number {
-    return this.state.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD;
-  }
-
   /** The MIDI clock time at which the audio clock reads `ctx`. Both clocks are in step while playing. */
-  clockOf(ctx: number): number {
-    return midiNow() + (ctx - (this.state.player?.audioNow ?? 0)) * 1000;
+  clockOf(ctx: number) {
+    return this.sectionsPart.clockOf(ctx);
   }
 
   /** The sections as they fall inside the part of the audio that plays: a trim cuts them. */
-  private get playableSections(): Section[] {
-    const { player, sections } = this.state;
-    if (!player) return sections;
-    const { start, duration } = player;
-    // The same array while nothing changes, so a decision made on it is still recognised as current.
-    const cached = this.clampedSections;
-    if (cached && cached.source === sections && cached.start === start && cached.end === duration) return cached.value;
-    const value = clampSections(sections, { start, end: duration });
-    this.clampedSections = { source: sections, start, end: duration, value };
-    return value;
+  private get playableSections() {
+    return this.sectionsPart.playableSections;
   }
 
   /** Tells the scheduler the waiting plan. Called on each decision, and when a scheduler starts while a plan waits. */
-  sendPlan(): void {
-    const schedule = this.section?.schedule ?? this.renderSchedule();
-    // Without sections there is never a plan to send or to clear, so the scheduler is not touched.
-    if (!schedule && !this.planSent) return;
-    this.planSent = schedule !== null;
-    this.scheduler?.plan(schedule?.cap ?? null, schedule?.jump ?? null);
-  }
-
-  /** The MIDI plan of a render swap: cues are held after its song time, and the schedule takes the new rate at its audio time. */
-  private renderSchedule(): { cap: number; jump: SchedulerJump | null } | null {
-    const swap = this.renderSwap;
-    if (!swap) return null;
-    return { cap: swap.at, jump: { at: this.clockOf(swap.ctxAt), position: swap.at, rate: swap.rate, keepsPosition: true } };
-  }
-
-  /** Takes a boundary decided by the planner: the audio jump is scheduled now, the MIDI schedule is held up to it. */
-  private commitBoundary(boundary: SectionBoundary): void {
-    const { player, sectionLive } = this.state;
-    const sections = this.playableSections;
-    if (!player || this.renderSwap) return;
-    const { action } = boundary;
-    if (action.kind === "jump") {
-      const ctxAt = player.prepareJump(action.to, boundary.at);
-      if (ctxAt === null) return;
-      this.section = {
-        kind: "jump",
-        ctxAt,
-        before: sectionLive,
-        sections,
-        schedule: { cap: boundary.at, jump: { at: this.clockOf(ctxAt), position: action.to } },
-      };
-    } else {
-      this.section = {
-        kind: action.kind,
-        ctxAt: player.audioTimeOf(boundary.at),
-        before: sectionLive,
-        sections,
-        schedule: action.kind === "pause" ? { cap: boundary.at, jump: null } : null,
-      };
-    }
-    this.sendPlan();
-    this.set({
-      sectionLive: boundary.live,
-      sectionNext: action.kind === "continue" ? null : { kind: action.kind, target: action.kind === "jump" ? action.target : null, at: boundary.at },
-    });
-  }
-
-  /**
-   * Puts back the decision that has not taken effect yet, and the live state it was made from. Returns false when a jump is already
-   * too close to take effect to undo, and the jump then stands.
-   */
-  private cancelSectionPlan(): boolean {
-    const plan = this.section;
-    if (!plan) return true;
-    if (plan.kind === "jump" && !this.state.player?.cancelJump()) return false;
-    this.section = null;
-    this.sendPlan();
-    this.set({ sectionLive: plan.before, sectionNext: null });
-    return true;
+  sendPlan() {
+    return this.sectionsPart.sendPlan();
   }
 
   /** Forgets a decision because playback stopped. Any jump was dropped by the player, and the live state goes back to what it was. */
-  dropSectionPlan(): void {
-    this.pendingRelease = null;
-    const plan = this.section;
-    if (!plan) return;
-    this.section = null;
-    this.set({ sectionLive: plan.before, sectionNext: null });
-  }
-
-  /**
-   * Whether the exit bars are used at all: the song has some, and it plays at its own speed and pitch, which is what they were rendered at.
-   * At another speed or pitch a vamp keeps the audio it has, which loops cleanly and leaves without its fill.
-   */
-  private exitsUsable(): boolean {
-    return Object.keys(this.exitBars).length > 0 && isPlainSpeed(this.state.speed);
-  }
-
-  /** Whether the vamp's exit bar can still be placed for the pass that is playing: its bar is far enough ahead on the audio clock. */
-  private canExit(player: StemPlayer, bar: ExitBar): boolean {
-    return player.audioTimeOf(bar.from) - player.audioNow >= EXIT_LEAD_S;
-  }
-
-  /**
-   * In a vamp, once the pass that is playing is the one that leaves the section (a loop that was released, a repeat's second pass, or a
-   * section that continues), swaps the generated tracks' last bar for the exit bar, which has the fill and lead-in into the next section. The swap
-   * is scheduled on the audio clock one bar ahead and changes no song time, so the MIDI cues stay where they were. A release that comes too late
-   * for it is held until the next pass. An exit that is no longer the pass's way out (the loop was started again, a jump was armed) is taken back.
-   */
-  private tickExit(player: StemPlayer, sections: readonly Section[]): void {
-    // A release that was held for the exit bar is taken at once when the exit bars stop being used (a change of speed or pitch).
-    if (this.pendingRelease !== null && !this.exitsUsable()) {
-      const id = this.pendingRelease;
-      this.pendingRelease = null;
-      this.set({ sectionLive: releaseLoop(this.state.sectionLive, id) });
-    }
-    if (!this.exitsUsable() || !sections.length || player.position < 0) return;
-    const ordered = sortedSections(sections);
-    const section = ordered[sectionIndexAt(ordered, player.position)];
-    if (this.pendingRelease !== null && section?.id !== this.pendingRelease) this.pendingRelease = null;
-    const bar = section ? this.exitBars[section.id] : undefined;
-    if (!section || !bar) return;
-    if (this.pendingRelease === section.id && this.canExit(player, bar)) {
-      this.pendingRelease = null;
-      this.set({ sectionLive: releaseLoop(this.state.sectionLive, section.id) });
-    }
-    const boundary = nextBoundary(sections, player.position, this.state.sectionLive);
-    // A pause at the end of the section leaves it the same way a continue does.
-    const leaving = boundary !== null && (boundary.action.kind === "continue" || boundary.action.kind === "pause");
-    if (player.exitAt !== null) {
-      if (!leaving) player.cancelExit();
-      return;
-    }
-    // A jump that is waiting means this pass does not leave into the next section.
-    if (!leaving || this.pendingRelease === section.id || this.section?.kind === "jump") return;
-    player.scheduleExit(bar);
+  dropSectionPlan() {
+    return this.sectionsPart.dropSectionPlan();
   }
 
   /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
-  tickSections = (): void => {
-    const { player, playing } = this.state;
-    const sections = this.playableSections;
-    if (!player || !playing) return;
-    try {
-      this.tickRender(player);
-      if (this.renderSwap) return;
-      this.tickExit(player, sections);
-      const plan = this.section;
-      if (plan) {
-        if (plan.sections !== sections) {
-          this.cancelSectionPlan();
-          return;
-        }
-        if (player.audioNow < plan.ctxAt) return;
-        this.section = null;
-        this.set({ sectionNext: null });
-        if (plan.kind === "pause") this.pause();
-        return;
-      }
-      if (!sections.length || player.position < 0) return;
-      const boundary = nextBoundary(sections, player.position, this.state.sectionLive);
-      if (boundary && boundary.at - player.position <= DECISION_LEAD_S) this.commitBoundary(boundary);
-    } catch (e) {
-      this.cancelSectionPlan();
-      this.fail(e);
-    }
-  };
-
-  /**
-   * Carries a render through while the song plays: a built render is swapped in at the next beat, once no section jump is waiting,
-   * and the swap is cleared when its audio time passes. Sections wait for a swap to land.
-   */
-  private tickRender(player: StemPlayer): void {
-    const swap = this.renderSwap;
-    if (swap) {
-      if (player.audioNow >= swap.ctxAt) {
-        this.renderSwap = null;
-        this.sendPlan();
-      }
-      return;
-    }
-    if (!this.pendingRender || this.section) return;
-    const started = player.swapRender(this.pendingRender, RENDER_SWAP_LEAD_S);
-    if (!started) return;
-    this.renderSwap = { at: started.at, ctxAt: started.when, rate: this.pendingRender.rate };
-    this.pendingRender = null;
-    this.sendPlan();
-  }
+  tickSections = () => this.sectionsPart.tickSections();
 
   /** Applies a render that is waiting for a beat, now. Used when the song stops, because a stopped song has no beat to wait for. */
-  private applyPendingRender(): void {
-    const render = this.pendingRender;
-    const player = this.state.player;
-    if (!render || !player) return;
-    this.pendingRender = null;
-    player.applyRender(render);
+  private applyPendingRender() {
+    return this.sectionsPart.applyPendingRender();
   }
 
   /**
    * Sets the song's speed and pitch. The render is built in the background; the newest request wins. A built render is swapped in at
    * the next beat while the song plays, and applied at once while it is stopped.
    */
-  setSpeed = (requested: Partial<SpeedSettings>): void => {
-    const speed = clampSpeed({ ...this.state.speed, ...requested });
-    if (JSON.stringify(speed) === JSON.stringify(this.state.speed)) return;
-    if (speed.rate !== this.state.speed.rate && this.state.playing && this.armed && hasPedalRhythm(this.state.cues)) {
-      this.fail("Pause and restart from the beginning to change speed with RC-10R drums.");
-      return;
-    }
-    if (this.playPending && this.state.preparing) this.pause();
-    this.set({ speed });
-    try {
-      const key = this.songSettingsKey;
-      const options = parseOptions(getSetting(key, ":options"));
-      setSetting(key, ":options", JSON.stringify({ ...options, ...speedOptions(speed) }));
-    } catch (e) {
-      this.fail(e);
-    }
-    this.speedPreparation = this.renderSpeed(speed);
-  };
+  setSpeed = (requested: Partial<SpeedSettings>) => this.sectionsPart.setSpeed(requested);
 
   /** Builds the render for `speed` from the stems at 100%, and hands it to the player. Stale results are dropped. */
-  private async renderSpeed(speed: SpeedSettings): Promise<void> {
-    const base = this.baseStems;
-    const player = this.state.player;
-    if (!base || !player) return;
-    const request = ++this.renderRequest;
-    this.set({ rendering: null });
-    try {
-      const stems = await this.renders.render(base, speed, (done, total) => {
-        if (request === this.renderRequest) this.set({ rendering: { done, total } });
-      });
-      if (!stems || request !== this.renderRequest || this.state.player !== player) return;
-      const render = await player.renderBuffers(stems, speed.rate);
-      if (request !== this.renderRequest || this.state.player !== player) return;
-      this.pendingRender = render;
-      if (!player.isPlaying) this.applyPendingRender();
-      this.set({ rendering: null });
-    } catch (e) {
-      if (request === this.renderRequest) {
-        this.set({ rendering: null });
-        this.fail(e);
-      }
-    }
+  private renderSpeed(speed: SpeedSettings) {
+    return this.sectionsPart.renderSpeed(speed);
   }
 
   /** A tap arms a jump to the section for the next boundary. While stopped it moves the playhead to the section's start instead. */
-  tapSection = (id: string) => {
-    const section = this.playableSections.find((s) => s.id === id);
-    if (!section) return;
-    if (this.state.playing && this.armed && hasPedalRhythm(this.state.cues)) {
-      this.fail(RHYTHM_RESTART);
-      return;
-    }
-    if (!this.state.playing) {
-      void this.state.player?.seek(section.start);
-      setClockPosition(section.start);
-      return;
-    }
-    this.cancelSectionPlan();
-    this.set({ sectionLive: armJump(this.state.sectionLive, id) });
-  };
+  tapSection = (id: string) => this.sectionsPart.tapSection(id);
 
   /** A second tap on the armed section: jumps now, after the MIDI lookahead, so queued cues still belong to the passage being left. */
-  jumpSectionNow = (id: string) => {
-    if (this.armed && hasPedalRhythm(this.state.cues)) {
-      this.fail(RHYTHM_RESTART);
-      return;
-    }
-    const { player, playing } = this.state;
-    if (!player || !playing) {
-      this.tapSection(id);
-      return;
-    }
-    this.cancelSectionPlan();
-    const boundary = immediateJump(this.playableSections, player.position + this.lookahead(), this.state.sectionLive, id);
-    if (boundary) this.commitBoundary(boundary);
-  };
+  jumpSectionNow = (id: string) => this.sectionsPart.jumpSectionNow(id);
 
   /** Loops a section until it is released; tapping the looping section releases it. */
-  toggleSectionLoop = (id: string) => {
-    if (this.armed && hasPedalRhythm(this.state.cues)) {
-      this.fail(RHYTHM_RESTART);
-      return;
-    }
-    // Tapping the looping section releases it, the same way the release action does.
-    const looping = sortedSections(this.playableSections).find((section) => section.id === id);
-    if (this.state.sectionLive.loop === id && looping) {
-      this.releaseLoopOf(looping);
-      return;
-    }
-    this.cancelSectionPlan();
-    this.pendingRelease = null;
-    const live = this.state.sectionLive;
-    this.set({ sectionLive: live.loop === id ? releaseLoop(live, id) : startLoop(live, id) });
-  };
+  toggleSectionLoop = (id: string) => this.sectionsPart.toggleSectionLoop(id);
 
   /** Releases the loop of the section being played, whether it was started live or is the section's own mode. */
-  releaseSectionLoop = () => {
-    const { player } = this.state;
-    const ordered = sortedSections(this.playableSections);
-    const current = player ? ordered[sectionIndexAt(ordered, player.position)] : undefined;
-    if (!current) return;
-    this.releaseLoopOf(current);
-  };
-
-  /** Whether another pass of `section` could place its exit bar: the bar begins far enough after the section does. A one-bar vamp has no such pass. */
-  private exitReachable(section: Section, bar: ExitBar): boolean {
-    return bar.from - section.start >= EXIT_LEAD_S + EXIT_TICK_MARGIN_S;
-  }
-
-  /**
-   * Releases a loop. A vamp leaves through its exit bar, placed a bar ahead. A release inside the last bar, or with the jump back already too
-   * close to take back, lets the section loop once more: the release is taken at the start of that pass, and its last bar is the exit. A vamp that
-   * cannot place its exit on a later pass either (its last bar is its first) is released at once and leaves by its plain last bar.
-   */
-  private releaseLoopOf(section: Section): void {
-    const { player } = this.state;
-    const bar = this.exitsUsable() ? this.exitBars[section.id] : undefined;
-    const later = bar !== undefined && this.exitReachable(section, bar);
-    if (bar && later && player && !this.canExit(player, bar)) {
-      this.pendingRelease = section.id;
-      return;
-    }
-    if (!this.cancelSectionPlan() && bar && later) {
-      this.pendingRelease = section.id;
-      return;
-    }
-    this.pendingRelease = null;
-    this.set({ sectionLive: releaseLoop(this.state.sectionLive, section.id) });
-  }
+  releaseSectionLoop = () => this.sectionsPart.releaseSectionLoop();
 
   /** Cancels the armed jump. A decision already made for it is put back too, where that is still possible. */
-  cancelSectionJump = () => {
-    this.cancelSectionPlan();
-    this.set({ sectionLive: cancelJump(this.state.sectionLive) });
-  };
+  cancelSectionJump = () => this.sectionsPart.cancelSectionJump();
 
   // ---- remote control ------------------------------------------------------------------------------------------
 
@@ -1703,26 +1392,16 @@ export class PerformanceSession {
   }
 
   /** The playable sections in song order, and the index of the one the playhead is in (-1 when none). */
-  sectionOrder(): { ids: string[]; current: number } {
-    const ordered = sortedSections(this.playableSections);
-    const player = this.state.player;
-    return { ids: ordered.map((s) => s.id), current: player ? sectionIndexAt(ordered, player.position) : -1 };
+  sectionOrder() {
+    return this.sectionsPart.sectionOrder();
   }
 
-  stepSection(step: 1 | -1): Hint {
-    const { ids, current } = this.sectionOrder();
-    if (!ids.length) return "This song has no sections.";
-    const target = current + step;
-    if (target < 0) return "Already at the first section.";
-    if (target >= ids.length) return "Already at the last section.";
-    this.tapSection(ids[target]);
+  stepSection(step: 1 | -1) {
+    return this.sectionsPart.stepSection(step);
   }
 
-  sectionAt(n: number, run: (id: string) => void): Hint {
-    const { ids } = this.sectionOrder();
-    if (!ids.length) return "This song has no sections.";
-    if (n > ids.length) return `This song has ${ids.length} sections.`;
-    run(ids[n - 1]);
+  sectionAt(n: number, run: (id: string) => void) {
+    return this.sectionsPart.sectionAt(n, run);
   }
 
   // ---- effects -------------------------------------------------------------------------------------------------
