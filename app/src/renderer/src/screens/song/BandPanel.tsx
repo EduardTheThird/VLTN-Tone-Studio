@@ -90,6 +90,7 @@ import {
 import { BAND_TAB_LABELS, BAND_TABS, isBandTab, useBandPanel } from "./band-panel-state";
 import { sectionKind, type BandSectionRow } from "./BandSections";
 import { BandFooter, type PreviewChoice } from "./BandFooter";
+import { keptOriginals } from "@/song/band/fade-check";
 import { BandTabFeel } from "./BandTabFeel";
 import { BandTabNotes } from "./BandTabNotes";
 import { BandTabParts } from "./BandTabParts";
@@ -910,6 +911,7 @@ function BandBody({
               onChange={change}
               onStyle={changeStyle}
               beatsPerBar={grid?.beatsPerBar}
+              keptAudio={keptOriginals(stems, source?.audio)}
               sections={rows.flatMap((row) => (row.plan.sectionId === null ? [] : [{ id: row.plan.sectionId, name: row.name }]))}
             />
           </TabsContent>
