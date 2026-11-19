@@ -78,7 +78,7 @@ Configurable BOSS controls require **Assigned CC** to match the named setting on
 
 **GP-150 / GP-180 preset names.** When a GP-150 or GP-180 is connected in the editor, the cue picker lists each memory with its name ("069 Crunch Lead"); without a connection it uses the names saved at the last connection, and a line under the list says which. A cue added from a named memory stores the name in its label (`{label:GP-180: 069 Crunch Lead}`). The MIDI bytes are the same as before, so older charts keep working. If the slot later holds a different preset, MIDI health and the playlist preflight warn about that cue, and say where the preset moved to when exactly one other slot has its name. Cues made without a name are not checked. The preset names come from the pedal, so the check only runs once the app has read them.
 
-Profiles are manual-derived and tested at byte level. Real GP-180/TimeLine tests confirmed timed patch changes and one-time tempo commands over Bluetooth and USB with the TimeLine connected to physical MIDI OUT. Other pedals and the complete action catalogue have not been hardware-validated. Continuous app clock was unstable on this rig; see [hardware results and the recommended one-time tempo setup](PERFORMANCE.md#hardware-results).
+Profiles are manual-derived and tested at byte level. Other pedals and the complete action catalogue have not been hardware-validated. For the GP-180 and TimeLine results, see [hardware results](PERFORMANCE.md#hardware-results).
 
 ## Community databases
 
@@ -118,4 +118,4 @@ Imports validate version, ids, integer ranges, substitutions and resulting MIDI 
 
 ### Repeat rules for Before song commands
 
-The Song MIDI cues builder offers **Every start**, **Only from beginning** and **Once per song load** for preparation commands. Use once for actions that must not repeat on a resume, and **Reset once commands** to deliberately allow another attempt. The policy is saved in chart tokens: `{midi@prepare:…}`, `{midi@prepare-beginning:…}` or `{midi@prepare-once:…}`. A macro keeps its message order, and a command line's bank/preset messages share the rule. Once sending begins, cancellation or a lost connection does not automatically re-enable that line. See [Preparation command repeat rules](PERFORMANCE.md#preparation-command-repeat-rules).
+Preparation commands (**Before song**) have repeat rules: **Every start**, **Only from beginning** and **Once per song load**. A macro keeps its message order. See [Preparation command repeat rules](PERFORMANCE.md#preparation-command-repeat-rules).
