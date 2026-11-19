@@ -35,13 +35,11 @@ import { getSetting, performanceKey, setSetting } from "@/song/performance/setti
 import { type EndBehaviour, playerShapeFromOptions } from "@/song/performance/song-shape";
 import { midiNow, prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState } from "@/song/performance/midi-chase";
-import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
+import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { canStartRhythm, hasPedalRhythm, hasSavedPedalRhythm, RHYTHM_MEMORY_SETTLE_MS, RHYTHM_RESTART, rhythmMemory, rhythmMemoryKey } from "./rhythm-runtime";
 import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
 import { savedPreparation } from "./start-preparation";
-import { TriggerPulses } from "./trigger-pulse";
 import { BLUETOOTH_LOOKAHEAD, type SchedulerJump, SYSTEM_LOOKAHEAD, type TimecodeTail } from "@/song/performance/midi-scheduler";
-import { orderForPedal } from "@/song/performance/midi-pedal-order";
 import { NO_TIMECODE, timecodeOffsetFrames } from "@/song/performance/timecode";
 import {
   armJump,
@@ -104,6 +102,7 @@ import {
   type SessionOptions,
   type SessionState,
 } from "./session-core";
+import { SessionOutput } from "./session-output";
 export { BLUETOOTH_PORT_ID, NO_TIMING, carriedInto, selectArmed, selectOutput } from "./session-core";
 export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, SessionOptions, SessionState, Timing } from "./session-core";
 
@@ -119,8 +118,6 @@ export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, S
 const CHAIN_CHECK_MS = 250;
 /** How often the place in the song is kept for a renderer crash while it plays (spec 120). */
 const RESUME_SAVE_MS = 2000;
-// Output queues outlive a song session during playlist handovers; their controller state must too.
-const rc10rPulses = new TriggerPulses();
 /** The next song is chained this far before its join, so that a pause in between has time to undo it */
 const CHAIN_AHEAD_S = 5;
 /** How often the playing song is checked for having reached its halfway point, to count it as played. */
@@ -189,6 +186,7 @@ export function leftPerformance(): boolean {
 
 export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
+  private readonly outputPart = new SessionOutput(this);
   private effects: Effect[];
   /** Stage mode: seeking is refused however it is requested. */
   locked = false;
@@ -201,8 +199,6 @@ export class PerformanceSession {
   flushing = false;
   private dirty = false;
   batchDepth = 0;
-  /** Stop and end messages waiting for the effects that the stop caused to finish (see `sendTriggers`). */
-  private heldTriggers: { bytes: number[]; kind: MidiTrigger }[] = [];
   unloadCurrentSong: (() => void) | null = null;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeResume: (() => void) | null = null;
@@ -211,21 +207,18 @@ export class PerformanceSession {
   scheduler: ReturnType<typeof startMidiScheduler> | null = null;
   prepared: ReturnType<typeof prepareMidiScheduler> | null = null;
   readyWorker: Worker | null = null;
-  private clearedOutput: MidiOutput | undefined;
   playRequest = 0;
   playPending = false;
   startTempo: number[][] | null = null;
   preparationHistory = new PreparationHistory();
   readySetup: { player: StemPlayer; output: MidiOutput; key: string; opening: { position: number; messages: number[][] } } | null = null;
   openingPrepared: { position: number; messages: number[][] } | undefined;
-  private tempoMsb = new Map<number, number>();
   startPosition: number | null = null;
   /** The count-in before the audio of the current start, in ms. The start tempo is due at its beginning. */
   countInMs = 0;
   /** Epoch ms when the audio of a delayed start begins. Set only while a chase leads the audio; the transport byte goes out then. */
   transportAt: number | null = null;
   private cancelDelay: (() => void) | null = null;
-  private noteChannels = new Set<number>();
   previousBluetooth: BleMidiConnection | null;
   section: SectionPlan | null = null;
   /** Whether the scheduler was last given a hold, so that clearing it is sent once */
@@ -238,7 +231,6 @@ export class PerformanceSession {
   /** Whether the playing song has been counted as played. Counted once per song, at its halfway point. */
   playedRecorded = false;
   private playedTimer: ReturnType<typeof setInterval> | null = null;
-  private expandedCues: { cues: Cue[]; sections: Section[]; value: Cue[] } | null = null;
   private clampedSections: { source: Section[]; start: number; end: number; value: Section[] } | null = null;
   /** The id of the song being handed over to, from the moment the library moves on until the session that takes it over is set up */
   handingOver: string | null = null;
@@ -684,17 +676,13 @@ export class PerformanceSession {
    * it names. The same array while neither the cues nor the sections change, and the chart's own array when it has no section cues, so a chart
    * without them behaves exactly as before.
    */
-  playCues(s: Pick<SessionState, "cues" | "sections">): Cue[] {
-    const cached = this.expandedCues;
-    if (cached && cached.cues === s.cues && cached.sections === s.sections) return cached.value;
-    const value = expandSectionCues(s.cues, s.sections);
-    this.expandedCues = { cues: s.cues, sections: s.sections, value };
-    return value;
+  playCues(s: Pick<SessionState, "cues" | "sections">) {
+    return this.outputPart.playCues(s);
   }
 
   /** The messages of the song's triggers of one kind, in chart order. */
-  triggerBytes(kind: MidiTrigger): number[][] {
-    return this.state.cues.filter((cue) => cue.trigger === kind).flatMap((cue) => cue.messages);
+  triggerBytes(kind: MidiTrigger) {
+    return this.outputPart.triggerBytes(kind);
   }
 
   /**
@@ -705,34 +693,13 @@ export class PerformanceSession {
    * clears it again, which would drop a message still waiting in a Bluetooth buffer. So while a batch is open or its effects are running,
    * these messages are held and sent by `flush`, once the effects are done.
    */
-  sendTriggers(kind: MidiTrigger, cues: Cue[] = this.state.cues): void {
-    if (!this.armed) return;
-    try {
-      const messages = orderForPedal(
-        cues.filter((cue) => cue.trigger === kind).flatMap((cue) => cue.messages),
-        this.state.tempoChannel,
-        (bytes) => bytes,
-      );
-      if ((kind === "stop" || kind === "end") && (this.batchDepth > 0 || this.flushing)) {
-        for (const bytes of messages) this.heldTriggers.push({ bytes, kind });
-        return;
-      }
-      for (const bytes of messages) this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
-    } catch (e) {
-      this.fail(e);
-    }
+  sendTriggers(kind: MidiTrigger, cues?: Cue[]) {
+    return this.outputPart.sendTriggers(kind, cues);
   }
 
   /** Sends the stop and end messages held by `sendTriggers`, in the order they were queued. */
-  private sendHeldTriggers(): void {
-    while (this.heldTriggers.length) {
-      const { bytes, kind } = this.heldTriggers.shift()!;
-      try {
-        this.sendPerformance(bytes, undefined, `Song ${kind} trigger`);
-      } catch (e) {
-        this.fail(e);
-      }
-    }
+  private sendHeldTriggers() {
+    return this.outputPart.sendHeldTriggers();
   }
 
   // ---- state helpers -------------------------------------------------------------------------------------------
@@ -843,8 +810,8 @@ export class PerformanceSession {
     this.sendHeldTriggers();
   }
 
-  context(): PanicContext {
-    return { output: this.output, armed: this.armed, clock: this.state.clock };
+  context() {
+    return this.outputPart.context();
   }
 
   terminateWorker() {
@@ -863,41 +830,22 @@ export class PerformanceSession {
   setInputId = (inputId: string) => this.set({ inputId });
   setAccess = (access: MIDIAccess | null) => this.set({ access });
   /** Arms or disarms this session only. Faults and output changes use it, so they leave the remembered preference alone. */
-  setArmed = (value: boolean) => {
-    if (this.playPending && this.state.preparing) this.pause();
-    const wasPlaying = this.state.playing && hasPedalRhythm(this.state.cues);
-    this.set({ armedOutput: value ? (this.output ?? null) : null, armedByPreference: false });
-    if (wasPlaying) {
-      this.pause();
-      this.set({ rhythmRestart: true });
-    }
-  };
+  setArmed = (value: boolean) => this.outputPart.setArmed(value);
 
   /** The Send cues choice: arms or disarms, and remembers it for the selected output so later songs and sessions follow. */
-  sendCues = (on: boolean) => {
-    const { portId } = this.state;
-    useMidiConfiguration.getState().update({ sendCues: { on, outputId: on ? portId : "" } });
-    this.setArmed(on);
-  };
+  sendCues = (on: boolean) => this.outputPart.sendCues(on);
 
   /** The explicit stop: disarms and turns the remembered preference off. */
-  disarm = () => {
-    if (hasPedalRhythm(this.state.cues)) this.pause();
-    this.sendCues(false);
-  };
+  disarm = () => this.outputPart.disarm();
 
   /** Whether the Send cues preference was turned on for this port. */
-  rememberedFor(portId: string): boolean {
-    const { on, outputId } = useMidiConfiguration.getState().sendCues;
-    return on && outputId !== "" && outputId === portId;
+  rememberedFor(portId: string) {
+    return this.outputPart.rememberedFor(portId);
   }
 
   /** Arms the selected output when the preference is on for it and it is connected. Returns whether it armed. */
-  armRemembered(): boolean {
-    const output = this.output;
-    if (!output || output.state !== "connected" || !this.rememberedFor(this.state.portId)) return false;
-    this.set({ armedOutput: output, armedByPreference: true });
-    return true;
+  armRemembered() {
+    return this.outputPart.armRemembered();
   }
 
   /** Waits out the start delay. Cancelling resolves the wait at once. */
@@ -944,125 +892,16 @@ export class PerformanceSession {
   };
 
   /** Stops the scheduler and releases anything this session started. A second call for one stop does nothing. */
-  panic = (context: PanicContext = this.context()) => {
-    this.invalidatePreparation();
-    this.startPosition = null;
-    this.openingPrepared = undefined;
-    this.scheduler?.stop();
-    this.scheduler = null;
-    const { output, armed, clock } = context;
-    if (stageOperationActive() || !output || this.clearedOutput === output) return;
-    // Pause handlers and lifecycle cleanup can both run for one stop.
-    // A second clear would cancel the BLE note releases queued by the first.
-    this.clearedOutput = output;
-    try {
-      (output as { clear?: () => void }).clear?.();
-      if (!armed || output.state !== "connected") {
-        this.noteChannels.clear();
-        return;
-      }
-      for (const release of rc10rPulses.releasesAfterClear(output, performance.now())) {
-        output.send(release.bytes, release.timestamp);
-        this.recordQueued(release.bytes, release.timestamp, "RC-10R control release");
-      }
-      // CC64 is sustain on synths but looper Stop on the GP-150 / GP-180. Release only
-      // channels where this session actually queued note messages.
-      for (const ch of this.noteChannels)
-        for (const bytes of [
-          [176 + ch, 64, 0],
-          [176 + ch, 123, 0],
-        ]) {
-          output.send(bytes);
-          this.recordQueued(bytes, undefined, "Note cleanup");
-        }
-      this.noteChannels.clear();
-      if (clock && this.stoppedOn !== output) {
-        output.send([252]);
-        this.recordQueued([252], undefined, "Transport Stop");
-        this.stoppedOn = output;
-      }
-    } catch (e) {
-      useMidiDiagnostics.getState().fault(String(e));
-      this.fail(e);
-    }
-  };
+  panic = (context?: PanicContext) => this.outputPart.panic(context);
 
-  private recordQueued(bytes: number[], timestamp?: number, label = "Manual / transport") {
-    // Whatever leaves the app may come back in through a THRU input, and must not be taken for a press. A scheduled message is
-    // timed from its wire time, not from when it was queued, since USB cues are queued up to a second ahead.
-    this.remote.echo.record(bytes, timestamp ?? performance.now());
-    if (bytes[0] === 0xb0 + this.state.tempoChannel - 1 && bytes.length === 3) {
-      if (bytes[1] === 73) this.tempoMsb.set(bytes[0], bytes[2]);
-      if (bytes[1] === 74 && this.tempoMsb.has(bytes[0]))
-        this.set({
-          lastTempo: { bpm: this.tempoMsb.get(bytes[0])! * 128 + bytes[2], channel: this.state.tempoChannel, output: this.output?.name ?? "MIDI output" },
-        });
-    }
-    const queued = midiNow(),
-      intended = (timestamp ?? performance.now()) + performance.timeOrigin;
-    useMidiDiagnostics.getState().record({ label, intended, queued, lateMs: Math.max(0, queued - intended), bytes });
-  }
-
-  sendPerformance = (bytes: number[], timestamp?: number, label = "Manual / transport") => {
-    if (stageOperationActive()) return;
-    if (!this.playPending) this.invalidatePreparation();
-    this.clearedOutput = undefined;
-    if (this.state.armedOutput && portIsDead(this.output)) {
-      this.deadOutput("MIDI output is no longer connected. Cues disarmed.");
-      return;
-    }
-    try {
-      if (this.output && this.isRc10rTrigger(bytes)) timestamp = rc10rPulses.timestamp(this.output, bytes, timestamp, performance.now());
-      this.output?.send(bytes, timestamp);
-    } catch (e) {
-      this.deadOutput(`MIDI send failed: ${e instanceof Error ? e.message : String(e)}. Cues disarmed.`);
-      return;
-    }
-    this.recordQueued(bytes, timestamp, label);
-    if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) this.noteChannels.add(bytes[0] & 15);
-  };
-
-  private isRc10rTrigger(bytes: number[]): boolean {
-    if (bytes.length !== 3 || (bytes[0] & 240) !== 176 || ![0, 127].includes(bytes[2])) return false;
-    const channel = (bytes[0] & 15) + 1;
-    const pedal = configuredPedals(usePedalLibrary.getState()).find((entry) => entry.name === "BOSS RC-10R");
-    return (
-      !!pedal?.triggers.some(([ch, cc]) => ch === channel && cc === bytes[1]) ||
-      this.state.cues.some((cue) => cue.managed === "rhythm" && cue.messages.some((message) => message[0] === bytes[0] && message[1] === bytes[1]))
-    );
-  }
+  sendPerformance = (bytes: number[], timestamp?: number, label?: string) => this.outputPart.sendPerformance(bytes, timestamp, label);
 
   /** Disarms because the output can no longer take messages. Armed cues are never dropped without a visible fault. */
-  deadOutput(message: string): void {
-    useMidiDiagnostics.getState().fault(message);
-    this.batch(() => {
-      this.setArmed(false);
-      if (hasPedalRhythm(this.state.cues)) {
-        this.pause();
-        this.set({ rhythmRestart: true });
-      }
-      this.fail(message);
-    });
+  deadOutput(message: string) {
+    return this.outputPart.deadOutput(message);
   }
 
-  degraded = (event: SchedulerDegraded) => {
-    const diagnostics = useMidiDiagnostics.getState(),
-      now = midiNow();
-    if (event.resynced) diagnostics.resync();
-    if (event.dropped.length)
-      diagnostics.drop(event.dropped.map((m) => ({ label: m.label, intended: m.due, queued: now, lateMs: Math.max(0, now - m.due), bytes: m.bytes })));
-    // Events from one stall arrive separately (resync, then drops); show them as one notice.
-    const n = this.state.lateNotice;
-    const recent = n !== null && now - n.at < 2000;
-    this.set({
-      lateNotice: {
-        dropped: (recent ? n.dropped : 0) + event.dropped.length,
-        position: event.position,
-        resynced: (recent && n.resynced) || event.resynced,
-        at: now,
-      },
-    });
-  };
+  degraded = (event: SchedulerDegraded) => this.outputPart.degraded(event);
 
   /** Hardware checks restore their temporary tempo before the transport can start. */
   registerRhythmTestCleanup(cleanup: () => void): () => void {
@@ -1596,43 +1435,16 @@ export class PerformanceSession {
   };
 
   /** Enable USB / system MIDI. Always asks for a fresh access, so a port re-enumerated since then is the object sent to. */
-  connectMidi = () => this.openMidi();
+  connectMidi = () => this.outputPart.connectMidi();
 
   /**
    * After sleep the ports from before are stale, so the system's ports are requested again. A warm scheduler worker from before the sleep
    * is dropped too, so Play builds a fresh one.
    */
-  private resumeMidi = () => {
-    if (this.prepared) {
-      this.prepared.cancel();
-      this.prepared = null;
-    }
-    if (this.state.access) void this.openMidi();
-  };
+  private resumeMidi = () => this.outputPart.resumeMidi();
 
-  async openMidi(): Promise<void> {
-    // Read before the request: the armed output is compared with the new one once access is replaced.
-    const wasArmed = !!this.state.armedOutput;
-    this.set({ midiStatus: "Opening USB / system MIDI…" });
-    try {
-      const next = await navigator.requestMIDIAccess({ sysex: true });
-      const connectedOutputs = [...next.outputs.values()].filter((p) => p.state === "connected");
-      const { portId } = this.state;
-      const remembered = portId !== BLUETOOTH_PORT_ID && next.outputs.get(portId)?.state === "connected";
-      if (portId !== BLUETOOTH_PORT_ID) this.portLost = !remembered;
-      let midiStatus = connectedOutputs.length
-        ? `USB / system MIDI ready: ${connectedOutputs.map((p) => p.name || p.id).join(", ")}. Select an output and enable Send cues.`
-        : "USB / system MIDI is enabled, but no outputs are available. Connect the pedal and close other MIDI apps, then try again.";
-      if (wasArmed && remembered) midiStatus = RECONNECTED_STATUS;
-      else if (wasArmed) useMidiDiagnostics.getState().fault("System MIDI output disconnected. Cues disarmed.");
-      this.batch(() => {
-        this.set({ access: next, midiStatus });
-        if (remembered && this.armRemembered()) this.set({ midiStatus: REARMED_STATUS });
-      });
-    } catch (e) {
-      this.set({ midiStatus: "USB / system MIDI could not be opened." });
-      this.fail(e);
-    }
+  openMidi() {
+    return this.outputPart.openMidi();
   }
 
   // ---- sections ------------------------------------------------------------------------------------------------
