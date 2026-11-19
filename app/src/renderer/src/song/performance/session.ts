@@ -18,31 +18,26 @@ import { showToast } from "@/app/notify";
 import { host } from "@/host";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue, MidiTrigger } from "@/song/performance/chart";
-import { clockPosition, setClockPosition, startPlaybackClock } from "@/song/performance/playback-clock";
+import { clockPosition, setClockPosition } from "@/song/performance/playback-clock";
 import { getSetting, performanceKey } from "@/song/performance/settings";
 import { playerShapeFromOptions } from "@/song/performance/song-shape";
-import { midiNow, prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
-import { canStartRhythm, hasPedalRhythm, rhythmMemory, rhythmMemoryKey } from "./rhythm-runtime";
+import { prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
+import { canStartRhythm, hasPedalRhythm } from "./rhythm-runtime";
 import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
-import { BLUETOOTH_LOOKAHEAD, SYSTEM_LOOKAHEAD, type TimecodeTail } from "@/song/performance/midi-scheduler";
-import { NO_TIMECODE, timecodeOffsetFrames } from "@/song/performance/timecode";
+import type { TimecodeTail } from "@/song/performance/midi-scheduler";
+import { NO_TIMECODE } from "@/song/performance/timecode";
 import { NO_LIVE } from "@/song/performance/sections";
 import { useMidiDiagnostics } from "@/song/performance/midi-diagnostics";
-import { rememberedPort } from "@/song/performance/midi-configuration";
 import type { BleMidiConnection } from "@/bluetooth/connection";
 import type { Hint, ViewHost } from "./actions";
 import { defaultBindings, RemoteRouter } from "./bindings";
 import {
   BLUETOOTH_PORT_ID,
-  chaseTriggers,
   type Effect,
   type MidiOutput,
   NO_TIMING,
   type PanicContext,
   parseOptions,
-  portIsDead,
-  REARMED_STATUS,
-  RECONNECTED_STATUS,
   type SectionPlan,
   selectArmed,
   selectOutput,
@@ -55,6 +50,7 @@ import { SessionRemote } from "./session-remote";
 import { SessionSections } from "./session-sections";
 import { SessionPlaylist } from "./session-playlist";
 import { SessionStart } from "./session-start";
+import { SessionEffects } from "./session-effects";
 export { BLUETOOTH_PORT_ID, NO_TIMING, carriedInto, selectArmed, selectOutput } from "./session-core";
 export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, SessionOptions, SessionState, Timing } from "./session-core";
 
@@ -66,10 +62,6 @@ export type { CarriedMidi, LateNotice, MidiOutput, SessionHost, SessionInputs, S
  * panel used before: each effect re-runs when one of its inputs changes and its cleanup runs first.
  */
 
-/** How often the session checks whether the next playlist song can be chained onto this one */
-const CHAIN_CHECK_MS = 250;
-/** How often the place in the song is kept for a renderer crash while it plays (spec 120). */
-const RESUME_SAVE_MS = 2000;
 /** How often the playing song is checked for having reached its halfway point, to count it as played. */
 const PLAYED_CHECK_MS = 1000;
 
@@ -115,6 +107,7 @@ export class PerformanceSession {
   private readonly sectionsPart = new SessionSections(this);
   private readonly playlistPart = new SessionPlaylist(this);
   private readonly startPart = new SessionStart(this);
+  private readonly effectsPart = new SessionEffects(this);
   private effects: Effect[];
   /** Stage mode: seeking is refused however it is requested. */
   locked = false;
@@ -187,9 +180,6 @@ export class PerformanceSession {
   renderSwap: { at: number; ctxAt: number; rate: number } | null = null;
   /** The `{midi@play}` messages of the start that the next scheduler sends. Cleared by any scheduler run, so a start sends them once. */
   startPlay: number[][] | null = null;
-  /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
-  private loadedPlayer: StemPlayer | null = null;
-  private loadedRhythmKey = "";
   /** The library id of the song loaded, when it is saved. A song trigger for this song does nothing. */
   loadedSongId: string | undefined;
   /** Set when a MIDI trigger asked for the loaded song to start: it starts once its player is ready and the library is idle */
@@ -240,7 +230,7 @@ export class PerformanceSession {
       timecode: NO_TIMECODE,
       ...initial,
     }));
-    this.effects = this.createEffects();
+    this.effects = this.effectsPart.createEffects();
     // The preference arms a new session for its remembered output, when that output is connected.
     if (!this.state.armedOutput && !this.armRemembered() && portId !== BLUETOOTH_PORT_ID && this.rememberedFor(portId) && access) this.portLost = true;
   }
@@ -269,7 +259,7 @@ export class PerformanceSession {
    * cleanup, which leaves the playlist running if the source is merely replaced.
    */
   loadSong(source: SongSource | null, stems: Stems | null): () => void {
-    const handover = this.claimHandover(source);
+    const handover = this.playlistPart.claimHandover(source);
     if (!source) return () => {};
     this.preparationHistory = preparationHistoryFor(source.audio);
     this.set({ preparationOnceUsed: this.preparationHistory.size });
@@ -294,7 +284,7 @@ export class PerformanceSession {
     player.setEndBehaviour(this.behaviourOf(player));
     const stopWiring = this.wirePlayer(player, source);
     if (handover) {
-      this.startHandover(handover);
+      this.playlistPart.startHandover(handover);
       // Playback carries on: the song is already running, so the transport goes on as it was.
       this.batch(() => this.set({ player, playing: true, speed }));
     } else {
@@ -303,9 +293,9 @@ export class PerformanceSession {
         setClockPosition(0);
       });
       // A song saved at another speed is rendered now. It plays at 100% until its render is in place.
-      this.speedPreparation = !isPlainSpeed(speed) ? this.renderSpeed(speed) : null;
+      this.speedPreparation = !isPlainSpeed(speed) ? this.sectionsPart.renderSpeed(speed) : null;
     }
-    this.playedTimer = setInterval(this.checkPlayed, PLAYED_CHECK_MS);
+    this.playedTimer = setInterval(this.playlistPart.checkPlayed, PLAYED_CHECK_MS);
     const id = source.libraryId;
     let unloaded = false;
     const unload = () => {
@@ -365,7 +355,7 @@ export class PerformanceSession {
         kind: "jump",
         ctxAt: when,
         before: this.state.sectionLive,
-        sections: this.playableSections,
+        sections: this.sectionsPart.playableSections,
         schedule: { cap: at, jump: { at: this.clockOf(when), position: to } },
       };
       this.sendPlan();
@@ -377,7 +367,7 @@ export class PerformanceSession {
       if (this.handingOver !== null) return;
       // The next song is already playing on this clock, so the hand-over is taken now rather than at its start.
       if (this.chained) {
-        this.handOver();
+        this.playlistPart.handOver();
         return;
       }
       // A looping song reaches its end only if its loop pass was missed. It then starts again from its trimmed start.
@@ -414,29 +404,16 @@ export class PerformanceSession {
     return stopOutputs;
   }
 
-  /**
-   * The song the previous session handed over, when it is `source`: the library holds it until a session takes it up. Any other
-   * held song is released there. The previous session's hook-up is undone here, and this session wires the song up again.
-   */
-  private claimHandover(source: SongSource | null) {
-    return this.playlistPart.claimHandover(source);
-  }
-
   /** Whether a song this session handed over is still waiting in the library for the next session to take it up. */
   get passing() {
     return this.playlistPart.passing;
-  }
-
-  /** Sets the next song's start: its cues from its own start, and its tempo message at the start of its count-in. */
-  private startHandover(chained: HandedOverSong) {
-    return this.playlistPart.startHandover(chained);
   }
 
   /** Starts the effects. Safe to call again after `dispose()`. */
   bind() {
     this.bound = true;
     this.unsubscribe = this.store.subscribe(() => this.flush());
-    this.unsubscribeResume = host.song.onSystemResume?.(this.resumeMidi) ?? null;
+    this.unsubscribeResume = host.song.onSystemResume?.(this.outputPart.resumeMidi) ?? null;
     this.flush();
     // A USB output is only reachable once system MIDI is open, so a remembered Send cues for it opens it, and opening arms it.
     const { savedOutput, access } = this.state;
@@ -522,16 +499,7 @@ export class PerformanceSession {
     return this.outputPart.sendTriggers(kind, cues);
   }
 
-  /** Sends the stop and end messages held by `sendTriggers`, in the order they were queued. */
-  private sendHeldTriggers() {
-    return this.outputPart.sendHeldTriggers();
-  }
-
   // ---- state helpers -------------------------------------------------------------------------------------------
-
-  private readyFor(state?: SessionState) {
-    return this.startPart.readyFor(state);
-  }
 
   /** Readiness describes what we sent on this connection, never a hardware acknowledgement. */
   invalidatePreparation = () => this.startPart.invalidatePreparation();
@@ -540,7 +508,7 @@ export class PerformanceSession {
   resetPreparationCommands = () => this.startPart.resetPreparationCommands();
 
   set(patch: Partial<SessionState>) {
-    if (this.readySetup && (!this.readyFor({ ...this.state, ...patch }) || patch.playing)) {
+    if (this.readySetup && (!this.startPart.readyFor({ ...this.state, ...patch }) || patch.playing)) {
       this.readySetup = null;
       if (!patch.playing) this.openingPrepared = undefined;
       patch = { ...patch, pedalsReady: false };
@@ -562,7 +530,7 @@ export class PerformanceSession {
   private flush() {
     if (this.batchDepth > 0) return;
     if (!this.bound) {
-      this.sendHeldTriggers();
+      this.outputPart.sendHeldTriggers();
       return;
     }
     if (this.flushing) {
@@ -590,7 +558,7 @@ export class PerformanceSession {
     } finally {
       this.flushing = false;
     }
-    this.sendHeldTriggers();
+    this.outputPart.sendHeldTriggers();
   }
 
   context() {
@@ -672,7 +640,7 @@ export class PerformanceSession {
         this.sendPlan();
       }
       player?.pause();
-      this.applyPendingRender();
+      this.sectionsPart.applyPendingRender();
       this.set({ playing: false });
       // A pedal/THRU path can echo our Stop back into the selected input.
       // Repeated Stop while already stopped must not transmit another Stop.
@@ -684,8 +652,8 @@ export class PerformanceSession {
   };
 
   /** Prepare the pedals and stop at Ready, without count-in, audio or Play triggers. */
-  preparePedals = () => this.start(true);
-  play = () => this.start(false);
+  preparePedals = () => this.startPart.start(true);
+  play = () => this.startPart.start(false);
 
   /** Keeps the place in the song for a renderer crash: the playlist entry, the time, and whether cues are armed. Library songs only. */
   saveResume = (): void => {
@@ -709,8 +677,6 @@ export class PerformanceSession {
       overrides: [...library.queueOverrides],
     });
   };
-
-  private start = (prepareOnly: boolean) => this.startPart.start(prepareOnly);
 
   seek = async (value: number) => {
     if (this.locked) return;
@@ -789,24 +755,12 @@ export class PerformanceSession {
   }
 
   /**
-   * Counts the playing song as played once it passes its halfway point, with the playlist set it came from. The check runs once a second and
-   * does no work once the song is counted, so it stays off the playback path.
-   */
-  private checkPlayed = () => this.playlistPart.checkPlayed();
-
-  /**
    * What the playing song does at its end: the playlist entry's override when it has one, otherwise the song's own. The entry playing
    * is locked, so its override cannot change while it plays.
    */
   behaviourOf(player: StemPlayer) {
     return this.playlistPart.behaviourOf(player);
   }
-
-  /**
-   * Hands the chained song over: the library holds it and moves on, and the view is re-created for the new song. The next session
-   * takes the song up in `loadSong`. The song is already playing, so this only moves the playlist and the outgoing song's events on.
-   */
-  private handOver = () => this.playlistPart.handOver();
 
   /** Undoes the chained song, if it has not been taken over: the outgoing song then runs to its own end. */
   dropChained() {
@@ -827,12 +781,6 @@ export class PerformanceSession {
   /** Enable USB / system MIDI. Always asks for a fresh access, so a port re-enumerated since then is the object sent to. */
   connectMidi = () => this.outputPart.connectMidi();
 
-  /**
-   * After sleep the ports from before are stale, so the system's ports are requested again. A warm scheduler worker from before the sleep
-   * is dropped too, so Play builds a fresh one.
-   */
-  private resumeMidi = () => this.outputPart.resumeMidi();
-
   openMidi() {
     return this.outputPart.openMidi();
   }
@@ -842,11 +790,6 @@ export class PerformanceSession {
   /** The MIDI clock time at which the audio clock reads `ctx`. Both clocks are in step while playing. */
   clockOf(ctx: number) {
     return this.sectionsPart.clockOf(ctx);
-  }
-
-  /** The sections as they fall inside the part of the audio that plays: a trim cuts them. */
-  private get playableSections() {
-    return this.sectionsPart.playableSections;
   }
 
   /** Tells the scheduler the waiting plan. Called on each decision, and when a scheduler starts while a plan waits. */
@@ -862,21 +805,11 @@ export class PerformanceSession {
   /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
   tickSections = () => this.sectionsPart.tickSections();
 
-  /** Applies a render that is waiting for a beat, now. Used when the song stops, because a stopped song has no beat to wait for. */
-  private applyPendingRender() {
-    return this.sectionsPart.applyPendingRender();
-  }
-
   /**
    * Sets the song's speed and pitch. The render is built in the background; the newest request wins. A built render is swapped in at
    * the next beat while the song plays, and applied at once while it is stopped.
    */
   setSpeed = (requested: Partial<SpeedSettings>) => this.sectionsPart.setSpeed(requested);
-
-  /** Builds the render for `speed` from the stems at 100%, and hands it to the player. Stale results are dropped. */
-  private renderSpeed(speed: SpeedSettings) {
-    return this.sectionsPart.renderSpeed(speed);
-  }
 
   /** A tap arms a jump to the section for the next boundary. While stopped it moves the playhead to the section's start instead. */
   tapSection = (id: string) => this.sectionsPart.tapSection(id);
@@ -925,350 +858,6 @@ export class PerformanceSession {
 
   sectionAt(n: number, run: (id: string) => void) {
     return this.sectionsPart.sectionAt(n, run);
-  }
-
-  // ---- effects -------------------------------------------------------------------------------------------------
-
-  private createEffects(): Effect[] {
-    const armedOf = (s: SessionState) => selectArmed(s);
-    return [
-      // While a song plays or prepares, or a playlist runs between its songs, the editor leaves the pedal alone (see state/stage-activity.ts).
-      {
-        deps: (s) => [s.playing, s.starting, s.preparing !== null, s.playlistPlaying],
-        run: (s) => setStageBusy(s.playing || s.starting || s.preparing !== null || s.playlistPlaying, this),
-      },
-      // The place in the song is kept every two seconds while it plays, and at once when a song loads, plays or pauses.
-      {
-        deps: (s) => [s.playing, s.player],
-        run: (s) => {
-          if (!s.player) return;
-          this.saveResume();
-          if (!s.playing) return;
-          const timer = setInterval(this.saveResume, RESUME_SAVE_MS);
-          return () => clearInterval(timer);
-        },
-      },
-      // A song a MIDI trigger loaded starts once its player is ready and the library is no longer loading.
-      {
-        deps: (s) => [s.player, s.busy],
-        run: (s) => {
-          if (!this.autoplayPending || !s.player || s.busy) return;
-          this.autoplayPending = false;
-          void this.play();
-        },
-      },
-      // A playlist song starts itself once it is the current one and nothing is loading, unless its entry asks to wait for Play.
-      {
-        deps: (s) => [s.player, s.queued, s.playlistPlaying, s.busy],
-        run: (s) => {
-          if (!s.queued || !s.playlistPlaying || s.busy || !s.player) return;
-          if (useSongLibrary.getState().queueOverrides[useSongLibrary.getState().position]?.autoplay === false) return;
-          if (s.parseError) {
-            this.fail(s.parseError);
-            useSongLibrary.getState().pausePlaylist();
-            return;
-          }
-          void this.play();
-        },
-      },
-      // Chains the next playlist song onto this one once its join is close, so that the two play on one clock.
-      {
-        deps: (s) => [s.player, s.playing, s.queued, s.playlistPlaying],
-        run: (s) => {
-          if (!s.playing || !s.player || !s.queued || !s.playlistPlaying) return;
-          const timer = setInterval(() => this.planNext(), CHAIN_CHECK_MS);
-          return () => clearInterval(timer);
-        },
-      },
-      // Stopping the playlist from elsewhere stops this song.
-      {
-        deps: (s) => [s.playlistPlaying],
-        run: (s) => {
-          if (!s.playlistPlaying && s.player?.isPlaying && s.queued) {
-            this.cancelPendingStart();
-            this.dropSectionPlan();
-            this.dropChained();
-            s.player.pause();
-            this.set({ playing: false });
-            this.panic();
-            this.sendTriggers("stop");
-          }
-        },
-      },
-      // Carry the MIDI to the next song: the access, output and input to any song loaded next, and arming only while a playlist plays,
-      // so a stopped playlist cannot leave an armed flag that re-arms a later join.
-      {
-        deps: (s) => [s.queued, s.playlistPlaying, s.busy, s.access, s.portId, s.inputId, armedOf(s), selectOutput(s)],
-        run: (s) => {
-          if (s.busy) return;
-          useSongLibrary
-            .getState()
-            .rememberMidi({ access: s.access, portId: s.portId, inputId: s.inputId, armed: armedOf(s) && s.playlistPlaying, output: selectOutput(s) });
-        },
-      },
-      // Transport lifecycle is separate from tempo-dependent scheduling.
-      {
-        deps: (s) => [s.playing, armedOf(s), selectOutput(s), s.clock],
-        run: (s) => {
-          if (!s.playing) return;
-          const context = this.context();
-          // A song that joins a set already running sends no Start: the set's Start went out with its first song.
-          const joined = this.joining;
-          this.joining = false;
-          // A delayed start sends its Start or Continue when the audio begins, after the chase.
-          const at = this.transportAt;
-          this.transportAt = null;
-          if (context.armed && s.clock && !s.timecode.enabled && !joined) {
-            try {
-              this.stoppedOn = undefined;
-              this.sendPerformance([(s.player?.position ?? 0) < 0.05 ? 250 : 251], at === null ? undefined : at - performance.timeOrigin);
-            } catch (e) {
-              this.fail(e);
-              this.setArmed(false);
-            }
-          }
-          // A song handed over stays on the set's transport, so leaving this session does not stop it.
-          return () => {
-            if (!this.passing) this.panic(this.endingIntoSet ? { ...context, clock: false } : context);
-          };
-        },
-      },
-      // Warm the scheduler worker while armed and stopped, so Play does not wait for it.
-      {
-        deps: (s) => [armedOf(s), s.playing, s.player, selectOutput(s)],
-        run: (s) => {
-          if (!armedOf(s) || s.playing || !s.player) return;
-          try {
-            const warm = this.prepared ?? prepareMidiScheduler();
-            this.prepared = warm;
-            return () => {
-              if (this.prepared === warm) {
-                warm.cancel();
-                this.prepared = null;
-              }
-            };
-          } catch (e) {
-            useMidiDiagnostics.getState().fault(String(e));
-            this.setArmed(false);
-            this.fail(e);
-          }
-        },
-      },
-      // Mirror the audio position into the display clock.
-      {
-        deps: (s) => [s.playing, s.player],
-        run: (s) => {
-          const player = s.player;
-          if (!s.playing || !player) return;
-          return startPlaybackClock(() => player.position);
-        },
-      },
-      // Section boundaries: decided ahead and carried out on the audio clock while the song plays.
-      {
-        deps: (s) => [s.playing, s.player],
-        run: (s) => {
-          if (!s.playing || !s.player) return;
-          const timer = setInterval(this.tickSections, 50);
-          return () => clearInterval(timer);
-        },
-      },
-      // A song's load triggers go out when it is loaded while armed, and again each time the session arms for it.
-      {
-        deps: (s) => [armedOf(s), s.player, rhythmMemoryKey(s.cues)],
-        run: (s) => {
-          if (!armedOf(s) || !s.player) {
-            this.loadedPlayer = null;
-            this.loadedRhythmKey = "";
-            return;
-          }
-          const key = rhythmMemoryKey(s.cues);
-          if (this.loadedPlayer === s.player) {
-            if (this.loadedRhythmKey !== key && !s.playing)
-              for (const bytes of rhythmMemory(s.cues)) this.sendPerformance(bytes, undefined, "RC-10R memory preparation");
-          } else {
-            this.loadedPlayer = s.player;
-            this.sendTriggers("load", s.cues);
-          }
-          this.loadedRhythmKey = key;
-        },
-      },
-      // The MIDI scheduler itself.
-      {
-        deps: (s) => [s.playing, s.player, armedOf(s), selectOutput(s), s.clock, s.bpm, this.playCues(s), s.timecode],
-        run: (s) => this.runScheduler(s),
-      },
-      // A USB output that goes away disarms the session. The same port id re-enumerated as a new object is the same device:
-      // it disarms without a fault, since the cues were never sent to the new object.
-      {
-        deps: (s) => [s.access, s.portId, s.armedOutput],
-        run: (s) => {
-          const access = s.access;
-          if (!access) return;
-          const update = () => {
-            const { portId, armedOutput } = this.state;
-            this.set({ portsVersion: this.state.portsVersion + 1 });
-            if (portId === BLUETOOTH_PORT_ID) return;
-            const current = access.outputs.get(portId);
-            if (!armedOutput) {
-              // The remembered port is back: take it up again, so Enable and arming work from the new object. Opening arms it too
-              // when Send cues is on for it. A port that goes away while Send cues is on is marked lost even if a fault had disarmed it.
-              if (current?.state !== "connected" && this.rememberedFor(portId)) this.portLost = true;
-              if (this.portLost && current?.state === "connected") void this.openMidi();
-              return;
-            }
-            if (current === armedOutput && current.state === "connected") return;
-            if (current?.state === "connected") {
-              this.setArmed(false);
-              this.set({ midiStatus: this.armRemembered() ? REARMED_STATUS : RECONNECTED_STATUS });
-              return;
-            }
-            useMidiDiagnostics.getState().fault("System MIDI output disconnected. Cues disarmed.");
-            this.portLost = true;
-            this.setArmed(false);
-          };
-          access.addEventListener("statechange", update);
-          return () => access.removeEventListener("statechange", update);
-        },
-      },
-      // Restore remembered ports when they appear.
-      {
-        deps: (s) => [s.access, s.portsVersion],
-        run: (s) => {
-          const access = s.access;
-          if (!access) return;
-          if (!access.outputs.get(s.portId) && s.savedOutput?.transport === "system") {
-            const saved = rememberedPort([...access.outputs.values()], s.savedOutput);
-            if (saved) this.setPortId(saved.id);
-          }
-          if (!s.inputId && s.savedInput?.transport === "system") {
-            const saved = rememberedPort([...access.inputs.values()], s.savedInput);
-            if (saved) this.setInputId(saved.id);
-          }
-        },
-      },
-      // A replaced or lost Bluetooth connection disarms. This runs before the generic check below so the fault is reported.
-      {
-        deps: (s) => [s.bluetooth, s.portId, s.armedOutput],
-        run: (s) => {
-          if (this.previousBluetooth !== s.bluetooth && s.portId === BLUETOOTH_PORT_ID) {
-            if (s.armedOutput && s.armedOutput === this.previousBluetooth)
-              useMidiDiagnostics.getState().fault("Bluetooth output disconnected or replaced. Cues disarmed.");
-            this.setArmed(false);
-            // A new Bluetooth connection for the remembered output is the same pedal coming back.
-            if (this.armRemembered()) this.set({ midiStatus: REARMED_STATUS });
-          }
-          this.previousBluetooth = s.bluetooth;
-        },
-      },
-      // Arming never survives a change of output object.
-      {
-        deps: (s) => [s.armedOutput, selectOutput(s)],
-        run: (s) => {
-          if (s.armedOutput && s.armedOutput !== selectOutput(s)) this.setArmed(false);
-        },
-      },
-      // Remote input: the selected input's messages run the bindings, or are learned while Learn is open.
-      {
-        deps: (s) => [s.access, s.inputId, s.bluetooth],
-        run: (s) => {
-          if (s.inputId === BLUETOOTH_PORT_ID) return s.bluetooth?.subscribe(this.receiveMidi);
-          const input = s.access?.inputs.get(s.inputId);
-          if (!input) return;
-          const handler = (e: MIDIMessageEvent) => {
-            if (e.data) this.receiveMidi(e.data);
-          };
-          input.addEventListener("midimessage", handler);
-          return () => input.removeEventListener("midimessage", handler);
-        },
-      },
-    ];
-  }
-
-  private runScheduler(s: SessionState): void | (() => void) {
-    const player = s.player;
-    if (!s.playing || !player) return;
-    const output = selectOutput(s);
-    if (!this.armed || output?.state !== "connected") {
-      // Armed, but the port went away: a silent stop would look like cues that never sounded.
-      if (s.armedOutput && portIsDead(output)) this.deadOutput("MIDI output is no longer connected. Cues disarmed.");
-      this.startPosition = null;
-      this.startTempo = null;
-      this.startPlay = null;
-      this.terminateWorker();
-      return;
-    }
-    const context = this.context();
-    const fault = (message: string) => {
-      useMidiDiagnostics.getState().fault(message);
-      this.batch(() => {
-        if (hasPedalRhythm(this.state.cues)) this.pause();
-        else this.panic(context);
-        this.setArmed(false);
-        this.fail(message);
-        if (this.state.queued) useSongLibrary.getState().rememberMidi(null);
-      });
-    };
-    this.set({ lateNotice: null });
-    try {
-      const position = player.position;
-      // Select opening cues from the requested offset, not a later render.
-      // Keep the live audio clock as the origin so overdue starts still fault.
-      const cuePosition = this.startPosition ?? position;
-      this.startPosition = null;
-      const rate = player.playbackRate;
-      const origin = midiNow() - (position * 1000) / rate;
-      const playTriggers = this.startPlay ?? [];
-      this.startPlay = null;
-      // Timecode replaces app clock: a receiver gets one source of time. The offset is checked here as well as at Play.
-      const offset = timecodeOffsetFrames(s.timecode);
-      const timecodeTail = this.incomingTail;
-      this.incomingTail = null;
-      const handle = startMidiScheduler(
-        {
-          cues: this.playCues(s),
-          position: cuePosition,
-          duration: player.duration,
-          origin,
-          // The start tempo and play trigger are due at the start of the count-in: the start position's clock time less the count-in. Song position
-          // zero is not that time when starting mid-song, so the message would be older than STALE_MS and dropped.
-          tempoAt: origin + (cuePosition * 1000) / rate - this.countInMs,
-          bpm: s.rhythmTempo ?? s.bpm,
-          rate,
-          clock: s.clock && offset === null,
-          timecode: offset === null ? undefined : { fps: s.timecode.fps, offset },
-          timecodeTail: timecodeTail ?? undefined,
-          tempo: this.startTempo,
-          prepared: this.openingPrepared,
-          playTriggers,
-          lookahead: s.portId === BLUETOOTH_PORT_ID ? BLUETOOTH_LOOKAHEAD : SYSTEM_LOOKAHEAD,
-          pedalChannel: s.tempoChannel,
-          chaseTriggers: chaseTriggers(),
-        },
-        (message) => {
-          // A replaced output object (same port id) is never sent to; the statechange handler disarms.
-          if (this.output !== output) return;
-          this.sendPerformance(message.bytes, message.due - performance.timeOrigin, message.label);
-        },
-        fault,
-        this.readyWorker ?? undefined,
-        this.degraded,
-      );
-      this.readyWorker = null;
-      this.startTempo = null;
-      this.openingPrepared = undefined;
-      this.scheduler = handle;
-      this.sendPlan();
-      // Audio position is a checkpoint, not the scheduling clock. A missing or
-      // frozen checkpoint makes the worker stop producing new batches.
-      const timer = setInterval(() => handle.sync(player.position), 50);
-      return () => {
-        clearInterval(timer);
-        handle.stop();
-        if (this.scheduler === handle) this.scheduler = null;
-      };
-    } catch (e) {
-      fault(e instanceof Error ? e.message : String(e));
-    }
   }
 }
 
