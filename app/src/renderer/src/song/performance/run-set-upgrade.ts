@@ -13,7 +13,7 @@ import { parseBandNotes, updatedBandNotes } from "../band/stored-notes";
 import { EXTRAS_NAMES, EXTRAS_RECORD_KEY, packExtras } from "../band/extras";
 import { automaticUpdateBlock } from "../band/tone-check";
 import { startChordDetection } from "../band/chord-detect-client";
-import { bassOf, harmonyOf } from "../analysis/analysis-audio";
+import { bassOf, harmonyInput, harmonyOf } from "../analysis/analysis-audio";
 import { parseAnalysis } from "../analysis/song-analysis";
 import type { PcmAudio } from "../types";
 import { parseChart } from "./chart";
@@ -80,7 +80,7 @@ export async function upgradeSavedSong(
         hints: analysis?.sections,
         ...keysFromOptions(saved, song.key),
       },
-      detectChords: () => startChordDetection({ harmony: harmonyOf(stems, source).audio, bass: bassOf(stems), beats: grid.beats }).done,
+      detectChords: () => startChordDetection({ ...harmonyInput(harmonyOf(stems, source)), bass: bassOf(stems), beats: grid.beats }).done,
     });
     const generated = recordOf(saved.generatedParts);
     const manifests = recordOf(saved.bandExtras);
