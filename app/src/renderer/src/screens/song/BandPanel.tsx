@@ -52,7 +52,7 @@ import { applyPartTone } from "@/song/band/part-tone";
 import { automaticUpdateBlock, cleanFallbackQuestion, generatedLabel, missingToneFiles } from "@/song/band/tone-check";
 import { storedShape } from "@/song/performance/song-shape";
 import { renderPartChain } from "@/song/band/bass-chain";
-import { bassOf, harmonyOf } from "@/song/analysis/analysis-audio";
+import { bassOf, harmonyInput, harmonyOf } from "@/song/analysis/analysis-audio";
 import { startChordDetection } from "@/song/band/chord-detect-client";
 import { barBeats } from "@/song/band/timing";
 import { findStyle, type StyleId } from "@/song/band/styles";
@@ -414,7 +414,7 @@ function BandBody({
   const detectChords = async (audio: PcmAudio): Promise<Chord[] | null> => {
     setWork("Detecting chords…");
     const stems = selectWholeSongStems(useSong.getState());
-    const detecting = startChordDetection({ harmony: harmonyOf(stems, audio).audio, bass: bassOf(stems), beats: grid?.beats ?? null });
+    const detecting = startChordDetection({ ...harmonyInput(harmonyOf(stems, audio)), bass: bassOf(stems), beats: grid?.beats ?? null });
     job.current = detecting;
     try {
       return await detecting.done;
