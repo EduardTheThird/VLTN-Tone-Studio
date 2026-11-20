@@ -23,6 +23,16 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Pedal drums, with a backup",
+    text: "In This song, open What plays and set drums to RC-10R pedal. Pick a fallback too, generated or original. When you press Play, the pedal plays only if the song has RC-10R cues and Send cues is on with an output connected. Otherwise the fallback drums play and a toast tells you why. A drums chip on the transport and in stage mode shows what plays. The old \"Use pedal drums in every song\" switch is gone. Songs with RC-10R cues were moved to pedal drums, keeping their previous drums as the fallback. The MIDI view has one RC-10R drums card with a ready checklist.",
+    image: band,
+  },
+  {
+    title: "Safer screens",
+    text: "If a problem happens in one screen or view, you now get Reload screen instead of a blank window. Opening This song no longer blanks the window.",
+    image: stageMode,
+  },
+  {
     title: "Upload NAM models to your GP-150/GP-180",
     text: "In Tones, open the NAM slots and choose Upload NAM on a slot to put an A2 Lite .nam file on the pedal. The app converts it, asks before it replaces the slot, and reads the list back to check the new name. The model you replace can't be read back from the pedal, so keep your own copy. Other NAM types are refused before anything is sent.",
     image: rigTools,

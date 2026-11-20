@@ -4,6 +4,22 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.51] — 2026-11-20
+
+### Added
+- Drums can be set to the RC-10R pedal in This song, with a fallback to generated or original drums. Press Play and the pedal plays only when the song has RC-10R cues and Send cues is on with an output connected. Otherwise the fallback plays and a toast says why.
+- A drums chip on the transport and in stage mode shows what is playing.
+- The MIDI view has one RC-10R drums card with a ready checklist.
+- A pre-show warning when an RC-10R song will fall back to other drums.
+- A per-screen crash guard: a problem in one screen or view shows Reload screen instead of a blank window.
+
+### Changed
+- The global "Use pedal drums in every song" switch is replaced by the per-song choice. Songs with RC-10R cues were moved to pedal drums automatically, keeping their previous drums as the fallback.
+
+### Fixed
+- Opening This song could blank the window.
+- Songs played with no drums when the pedal switch was on but the RC-10R was unreachable. They now play the fallback drums.
+
 ## [0.9.50] — 2026-11-19
 
 ### Added
