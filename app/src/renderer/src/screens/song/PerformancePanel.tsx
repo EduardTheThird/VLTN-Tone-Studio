@@ -87,6 +87,7 @@ import { audienceModel, type AudienceSongInput } from "@/song/performance/audien
 import { useAudienceSettings } from "@/song/performance/audience-settings";
 import { useChartPage } from "@/song/performance/pdf/current-page";
 import { PerformanceViewSwitcher, readPerformanceView, savePerformanceView, type PerformanceView as ViewName } from "./PerformanceViews";
+import { ScreenBoundary } from "@/components/ScreenBoundary";
 
 function readNumber(raw: string, fallback: number, min: number, max: number): number {
   const n = raw === "" ? NaN : Number(raw);
@@ -769,6 +770,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           ))}
         </div>
         <div style={{ display: shownView("play") }}>
+          <ScreenBoundary name="Performance play">
           {!stage && (
             <SessionTimeline
               session={session}
@@ -785,6 +787,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             analyseDisabled={!source || playing || library.playlistPlaying || !!library.busy}
             onAnalyseAgain={() => detectTempo(true)}
           />
+          <ScreenBoundary name="Performance transport">
           <PerformanceTransport
             session={session}
             stage={stage}
@@ -815,6 +818,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             onTap={tap}
             drumsChip={drumsChip}
           />
+          </ScreenBoundary>
           <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
           <div className="flex justify-end">
             <PracticeMuteMenu />
@@ -839,8 +843,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               })
             }
           />
+          </ScreenBoundary>
         </div>
         <div style={{ display: shownView("song") }}>
+          <ScreenBoundary name="Performance this song">
           <AnalysisCard
             sectionCount={sectionList.length}
             analysis={analysis}
@@ -913,8 +919,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             channels={source?.audio.channels ?? null}
           />
           <SongTriggerField songId={source?.libraryId} songs={library.index.songs} inputReady={inputReady} />
+          </ScreenBoundary>
         </div>
         <div style={{ display: stage || view === "play" ? "contents" : "none" }}>
+          <ScreenBoundary name="Performance stage">
           <StageView
             drumsChip={drumsChip}
             session={session}
@@ -933,8 +941,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             settingsKey={key}
             soloScale={{ storageKey: key, capo, onChange: () => setSoloVersion((v) => v + 1) }}
           />
+          </ScreenBoundary>
         </div>
         <div style={{ display: shownView("midi") }}>
+          <ScreenBoundary name="Performance MIDI">
           <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} />
           {source && (
             <RhythmAutomationSetup
@@ -963,16 +973,20 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             timecodeOffset={timecodeOffset}
             onTimecodeOffset={saveTimecodeOffset}
           />
+          </ScreenBoundary>
         </div>
         <div style={{ display: shownView("setup") }}>
+          <ScreenBoundary name="Performance setup">
           <p className="text-xs text-silkscreen-3">These settings apply to every song.</p>
           <PerformanceOutputs player={player} />
           <AudienceSettings />
           <BandSyncSettings />
           <RemoteControlSettings inputReady={inputReady} />
           <SongTriggerSettings songs={library.index.songs} inputReady={inputReady} />
+          </ScreenBoundary>
         </div>
         <div style={{ display: shownView("lyrics") }}>
+          <ScreenBoundary name="Performance lyrics and chords">
           <PerformanceAnalysis
             session={session}
             stems={stems}
@@ -993,12 +1007,17 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             chordSource={harmony?.name ?? ""}
             onSelectChord={setSelectedChord}
           />
+          </ScreenBoundary>
         </div>
         <div style={{ display: stage ? "none" : "contents" }}>
           <ChordVoicings chord={selectedChord} onClose={() => setSelectedChord(null)} />
         </div>
       </div>
-      {!stage && <TransportBar session={session} bpm={effectiveBpm(bpm, speed.rate)} beats={beats} firstBeat={firstBeat} />}
+      {!stage && (
+        <ScreenBoundary name="Performance transport bar">
+          <TransportBar session={session} bpm={effectiveBpm(bpm, speed.rate)} beats={beats} firstBeat={firstBeat} />
+        </ScreenBoundary>
+      )}
     </section>
   );
 }

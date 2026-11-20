@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/globals.css";
 import { App } from "./app/App";
+import { ScreenBoundary } from "./components/ScreenBoundary";
 import { AudienceView } from "./screens/audience/AudienceView";
 import { logUncaughtErrors } from "./state/session-log";
 import { watchMemory } from "./song/audio/memory-usage";
@@ -22,7 +23,10 @@ createRoot(document.getElementById("root")!).render(
     <AudienceView />
   ) : (
     <StrictMode>
-      <App />
+      {/* Last resort: the screen boundaries catch most errors. This one keeps a crash outside them from leaving a blank window. */}
+      <ScreenBoundary name="app" scope="app">
+        <App />
+      </ScreenBoundary>
     </StrictMode>
   ),
 );
