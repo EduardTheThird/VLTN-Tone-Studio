@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { BeatIndicator } from "./BeatIndicator";
 import { PreparePedalsButton } from "./PreparePedalsButton";
@@ -40,6 +40,7 @@ export function StageView({
   pdf,
   soloScale,
   settingsKey,
+  drumsChip,
 }: {
   session: PerformanceSession;
   stage: boolean;
@@ -61,6 +62,8 @@ export function StageView({
   soloScale?: { storageKey: string; capo: number; onChange?: () => void };
   /** The song's settings key: its saved band beat grid, when it has one, gives the strip the song's real bar lines. */
   settingsKey?: string;
+  /** Which drums play, shown in the status strip. */
+  drumsChip?: ReactNode;
 }) {
   const library = useSongLibrary();
   const source = useSong((s) => s.source);
@@ -160,7 +163,12 @@ export function StageView({
               beat={beat}
               speedNote={speedNote}
               notices={notices}
-              extra={reader.pdfControls}
+              extra={
+                <>
+                  {drumsChip}
+                  {reader.pdfControls}
+                </>
+              }
               controls={{
                 follow: reader.follow,
                 onFollow: reader.onFollow,

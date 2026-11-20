@@ -13,6 +13,8 @@ export function BandTabSound({
   partKeys,
   generatedNotes,
   onPartChoice,
+  pedalCues,
+  onOpenMidi,
   busy,
   blocked,
   pendingLineUp,
@@ -29,6 +31,9 @@ export function BandTabSound({
   /** What each generated part says about itself: "Generated · clean (tone missing)" where its tone files were missing. */
   generatedNotes?: Partial<Record<"drums" | "bass", string>>;
   onPartChoice(patch: Partial<PartChoices>): void;
+  /** True when the song has automatic RC-10R cues, so drums can choose the pedal. */
+  pedalCues?: boolean;
+  onOpenMidi?: () => void;
   busy: boolean;
   blocked: boolean;
   pendingLineUp(kind: RenderedKind): PendingLineUp | null;
@@ -38,7 +43,7 @@ export function BandTabSound({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      {hasSong && <PartChoiceRows choices={partChoices} keys={partKeys} notes={generatedNotes} disabled={busy} onChange={onPartChoice} />}
+      {hasSong && <PartChoiceRows choices={partChoices} keys={partKeys} notes={generatedNotes} disabled={busy} onChange={onPartChoice} pedalCues={pedalCues} onOpenMidi={onOpenMidi} />}
       {hasSong && (
         <section aria-label="Rendered parts" className="flex flex-col gap-3">
           {RENDERED_KINDS.map((kind) => (

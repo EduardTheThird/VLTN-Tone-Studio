@@ -127,6 +127,10 @@ export interface BandPanelProps {
   onPlayFrom?(seconds: number): void;
   /** Which drums and bass play: the original, the generated track or both. */
   partChoices: PartChoices;
+  /** True when the song has automatic RC-10R cues, so its drums can choose the pedal. */
+  pedalCues?: boolean;
+  /** Opens the MIDI view (the RC-10R setup card is there). */
+  onOpenMidi?: () => void;
   /** Changes some parts' choice and updates the mix to match. Works while playing, since it only changes mute levels. */
   onPartChoice(patch: Partial<PartChoices>): void;
   /** The bass note the song's bass stem plays on each beat, from the song analysis. Null when the song has no bass stem or it is not read yet. */
@@ -165,6 +169,8 @@ function BandBody({
   getPosition,
   onPlayFrom,
   partChoices,
+  pedalCues,
+  onOpenMidi,
   onPartChoice,
   bassLine = null,
   sectionHints = [],
@@ -924,6 +930,8 @@ function BandBody({
               partKeys={partKeys}
               generatedNotes={{ drums: generatedLabel(settings, "drums"), bass: generatedLabel(settings, "bass") }}
               onPartChoice={onPartChoice}
+              pedalCues={pedalCues}
+              onOpenMidi={onOpenMidi}
               busy={busy}
               blocked={blocked}
               pendingLineUp={(kind) =>
