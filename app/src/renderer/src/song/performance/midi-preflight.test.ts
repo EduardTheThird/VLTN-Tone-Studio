@@ -252,3 +252,10 @@ describe("preset names", () => {
     expect(new Set(report.issues.map((i) => i.code))).toEqual(new Set(["saved-channel"]));
   });
 });
+
+it("warns when the song chose RC-10R drums but the cues are not armed", () => {
+  const cues = parseChart("[00:01] {midi:pc 1 2}");
+  expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: true, armed: false } }).warnings.map((i) => i.code)).toEqual(["pedal-drums-off"]);
+  expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: true, armed: true } }).warnings).toEqual([]);
+  expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: false, armed: false } }).warnings).toEqual([]);
+});

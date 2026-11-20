@@ -297,3 +297,17 @@ it("reports no pedal settings when no GP is connected", () => {
   const [result] = playlistPreflight(["one"], [saved], { ...config, rig: null });
   expect([...result.errors, ...result.warnings, ...result.advice].some((text) => text.startsWith("Pedal settings:"))).toBe(false);
 });
+
+it("counts the songs that choose RC-10R drums when the cues are off, once, on the first entry", () => {
+  const pedal = (id: string): LibraryPreflightSong => ({
+    ...saved,
+    id,
+    song: { ...saved.song!, id, settings: { ...saved.song!.settings, ":options": JSON.stringify({ ...JSON.parse(saved.song!.settings[":options"]), partChoice: { drums: "pedal" } }) } },
+  });
+  const songs = [pedal("a"), pedal("b"), saved];
+  const [first, second] = playlistPreflight(["a", "b", "one"], songs, { ...config, cuesArmed: false });
+  expect(first.warnings).toContain("2 songs use RC-10R drums but cues are off; they will play their fallback drums.");
+  expect(second.warnings.join(" ")).not.toContain("RC-10R drums");
+  expect(playlistPreflight(["a", "b"], songs, { ...config, cuesArmed: true })[0].warnings.join(" ")).not.toContain("RC-10R drums");
+  expect(playlistPreflight(["a", "b"], songs, config)[0].warnings.join(" ")).not.toContain("RC-10R drums");
+});

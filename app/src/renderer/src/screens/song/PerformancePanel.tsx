@@ -10,7 +10,7 @@ import { chordDisplayTranspose, clampCapo, effectiveBpm, keySpelling } from "@/s
 import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { SpeedControls } from "./SpeedControls";
 import { bassOf, harmonyNameOf, harmonyOf } from "@/song/analysis/analysis-audio";
-import { PerformanceSession, carriedInto, leftPerformance, useSession, type Timing } from "@/song/performance/session";
+import { PerformanceSession, carriedInto, leftPerformance, selectArmed, selectOutput, useSession, type Timing } from "@/song/performance/session";
 import {
   ownClickSounds,
   readClickSoundDefaults,
@@ -49,7 +49,7 @@ import { TrackImport } from "./TrackImport";
 import { SongLoudnessControl } from "./SongLoudnessControl";
 import { loudnessFromOptions, normalisingGain, type SongLoudness } from "@/song/audio/loudness";
 import { busDefaults, mixDefaults, type TrackInfo } from "@/song/tracks";
-import { applyPartChoices, defaultPartChoices, muteSilencedParts, partKeysOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
+import { applyPartChoices, defaultPartChoices, muteSilencedParts, partKeysOf, pedalFallbackOf, readPartChoices, type PartChoices } from "@/song/band/part-choice";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth } from "./PerformanceMidiSetup";
 import { RhythmTransferStatus } from "./RhythmTransferStatus";
@@ -59,7 +59,12 @@ import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { currentRhythmAutomation, rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { preparationSettings, usePreparationDefaults } from "@/song/performance/start-preparation";
-import { pedalDrumMix, usePedalDrums } from "@/song/performance/pedal-drums";
+import { pedalDrumMix } from "@/song/performance/pedal-drums";
+import { cuesForDrums, fallbackReason, isFallback, resolveDrums, settledArmed, withResolvedDrums } from "@/song/band/drum-source";
+import { hasPedalRhythm } from "@/song/performance/rhythm-runtime";
+import { useBandPanel } from "./band-panel-state";
+import { DrumsChip } from "./DrumsChip";
+import { showToast } from "@/app/notify";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
 import { StageView } from "./StageView";
@@ -249,7 +254,6 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   // What each imported track counts as for the practice mute. It is saved with the song, since only that song's tracks have these names.
   const [countsAs, setCountsAs] = useState<Record<string, CountsAs>>(() => readCountsAs(options));
   const practiceKinds = usePracticeMute((s) => s.kinds);
-  const pedalDrums = usePedalDrums((s) => s.enabled);
   const [trackBuses, setTrackBuses] = useState<TrackBuses>(() => ({ ...busDefaults(tracks), ...options.trackBuses }));
   useEffect(() => {
     setMix((current) => ({ ...mixDefaults(tracks), ...current }));
@@ -305,6 +309,20 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             .bpm ?? null),
     };
   }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature]);
+  // Which drums play. The pedal plays only when the song has RC-10R cues and the cues are armed. This is decided while stopped and held
+  // while playing, so the drum tracks never switch mid-song; the next Play decides again.
+  const [heldArmed, setHeldArmed] = useState(() => !!carriedInto(library.midiSession, { queued, playlistPlaying: !!library.playlistPlaying })?.armed);
+  const hasRhythmCues = hasPedalRhythm(parsed.cues);
+  const drumKeys = partKeysOf(tracks, stems);
+  const drumFallback = pedalFallbackOf(partChoice, drumKeys.drums?.generated !== undefined);
+  // Memoised on plain values: the session compares its cues by identity, so a new object each render would restart its scheduler.
+  const drums = useMemo(
+    () => resolveDrums({ choice: partChoice.drums, fallback: drumFallback, hasRhythmCues, armed: heldArmed }),
+    [partChoice.drums, drumFallback, hasRhythmCues, heldArmed],
+  );
+  const drumsFellBack = isFallback(partChoice.drums, drums);
+  // A song on its fallback drums does not send its RC-10R rhythm cues, or the pedal would start its rhythm over the fallback.
+  const sessionCues = useMemo(() => cuesForDrums(parsed.cues, partChoice.drums, drums), [parsed.cues, partChoice.drums, drums]);
   // The song's MIDI timecode offset, saved with its options. Empty means 00:00:00:00.
   const [timecodeOffset, setTimecodeOffset] = useState(options.timecodeOffset);
   const saveTimecodeOffset = (value: string) => {
@@ -329,6 +347,13 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   };
 
+  // The choices with the drums replaced by what really plays, for the mix, the mixer's badges and the Band status line.
+  const playingChoices = useMemo(() => withResolvedDrums(partChoice, drums), [partChoice, drums]);
+  const openWhatPlays = () => {
+    setStage(false);
+    chooseView("song");
+    useBandPanel.getState().show(true);
+  };
   const [session] = useState(
     () =>
       new PerformanceSession({
@@ -343,7 +368,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           queued,
           playlistPlaying: !!library.playlistPlaying,
           busy: !!library.busy,
-          cues: parsed.cues,
+          cues: sessionCues,
           parseError: parsed.error,
           bpm,
           rhythmTempo: parsed.rhythmTempo,
@@ -356,6 +381,20 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   );
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
+  const armed = useSession(session, selectArmed);
+  const outputConnected = useSession(session, (s) => selectOutput(s)?.state === "connected");
+  useEffect(() => setHeldArmed((held) => settledArmed(held, armed, playing)), [armed, playing]);
+  // A fallback is announced once per song start.
+  useEffect(() => {
+    if (!playing || !drumsFellBack || drums.reason !== "not-armed") return;
+    showToast({
+      tone: "info",
+      title: `RC-10R not reachable (${fallbackReason(drums, outputConnected)})`,
+      body: `Playing ${drums.plays} drums.`,
+    });
+    // Once per start: the drums are held while playing, so only the start changes this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
   // The Library's batch analysis waits while a song plays, so it is told when this panel's session starts or stops.
   useEffect(() => {
     setSongPlaying(playing);
@@ -439,7 +478,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       queued,
       playlistPlaying: !!library.playlistPlaying,
       busy: !!library.busy,
-      cues: parsed.cues,
+      cues: sessionCues,
       parseError: parsed.error,
       bpm,
       rhythmTempo: parsed.rhythmTempo,
@@ -615,11 +654,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const playedMix = useMemo(
     () =>
       pedalDrumMix(
-        effectiveMute(muteSilencedParts(mix, partChoice, partKeysOf(tracks, stems)), practiceSet(practiceKinds), practiceTracks),
+        effectiveMute(muteSilencedParts(mix, playingChoices, partKeysOf(tracks, stems)), practiceSet(practiceKinds), practiceTracks),
         practiceTracks,
-        pedalDrums,
+        drums.plays === "pedal",
       ),
-    [mix, partChoice, tracks, stems, practiceKinds, practiceTracks, pedalDrums],
+    [mix, playingChoices, tracks, stems, practiceKinds, practiceTracks, drums.plays],
   );
   useEffect(() => {
     player?.setMix(playedMix, songGain);
@@ -689,6 +728,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     setView(next);
     savePerformanceView(next);
   };
+  const drumsChip = <DrumsChip choice={partChoice.drums} source={drums} fallbackWhy={fallbackReason(drums, outputConnected)} onOpen={openWhatPlays} />;
   /** A view's wrapper shows only when it is selected and stage mode is off. Stage mode hides every view except the reader. */
   const shownView = (name: ViewName) => (!stage && view === name ? "contents" : "none");
 
@@ -773,6 +813,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               onSoundDefaults: setSoundDefault,
             }}
             onTap={tap}
+            drumsChip={drumsChip}
           />
           <SectionStrip session={session} onSaveDefaults={saveSectionDefaults} />
           <div className="flex justify-end">
@@ -787,7 +828,9 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             trackBuses={trackBuses}
             onTrackBus={(name, bus) => setTrackBuses((routes) => ({ ...routes, [name]: bus }))}
             onTrackInfo={setTrackInfo}
-            partChoices={partChoice}
+            partChoices={playingChoices}
+            pedalPlays={drums.plays === "pedal"}
+            drumsFallback={drumsFellBack}
             countsAs={countsAs}
             onCountsAs={(trackKey, value) =>
               setCountsAs((current) => {
@@ -834,7 +877,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           />
           <TrackImport playing={playing || library.playlistPlaying} />
           <SongLoudnessControl audio={source?.audio ?? null} storageKey={key} value={loudness} onChange={setLoudness} />
-          <BandPanelButton sections={sectionList} partChoices={partChoice} />
+          <BandPanelButton sections={sectionList} partChoices={playingChoices} drumsFallback={drumsFellBack} />
           <BandPanel
             songKey={key}
             playing={playing || library.playlistPlaying}
@@ -853,6 +896,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
             getPosition={() => session.position}
             onPlayFrom={(seconds) => void session.seek(seconds).then(() => session.startPlayback())}
             partChoices={partChoice}
+            pedalCues={hasRhythmCues}
+            onOpenMidi={() => chooseView("midi")}
             onPartChoice={choosePart}
             bassLine={bassLine}
             sectionHints={suggested}
@@ -871,6 +916,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         </div>
         <div style={{ display: stage || view === "play" ? "contents" : "none" }}>
           <StageView
+            drumsChip={drumsChip}
             session={session}
             stage={stage}
             onExitStage={() => setStage(false)}
@@ -889,7 +935,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           />
         </div>
         <div style={{ display: shownView("midi") }}>
-          <SessionMidiHealth session={session} firstBeat={firstBeat} />
+          <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} />
           {source && (
             <RhythmAutomationSetup
               key={key}

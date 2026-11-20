@@ -22,6 +22,7 @@ import { orderedKeys } from "../tracks";
 import { describeBinding, type Binding } from "./bindings";
 import { readTempoSource } from "./tempo-source";
 import { bindingClaiming, triggerClashes, type SongEntry } from "./song-triggers";
+import { pedalDrumsOffWarning } from "../band/drum-source";
 import { currentRhythmAutomation } from "./rhythm-automation";
 import type { RhythmControls } from "./rhythm-automation";
 
@@ -31,6 +32,14 @@ function trimRange(duration: number, options: object): { start: number; end: num
   const shape = { ...storedShape(raw), trimStart: playedTrimStart(raw) };
   if (shape.trimStart === undefined && shape.trimEnd === undefined) return undefined;
   return playRange(duration, shape);
+}
+/** Whether a song's saved options choose RC-10R pedal drums. */
+function choosesPedalDrums(options: string | undefined): boolean {
+  try {
+    return JSON.parse(options || "{}")?.partChoice?.drums === "pedal";
+  } catch {
+    return false;
+  }
 }
 export interface PlaylistCheck {
   entry: number;
@@ -69,6 +78,8 @@ export function playlistPreflight(
     leadInDefaults?: LeadIn;
     /** The connected GP-150 / GP-180's settings and the app's side. Its issues are added once, to the first entry; `appClock` is taken from the songs. */
     rig?: RigFacts | null;
+    /** Whether the cues are armed now. Unset skips the pedal drums check; false warns about every song that chose RC-10R drums. */
+    cuesArmed?: boolean;
   },
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
@@ -208,6 +219,11 @@ export function playlistPreflight(
     }
     return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, advice, notes, ...(preparation ? { preparation } : {}) };
   });
+  // Songs that chose RC-10R drums play their fallback when the cues are off. One warning counts them, on the first entry.
+  if (config.cuesArmed === false && checks.length > 0) {
+    const chosen = checks.filter((check) => choosesPedalDrums(byId.get(check.id)?.song?.settings[":options"])).length;
+    if (chosen > 0) checks[0].warnings.push(pedalDrumsOffWarning(chosen));
+  }
   // The pedal's settings are the same for every song, so they are reported once, on the first entry.
   if (config.rig && checks.length > 0) {
     for (const issue of rigCheck({ ...config.rig, appClock: anyClock })) {

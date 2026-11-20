@@ -6,7 +6,6 @@ import { useSession, type PerformanceSession } from "@/song/performance/session"
 import { followsPitch } from "@/song/performance/speed";
 import { clickStretchWarning, setSolo, silenceGroupmates, type TrackInfo } from "@/song/tracks";
 import { ORIGINAL_PARTS, partKeysOf, silencedByChoice, type PartChoices } from "@/song/band/part-choice";
-import { usePedalDrums } from "@/song/performance/pedal-drums";
 import { PRACTICE_KINDS, PRACTICE_LABEL, kindOfTrack, practiceMutedKeys, practiceSet, usePracticeMute, type CountsAs } from "@/song/performance/practice-mute";
 import { STEM_LABEL } from "./stems/StemMixer";
 import type { StemName } from "@/song/types";
@@ -24,6 +23,11 @@ function rowName(name: string, stems: Stems | null, info: TrackInfo | undefined)
 
 /** What part-choice.ts says on the original track while the generated part plays. */
 const OFF_ORIGINAL = "Off: generated plays";
+/** The words on a track "What plays" silences. The pedal's own text is kept, and a fallback is marked. */
+const offText = (off: string): string =>
+  off.includes("RC-10R")
+    ? off
+    : `${off.startsWith(OFF_ORIGINAL) ? "Original off" : "Generated off"}${off.endsWith("(fallback)") ? " (fallback)" : ""}`;
 
 // One grid for every row, so the columns line up: name, solo, volume, pan, follows pitch, bus and mute groups.
 const ROW_GRID = "grid grid-cols-[minmax(9rem,1.2fr)_auto_minmax(8rem,1fr)_minmax(7rem,0.8fr)_auto_minmax(7rem,auto)_minmax(10rem,auto)] gap-x-3";
@@ -53,6 +57,8 @@ export function PerformanceMix({
   onTrackBus,
   onTrackInfo,
   partChoices = ORIGINAL_PARTS,
+  pedalPlays = false,
+  drumsFallback = false,
   countsAs = {},
   onCountsAs,
 }: {
@@ -66,12 +72,15 @@ export function PerformanceMix({
   onTrackInfo: (key: string, patch: Partial<Omit<TrackInfo, "kind">>) => void;
   /** What "What plays" is set to. A track it silences is marked, so a muted original or generated part does not look like a fault. */
   partChoices?: PartChoices;
+  /** True while the RC-10R plays the drums, so every drum track is off. `partChoices` holds what really plays (see withResolvedDrums). */
+  pedalPlays?: boolean;
+  /** True when the song chose the pedal but its fallback drums play, so their badges say so. */
+  drumsFallback?: boolean;
   /** What each imported track counts as for the practice mute, by key. A track without an entry goes by its name. */
   countsAs?: Record<string, CountsAs>;
   onCountsAs?: (key: string, value: CountsAs | undefined) => void;
 }) {
   const practiceKinds = usePracticeMute((s) => s.kinds);
-  const pedalDrums = usePedalDrums((s) => s.enabled);
   const player = useSession(session, (s) => s.player);
   const speed = useSession(session, (s) => s.speed);
   if (!player) return null;
@@ -88,7 +97,7 @@ export function PerformanceMix({
     player.names.map((name) => ({ key: name, name: tracks[name]?.name ?? name, bus: busOf(name) })),
   );
   const label = (name: string) => rowName(name, stems, tracks[name]);
-  const silenced = silencedByChoice(partChoices, partKeysOf(tracks, stems));
+  const silenced = silencedByChoice(partChoices, partKeysOf(tracks, stems), drumsFallback);
   // The tracks the band generated, so a generated part that plays is badged as such.
   const generatedKeys = new Set(Object.values(partKeysOf(tracks, stems)).flatMap((part) => (part?.generated === undefined ? [] : [part.generated])));
   const usedGroups = [...new Set(Object.values(groups).flat())].sort((a, b) => a - b);
@@ -131,7 +140,7 @@ export function PerformanceMix({
           const info = tracks[name];
           const off = silenced[name];
           const byPractice = practiceMuted.has(name);
-          const byPedal = pedalDrums && kindOfTrack(name, info, countsAs[name]) === "drums";
+          const byPedal = pedalPlays && kindOfTrack(name, info, countsAs[name]) === "drums";
           const state = off ? "off" : entry.mute || byPractice || byPedal ? "muted" : "playing";
           const generatedPlays = !off && generatedKeys.has(name);
           return (
@@ -169,7 +178,7 @@ export function PerformanceMix({
                   />
                   <span className="truncate">{label(name)}</span>
                 </label>
-                {byPedal && <span className="text-xs text-led-warn">Pedal drums</span>}
+                {byPedal && !off && <span className="text-xs text-led-warn">Off: RC-10R plays</span>}
                 {byPractice && <span className="shrink-0 rounded-md border border-led-warn px-1.5 py-0.5 text-xs text-led-warn">Practice</span>}
                 {info?.kind === "user" && onCountsAs && (
                   <select
@@ -195,7 +204,7 @@ export function PerformanceMix({
                     Generated plays
                   </span>
                 )}
-                {off && <span className="shrink-0 text-xs text-silkscreen-3">{off === OFF_ORIGINAL ? "Original off" : "Generated off"}</span>}
+                {off && <span className="shrink-0 text-xs text-silkscreen-3">{offText(off)}</span>}
               </div>
               <label className="flex items-center gap-1">
                 <input
