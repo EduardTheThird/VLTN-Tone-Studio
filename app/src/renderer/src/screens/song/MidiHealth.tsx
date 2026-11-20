@@ -31,6 +31,7 @@ export function MidiHealth({
   outputName,
   parseError,
   timecode,
+  pedalDrums,
 }: {
   cues: Cue[];
   /** The song's sections, which the cues on a section are placed on */
@@ -49,6 +50,8 @@ export function MidiHealth({
   parseError: string;
   /** Set only while MIDI timecode is on */
   timecode?: { fps: TimecodeRate; offset: string; bluetooth: boolean };
+  /** The song chose RC-10R drums, and whether the cues are armed */
+  pedalDrums?: { chosen: boolean; armed: boolean };
 }) {
   const library = usePedalLibrary();
   const presetNames = useKnownPresetNames();
@@ -68,6 +71,7 @@ export function MidiHealth({
         outputName,
         timecode,
         presetNames,
+        pedalDrums,
         pedals: configuredPedals(library),
       }),
     [
@@ -85,6 +89,8 @@ export function MidiHealth({
       outputName,
       timecode,
       presetNames,
+      pedalDrums?.chosen,
+      pedalDrums?.armed,
       library.channels,
       library.profiles,
       library.assignments,

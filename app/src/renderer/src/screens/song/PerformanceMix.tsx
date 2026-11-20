@@ -23,6 +23,11 @@ function rowName(name: string, stems: Stems | null, info: TrackInfo | undefined)
 
 /** What part-choice.ts says on the original track while the generated part plays. */
 const OFF_ORIGINAL = "Off: generated plays";
+/** The words on a track "What plays" silences. The pedal's own text is kept, and a fallback is marked. */
+const offText = (off: string): string =>
+  off.includes("RC-10R")
+    ? off
+    : `${off.startsWith(OFF_ORIGINAL) ? "Original off" : "Generated off"}${off.endsWith("(fallback)") ? " (fallback)" : ""}`;
 
 // One grid for every row, so the columns line up: name, solo, volume, pan, follows pitch, bus and mute groups.
 const ROW_GRID = "grid grid-cols-[minmax(9rem,1.2fr)_auto_minmax(8rem,1fr)_minmax(7rem,0.8fr)_auto_minmax(7rem,auto)_minmax(10rem,auto)] gap-x-3";
@@ -173,7 +178,7 @@ export function PerformanceMix({
                   />
                   <span className="truncate">{label(name)}</span>
                 </label>
-                {byPedal && <span className="text-xs text-led-warn">Off: RC-10R plays</span>}
+                {byPedal && !off && <span className="text-xs text-led-warn">Off: RC-10R plays</span>}
                 {byPractice && <span className="shrink-0 rounded-md border border-led-warn px-1.5 py-0.5 text-xs text-led-warn">Practice</span>}
                 {info?.kind === "user" && onCountsAs && (
                   <select
@@ -199,7 +204,7 @@ export function PerformanceMix({
                     Generated plays
                   </span>
                 )}
-                {off && <span className="shrink-0 text-xs text-silkscreen-3">{off === OFF_ORIGINAL ? "Original off" : "Generated off"}</span>}
+                {off && <span className="shrink-0 text-xs text-silkscreen-3">{offText(off)}</span>}
               </div>
               <label className="flex items-center gap-1">
                 <input

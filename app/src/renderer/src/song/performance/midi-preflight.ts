@@ -4,6 +4,7 @@ import { expandSectionCues, timedCues, unmatchedSectionCues, type Cue } from "./
 import { chaseTriggerSet, isChased, triggerKey, type TriggerCc } from "./midi-chase";
 import { sectionIssues, type Section } from "./sections";
 import { parseOffset, type TimecodeRate } from "./timecode";
+import { pedalDrumsOffWarning } from "../band/drum-source";
 import { presetCueTarget, presetNumber, type PresetNames } from "./pedal-preset-names";
 export interface PreflightOptions {
   duration: number;
@@ -29,6 +30,8 @@ export interface PreflightOptions {
   timecode?: { fps: TimecodeRate; offset: string; bluetooth: boolean };
   /** The GP-150 / GP-180 preset names as last known (index = slot). Unset while they are unknown, which skips the preset-name check. */
   presetNames?: PresetNames;
+  /** The song chose RC-10R pedal drums, and whether the cues are armed. A chosen pedal with cues off plays the fallback drums, which is warned about. */
+  pedalDrums?: { chosen: boolean; armed: boolean };
 }
 /** A cue's label starts with its pedal's name; a GP-150 / GP-180 preset label leaves out the "Valeton" the profile name starts with. */
 const labelIsFrom = (label: string | undefined, pedalName: string) =>
@@ -254,6 +257,7 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
     add(issue.code, issue.text, issue.level);
   for (const [note, time] of notes)
     add("note-off", `Note ${note.split(":")[1]} on channel ${note.split(":")[0]} at ${time.toFixed(2)} s has no later note-off before the audio ends.`);
+  if (options.pedalDrums?.chosen && !options.pedalDrums.armed) add("pedal-drums-off", pedalDrumsOffWarning(1));
   const warnings = issues.filter((issue) => !issue.level),
     advice = issues.filter((issue) => issue.level === "advice");
   return {
