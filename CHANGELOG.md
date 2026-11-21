@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Fixed
+- **GP-150 preset numbers after overwriting presets** (#140). The Library and the preset bar showed the right names under the wrong slot numbers, so the arrows in the Rig jumped to other presets. Slots now follow the order of the pedal's list.
+
 ## [0.9.51] — 2026-11-20
 
 ### Added
