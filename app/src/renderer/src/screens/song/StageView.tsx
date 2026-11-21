@@ -98,7 +98,6 @@ export function StageView({
     <>
       <PerformanceReader
         stage={stage}
-        onExitStage={onExitStage}
         pdf={pdf}
         soloScale={soloScale}
         chart={chart}
