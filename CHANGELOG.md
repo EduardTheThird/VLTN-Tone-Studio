@@ -4,8 +4,15 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.52] — 2026-11-23
+
+### Added
+- Rename a SnapTone or User IR on the GP-200: right-click a filled slot in Tones > On your GP-200 and pick Rename. The app reads the name back to check it.
+
 ### Fixed
-- **GP-150 preset numbers after overwriting presets** (#140). The Library and the preset bar showed the right names under the wrong slot numbers, so the arrows in the Rig jumped to other presets. Slots now follow the order of the pedal's list.
+- GP-150 preset numbers after overwriting presets. The Library and the preset bar showed the right names under the wrong slot numbers, so the arrows in the Rig jumped to other presets. Slots now follow the order of the pedal's list.
+- Open dropdown lists were unreadable on Linux (white text on a light list).
+- Security fixes: Electron and other dependencies updated, and several file reads hardened.
 
 ## [0.9.51] — 2026-11-20
 

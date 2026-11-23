@@ -23,6 +23,11 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Rename SnapTones and IRs on the GP-200",
+    text: "In Tones, under On your GP-200, right-click a filled SnapTone or User IR slot and pick Rename. Names can be up to 15 characters. The app reads the name back from the pedal to check it, and a linked TONE3000 tone keeps its link. GP-150 users: preset numbers now stay right after you overwrite presets, so the Rig arrows step through them in order.",
+    image: rigTools,
+  },
+  {
     title: "Pedal drums, with a backup",
     text: "In This song, open What plays and set drums to RC-10R pedal. Pick a fallback too, generated or original. When you press Play, the pedal plays only if the song has RC-10R cues and Send cues is on with an output connected. Otherwise the fallback drums play and a toast tells you why. A drums chip on the transport and in stage mode shows what plays. The old \"Use pedal drums in every song\" switch is gone. Songs with RC-10R cues were moved to pedal drums, keeping their previous drums as the fallback. The MIDI view has one RC-10R drums card with a ready checklist.",
     image: band,
