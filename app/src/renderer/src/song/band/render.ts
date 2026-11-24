@@ -9,7 +9,8 @@ import type { PcmAudio } from "../types";
 import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { ATTACK_ENVELOPE_SAMPLES } from "./beat-grid";
 import { STICK_SECONDS, STICK_TRANSPOSE, STICK_CLICK } from "./count-in";
-import { pickBassLayers, pickDrumLayers, type SampleSet } from "./samples";
+import { organSample } from "./keys-organ";
+import { pickBassLayers, pickDrumLayers, pickKeysLayers, type SampleSet } from "./samples";
 
 /** The sample rate of a rendered part: the song's rate. */
 export const RENDER_RATE = 44100;
@@ -272,6 +273,29 @@ function bassVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
   });
 }
 
+function keysVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate: number): Voice[] {
+  const organs = new Map<number, PcmAudio>();
+  return notes.flatMap((note) => {
+    const instrument = note.instrument ?? "piano";
+    const start = Math.round(note.time * sampleRate);
+    const holdEnd = start + Math.round(note.duration * sampleRate);
+    const [left, right] = panGains(Math.max(-0.3, Math.min(0.3, (note.pitch - 60) / 90)));
+    let layers;
+    if (instrument === "organ") {
+      let audio = organs.get(note.pitch);
+      if (!audio) {
+        audio = organSample(note.pitch, sampleRate);
+        organs.set(note.pitch, audio);
+      }
+      layers = [{ audio, semitones: 0, gain: 0.55 * note.velocity / 100 }];
+    } else layers = pickKeysLayers(samples, instrument, note.pitch, note.velocity);
+    return layers.filter(({ gain }) => gain > 0).map(({ audio, semitones, gain }) => ({
+      sample: audio, rate: rateOf(semitones, audio.sampleRate, sampleRate), gain, left, right,
+      shape: { start, holdEnd, release: Math.round(sampleRate * (instrument === "organ" ? 0.045 : 0.16)), cutAt: Infinity, cutFade: 0 },
+    }));
+  });
+}
+
 function peakOf(channel: Float32Array): number {
   let peak = 0;
   for (let i = 0; i < channel.length; i++) peak = Math.max(peak, Math.abs(channel[i]));
@@ -284,13 +308,13 @@ function peakOf(channel: Float32Array): number {
  */
 export function renderPart(
   notes: readonly NoteEvent[],
-  kind: "drums" | "bass",
+  kind: "drums" | "bass" | "keys",
   samples: SampleSet,
   lengthFrames: number,
   sampleRate = RENDER_RATE,
 ): RenderedPart {
   const sorted = [...notes].sort((a, b) => a.time - b.time);
-  const voices = (kind === "drums" ? drumVoices(sorted, samples, sampleRate) : bassVoices(sorted, samples, sampleRate)).map(onAttack);
+  const voices = (kind === "drums" ? drumVoices(sorted, samples, sampleRate) : kind === "bass" ? bassVoices(sorted, samples, sampleRate) : keysVoices(sorted, samples, sampleRate)).map(onAttack);
   const left = new Float32Array(lengthFrames);
   const right = new Float32Array(lengthFrames);
   for (const voice of voices) mixVoice(left, right, voice);

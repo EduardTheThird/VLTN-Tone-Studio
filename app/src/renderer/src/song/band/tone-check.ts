@@ -1,3 +1,4 @@
+import { BAND_PARTS, partToneOf, type ToneSettings } from "./arrangement";
 // Whether a song's tone files are really there (spec 136). A bass or drum tone chain names captures and IRs that are downloaded files. When
 // one is missing, Generate falls back to a clean part. That is fine when the performer asks for it, but an automatic update must never swap a
 // good rendered part for a clean one, and a playlist should say before the show which songs would sound different.
@@ -14,8 +15,8 @@ export interface MissingToneFile {
   file: PartToneFile;
 }
 
-const PART_LABEL: Record<TonePart, string> = { bass: "bass", drums: "drum" };
-const PARTS: readonly TonePart[] = ["bass", "drums"];
+const PART_LABEL: Record<TonePart, string> = { bass: "bass", drums: "drum", keys: "keys" };
+const PARTS: readonly TonePart[] = ["bass", ...BAND_PARTS.filter((part) => part !== "bass")];
 
 /** "amp capture" or "cab IR": what a block's file is called in a sentence. */
 export const fileLabel = (missing: Pick<MissingToneFile, "role" | "type">): string => `${missing.role} ${missing.type === "capture" ? "capture" : "IR"}`;
@@ -42,10 +43,10 @@ async function exists(block: ToneBlock & { file: PartToneFile }, files: PartTone
  * The chain files of the bass and drum tones that cannot be read. Only blocks that are on and have a file count, as in loadPartTone: an
  * empty slot or an off block plays nothing, so it cannot be missing.
  */
-export async function missingToneFiles(settings: Pick<BandSettings, "bassTone" | "drumTone">, files: PartToneFiles): Promise<MissingToneFile[]> {
+export async function missingToneFiles(settings: ToneSettings, files: PartToneFiles): Promise<MissingToneFile[]> {
   const missing: MissingToneFile[] = [];
   for (const part of PARTS) {
-    const tone = part === "bass" ? settings.bassTone : settings.drumTone;
+    const tone = partToneOf(settings, part);
     if (tone.kind !== "chain") continue;
     for (const block of tone.blocks) {
       if (!block.on || !block.file) continue;
@@ -74,7 +75,7 @@ export function notUpdatedMessage(missing: readonly MissingToneFile[]): string {
  * The reason an automatic update must not run, or null when it may. The stored audio and the settings are left as they are: only an
  * explicit Generate may fall back to a clean part.
  */
-export async function automaticUpdateBlock(settings: Pick<BandSettings, "bassTone" | "drumTone">, files: PartToneFiles): Promise<string | null> {
+export async function automaticUpdateBlock(settings: ToneSettings, files: PartToneFiles): Promise<string | null> {
   const missing = await missingToneFiles(settings, files);
   return missing.length ? notUpdatedMessage(missing) : null;
 }
@@ -92,7 +93,7 @@ export function missingToneWarning(missing: MissingToneFile): string {
 }
 
 /** What the mixer row says about a generated part: that its tone is missing when the settings ask for a chain and the audio is clean. */
-export function generatedLabel(settings: Pick<BandSettings, "bassTone" | "drumTone" | "renderedTone">, part: TonePart): string {
-  const asked = part === "bass" ? settings.bassTone : settings.drumTone;
+export function generatedLabel(settings: ToneSettings & Pick<BandSettings, "renderedTone">, part: TonePart): string {
+  const asked = partToneOf(settings, part);
   return asked.kind === "chain" && settings.renderedTone[part] === "clean" ? "Generated · clean (tone missing)" : "Generated";
 }

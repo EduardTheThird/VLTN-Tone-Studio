@@ -5,7 +5,7 @@ import type { Cue } from "../performance/chart";
 import type { Chord } from "../performance/chords";
 import type { Section } from "../performance/sections";
 import type { PcmAudio, Stems } from "../types";
-import { WHOLE_SONG_ID, planSections, type BandSettings, type SectionBandHint, type SectionPlan } from "./arrangement";
+import { BAND_PARTS, WHOLE_SONG_ID, planSections, type BandSettings, type SectionBandHint, type SectionPlan } from "./arrangement";
 import type { BandFollow, BandRequest, BandResult } from "./band-job";
 import type { BassLineBeat } from "../analysis/bass-line";
 import { parseKey } from "../analysis/chord-hmm";
@@ -84,7 +84,7 @@ export type LevelStems = NonNullable<BandRequest["originals"]>;
 
 /** The original drums and bass of the split, when there is one. The other stems are not used for levels. */
 export function levelStems(stems: Stems | null): LevelStems {
-  return { drums: stems?.drums, bass: stems?.bass };
+  return { drums: stems?.drums, bass: stems?.bass, ...(stems?.piano ? { keys: stems.piano } : {}) };
 }
 
 /** The follow sources the song has: the stems among FOLLOW_STEMS that were split, then the mix, which is always there. */
@@ -270,7 +270,7 @@ export function bandRequest(input: BandInputs): BandRequest {
  * the window is as long as the parts. Samples past the end of the song are silence. The sum is held to −1 to 1.
  */
 export function previewMix(song: PcmAudio, fromTime: number, result: BandResult): PcmAudio {
-  const parts = [result.drums, result.bass].filter((part): part is PcmAudio => part !== undefined);
+  const parts = BAND_PARTS.map((part) => result[part]).filter((part): part is PcmAudio => part !== undefined);
   const frames = parts.reduce((longest, part) => Math.max(longest, part.channels[0]?.length ?? 0), 0);
   const first = Math.max(0, Math.round(fromTime * song.sampleRate));
   const channels = song.channels.map((channel, c) => {

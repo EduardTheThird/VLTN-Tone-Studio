@@ -1,4 +1,4 @@
-import { RENDERED_KINDS, type BandSettings, type RenderedKind } from "@/song/band/arrangement";
+import { RENDERED_KINDS, partToneOf, type BandSettings, type RenderedKind } from "@/song/band/arrangement";
 import type { PartChoices, PartKeys } from "@/song/band/part-choice";
 import { PartChoiceRows } from "./PartChoiceRows";
 import { PartToneChain } from "./PartToneChain";
@@ -29,7 +29,7 @@ export function BandTabSound({
   partChoices: PartChoices;
   partKeys: PartKeys;
   /** What each generated part says about itself: "Generated · clean (tone missing)" where its tone files were missing. */
-  generatedNotes?: Partial<Record<"drums" | "bass", string>>;
+  generatedNotes?: Partial<Record<RenderedKind, string>>;
   onPartChoice(patch: Partial<PartChoices>): void;
   /** True when the song has automatic RC-10R cues, so drums can choose the pedal. */
   pedalCues?: boolean;
@@ -46,7 +46,7 @@ export function BandTabSound({
       {hasSong && <PartChoiceRows choices={partChoices} keys={partKeys} notes={generatedNotes} disabled={busy} onChange={onPartChoice} pedalCues={pedalCues} onOpenMidi={onOpenMidi} />}
       {hasSong && (
         <section aria-label="Rendered parts" className="flex flex-col gap-3">
-          {RENDERED_KINDS.map((kind) => (
+          {RENDERED_KINDS.filter((kind) => kind !== "keys" || settings.parts.keys || settings.rendered.keys).map((kind) => (
             <RenderedPartRow
               key={kind}
               kind={kind}
@@ -62,6 +62,7 @@ export function BandTabSound({
       <section aria-label="Tone chains" className="grid gap-x-8 gap-y-4 md:grid-cols-2">
         <PartToneChain part="drums" tone={settings.drumTone} songSeconds={songSeconds} onChange={(drumTone) => onChange({ drumTone })} />
         <PartToneChain part="bass" tone={settings.bassTone} songSeconds={songSeconds} onChange={(bassTone) => onChange({ bassTone })} />
+        {settings.parts.keys && <PartToneChain part="keys" tone={partToneOf(settings, "keys")} songSeconds={songSeconds} onChange={(keysTone) => onChange({ keysTone })} />}
       </section>
       <p className="text-silkscreen-3">Render it with your own instruments, then use it here.</p>
     </div>

@@ -1,8 +1,9 @@
+import { DEFAULT_KEYS, KEYS_LEFT, KEYS_REGISTERS, KEYS_SOUNDS, type KeysSettings } from "@/song/band/keys-types";
 import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, SONG_LIFTS, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice, type SongLift } from "@/song/band/arrangement";
+import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, BAND_PARTS, DRUM_KITS, HUMANISE_CHOICES, SONG_LIFTS, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice, type SongLift } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
 import { variantExtraBytes } from "@/song/band/live-variants";
@@ -42,7 +43,7 @@ export interface BandSettingsFormProps {
 
 /** The song-wide band settings, in two columns: drums, then bass. The tone chains are on the Sound tab. Changing one saves it; nothing is generated until Generate. */
 export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar, songSeconds = 0, hasOriginalDrums = false }: BandSettingsFormProps) {
-  const parts = Number(settings.parts.drums) + Number(settings.parts.bass);
+  const parts = BAND_PARTS.filter((part) => settings.parts[part]).length;
   const extra = Math.round(variantExtraBytes(songSeconds, parts) / 1_000_000);
   return (
     <section aria-label="Band settings" className="grid gap-x-8 gap-y-4 md:grid-cols-2">
@@ -309,6 +310,53 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
           Return to normal at the next section
         </label>
       </div>
+      <div className="flex min-w-0 flex-col gap-3">
+        <h3 className="font-semibold">Keys</h3>
+        <label className="flex items-center gap-2">
+          <Switch aria-label="Generate keys" checked={!!settings.parts.keys}
+            onCheckedChange={(on) => onChange({ parts: { ...settings.parts, keys: on } })} />
+          Keys
+        </label>
+        {settings.parts.keys && <KeysControls value={settings.keys ?? DEFAULT_KEYS} onChange={(keys) => onChange({ keys })} />}
+      </div>
     </section>
+  );
+}
+
+const KEYS_LABELS = {
+  auto: "Automatic", piano: "Piano", grand: "Electric grand", pianet: "Pianet", wurlitzer: "Wurlitzer", organ: "Organ",
+  style: "Style default", rest: "Rest", root: "Root", "root-octave": "Root and octave", "root-fifth": "Root and fifth",
+  low: "Low", mid: "Middle", high: "High",
+};
+
+function KeysControls({ value, onChange }: { value: KeysSettings; onChange(value: KeysSettings): void }) {
+  const choice = <K extends "sound" | "left" | "register">(key: K, label: string, choices: readonly KeysSettings[K][]) => (
+    <label className="flex items-center justify-between gap-3">
+      {label}
+      <Select value={value[key]} onValueChange={(next) => onChange({ ...value, [key]: next })}>
+        <SelectTrigger aria-label={`Keys ${label.toLowerCase()}`} className="w-44"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {choices.map((entry) => <SelectItem key={entry} value={entry}>{KEYS_LABELS[entry]}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+  return (
+    <>
+      {choice("sound", "Sound", KEYS_SOUNDS)}
+      {choice("left", "Left hand", KEYS_LEFT)}
+      {choice("register", "Register", KEYS_REGISTERS)}
+      <label className="flex items-center justify-between gap-3">
+        Voices
+        <Select value={String(value.voices)} onValueChange={(next) => onChange({ ...value, voices: next === "4" ? 4 : 3 })}>
+          <SelectTrigger aria-label="Keys voices" className="w-44"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="3">3</SelectItem><SelectItem value="4">4</SelectItem></SelectContent>
+        </Select>
+      </label>
+      <label className="flex items-center gap-2">
+        <Switch aria-label="Keys chord extensions" checked={value.extensions} onCheckedChange={(extensions) => onChange({ ...value, extensions })} />
+        Chord extensions
+      </label>
+    </>
   );
 }

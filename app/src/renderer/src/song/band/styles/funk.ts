@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Funk: sixteenth-note grooves, with kick and snare placed on the off-beats and ghost notes between the backbeats.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const FUNK: Style = {
   id: "funk",
   name: "Funk",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("funk", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "tight",
   grooves: {

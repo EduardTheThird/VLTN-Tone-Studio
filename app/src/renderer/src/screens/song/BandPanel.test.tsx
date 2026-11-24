@@ -1059,6 +1059,18 @@ describe("Band panel", () => {
     expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
   });
 
+  it("generates a keys-only track and saves the bar-view notes", async () => {
+    stored({ beatGrid: grid, band: { parts: { drums: false, bass: false, keys: true }, keys: { sound: "organ" } } });
+    const keys = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
+    const notes = { drums: [], bass: [], keys: [{ time: 0, pitch: 60, duration: 0.5, velocity: 90 }] };
+    mocks.startBandRender.mockReturnValue({ done: Promise.resolve({ keys, notes }), onProgress: vi.fn(), cancel: vi.fn() });
+    renderPanel({ chart: "[C]" });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums: undefined, bass: undefined, keys }, { playing: false, remove: ["drums", "bass"] }));
+    await waitFor(() => expect(savedOptions().bandNotes.keys).toEqual([[0, 60, 90, 500, 0]]));
+    expect(mocks.startBandRender.mock.calls[0][0].parts.keys).toBe(true);
+  });
+
   it("passes a turned-off part to the store, so its generated track goes in the same update", async () => {
     stored({ beatGrid: grid, band: { parts: { drums: false, bass: true } } });
     const bass = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
@@ -1141,7 +1153,7 @@ describe("Band panel", () => {
     stored({ beatGrid: grid, band: { parts: { drums: false, bass: false } } });
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
-    expect(screen.getByText("Turn on drums or bass first.")).toBeTruthy();
+    expect(screen.getByText("Turn on drums, bass or keys first.")).toBeTruthy();
     expect(mocks.startBandRender).not.toHaveBeenCalled();
   });
 });

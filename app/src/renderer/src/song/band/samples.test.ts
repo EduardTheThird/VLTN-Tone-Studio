@@ -125,7 +125,7 @@ describe("map.json", () => {
   });
 
   it("names only files that exist, and ships no FLAC the map does not use", () => {
-    const files = mappedFiles();
+    const files = [...mappedFiles(), ...Object.values(SAMPLE_MAP.keysInstruments ?? {}).flatMap((roots) => roots.flatMap((row) => row.layers.map(({ file }) => file)))];
     for (const file of files) expect(existsSync(join(SAMPLES, file)), file).toBe(true);
     const onDisk = readdirSync(SAMPLES, { recursive: true })
       .map(String)
@@ -149,8 +149,9 @@ describe("map.json", () => {
     expect(() => readSampleMap(map({ velocity: [1, 127], nominal: 80 }))).toThrow(/Invalid sample map/);
   });
 
-  it("keeps samples/ under 30 MB", () => {
+  it("keeps the original kit, bass and room library under 30 MB", () => {
     const total = readdirSync(SAMPLES, { recursive: true })
+      .filter((path) => !String(path).startsWith("keys/"))
       .map((path) => join(SAMPLES, String(path)))
       .filter((path) => statSync(path).isFile())
       .reduce((sum, path) => sum + statSync(path).size, 0);
@@ -402,4 +403,19 @@ it("crossfades recorded bass layers at constant power and cycles both layers tog
   expect(first.reduce((power, layer) => power + layer.weight ** 2, 0)).toBeCloseTo(1);
   expect(pickBassLayers(set, 23, 50, 2)).toEqual(first);
   expect(pickBassLayers(set, 23, 90, 0, "ghost")[0].pick.audio).toBe(audio("bass/fingers-ghost-23-90-1.flac"));
+});
+
+it("ships four sampled keys banks with a loaded root within two semitones across the playable range", () => {
+  const banks = SAMPLE_MAP.keysInstruments!;
+  expect(Object.keys(banks).sort()).toEqual(["grand", "pianet", "piano", "wurlitzer"]);
+  let bytes = 0;
+  for (const roots of Object.values(banks)) {
+    for (let note = 24; note <= 96; note++) expect(roots.some(({ root }) => Math.abs(root - note) <= 2)).toBe(true);
+    for (const { layers } of roots) for (const { file } of layers) {
+      const sample = join(SAMPLES, file);
+      expect(readFileSync(sample).subarray(0, 4).toString()).toBe("fLaC");
+      bytes += statSync(sample).size;
+    }
+  }
+  expect(bytes).toBeLessThan(25_000_000);
 });

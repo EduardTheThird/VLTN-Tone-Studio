@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Shuffle: a triplet grid of three steps to a beat. The swing is in the pattern itself, so the first and third triplet steps carry
 // the ride and the middle one is left out. Walking bass fits this style.
 
@@ -13,6 +14,7 @@ export const SHUFFLE: Style = {
   id: "shuffle",
   name: "Shuffle",
   meter: { beatsPerBar: 4, stepsPerBeat: 3 },
+  keys: keysPatterns("shuffle", { beatsPerBar: 4, stepsPerBeat: 3 }),
   swingDefault: 0.5,
   feelDefault: "laid-back",
   grooves: {

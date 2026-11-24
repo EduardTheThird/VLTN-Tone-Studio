@@ -1,3 +1,4 @@
+import { BAND_PARTS, type BandPart } from "./arrangement";
 // Level matching for the generated parts (spec 85, stage 1). A generated drum or bass part is set to the song's loudness rather than to
 // its peak: its integrated loudness is moved to a target, and the gain is held back if that would push the peak past the ceiling. Pure:
 // the band job calls these in the worker, where the loudness reads are off the window's thread.
@@ -18,10 +19,10 @@ export const DRUMS_BELOW_SONG_LU = 4;
 /** An original stem at or below this loudness is treated as silent, so the song's loudness is used instead. */
 export const STEM_SILENT_LUFS = -60;
 
-export type LevelKind = "drums" | "bass";
+export type LevelKind = BandPart;
 
 /** How far under the song each generated part sits, when there is no original stem to match. */
-export const BELOW_SONG_LU: Readonly<Record<LevelKind, number>> = { drums: DRUMS_BELOW_SONG_LU, bass: BASS_BELOW_SONG_LU };
+export const BELOW_SONG_LU: Readonly<Record<LevelKind, number>> = { drums: DRUMS_BELOW_SONG_LU, bass: BASS_BELOW_SONG_LU, keys: 8 };
 
 /** The loudness a part is matched to, in LUFS. */
 export interface LevelTarget {
@@ -51,6 +52,7 @@ export interface LevelReport {
 export interface PartLevels {
   drums?: LevelReport;
   bass?: LevelReport;
+  keys?: LevelReport;
 }
 
 /** The mono average of a signal: its channels added and divided by their count, with the level kept (no scaling to a peak). */
@@ -111,8 +113,10 @@ export function matchLoudness(part: PcmAudio, target: LevelTarget, ceilingDb = L
 export function levelStatus(levels: PartLevels | undefined): string | null {
   if (!levels) return null;
   const named: [string, LevelReport][] = [];
-  if (levels.drums) named.push(["Drums", levels.drums]);
-  if (levels.bass) named.push(["Bass", levels.bass]);
+  for (const part of BAND_PARTS) {
+    const report = levels[part];
+    if (report) named.push([part[0].toUpperCase() + part.slice(1), report]);
+  }
   if (named.length === 0) return null;
   const phrases = named.map(([name, level], index) => {
     const amount = `${level.belowSongDb.toFixed(1)} dB under`;

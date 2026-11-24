@@ -2,7 +2,7 @@
 // the band worker calls these with the decoded samples, and the tests call them with stub samples. The same request, with the same seed,
 // gives the same audio.
 
-import type { BandSettings, SectionPlan } from "./arrangement";
+import { BAND_PARTS, type BandPart, type BandSettings, type PartToggles, type SectionPlan } from "./arrangement";
 import { monoSum, onsetStrength, type BeatGrid } from "./beat-grid";
 import { endBeforeNext, generateBass } from "./bass";
 import { countInOf } from "./count-in";
@@ -14,6 +14,7 @@ import { ENDING_TAIL, HOLD_BARS, SLOW_TEMPO } from "./ending";
 import { beatLevelsDb, followFeel, type Feel } from "./feel";
 import type { ChordAtBeat } from "./harmony";
 import { humanise } from "./humanise";
+import { generateKeys } from "./keys";
 import { loudnessOf, matchLoudness, STEM_SILENT_LUFS, targetLoudness, type LevelKind, type LevelReport, type PartLevels } from "./level";
 import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
@@ -50,7 +51,7 @@ export interface BandRequest {
   keys: BandKey[];
   /** The song's trim end in seconds, when it has one. The ending goes on the last full bar before it (ending.ts). */
   trimEnd?: number;
-  parts: { drums: boolean; bass: boolean };
+  parts: PartToggles;
   /** Where the worker fetches each sample file, by its path in map.json. */
   sampleUrls: Record<string, string>;
   /** The stem that follow-my-playing reads, when the setting is on. */
@@ -64,7 +65,7 @@ export interface BandRequest {
    * The original drums and bass stems, mono, when the split has them. A generated part is matched to its stem's loudness, and to the song
    * less an offset when there is no stem.
    */
-  originals?: { drums?: PcmAudio; bass?: PcmAudio };
+  originals?: Partial<Record<BandPart, PcmAudio>>;
 }
 
 /** What follow-my-playing did for a render: which source it read, and whether the parts were made to follow it. */
@@ -80,7 +81,8 @@ export interface BandResult {
   /** Present only for the parts the request asked for. */
   drums?: PcmAudio;
   bass?: PcmAudio;
-  notes: { drums: NoteEvent[]; bass: NoteEvent[] };
+  keys?: PcmAudio;
+  notes: BandNoteSet;
   /** Present when follow-my-playing was on for the request. */
   follow?: FollowReport;
   learnedDrums?: LearnedDrumsReport[];
@@ -96,7 +98,7 @@ export interface BandResult {
    * The exit bar of each vamp, by section id (vamp.ts): the vamp's last bar with the fill and lead-in into the next section, rendered like the
    * parts it replaces and set to their level. `from` and `to` are the song times of the bar it takes the place of on the last pass.
    */
-  exits?: Record<string, { from: number; to: number; drums?: PcmAudio; bass?: PcmAudio }>;
+  exits?: Record<string, { from: number; to: number } & Partial<Record<BandPart, PcmAudio>>>;
   variants?: Record<RenderedVariant, BandResult>;
 }
 
@@ -106,18 +108,15 @@ export interface PreviewWindow {
   end: number;
 }
 
-interface Notes {
-  drums: NoteEvent[];
-  bass: NoteEvent[];
-}
+export type BandNoteSet = { drums: NoteEvent[]; bass: NoteEvent[]; keys?: NoteEvent[] };
 
 interface Generated {
-  notes: Notes;
+  notes: BandNoteSet;
   follow?: FollowReport;
   learnedDrums?: LearnedDrumsReport[];
   detectedStops?: number[];
   /** The notes of the song as if its vamps were ordinary sections, when it has vamps: their exit bars are cut from these. */
-  exitNotes?: Notes;
+  exitNotes?: BandNoteSet;
 }
 
 /**
@@ -172,7 +171,9 @@ function generate(request: BandRequest, original = originalDrummer(request), den
   const snapped = settings.followDrummer && original.hits ? followDrummer(humanDrums, humanBass, onsetTimes(original.hits)) : { drums: humanDrums, bass: humanBass };
   const drumNotes = snapped.drums;
   const bassNotes = endBeforeNext(snapped.bass);
-  const result: Generated = { notes: { drums: request.parts.drums ? drumNotes : [], bass: bassNotes }, follow };
+  const notes: BandNoteSet = { drums: request.parts.drums ? drumNotes : [], bass: bassNotes };
+  if (request.parts.keys) notes.keys = generateKeys(grid, request.harmony, plans, settings, seed, feel, request.trimEnd);
+  const result: Generated = { notes, follow };
   if (request.parts.drums && report.length) result.learnedDrums = report;
   if (feel?.stops.size) result.detectedStops = [...feel.stops].map((beat) => grid.beats[beat]).filter(Number.isFinite);
   // A song with vamps is generated a second time with them as ordinary sections, which gives each vamp's exit bar its fill and lead-in.
@@ -197,10 +198,10 @@ function levelPart(kind: LevelKind, audio: PcmAudio, request: BandRequest, songL
  * How long the rendered parts are. A hold, three hits or a slow ending play past the song's own end, so the parts grow to fit them: a
  * hold or three hits by at most HOLD_BARS bars, and a slow ending by the bars it slows over as well. Other endings keep the song's length.
  */
-export function renderLength(request: BandRequest, notes: Notes): number {
+export function renderLength(request: BandRequest, notes: BandNoteSet): number {
   const { kind, bars } = request.settings.ending;
   if (kind === "hit" || kind === "none") return request.lengthFrames;
-  const all = [...notes.drums.map((note) => ({ ...note, duration: Math.max(note.duration, ENDING_TAIL) })), ...notes.bass];
+  const all = [...notes.drums.map((note) => ({ ...note, duration: Math.max(note.duration, ENDING_TAIL) })), ...notes.bass, ...(notes.keys ?? [])];
   const latest = all.reduce((end, note) => Math.max(end, note.time + note.duration), 0);
   const wanted = Math.max(request.lengthFrames, Math.ceil(latest * RENDER_RATE));
   const beats = request.grid.beats;
@@ -226,9 +227,9 @@ function render(request: BandRequest, generated: Generated, samples: SampleSet, 
   const songLufs = request.mix ? loudnessOf(request.mix) : -Infinity;
   const levels: PartLevels = {};
   const vamps = vampBars(request.grid, request.plans);
-  for (const kind of ["drums", "bass"] as const) {
+  for (const kind of BAND_PARTS) {
     if (!request.parts[kind]) continue;
-    const dry = renderPart(notes[kind], kind, samples, lengthFrames, RENDER_RATE).audio;
+    const dry = renderPart(notes[kind] ?? [], kind, samples, lengthFrames, RENDER_RATE).audio;
     // The ring of a vamp's last bar carries on into its start, so the loop point has no cut.
     if (kind === "drums") for (const bar of vamps) wrapTail(dry, notes.drums, bar, samples);
     const rendered = kind === "drums" && !hasOwnSpace(request.settings.drumTone) ? addRoom(dry, samples.room, Math.min(1, request.settings.drumRoom * (samples.roomScale ?? 1))) : dry;
@@ -236,7 +237,7 @@ function render(request: BandRequest, generated: Generated, samples: SampleSet, 
     result[kind] = leveled.audio;
     if (leveled.report) levels[kind] = leveled.report;
   }
-  if (levels.drums || levels.bass) result.levels = levels;
+  if (BAND_PARTS.some((part) => levels[part])) result.levels = levels;
   const count = request.parts.drums ? renderCountIn(request, samples, levels.drums?.gainDb ?? 0) : undefined;
   if (count) result.countIn = count;
   if (generated.exitNotes && vamps.length > 0) result.exits = renderExits(request, generated.exitNotes, vamps, samples, levels);
@@ -271,7 +272,7 @@ function wrapTail(dry: PcmAudio, notes: readonly NoteEvent[], bar: VampBar, samp
 /** Each vamp's exit bar, rendered like its part and set to the part's level. The drums get the room too. */
 function renderExits(
   request: BandRequest,
-  notes: Notes,
+  notes: BandNoteSet,
   vamps: readonly VampBar[],
   samples: SampleSet,
   levels: PartLevels,
@@ -280,9 +281,9 @@ function renderExits(
   for (const bar of vamps) {
     const frames = Math.round((bar.to - bar.from + EXIT_TAIL) * RENDER_RATE);
     const exit: NonNullable<BandResult["exits"]>[string] = { from: bar.from, to: bar.to };
-    for (const kind of ["drums", "bass"] as const) {
+    for (const kind of BAND_PARTS) {
       if (!request.parts[kind]) continue;
-      const dry = renderPart(notesInBar(notes[kind], bar.from, bar.to), kind, samples, frames, RENDER_RATE).audio;
+      const dry = renderPart(notesInBar(notes[kind] ?? [], bar.from, bar.to), kind, samples, frames, RENDER_RATE).audio;
       const rendered = kind === "drums" && !hasOwnSpace(request.settings.drumTone) ? addRoom(dry, samples.room, Math.min(1, request.settings.drumRoom * (samples.roomScale ?? 1))) : dry;
       exit[kind] = withGain(rendered, levels[kind]?.gainDb ?? 0);
     }
@@ -389,8 +390,10 @@ export function runBandPreview(request: BandRequest, samples: SampleSet, fromTim
     list.filter((note) => note.time >= start && note.time < end).map((note) => ({ ...note, time: note.time - start }));
   const full = render(request, generated, samples, request.lengthFrames, onStage);
   const result: BandResult = { ...full, notes: { drums: inWindow(generated.notes.drums), bass: inWindow(generated.notes.bass) } };
-  if (full.drums) result.drums = sliceAudio(full.drums, from, frames);
-  if (full.bass) result.bass = sliceAudio(full.bass, from, frames);
+  if (generated.notes.keys) result.notes.keys = inWindow(generated.notes.keys);
+  for (const part of BAND_PARTS) {
+    if (full[part]) result[part] = sliceAudio(full[part], from, frames);
+  }
   // A preview plays a window of the song, which has no count before it and no vamp to leave.
   delete result.countIn;
   delete result.exits;
@@ -399,6 +402,6 @@ export function runBandPreview(request: BandRequest, samples: SampleSet, fromTim
 
 /** The buffers of a result, so the worker can transfer them to the window instead of copying them. */
 export function transferables(result: BandResult): ArrayBuffer[] {
-  const exits = Object.values(result.exits ?? {}).flatMap((exit) => [exit.drums, exit.bass]);
-  return [result.drums, result.bass, result.countIn?.audio, ...exits].flatMap((part) => (part ? part.channels.map((channel) => channel.buffer as ArrayBuffer) : [])).concat(Object.values(result.variants ?? {}).flatMap(transferables));
+  const exits = Object.values(result.exits ?? {}).flatMap((exit) => BAND_PARTS.map((part) => exit[part]));
+  return [...BAND_PARTS.map((part) => result[part]), result.countIn?.audio, ...exits].flatMap((part) => (part ? part.channels.map((channel) => channel.buffer as ArrayBuffer) : [])).concat(Object.values(result.variants ?? {}).flatMap(transferables));
 }

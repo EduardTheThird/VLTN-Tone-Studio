@@ -38,7 +38,7 @@ export function missingNotice(missing: MissingParts | null | undefined, sections
 /** True when the song has the generated drum or bass track in its mixer. */
 export function hasGeneratedParts(tracks: Record<string, TrackInfo> | undefined): boolean {
   return Object.values(tracks ?? {}).some(
-    (track) => track.kind === "user" && (track.name === GENERATED_PART_NAMES.drums || track.name === GENERATED_PART_NAMES.bass),
+    (track) => track.kind === "user" && Object.values(GENERATED_PART_NAMES).some((name) => name === track.name),
   );
 }
 
@@ -49,13 +49,14 @@ export function bandEntryStatus(keys: PartKeys, choices: PartChoices, missing: M
     const presence = missing?.[kind];
     if (presence === "absent" || presence === "partial") lines.push(presenceLine(kind, presence, missing?.absentSections[kind] ?? [], sections));
   }
-  const generated = PART_KINDS.filter((kind) => keys[kind]?.generated !== undefined);
+  const kinds = keys.keys ? ([...PART_KINDS, "keys"] as const) : PART_KINDS;
+  const generated = kinds.filter((kind) => keys[kind]?.generated !== undefined);
   if (generated.length) {
     lines.push(`Generated: ${generated.join(", ")}`);
-    const plays = PART_KINDS.flatMap((kind) => {
+    const plays = kinds.flatMap((kind) => {
       const part = keys[kind];
       if (!part || (part.original === undefined && part.generated === undefined)) return [];
-      const shown = effectiveChoice(choices[kind], part);
+      const shown = effectiveChoice(choices[kind] ?? "original", part);
       if (shown === "pedal") return ["RC-10R drums"];
       const what = shown === "both" ? "original and generated" : shown;
       return [`${what} ${kind}${kind === "drums" && drumsFallback ? " (RC-10R fallback)" : ""}`];

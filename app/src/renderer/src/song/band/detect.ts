@@ -1,3 +1,4 @@
+import { BAND_PARTS, type BandPart } from "./arrangement";
 // Missing-part detection: does a split song have drums or bass? A stem that is far below the mix in most of the song is
 // treated as missing, so the Band panel can offer to generate that part. Pure functions over the audio already in memory:
 // no WebAudio and no store, and nothing is copied.
@@ -23,8 +24,9 @@ export type PartPresence = "present" | "partial" | "absent" | "unknown";
 export interface MissingParts {
   drums: PartPresence;
   bass: PartPresence;
+  keys?: PartPresence;
   /** Ids of the sections where a part is absent, when it is `partial`. Empty otherwise. */
-  absentSections: { drums: string[]; bass: string[] };
+  absentSections: Partial<Record<BandPart, string[]>> & { drums: string[]; bass: string[] };
 }
 
 const SKIPPED = 0;
@@ -95,8 +97,8 @@ export function detectMissingParts(mix: PcmAudio, stems: Stems, sections: readon
   const mixCount = mix.channels.length ? Math.floor(mix.channels[0].length / windowSamples) : 0;
   const mixLevels = levelsDb(mix, mixCount, windowSamples);
   const result: MissingParts = { drums: "unknown", bass: "unknown", absentSections: { drums: [], bass: [] } };
-  for (const part of ["drums", "bass"] as const) {
-    const stem = stems[part];
+  for (const part of BAND_PARTS) {
+    const stem = stems[part === "keys" ? "piano" : part];
     if (!stem || !stem.channels.length) continue;
     const stemCount = Math.floor(stem.channels[0].length / windowSamples);
     const { presence, absentSections } = presenceOf(mix, mixLevels, levelsDb(stem, stemCount, windowSamples), sections, windowSamples);

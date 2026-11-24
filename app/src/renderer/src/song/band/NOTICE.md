@@ -382,3 +382,12 @@ The drum patterns, fills and feel profiles in `styles/data/` are derived from th
 available by Google LLC under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 The derived tables remap kit pieces, quantize and cluster bars, and summarize
 timing and dynamics. See `app/scripts/groove-data/extract.py` for reproduction.
+
+## Keys recordings
+
+- [Osiris Piano](https://github.com/sfzinstruments/Osiris_Piano) by Versilian Studios and Karoryfer Samples ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)), commit `18c6afccb60cff458edbf7c394571783e074e1e9`. Close mic A, two recorded velocities.
+- [Greg Sullivan’s E-Pianos](https://github.com/sfzinstruments/GregSullivan.E-Pianos), made by Greg Sullivan and mapped by kinwie ([CC BY 3.0 Unported](https://creativecommons.org/licenses/by/3.0/)), commit `8c3e581acda3594b553948ff0222d4f84a698376`. CP80 Electric Grand, Pianet T and Wurlitzer EP200.
+
+The sample pack uses selected root notes and takes. Recordings were retuned using the sample maps,
+resampled to mono 44.1 kHz, trimmed and faded. Some gaps are filled with a retuned nearest recording.
+The organ is generated in code.

@@ -455,3 +455,21 @@ it("renders opt-in Lift and Soft on the same backbeat and keeps them out of ordi
   expect(lift.drums?.channels[0].length).toBeCloseTo(result.drums!.channels[0].length);
   expect(runBandJob(original, stubSamples()).variants).toBeUndefined();
 });
+
+it("renders, levels and previews keys without changing the drum or bass samples", () => {
+  const baseline = request({ settings: { ...DEFAULT_BAND_SETTINGS, ending: { kind: "none" } } });
+  const settings: BandSettings = { ...baseline.settings, parts: { ...baseline.parts, keys: true }, keys: { ...baseline.settings.keys!, sound: "organ" } };
+  const input = { ...baseline, settings, parts: settings.parts, plans: planSections([], SONG_SECONDS, settings) };
+  const samples = stubSamples();
+  const full = runBandJob(input, samples);
+  const ordinary = runBandJob(baseline, samples);
+  expect(full.notes.keys?.length).toBeGreaterThan(5);
+  expect(sameSamples(full.drums?.channels[0], ordinary.drums?.channels[0])).toBe(true);
+  expect(sameSamples(full.bass?.channels[0], ordinary.bass?.channels[0])).toBe(true);
+  const stem = { sampleRate: RATE, channels: [Float32Array.from({ length: RATE * SONG_SECONDS }, (_, i) => 0.02 * Math.sin(i * 0.08))] };
+  const leveled = runBandJob({ ...input, mix: stem, originals: { keys: stem } }, samples);
+  expect(loudnessOf(leveled.keys!)).toBeCloseTo(loudnessOf(stem), 0);
+  const preview = runBandPreview(input, samples, 2, 1);
+  expect(preview.keys?.channels[0]).toHaveLength(RATE * 2);
+  expect(transferables(preview)).toContain(preview.keys?.channels[0].buffer);
+});

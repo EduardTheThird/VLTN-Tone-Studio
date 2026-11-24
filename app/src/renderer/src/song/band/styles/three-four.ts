@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Three-four: three beats to the bar, four steps to the beat, so a bar has twelve steps. The kick is on the one. At low energy the
 // snare (or cross-stick) is on two and three; at high energy it is on three alone, over hats in eighths, with the ride from energy 4.
 
@@ -14,6 +15,7 @@ export const THREE_FOUR: Style = {
   id: "three-four",
   name: "3/4",
   meter: { beatsPerBar: 3, stepsPerBeat: 4 },
+  keys: keysPatterns("three-four", { beatsPerBar: 3, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "natural",
   grooves: {

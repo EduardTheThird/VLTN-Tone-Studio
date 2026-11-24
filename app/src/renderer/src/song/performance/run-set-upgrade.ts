@@ -61,7 +61,7 @@ export async function upgradeSavedSong(
     const { source, stems } = await loadSongAudio(song.id, true);
     idle();
     const analysis = parseAnalysis(saved.analysis);
-    const using = { ...plan.settings, parts: { drums: plan.generated.includes("drums"), bass: plan.generated.includes("bass") } };
+    const using = { ...plan.settings, parts: { drums: plan.generated.includes("drums"), bass: plan.generated.includes("bass"), ...(plan.generated.includes("keys") ? { keys: true } : {}) } };
     const prepared = await regenerateSong(song.id, {
       input: {
         grid,
@@ -118,7 +118,7 @@ export async function upgradeSavedSong(
         pcm.channels.some((channel) => channel.length !== pcm.channels[0].length)
       )
         throw new Error(`The generated ${kind} part does not match the song's length, so it was not added.`);
-      await putAudio(key, pcm, audio.find((entry) => trackKey(entry) === key)!.name, kind === "bass");
+      await putAudio(key, pcm, audio.find((entry) => trackKey(entry) === key)!.name, kind !== "drums");
       const extraKey = EXTRAS_RECORD_KEY[kind];
       const oldExtra = generated[extraKey];
       const ownedExtra =

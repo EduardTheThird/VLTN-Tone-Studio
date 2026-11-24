@@ -1,3 +1,4 @@
+import { detectMissingParts } from "@/song/band/detect";
 import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { regenerateSong, regeneratedSettings } from "@/song/band/regenerate";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { host } from "@/host";
 import { selectWholeSongStems, useSong } from "@/song/store";
-import { sectionKind,
+import { sectionKind, partToneOf,
   CURRENT_ENGINE,
   planSections,
   RENDERED_KINDS,
@@ -215,7 +216,7 @@ function BandBody({
   // The notes of the last Generate, kept so they can be exported as a MIDI file.
   // The notes saved with the song at the last Generate, for the part view. Songs generated before they were kept have none.
   const [savedNotes, setSavedNotes] = useState<BandNotes | null>(stored.notes);
-  const [lastNotes, setLastNotes] = useState<{ drums: NoteEvent[]; bass: NoteEvent[] } | null>(null);
+  const [lastNotes, setLastNotes] = useState<{ drums: NoteEvent[]; bass: NoteEvent[]; keys?: NoteEvent[] } | null>(null);
   const [rhythmOpen, setRhythmOpen] = useState(false);
   const [rhythmGeneration, setRhythmGeneration] = useState<{
     snapshot: RhythmSnapshot;
@@ -257,7 +258,12 @@ function BandBody({
   const source = useSong((s) => s.source);
   const stems = useSong(selectWholeSongStems);
   const tracks = useSong((s) => s.tracks);
-  const missing = useSong((s) => s.missingParts);
+  const checkedMissing = useSong((s) => s.missingParts);
+  const piano = stems?.piano;
+  const keysPresence = useMemo(() => source && piano ? detectMissingParts(source.audio, { piano }, sections) : null, [source, piano, sections]);
+  const missing = checkedMissing && keysPresence
+    ? { ...checkedMissing, keys: keysPresence.keys, absentSections: { ...checkedMissing.absentSections, keys: keysPresence.absentSections.keys } }
+    : checkedMissing;
   const hasOriginalDrums = !!stems?.drums && missing?.drums !== "absent";
   useEffect(() => {
     if (!defaultDrumPattern.current || !hasOriginalDrums || missing?.drums !== "present") return;
@@ -453,11 +459,11 @@ function BandBody({
   const savedTrimEnd = (): number | undefined => storedShape(readOptions<Record<string, unknown>>(songKey, {})).trimEnd;
 
   const generate = async (requested: BandSettings, only?: RenderedKind) => {
-    const using: BandSettings = only ? { ...requested, parts: { drums: only === "drums", bass: only === "bass" } } : requested;
+    const using: BandSettings = only ? { ...requested, parts: { drums: only === "drums", bass: only === "bass", ...(only === "keys" ? { keys: true } : {}) } } : requested;
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before generating parts."]);
     if (!grid) return setNotices(["Find the beat first, so the parts have a grid to follow."]);
-    if (!using.parts.drums && !using.parts.bass) return setNotices(["Turn on drums or bass first."]);
+    if (!RENDERED_KINDS.some((kind) => using.parts[kind])) return setNotices(["Turn on drums, bass or keys first."]);
     let succeeded = false;
     const startedInputs = generationInputs(requested);
     await attempt("Generating the parts was cancelled. The tracks were not changed.", async () => {
@@ -488,19 +494,20 @@ function BandBody({
           job.current = rendering;
         },
       });
-      const { request, result, drums, bass, notes } = prepared;
+      const { request, result, drums, bass, keys, notes } = prepared;
       if (!active.current || playingNow.current || useSong.getState().source !== current) return;
       setLastNotes(result.notes);
       // A part that is turned off loses its generated track in the same update as the parts that are applied.
       if (!active.current || playingNow.current || useSong.getState().source !== current) return;
       if (requestedInputs.current !== null && requestedInputs.current !== startedInputs) return;
-      const turnedOff = only ? [] : (["drums", "bass"] as const).filter((kind) => !using.parts[kind]);
+      const turnedOff = only ? [] : RENDERED_KINDS.filter((kind) =>
+        !using.parts[kind] && (kind !== "keys" || partKeys.keys?.generated !== undefined));
       // The drummer's count and the vamps' exit bars travel with their part. Nothing is passed for a song that has none.
       const withExtras = prepared.extras;
       const applied = useSong
         .getState()
         .applyGeneratedParts(
-          { drums, bass, ...(Object.keys(withExtras).length > 0 ? { extras: withExtras } : {}) },
+          { drums, bass, ...(keys ? { keys } : {}), ...(Object.keys(withExtras).length > 0 ? { extras: withExtras } : {}) },
           { playing: playingNow.current, remove: turnedOff },
         );
       if (applied.length === 0) {
@@ -512,7 +519,7 @@ function BandBody({
         // with its generated track gone goes back to its original.
         const patch: Partial<PartChoices> = {};
         for (const kind of turnedOff) patch[kind] = "original";
-        const switched = (["drums", "bass"] as const).filter((kind) => using.parts[kind] && result[kind] && partChoices[kind] === "original");
+        const switched = RENDERED_KINDS.filter((kind) => using.parts[kind] && result[kind] && (partChoices[kind] ?? "original") === "original");
         for (const kind of switched) patch[kind] = "generated";
         if (Object.keys(patch).length) onPartChoice(patch);
         if (switched.length) notes.push(info(`Now playing the generated ${switched.join(" and ")}. Switch back under What plays.`));
@@ -586,7 +593,7 @@ function BandBody({
     if (busy || libraryBusy) throw new Error("The band parts are still updating. Wait for the update to finish.");
     const kinds = RENDERED_KINDS.filter((kind) => settings.parts[kind] && !settings.rendered[kind]);
     if (!kinds.length) {
-      if (!settings.parts.drums && !settings.parts.bass) {
+      if (!RENDERED_KINDS.some((kind) => settings.parts[kind])) {
         const notices = useSong.getState().removeGeneratedParts({ playing: false });
         if (notices.length) throw new Error(notices.join(" "));
         onPartChoice(ORIGINAL_PARTS);
@@ -637,7 +644,7 @@ function BandBody({
       else void generate(next);
     };
     // Only an explicit Generate may fall back to a clean part, and it asks first.
-    if (next.bassTone.kind !== "chain" && next.drumTone.kind !== "chain") return go();
+    if (!RENDERED_KINDS.some((part) => partToneOf(next, part).kind === "chain")) return go();
     const question = cleanFallbackQuestion(await missingToneFiles(next, host.tones));
     if (question) setConfirmClean({ question, run: go });
     else go();
@@ -645,7 +652,7 @@ function BandBody({
 
   /** Puts a rendered file in place of a part's generated audio, or offers the line-up first when the file's first hit is off the first note. */
   const applyRendered = (kind: RenderedKind, name: string, audio: PcmAudio, notices: BandNotice[]) => {
-    const parts = kind === "drums" ? { drums: audio } : { bass: audio };
+    const parts = { [kind]: audio };
     const applied = useSong.getState().applyGeneratedParts(parts, { playing: playingNow.current });
     setPendingRendered(null);
     if (applied.length) return setNotices([...notices, ...applied]);
@@ -653,8 +660,8 @@ function BandBody({
     commitBand({ ...latest, rendered: { ...latest.rendered, [kind]: { name, importedAt: new Date().toISOString() } } });
     const rendering = [...notices];
     // A part that was on its original plays its rendered audio at once, as a generated part does, so the performer hears what they brought in.
-    if (partChoices[kind] === "original") {
-      const patch: Partial<PartChoices> = kind === "drums" ? { drums: "generated" } : { bass: "generated" };
+    if ((partChoices[kind] ?? "original") === "original") {
+      const patch: Partial<PartChoices> = { [kind]: "generated" };
       onPartChoice(patch);
       rendering.push(info(`Now playing your rendered ${kind}. Switch back under What plays.`));
     }
@@ -715,7 +722,7 @@ function BandBody({
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before previewing."]);
     if (!grid) return setNotices(["Find the beat first, so the preview has a grid to follow."]);
-    if (!using.parts.drums && !using.parts.bass) return setNotices(["Turn on drums or bass to preview them."]);
+    if (!RENDERED_KINDS.some((kind) => using.parts[kind])) return setNotices(["Turn on drums, bass or keys to preview them."]);
     setNotices([]);
     setWork("Rendering the preview…");
     await attempt("Rendering the preview was cancelled.", async () => {
@@ -742,6 +749,7 @@ function BandBody({
       // The preview hears the bass tone too, so it matches what Generate would save.
       let bass = result.bass;
       let drums = result.drums;
+      let keys = result.keys;
       const toneNotices: string[] = [];
       if (drums && settings.drumTone.kind === "chain") {
         setWork(DRUM_TONE_TEXT);
@@ -756,7 +764,13 @@ function BandBody({
         if (toned.notice) toneNotices.push(toned.notice);
       }
       if (toneNotices.length) setNotices(toneNotices);
-      const mixed = previewMix(current.audio, from, { ...result, drums, bass });
+      if (keys && using.keysTone?.kind === "chain") {
+        setWork("Rendering the keys tone…");
+        const toned = await applyPartTone(keys, using.keysTone, host.tones, renderPartChain, "keys");
+        keys = toned.audio;
+        if (toned.notice) toneNotices.push(toned.notice);
+      }
+      const mixed = previewMix(current.audio, from, { ...result, drums, bass, keys });
       setWork(null);
       stopPreview.current = playOnce(mixed, () => {
         stopPreview.current = null;
@@ -798,6 +812,7 @@ function BandBody({
       [
         { name: GENERATED_PART_NAMES.drums, channel: 9, notes: lastNotes.drums },
         { name: GENERATED_PART_NAMES.bass, channel: 0, notes: lastNotes.bass },
+        ...(lastNotes.keys?.length ? [{ name: GENERATED_PART_NAMES.keys, channel: 1, notes: lastNotes.keys }] : []),
       ],
       grid,
     );
@@ -863,6 +878,20 @@ function BandBody({
     failedInputs.current = musicalInputs;
     job.current?.cancel();
   };
+  const chordEvidence = (id: string) => id === "" ? harmony.some((entry) => entry.chord) : rows.some(({ plan }) =>
+    plan.sectionId === id && harmony.some((entry) => entry.chord && entry.time >= plan.start && entry.time < plan.end));
+  const missingKeys = missing?.keys === "absent" ? chordEvidence("") :
+    missing?.keys === "partial" && (missing.absentSections.keys ?? []).some(chordEvidence);
+  const addMissingKeys = () => {
+    const absent = new Set(missing?.absentSections.keys ?? []);
+    const overrides = { ...settings.sections };
+    if (missing?.keys === "partial") for (const { plan } of rows) {
+      if (plan.sectionId !== null && !absent.has(plan.sectionId)) {
+        overrides[plan.sectionId] = { ...overrides[plan.sectionId], keysPart: overrides[plan.sectionId]?.keysPart ?? "rest" };
+      }
+    }
+    change({ parts: { ...settings.parts, keys: true }, sections: overrides });
+  };
   const partLine = (kind: PartKind) => presenceLine(kind, missing?.[kind] ?? "unknown", missing?.absentSections[kind] ?? [], sections);
 
   return (
@@ -886,7 +915,8 @@ function BandBody({
       <section aria-label="Band status" className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
         {ownParts(missing) && <p>{ownParts(missing)}</p>}
         {(["drums", "bass"] as const).map((kind) => missing?.[kind] !== "present" && <p key={kind}>{partLine(kind)}</p>)}
-        <p className="text-silkscreen-3">{generated ? "Generated drum and bass tracks are in the mixer." : "No generated parts yet."}</p>
+        {missingKeys && !settings.parts.keys && <Button type="button" size="sm" variant="outline" disabled={blocked} onClick={addMissingKeys}>Add keys</Button>}
+        <p className="text-silkscreen-3">{generated ? (partKeys.keys?.generated ? "Generated band tracks are in the mixer." : "Generated drum and bass tracks are in the mixer.") : "No generated parts yet."}</p>
         {settings.engine < CURRENT_ENGINE && (
           <p className="flex items-center gap-2">
             This song uses the earlier band patterns.
@@ -944,7 +974,7 @@ function BandBody({
               hasSong={source !== null}
               partChoices={partChoices}
               partKeys={partKeys}
-              generatedNotes={{ drums: generatedLabel(settings, "drums"), bass: generatedLabel(settings, "bass") }}
+              generatedNotes={{ drums: generatedLabel(settings, "drums"), bass: generatedLabel(settings, "bass"), keys: generatedLabel(settings, "keys") }}
               onPartChoice={onPartChoice}
               pedalCues={pedalCues}
               onOpenMidi={onOpenMidi}

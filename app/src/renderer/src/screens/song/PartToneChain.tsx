@@ -38,6 +38,7 @@ const ADD_LABEL: Record<ToneRole, string> = {
 const PART_LABEL: Record<TonePart, { title: string; clean: string; plural: string }> = {
   bass: { title: "Bass tone", clean: "Clean bass", plural: "Bass tones" },
   drums: { title: "Drum tone", clean: "Clean drums", plural: "Drum tones" },
+  keys: { title: "Keys tone", clean: "Clean keys", plural: "Keys tones" },
 };
 
 export interface PartToneChainProps {
@@ -89,7 +90,7 @@ export function PartToneChain({ part, tone, songSeconds, onChange }: PartToneCha
       ? null
       : captures === 0
         ? "Only IRs: a few seconds at Generate."
-        : `About ${Math.round(captureRenderSeconds(blocks, songSeconds, chain?.fast ?? false, part === "drums"))} s at Generate for this song.`;
+        : `About ${Math.round(captureRenderSeconds(blocks, songSeconds, chain?.fast ?? false, part !== "bass"))} s at Generate for this song.`;
 
   return (
     <section aria-label={label.title} className="flex flex-col gap-3 sm:col-span-2">

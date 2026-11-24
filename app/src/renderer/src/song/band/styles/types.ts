@@ -1,3 +1,4 @@
+import type { KeysPattern } from "./keys-patterns";
 import type { Figure } from "../bass-figures";
 
 // Style data: a meter, a step grid, drum grooves per energy level, fills and bass rhythms. Styles are plain data so they can be
@@ -101,6 +102,7 @@ export interface Style {
   /** Hits that replace the last beat of a groove in the last bar of a phrase that does not end a pair of phrases: one small change. */
   turnarounds: DrumPattern[];
   bass: BassStyle;
+  keys: Record<Energy, KeysPattern[]>;
 }
 
 /** How many half fills and bar fills a style had before the drum phrases (engine 3). Songs on engine 2 or earlier draw from these only. */

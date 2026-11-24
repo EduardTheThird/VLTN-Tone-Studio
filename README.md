@@ -659,3 +659,5 @@ VLTN Tone Studio is free software under the [GNU General Public License v3.0](LI
 </div>
 
 Band drum patterns and feel profiles are derived from the [Groove MIDI Dataset](https://magenta.tensorflow.org/datasets/groove) by Google LLC under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were quantized, clustered and averaged for this app.
+
+Keys recordings include [Osiris Piano](https://github.com/sfzinstruments/Osiris_Piano) by Versilian Studios and Karoryfer Samples ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)) and [Greg Sullivan’s E-Pianos, mapped by kinwie](https://github.com/sfzinstruments/GregSullivan.E-Pianos) ([CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)). The recordings were selected, retuned, resampled, trimmed and faded.

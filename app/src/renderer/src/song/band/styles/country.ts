@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Country: the train beat. Kick on the one, backbeat on 2 and 4, and steady eighths on the hat, with busier energies adding kicks
 // and a ride.
 
@@ -10,6 +11,7 @@ export const COUNTRY: Style = {
   id: "country",
   name: "Country",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("country", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "natural",
   grooves: {

@@ -59,6 +59,7 @@ export interface PartBar {
   chords: BarChord[];
   drums: DrumDot[];
   bass: BassBlock[];
+  keys?: { x: number; width: number; pitch: number }[];
   /** A bar of fill: toms, or a snare roll. */
   fill: boolean;
   /** A crash on the bar's downbeat. */
@@ -180,7 +181,7 @@ function scaleOf(blocks: readonly BassBlock[]): BassScale | null {
  * band's harmony per beat, for the chord names and for the notes the performer set by hand.
  */
 export function layoutSection(
-  notes: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[] },
+  notes: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[]; keys?: readonly NoteEvent[] },
   grid: BeatGrid,
   section: { start: number; end: number },
   harmony: readonly ChordAtBeat[] = [],
@@ -216,6 +217,9 @@ export function layoutSection(
       byHand: harmony[beatAt(beats, note.time)]?.chord?.byHand === true,
     }));
     allBlocks.push(...bass);
+    const keys = notes.keys?.filter(within).map((note) => ({
+      x: x(note.time), width: Math.max(0.012, Math.min(note.duration / length, 1 - x(note.time))), pitch: note.pitch,
+    }));
 
     const chords: BarChord[] = [];
     for (let beat = span.start; beat < span.start + span.beats && beat < beats.length; beat++) {
@@ -237,6 +241,7 @@ export function layoutSection(
       chords,
       drums,
       bass,
+      ...(keys?.length ? { keys } : {}),
       fill,
       crashOnOne,
       label: barLabel(number, drums, fill),

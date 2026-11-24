@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Rock: straight eighths on the hat, a backbeat on 2 and 4, and kick patterns that get busier with energy.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const ROCK: Style = {
   id: "rock",
   name: "Rock",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("rock", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "natural",
   grooves: {

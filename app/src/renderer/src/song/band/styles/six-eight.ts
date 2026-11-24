@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Six-eight: two dotted-quarter beats to the bar, each split into three steps. The step is an eighth note, so the grid is a triplet
 // grid (stepsPerBeat 3) and the bar has six steps. The backbeat falls on the second beat, step 3.
 
@@ -12,6 +13,7 @@ export const SIX_EIGHT: Style = {
   id: "six-eight",
   name: "6/8",
   meter: { beatsPerBar: 2, stepsPerBeat: 3 },
+  keys: keysPatterns("six-eight", { beatsPerBar: 2, stepsPerBeat: 3 }),
   swingDefault: 0,
   feelDefault: "natural",
   grooves: {

@@ -1,3 +1,4 @@
+import { KEYS_PARTS, type KeysPart } from "@/song/band/keys-types";
 import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -92,6 +93,28 @@ export function BandSectionMore({
             </SelectContent>
           </Select>
         </label>
+        {plan.play.keys && (
+          <>
+            <label className="flex items-center justify-between gap-2 text-sm">
+              Keys part
+              <Select value={plan.keysPart ?? "auto"} onValueChange={(value) => onChange({ keysPart: value as KeysPart })}>
+                <SelectTrigger aria-label={`Keys part of ${name}`} className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {KEYS_PARTS.map((part) => <SelectItem key={part} value={part}>{part[0].toUpperCase() + part.slice(1)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="flex items-center justify-between gap-2 text-sm">
+              Keys octave
+              <Select value={String(plan.keysOctave ?? 0)} onValueChange={(value) => onChange({ keysOctave: Number(value) as OctaveShift })}>
+                <SelectTrigger aria-label={`Keys octave of ${name}`} className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {OCTAVE_SHIFTS.map((shift) => <SelectItem key={shift} value={String(shift)}>{OCTAVE_LABELS[String(shift)]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+          </>
+        )}
         <DrumPatternPicker
           label={`Drum pattern of ${name}`}
           value={drumPattern}

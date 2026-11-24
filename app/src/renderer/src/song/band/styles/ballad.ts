@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Ballad: slow and soft. Sidestick or light snare on 3, a ride on the beat, and kicks that move only with more energy.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const BALLAD: Style = {
   id: "ballad",
   name: "Ballad",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("ballad", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "laid-back",
   grooves: {

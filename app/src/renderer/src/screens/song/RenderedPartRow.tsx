@@ -28,7 +28,7 @@ export interface RenderedPartRowProps {
 
 export function RenderedPartRow({ kind, rendered, disabled, pending, onFile, onBack }: RenderedPartRowProps) {
   const input = useRef<HTMLInputElement>(null);
-  const label = kind === "drums" ? "drums" : "bass";
+  const label = kind;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">

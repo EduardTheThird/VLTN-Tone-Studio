@@ -49,6 +49,12 @@ export function AboutDialog() {
           {" "}by Google LLC, licensed{" "}
           <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer" className="underline">CC BY 4.0</a>.
         </p>
+        <p className="text-xs text-pretty text-silkscreen-3">
+          Electric piano recordings by{" "}
+          <a href="https://github.com/sfzinstruments/GregSullivan.E-Pianos" target="_blank" rel="noreferrer" className="underline">Greg Sullivan</a>
+          {" "}and mapping by kinwie, licensed{" "}
+          <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer" className="underline">CC BY 3.0</a>.
+        </p>
         <DialogFooter>
           {host.kind === "electron" && (
             <Button variant="outline" onClick={() => void checkForUpdates()}>

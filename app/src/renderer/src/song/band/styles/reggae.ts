@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Reggae: the one drop. The kick and the rim or snare land together on beat 3 only, and the hat plays the off-beats (the skank).
 
 import { figure } from "../bass-figures";
@@ -12,6 +13,7 @@ export const REGGAE: Style = {
   id: "reggae",
   name: "Reggae",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("reggae", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "laid-back",
   grooves: {

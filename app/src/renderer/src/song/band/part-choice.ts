@@ -1,3 +1,4 @@
+import { BAND_PARTS, type BandPart } from "./arrangement";
 // Which drum and bass parts a song plays: the split's original stem, the generated track, or both. Pure, so the mix can be tested without
 // WebAudio. The choice only changes mute flags, so the user's volumes and pans survive switching back and forth.
 
@@ -7,14 +8,14 @@ import type { TrackInfo } from "@/song/tracks";
 import type { PartPresence } from "./detect";
 import { GENERATED_PART_NAMES } from "./generated-names";
 
-export const PART_KINDS = ["drums", "bass"] as const;
-export type PartKind = (typeof PART_KINDS)[number];
+export const PART_KINDS = BAND_PARTS;
+export type PartKind = BandPart;
 
 /** `pedal` is for drums only: the RC-10R plays them, and the app's own drum tracks are muted while it does. */
 export type PartChoice = "original" | "generated" | "both" | "pedal";
 /** What plays when the song chose pedal drums and the pedal cannot be reached. */
 export type DrumFallback = "generated" | "original";
-export type PartChoices = Record<PartKind, PartChoice> & { pedalFallback?: DrumFallback };
+export type PartChoices = Record<"drums" | "bass", PartChoice> & { keys?: PartChoice; pedalFallback?: DrumFallback };
 
 const CHOICES: readonly PartChoice[] = ["original", "generated", "both"];
 const FALLBACKS: readonly DrumFallback[] = ["generated", "original"];
@@ -27,7 +28,7 @@ export function pedalFallbackOf(choices: Pick<PartChoices, "pedalFallback">, has
 /** The choice that sets a part's mute flags in the saved mix. Pedal drums are not a mix setting, so they save as their fallback. */
 function settledChoice(choices: PartChoices, kind: PartKind, hasGenerated: boolean): PartChoice {
   const choice = choices[kind];
-  return choice === "pedal" ? pedalFallbackOf(choices, hasGenerated) : choice;
+  return choice === "pedal" ? pedalFallbackOf(choices, hasGenerated) : choice ?? "original";
 }
 
 /** The choices a song with nothing saved starts from: every part plays its original. */
@@ -55,6 +56,7 @@ export function defaultPartChoices(missing: Partial<Record<PartKind, PartPresenc
   return {
     drums: defaultPartChoice(missing?.drums ?? "unknown", keys.drums?.generated !== undefined),
     bass: defaultPartChoice(missing?.bass ?? "unknown", keys.bass?.generated !== undefined),
+    ...(keys.keys ? { keys: defaultPartChoice(missing?.keys ?? "unknown", keys.keys.generated !== undefined) } : {}),
   };
 }
 
@@ -67,17 +69,18 @@ export function readPartChoices(saved: unknown, fallback: PartChoices): PartChoi
   const read = (kind: PartKind): PartChoice => {
     const value = record[kind];
     if (kind === "drums" && value === "pedal") return "pedal";
-    return CHOICES.includes(value as PartChoice) ? (value as PartChoice) : fallback[kind];
+    return CHOICES.includes(value as PartChoice) ? (value as PartChoice) : fallback[kind] ?? "original";
   };
   const pedalFallback = FALLBACKS.includes(record.pedalFallback as DrumFallback) ? (record.pedalFallback as DrumFallback) : fallback.pedalFallback;
-  return { drums: read("drums"), bass: read("bass"), ...(pedalFallback ? { pedalFallback } : {}) };
+  return { drums: read("drums"), bass: read("bass"), ...(record.keys !== undefined || fallback.keys !== undefined ? { keys: read("keys") } : {}), ...(pedalFallback ? { pedalFallback } : {}) };
 }
 
 /** The track keys each part's choice applies to: the stems the song has, and the user tracks that carry the generated part's name. */
 export function partKeysOf(tracks: Readonly<Record<string, TrackInfo>>, stems: Readonly<Record<string, unknown>> | null | undefined): PartKeys {
   const keys: PartKeys = {};
   for (const kind of PART_KINDS) {
-    const original = stems?.[kind] ? kind : undefined;
+    const stem = kind === "keys" ? "piano" : kind;
+    const original = stems?.[stem] ? stem : undefined;
     const generated = Object.entries(tracks).find(([, info]) => info.kind === "user" && info.name === GENERATED_PART_NAMES[kind])?.[0];
     if (original === undefined && generated === undefined) continue;
     keys[kind] = { original, generated };
@@ -132,8 +135,8 @@ export function silencedByChoice(choices: PartChoices, keys: PartKeys, drumsFall
   for (const kind of PART_KINDS) {
     const part = keys[kind];
     if (!part) continue;
-    const playing = playingTracks(choices[kind], part);
-    const pedal = effectiveChoice(choices[kind], part) === "pedal";
+    const playing = playingTracks(choices[kind] ?? "original", part);
+    const pedal = effectiveChoice(choices[kind] ?? "original", part) === "pedal";
     const note = kind === "drums" && drumsFallback ? " (fallback)" : "";
     if (part.original !== undefined && !playing.original) off[part.original] = pedal ? "Off: RC-10R plays" : `Off: generated plays${note}`;
     if (part.generated !== undefined && !playing.generated) off[part.generated] = pedal ? "Off: RC-10R plays" : `Off: original plays${note}`;

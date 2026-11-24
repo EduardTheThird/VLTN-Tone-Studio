@@ -1,3 +1,4 @@
+import { BAND_PARTS, type BandPart } from "./arrangement";
 // The short buffers that go with a generated part (spec 136): the drummer's count-in, and the exit bar of each vamp. They are not the
 // song's length, so they are packed end to end into one track beside the part ("Drums extras (generated)"), and a manifest in the song's
 // options says where each one is. The track is kept out of the player (extraKeysIn, playable.ts): the session plays the extras itself, at
@@ -7,11 +8,11 @@ import type { PcmAudio, Stems } from "../types";
 import { RENDERED_VARIANTS, type RenderedVariant } from "./live-variants";
 
 /** The names of the extras tracks. The song store writes them. */
-export const EXTRAS_NAMES = { drums: "Drums extras (generated)", bass: "Bass extras (generated)" } as const;
+export const EXTRAS_NAMES = { drums: "Drums extras (generated)", bass: "Bass extras (generated)", keys: "Keys extras (generated)" } as const;
 export type ExtrasPart = keyof typeof EXTRAS_NAMES;
 
 /** The key the song's `generatedParts` record keeps a part's extras track under. */
-export const EXTRAS_RECORD_KEY = { drums: "drumsExtras", bass: "bassExtras" } as const satisfies Record<ExtrasPart, string>;
+export const EXTRAS_RECORD_KEY = { drums: "drumsExtras", bass: "bassExtras", keys: "keysExtras" } as const satisfies Record<ExtrasPart, string>;
 
 /** The drummer's count: its audio, and the song time its first frame plays at (negative: ahead of the song). */
 export interface CountInAudio {
@@ -165,7 +166,7 @@ export function loadExtras(
   const saved = options.generatedParts;
   const manifests = options.bandExtras;
   if (!stems || !isRecord(saved) || !isRecord(manifests)) return loaded;
-  for (const part of ["drums", "bass"] as const) {
+  for (const part of BAND_PARTS) {
     const track = saved[part];
     const packed = saved[EXTRAS_RECORD_KEY[part]];
     if (typeof track !== "string" || typeof packed !== "string" || !stems[track] || !stems[packed]) continue;
@@ -176,7 +177,7 @@ export function loadExtras(
 }
 
 export interface BandTrack {
-  part: "drums" | "bass";
+  part: BandPart;
   track: string;
   variant?: RenderedVariant;
 }
@@ -198,7 +199,7 @@ export function bandPlayback(
   if (!isRecord(saved)) return { stems: source, tracks: {} };
   const tracks: BandTracks = {};
   const stems = { ...source };
-  for (const part of ["drums", "bass"] as const) {
+  for (const part of BAND_PARTS) {
     const track = saved[part];
     if (typeof track !== "string" || !source[track]) continue;
     tracks[track] = { part, track };

@@ -166,7 +166,7 @@ export const DRUM_TONE_PRESETS: readonly TonePreset[] = [
 ];
 
 /** The presets for each part. */
-export const PART_TONE_PRESETS: Record<TonePart, readonly TonePreset[]> = { bass: BASS_TONE_PRESETS, drums: DRUM_TONE_PRESETS };
+export const PART_TONE_PRESETS: Record<TonePart, readonly TonePreset[]> = { bass: BASS_TONE_PRESETS, drums: DRUM_TONE_PRESETS, keys: [] };
 
 /** The blocks of a preset: empty slots with their roles set, at unity levels, on. */
 export function presetBlocks(roles: readonly { role: ToneRole; mix?: number }[]): ToneBlock[] {
@@ -364,6 +364,7 @@ export const renderBassTone = (bass: PcmAudio, tone: LoadedPartTone, chain: Part
 const PART_NOTICE: Record<TonePart, { subject: string; plays: string; noun: string }> = {
   bass: { subject: "The bass", plays: "plays", noun: "bass tone" },
   drums: { subject: "The drums", plays: "play", noun: "drum tone" },
+  keys: { subject: "The keys", plays: "play", noun: "keys tone" },
 };
 
 /**
@@ -374,7 +375,7 @@ export async function applyPartTone(audio: PcmAudio, tone: PartTone, files: Part
   if (tone.kind === "clean") return { audio, notice: null, tone: "clean" };
   if (tone.kind === "builtin") return { audio: warmBassTone(audio), notice: null, tone: "chain" };
   const { subject, plays, noun } = PART_NOTICE[part];
-  const stereo = part === "drums";
+  const stereo = part !== "bass";
   let loaded: LoadedPartTone;
   try {
     loaded = await loadPartTone(tone, files, stereo);

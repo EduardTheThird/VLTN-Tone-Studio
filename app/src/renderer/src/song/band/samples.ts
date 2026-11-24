@@ -1,3 +1,4 @@
+import type { KeysInstrument } from "./keys-types";
 // Samples for the generated drum and bass parts (spec 50). The FLAC files and samples/map.json ship with the app; their licences are in
 // NOTICE.md next to this file. Loading decodes every file once and keeps the result in memory. The pickers are pure, so the generators
 // and their tests can use them without any audio.
@@ -38,6 +39,7 @@ export interface SampleSet {
   /** Drum layers by GM pitch, sorted by velocity. */
   drums: Map<number, DrumLayer[]>;
   bass: BassSample[];
+  keys?: Partial<Record<SampledKeys, KeysRoot<{ audio: PcmAudio }>[]>>;
   bassInstrument?: Partial<Record<BassArticulation, BassRoot[]>>;
   /** The built-in room's impulse response (room.ts). A set without one has no room. */
   room?: PcmAudio;
@@ -73,6 +75,12 @@ export interface KitEntry {
 export const DEFAULT_KIT = "standard";
 
 /** What samples/map.json holds. File paths are relative to samples/. */
+export type SampledKeys = Exclude<KeysInstrument, "organ">;
+interface KeysRoot<Source> {
+  root: number;
+  layers: ({ nominal: number } & Source)[];
+}
+
 export interface SampleMap {
   sampleRate: number;
   /** The room impulse response, relative to samples/. */
@@ -80,6 +88,7 @@ export interface SampleMap {
   kits: Record<string, KitEntry>;
   bass: { file: string; root: number; layer: "p" | "f"; velocity: VelocityRange }[];
   bassSounds?: Record<BassSound, BassInstrumentEntry>;
+  keysInstruments?: Record<SampledKeys, KeysRoot<{ file: string }>[]>;
 }
 
 const BASS_ARTICULATIONS = ["notes", "ghost", "staccato", "release"] as const;
@@ -165,7 +174,18 @@ export function readSampleMap(value: unknown): SampleMap {
       }
     }
   }
-  return { sampleRate: map.sampleRate!, room: map.room, kits: map.kits, bass, bassSounds };
+  for (const [sound, roots] of Object.entries(map.keysInstruments ?? {})) {
+    if (!Array.isArray(roots) || roots.length === 0) fail(`keys ${sound} roots`);
+    for (const root of roots) {
+      if (!Number.isInteger(root.root) || root.root < 0 || root.root > 127 || !Array.isArray(root.layers) || !root.layers.length) fail(`keys ${sound} root`);
+      let last = 0;
+      for (const layer of root.layers) {
+        if (!Number.isInteger(layer.nominal) || layer.nominal <= last || layer.nominal > 127 || typeof layer.file !== "string") fail(`keys ${sound} layer`);
+        last = layer.nominal;
+      }
+    }
+  }
+  return { sampleRate: map.sampleRate!, room: map.room, kits: map.kits, bass, bassSounds, keysInstruments: map.keysInstruments };
 }
 
 /** The bundled map. Read once at import; a malformed file fails the first test run, not the first song. */
@@ -373,6 +393,23 @@ function sampleFiles(kit: string, bank: BassBank): string[] {
   return [...new Set([...drums, ...bassFiles(SAMPLE_MAP, bank), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])])];
 }
 
+export function pickKeysLayers(set: SampleSet, instrument: SampledKeys, pitch: number, velocity: number): { audio: PcmAudio; semitones: number; gain: number }[] {
+  const roots = set.keys?.[instrument];
+  if (!roots?.length) return [];
+  const root = roots.reduce((nearest, candidate) => Math.abs(candidate.root - pitch) < Math.abs(nearest.root - pitch) ? candidate : nearest);
+  const last = root.layers.at(-1)!;
+  const above = root.layers.findIndex((entry) => entry.nominal >= velocity);
+  const high = above < 0 ? last : root.layers[above];
+  const low = above > 0 ? root.layers[above - 1] : high;
+  const mix = high.nominal === low.nominal ? 1 : (velocity - low.nominal) / (high.nominal - low.nominal);
+  const gain = 0.55 * (velocity / 100) ** 1.4;
+  const semitones = pitch - root.root;
+  return low === high ? [{ audio: high.audio, semitones, gain }] : [
+    { audio: high.audio, semitones, gain: gain * mix },
+    { audio: low.audio, semitones, gain: gain * (1 - mix) },
+  ];
+}
+
 /** Shared by kit views owned by one worker or renderer; URL keys avoid retaining an obsolete asset under a reused file name. */
 export type SampleCache = Map<string, Promise<PcmAudio>>;
 
@@ -416,14 +453,24 @@ export async function loadSampleSetWith(
   cache: SampleCache = new Map(),
   bank: BassBank = "pick",
   bassCache: SampleCache = cache,
+  keysInstruments: readonly SampledKeys[] = [],
 ): Promise<SampleSet> {
   if (!SAMPLE_MAP.kits[kit]) throw new Error(`Unknown drum kit ${kit}.`);
-  const decoded = await decodeAll(sampleFiles(kit, bank), urls, decode, cache, bassCache);
-  return sampleSetFrom(SAMPLE_MAP, kit, (file) => {
+  const selectedKeys = keysInstruments.map((name) => [name, SAMPLE_MAP.keysInstruments?.[name] ?? []] as const);
+  const files = [...sampleFiles(kit, bank), ...selectedKeys.flatMap(([, roots]) => roots.flatMap((root) => root.layers.map(({ file }) => file)))];
+  const decoded = await decodeAll(files, urls, decode, cache, bassCache);
+  const audioFor = (file: string): PcmAudio => {
     const audio = decoded.get(file);
     if (!audio) throw new Error(`Sample ${file} was not decoded.`);
     return audio;
-  }, bank);
+  };
+  const set = sampleSetFrom(SAMPLE_MAP, kit, audioFor, bank);
+  if (selectedKeys.length) {
+    set.keys = Object.fromEntries(selectedKeys.map(([name, roots]) => [
+      name, roots.map(({ root, layers }) => ({ root, layers: layers.map(({ nominal, file }) => ({ nominal, audio: audioFor(file) })) })),
+    ]));
+  }
+  return set;
 }
 
 const loaded = new Map<string, Promise<SampleSet>>();

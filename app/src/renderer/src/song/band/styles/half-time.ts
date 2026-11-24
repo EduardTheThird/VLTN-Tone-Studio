@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Half-time: the backbeat sits on beat 3 only, so the groove feels half as fast as the tempo. Kicks move around the bar as energy rises.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const HALF_TIME: Style = {
   id: "half-time",
   name: "Half-time",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("half-time", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "laid-back",
   grooves: {

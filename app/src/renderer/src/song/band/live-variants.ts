@@ -1,3 +1,4 @@
+import type { BandNoteSet } from "./band-job";
 import type { SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { CRASH, KICK, OPEN_HAT, CLOSED_HAT, PEDAL_HAT, SNARE, type NoteEvent } from "./note";
@@ -21,10 +22,8 @@ export function variantPlans(plans: readonly SectionPlan[], variant: RenderedVar
   return plans.map((plan) => ({ ...plan, loud: change(plan.loud), busy: change(plan.busy) }));
 }
 
-type Notes = { drums: NoteEvent[]; bass: NoteEvent[] };
-
 /** The backbeat and bass figure stay locked to the same times across performances. */
-export function variantNotes(variant: RenderedVariant, grid: BeatGrid, plans: readonly SectionPlan[], normal: Notes, alternative: Notes): Notes {
+export function variantNotes(variant: RenderedVariant, grid: BeatGrid, plans: readonly SectionPlan[], normal: BandNoteSet, alternative: BandNoteSet): BandNoteSet {
   const gain = variant === "lift" ? 1.12 : 0.84;
   const scale = (note: NoteEvent): NoteEvent => ({ ...note, velocity: clampVelocity(note.velocity * gain) });
   const backbeat = (note: NoteEvent) => note.pitch === KICK || note.pitch === SNARE;
@@ -56,6 +55,7 @@ export function variantNotes(variant: RenderedVariant, grid: BeatGrid, plans: re
   return {
     drums: drums.sort((a, b) => a.time - b.time || a.pitch - b.pitch),
     bass: normal.bass.map(scale),
+    ...(normal.keys ? { keys: (alternative.keys ?? normal.keys).map(scale) } : {}),
   };
 }
 

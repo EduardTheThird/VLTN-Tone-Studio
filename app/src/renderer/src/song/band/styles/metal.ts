@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Metal: double kick. Pairs of kicks on the eighths and sixteenths, a snare on 2 and 4 and tom fills that use the whole kit.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const METAL: Style = {
   id: "metal",
   name: "Metal",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("metal", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "tight",
   grooves: {

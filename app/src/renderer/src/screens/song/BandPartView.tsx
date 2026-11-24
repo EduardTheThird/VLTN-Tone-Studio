@@ -11,7 +11,7 @@ import { sectionColours } from "./section-colours";
 import { barPlace, layoutSection, noteName } from "./band-part-layout";
 import { BarMarkMenu, markText } from "./BarMarkMenu";
 import { BandMarksList, markRows } from "./BandMarksList";
-import { barLeft, barWidth, drawSection, LINE_HEIGHT, type PartColours } from "./band-part-draw";
+import { barLeft, barWidth, drawSection, lineHeightOf, type PartColours } from "./band-part-draw";
 
 /** A section the view can show. */
 export interface PartSection {
@@ -92,7 +92,7 @@ export function BandPartView({
   const learning = notes?.learnedDrums?.find((entry) => entry.start === section?.start);
   const layout = useMemo(() => {
     if (!notes || !grid || !section) return null;
-    return layoutSection({ drums: fromStoredNotes(notes.drums), bass: fromStoredNotes(notes.bass) }, grid, section, harmony);
+    return layoutSection({ drums: fromStoredNotes(notes.drums), bass: fromStoredNotes(notes.bass), keys: fromStoredNotes(notes.keys ?? []) }, grid, section, harmony);
   }, [notes, grid, section, harmony]);
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -116,7 +116,7 @@ export function BandPartView({
     const context = element.getContext("2d");
     if (!context) return;
     const ratio = window.devicePixelRatio || 1;
-    const height = layout.lines.length * LINE_HEIGHT;
+    const height = layout.lines.length * lineHeightOf(layout);
     element.width = Math.round(width * ratio);
     element.height = Math.round(height * ratio);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -140,7 +140,7 @@ export function BandPartView({
         const row = Math.floor(index / 4);
         const x = barLeft(width, index % 4) + ((time - bar.start) / (bar.end - bar.start)) * barWidth(width);
         head.style.display = "block";
-        head.style.transform = `translate(${x}px, ${row * LINE_HEIGHT}px)`;
+        head.style.transform = `translate(${x}px, ${row * lineHeightOf(layout)}px)`;
       }
       frame = requestAnimationFrame(move);
     };
@@ -211,12 +211,12 @@ export function BandPartView({
         <p className="text-silkscreen-3">{grid ? "No bars of this section have notes." : "Find the beat first, so the parts can be drawn on bars."}</p>
       ) : (
         <>
-          <div ref={holder} className="relative min-w-0 text-silkscreen-3" style={{ height: layout.lines.length * LINE_HEIGHT }}>
-            <canvas ref={canvas} aria-hidden="true" className="absolute left-0 top-0" style={{ width, height: layout.lines.length * LINE_HEIGHT }} />
+          <div ref={holder} className="relative min-w-0 text-silkscreen-3" style={{ height: layout.lines.length * lineHeightOf(layout) }}>
+            <canvas ref={canvas} aria-hidden="true" className="absolute left-0 top-0" style={{ width, height: layout.lines.length * lineHeightOf(layout) }} />
             {layout.lines.map((line, row) =>
               line.map((bar, column) => {
                 const onBar = placed?.byBar.get(bar.barIndex) ?? [];
-                const box = { left: barLeft(width, column), top: row * LINE_HEIGHT, width: barWidth(width) };
+                const box = { left: barLeft(width, column), top: row * lineHeightOf(layout), width: barWidth(width) };
                 const label = onBar.length > 0 ? `${bar.label}. Marked: ${onBar.map(markText).join(", ")}` : bar.label;
                 // The marks that landed on this bar are moved to its start when one is added or taken off, so a bar keeps one time.
                 const rebased = marks.map((mark) => (onBar.includes(mark) ? { ...mark, time: bar.start } : mark));
@@ -231,7 +231,7 @@ export function BandPartView({
                         disabled={!onMarks && !onPlayFrom}
                         title={onMarks ? "Mark this bar" : onPlayFrom ? "Play from this bar" : undefined}
                         className="absolute rounded-sm outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-                        style={{ ...box, height: LINE_HEIGHT - 8 }}
+                        style={{ ...box, height: lineHeightOf(layout) - 8 }}
                         onClick={(event) => {
                           // Without marks a bar only plays from itself.
                           if (onMarks) return;
@@ -272,7 +272,7 @@ export function BandPartView({
                     className="pointer-events-none absolute truncate rounded bg-amber-300/90 px-1 text-[10px] font-medium leading-4 text-black"
                     style={{
                       left: barLeft(width, column) + barWidth(width) - 4,
-                      top: row * LINE_HEIGHT,
+                      top: row * lineHeightOf(layout),
                       maxWidth: barWidth(width) - 8,
                       transform: "translateX(-100%)",
                     }}
@@ -286,7 +286,7 @@ export function BandPartView({
               ref={playhead}
               aria-hidden="true"
               className="pointer-events-none absolute left-0 top-0 hidden w-0.5 bg-white"
-              style={{ height: LINE_HEIGHT - 12 }}
+              style={{ height: lineHeightOf(layout) - 12 }}
             />
           </div>
           <table className="sr-only">
@@ -298,6 +298,7 @@ export function BandPartView({
                   <td>
                     {bar.bass.length > 0 ? bar.bass.map((note) => `${noteName(note.pitch)} on beat ${beatOf(note.x, beatsPerBar)}`).join(", ") : "no bass"}
                   </td>
+                  {bar.keys?.length ? <td>{`Keys: ${bar.keys.map((note) => `${noteName(note.pitch)} on beat ${beatOf(note.x, beatsPerBar)}`).join(", ")}`}</td> : null}
                 </tr>
               ))}
             </tbody>

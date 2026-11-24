@@ -1,5 +1,5 @@
 import { trackKey, trackKindOf, type LibrarySong } from "@shared/song-library";
-import { CURRENT_ENGINE, WHOLE_SONG_ID, parseBandSettings, type BandSettings, type RenderedKind } from "../band/arrangement";
+import { BAND_PARTS, CURRENT_ENGINE, WHOLE_SONG_ID, parseBandSettings, type BandSettings, type RenderedKind } from "../band/arrangement";
 import { GENERATED_PART_NAMES } from "../band/generated-names";
 import { parseSections } from "./sections";
 import { parseChart } from "./chart";
@@ -34,7 +34,7 @@ export function planSetUpgrade(song: LibrarySong, options: SetUpgradeOptions): S
   const saved = upgradeSongOptions(song);
   const settings = parseBandSettings(saved.band);
   const keys = savedGeneratedKeys(song);
-  const generated = (["drums", "bass"] as const).filter((kind) => settings.parts[kind] && !settings.rendered[kind] && keys[kind] !== undefined);
+  const generated = BAND_PARTS.filter((kind) => settings.parts[kind] && !settings.rendered[kind] && keys[kind] !== undefined);
   const update = options.updateBand && generated.length > 0 && settings.engine < CURRENT_ENGINE;
   const warm = options.warmBass && generated.includes("bass") && settings.bassTone.kind === "clean";
   return {
@@ -141,7 +141,7 @@ export function savedGeneratedKeys(song: LibrarySong): Partial<Record<RenderedKi
   if (!saved || typeof saved !== "object") return {};
   const record = saved as Record<string, unknown>;
   return Object.fromEntries(
-    (["drums", "bass"] as const).flatMap((kind) => {
+    BAND_PARTS.flatMap((kind) => {
       const track = song.audio.find((audio) => trackKey(audio) === record[kind] && trackKindOf(audio) === "user" && audio.name === GENERATED_PART_NAMES[kind]);
       return track ? [[kind, trackKey(track)]] : [];
     }),

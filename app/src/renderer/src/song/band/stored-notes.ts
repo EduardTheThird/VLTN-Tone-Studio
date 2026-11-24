@@ -1,3 +1,4 @@
+import type { BandPart, PartToggles } from "./arrangement";
 // The notes of the last Generate, kept in the song's options so the Band dialog can draw them again when the song is reopened. A note is
 // stored as a tuple to keep a five-minute song near 60 KB of JSON. Reads are defensive: anything malformed gives no notes.
 
@@ -23,6 +24,7 @@ export interface BandNotes {
   seed: number;
   drums: StoredNote[];
   bass: StoredNote[];
+  keys?: StoredNote[];
   learnedDrums?: LearnedDrumsReport[];
   detectedStops?: number[];
 }
@@ -88,19 +90,20 @@ export function parseBandNotes(value: unknown): BandNotes | null {
   if (!isRecord(value) || !isNumber(value.engine) || !isNumber(value.seed)) return null;
   const drums = parseList(value.drums);
   const bass = parseList(value.bass);
+  const keys = parseList(value.keys);
   if (!drums || !bass) return null;
   const learnedDrums = Array.isArray(value.learnedDrums)
     ? value.learnedDrums.filter((item): item is LearnedDrumsReport => isRecord(item) && isNumber(item.start) && item.start >= 0 &&
         isNumber(item.confidence) && item.confidence >= 0 && item.confidence <= 1 && typeof item.learned === "boolean")
     : [];
   const detectedStops = Array.isArray(value.detectedStops) ? value.detectedStops.slice(0, MAX_STORED_NOTES).filter((time): time is number => isNumber(time) && time >= 0) : [];
-  return { engine: value.engine, seed: value.seed, drums, bass, ...(learnedDrums.length ? { learnedDrums } : {}),
+  return { engine: value.engine, seed: value.seed, drums, bass, ...(keys?.length ? { keys } : {}), ...(learnedDrums.length ? { learnedDrums } : {}),
     ...(detectedStops.length ? { detectedStops } : {}) };
 }
 
 /** The entry to save for a Generate's notes. */
-export function bandNotesOf(notes: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[] }, engine: number, seed: number): BandNotes {
-  return { engine, seed, drums: toStoredNotes(notes.drums), bass: toStoredNotes(notes.bass) };
+export function bandNotesOf(notes: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[]; keys?: readonly NoteEvent[] }, engine: number, seed: number): BandNotes {
+  return { engine, seed, drums: toStoredNotes(notes.drums), bass: toStoredNotes(notes.bass), ...(notes.keys?.length ? { keys: toStoredNotes(notes.keys) } : {}) };
 }
 
 /**
@@ -109,17 +112,18 @@ export function bandNotesOf(notes: { drums: readonly NoteEvent[]; bass: readonly
  */
 export function updatedBandNotes(
   previous: BandNotes | null,
-  made: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[] },
-  generated: { drums: boolean; bass: boolean },
-  parts: { drums: boolean; bass: boolean },
+  made: { drums: readonly NoteEvent[]; bass: readonly NoteEvent[]; keys?: readonly NoteEvent[] },
+  generated: PartToggles,
+  parts: PartToggles,
   engine: number,
   seed: number,
   learnedDrums?: LearnedDrumsReport[],
   detectedStops?: number[],
 ): BandNotes {
-  const part = (kind: "drums" | "bass"): StoredNote[] => (generated[kind] ? toStoredNotes(made[kind]) : parts[kind] ? (previous?.[kind] ?? []) : []);
+  const part = (kind: BandPart): StoredNote[] => (generated[kind] ? toStoredNotes(made[kind] ?? []) : parts[kind] ? (previous?.[kind] ?? []) : []);
+  const keys = part("keys");
   const report = generated.drums ? learnedDrums : parts.drums ? previous?.learnedDrums : undefined;
   const stops = generated.drums || generated.bass ? detectedStops : previous?.detectedStops;
-  return { engine, seed, drums: part("drums"), bass: part("bass"), ...(report?.length ? { learnedDrums: report } : {}),
+  return { engine, seed, drums: part("drums"), bass: part("bass"), ...(keys.length ? { keys } : {}), ...(report?.length ? { learnedDrums: report } : {}),
     ...(stops?.length ? { detectedStops: stops } : {}) };
 }

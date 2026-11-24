@@ -9,6 +9,7 @@ const CHORD_HEIGHT = 20;
 const LANE_HEIGHT = 14;
 const TOMS_HEIGHT = 26;
 const BASS_HEIGHT = 64;
+const KEYS_HEIGHT = 56;
 /** The row under the bass for the bar numbers, and the gap between lines. */
 const NUMBER_HEIGHT = 14;
 const LINE_GAP = 10;
@@ -19,6 +20,8 @@ const DRUMS_HEIGHT = LANE_HEIGHT * (DRUM_LANES.length - 1) + TOMS_HEIGHT;
 const BASS_TOP = DRUMS_TOP + DRUMS_HEIGHT + 6;
 /** The height of one line of four bars, with the gap under it. */
 export const LINE_HEIGHT = BASS_TOP + BASS_HEIGHT + NUMBER_HEIGHT + LINE_GAP;
+
+export const lineHeightOf = (layout: SectionLayout): number => LINE_HEIGHT + (layout.bars.some((bar) => bar.keys?.length) ? KEYS_HEIGHT : 0);
 
 const LANE_NAMES: Record<DrumLane, string> = { crash: "Crash", ride: "Ride", "open-hat": "Open", hat: "Hat", toms: "Toms", snare: "Snare", kick: "Kick" };
 
@@ -69,6 +72,7 @@ function drawBar(
   markTint?: string,
 ) {
   const { drums, bass, text, strong, line } = colours;
+  const keysHeight = lineHeightOf(layout) - LINE_HEIGHT;
   if (bar.fill) {
     ctx.globalAlpha = 0.14;
     ctx.fillStyle = drums;
@@ -86,7 +90,7 @@ function drawBar(
   ctx.lineWidth = bar.phraseEnd ? 2 : 1;
   ctx.beginPath();
   ctx.moveTo(left + width, top + DRUMS_TOP - 2);
-  ctx.lineTo(left + width, top + BASS_TOP + BASS_HEIGHT);
+  ctx.lineTo(left + width, top + BASS_TOP + BASS_HEIGHT + keysHeight);
   ctx.stroke();
 
   ctx.font = "600 11px system-ui, sans-serif";
@@ -123,8 +127,18 @@ function drawBar(
   // The bar's number, counted from the section's start, under the bass.
   ctx.font = "10px system-ui, sans-serif";
   ctx.fillStyle = text;
-  ctx.fillText(String(bar.number), left + 4, top + BASS_TOP + BASS_HEIGHT + NUMBER_HEIGHT / 2);
+  ctx.fillText(String(bar.number), left + 4, top + BASS_TOP + BASS_HEIGHT + keysHeight + NUMBER_HEIGHT / 2);
 
+  if (bar.keys) {
+    ctx.fillStyle = strong;
+    ctx.globalAlpha = 0.8;
+    for (const note of bar.keys) {
+      const y = Math.max(0, Math.min(1, (96 - note.pitch) / 72));
+      ctx.fillRect(left + 4 + note.x * (width - 8), top + BASS_TOP + BASS_HEIGHT + 2 + y * (KEYS_HEIGHT - 5),
+        Math.max(2, note.width * (width - 8)), 3);
+    }
+    ctx.globalAlpha = 1;
+  }
   const scale = layout.bassScale;
   if (!scale) return;
   const span = Math.max(1, scale.high - scale.low);
@@ -171,10 +185,11 @@ export function drawSection(
   colours: PartColours,
   marked: (bar: PartBar) => string | undefined = () => undefined,
 ) {
-  ctx.clearRect(0, 0, width, layout.lines.length * LINE_HEIGHT);
+  const lineHeight = lineHeightOf(layout);
+  ctx.clearRect(0, 0, width, layout.lines.length * lineHeight);
   const w = barWidth(width);
   layout.lines.forEach((line, row) => {
-    const top = row * LINE_HEIGHT;
+    const top = row * lineHeight;
     ctx.fillStyle = colours.section;
     ctx.fillRect(GUTTER, top, w * line.length, CHORD_HEIGHT - 2);
     ctx.font = "10px system-ui, sans-serif";
@@ -202,6 +217,7 @@ export function drawSection(
         lastY = y;
       }
     } else ctx.fillText("Bass", GUTTER - 5, top + BASS_TOP + BASS_HEIGHT / 2);
+    if (lineHeight > LINE_HEIGHT) ctx.fillText("Keys", GUTTER - 5, top + BASS_TOP + BASS_HEIGHT + KEYS_HEIGHT / 2);
     line.forEach((bar, column) => drawBar(ctx, bar, GUTTER + column * w, top, w, layout, colours, marked(bar)));
   });
 }

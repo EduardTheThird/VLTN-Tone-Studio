@@ -24,7 +24,9 @@ export interface PendingRendered {
 /** The title of the prompt before Generate replaces rendered audio. */
 export function replaceTitle(kinds: readonly RenderedKind[]): string {
   if (kinds.length === 1) return `Replace your rendered ${kinds[0]} with new generated ${kinds[0]}?`;
-  return "Replace your rendered drums and bass with new generated parts?";
+  return kinds.includes("keys")
+    ? `Replace your rendered ${kinds.join(", ")} with new generated parts?`
+    : "Replace your rendered drums and bass with new generated parts?";
 }
 /** The step the bass tone takes after the render, while it is read and rendered through the capture. */
 export const BASS_TONE_TEXT = "Bass tone…";

@@ -1,3 +1,4 @@
+import { keysPatterns } from "./keys-patterns";
 // Pop: a backbeat on 2 and 4 with kick patterns on the one and the and of two. Busier energies add 16th hats, open hats and crashes.
 
 import { figure } from "../bass-figures";
@@ -9,6 +10,7 @@ export const POP: Style = {
   id: "pop",
   name: "Pop",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  keys: keysPatterns("pop", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "tight",
   grooves: {
