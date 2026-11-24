@@ -1,3 +1,4 @@
+import { PERCUSSION_CHOICES, type PercussionChoice } from "./percussion";
 import { SYNTH_BASS_IDS, SYNTH_PARTS, SYNTH_PRESET_IDS, type SynthBass, type SynthPart, type SynthPreset } from "./synth-presets";
 import { DEFAULT_KEYS, KEYS_PARTS, parseKeysSettings, type KeysPart, type KeysSettings } from "./keys-types";
 // The arrangement: which style, energy, fill and parts play in each section of a song, and the song-wide settings the user tunes.
@@ -222,6 +223,7 @@ export interface SectionPlan {
   keysPart?: KeysPart;
   synthPart?: SynthPart;
   keysOctave?: OctaveShift;
+  percussion?: PercussionChoice;
   cymbal?: (typeof CYMBAL_CHOICES)[number];
   kick?: (typeof KICK_CHOICES)[number];
   snare?: (typeof SNARE_CHOICES)[number];
@@ -284,6 +286,7 @@ export interface BandSettings {
   keys?: KeysSettings;
   synthPreset?: SynthPreset;
   synthBass?: SynthBass;
+  percussionAuto?: boolean;
   /** 0 straight to 0.75 heavy. Applies to straight grids only. */
   swing: number;
   ghostNotes: boolean;
@@ -369,6 +372,7 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   keys: DEFAULT_KEYS,
   synthPreset: "warm",
   synthBass: "sub",
+  percussionAuto: true,
   style: "rock",
   complexity: 0.5,
   swing: 0,
@@ -461,6 +465,7 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
     ...(override.synthPart ? { synthPart: override.synthPart } : {}),
     ...(override.keysOctave !== undefined ? { keysOctave: override.keysOctave } : {}),
     ...(override.cymbal ? { cymbal: override.cymbal } : {}),
+    ...(override.percussion ? { percussion: override.percussion } : {}),
     ...(override.kick ? { kick: override.kick } : {}),
     ...(override.snare ? { snare: override.snare } : {}),
     ...(override.bassArticulation ? { bassArticulation: override.bassArticulation } : {}),
@@ -859,6 +864,8 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   const synth = SYNTH_PARTS.find((choice) => choice === value.synthPart);
   if (synth) override.synthPart = synth;
   if (isOctave(value.keysOctave)) override.keysOctave = value.keysOctave;
+  const percussion = PERCUSSION_CHOICES.find((choice) => choice === value.percussion);
+  if (percussion) override.percussion = percussion;
   const cymbal = CYMBAL_CHOICES.find((choice) => choice === value.cymbal);
   const kick = KICK_CHOICES.find((choice) => choice === value.kick);
   const snare = SNARE_CHOICES.find((choice) => choice === value.snare);
@@ -898,6 +905,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     lift: SONG_LIFTS.find((lift) => lift === source.lift) ?? (isRecord(value) ? 0 : defaults.lift),
     keys: parseKeysSettings(source.keys),
     synthPreset: SYNTH_PRESET_IDS.find((id) => id === source.synthPreset) ?? defaults.synthPreset,
+    percussionAuto: isBool(source.percussionAuto) ? source.percussionAuto : !isRecord(value),
     synthBass: SYNTH_BASS_IDS.find((id) => id === source.synthBass) ?? defaults.synthBass,
     swing: isSwing(source.swing) ? source.swing : defaults.swing,
     ghostNotes: isBool(source.ghostNotes) ? source.ghostNotes : defaults.ghostNotes,

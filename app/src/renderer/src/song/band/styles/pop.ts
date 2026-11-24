@@ -10,6 +10,7 @@ export const POP: Style = {
   id: "pop",
   name: "Pop",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  percussion: { chorus: "tamb-backbeat" },
   keys: keysPatterns("pop", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "tight",

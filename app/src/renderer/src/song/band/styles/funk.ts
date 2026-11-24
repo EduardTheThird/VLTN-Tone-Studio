@@ -10,6 +10,7 @@ export const FUNK: Style = {
   id: "funk",
   name: "Funk",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  percussion: { verse: "shaker-sixteenths" },
   keys: keysPatterns("funk", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "tight",

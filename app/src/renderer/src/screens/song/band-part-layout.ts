@@ -4,12 +4,12 @@
 
 import type { BeatGrid } from "@/song/band/beat-grid";
 import type { ChordAtBeat } from "@/song/band/harmony";
-import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "@/song/band/note";
+import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, PERCUSSION_PITCHES, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "@/song/band/note";
 import { barSpans, beatSpan } from "@/song/band/timing";
 
 /** The drum lanes, top to bottom. The toms share one lane at three heights. */
 export const DRUM_LANES = ["crash", "ride", "open-hat", "hat", "toms", "snare", "kick"] as const;
-export type DrumLane = (typeof DRUM_LANES)[number];
+export type DrumLane = (typeof DRUM_LANES)[number] | "percussion";
 
 /** A drum hit under this velocity is a ghost note, drawn small and hollow. */
 export const GHOST_BELOW = 50;
@@ -117,7 +117,7 @@ export function laneOf(pitch: number): { lane: DrumLane; height: number; hollow:
     case KICK:
       return { lane: "kick", height: 0, hollow: false };
     default:
-      return null;
+      return PERCUSSION_PITCHES.includes(pitch) ? { lane: "percussion", height: 0, hollow: false } : null;
   }
 }
 
@@ -138,6 +138,7 @@ export function barLabel(number: number, drums: readonly DrumDot[], fill: boolea
       ["ride", count(["ride"])],
       ["toms", count(["toms"])],
       ["crash", count(["crash"])],
+      ["percussion", count(["percussion"])],
     ] as const
   )
     .filter(([, n]) => n > 0)

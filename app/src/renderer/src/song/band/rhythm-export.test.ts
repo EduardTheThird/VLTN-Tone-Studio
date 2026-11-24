@@ -1,3 +1,4 @@
+import { TAMBOURINE } from "./note";
 import { describe, expect, it } from "vitest";
 import { fixedBeatGrid } from "./beat-grid";
 import { DEFAULT_BAND_SETTINGS, planSections } from "./arrangement";
@@ -60,6 +61,17 @@ describe("rhythm passage export", () => {
     expect(ending.endTick).toBe(3840);
     expect(rhythmPreview(ending, choices).duration).toBe(4);
     expect(ending.notes).toEqual([{ tick: 0, duration: 96, pitch: 36, velocity: 110 }]);
+  });
+
+  it("reports app percussion that the RC-10R rhythm does not carry", () => {
+    const source = snapshot();
+    const chosen = setup(source);
+    const ordinary = assembleRhythmPart(source, chosen, "pattern1");
+    const first = (chosen.parts.pattern1.firstBar - 1) * source.grid.beatsPerBar;
+    const notes = [...source.notes, { time: source.grid.beats[first], pitch: TAMBOURINE, duration: 0.1, velocity: 87 }];
+    const actual = assembleRhythmPart({ ...source, notes }, chosen, "pattern1");
+    expect(actual.notes).toEqual(ordinary.notes);
+    expect(actual.warnings.some((warning) => warning.includes("app percussion hits omitted"))).toBe(true);
   });
 
   it("normalises tempo drift by fractional beat, retaining swing and velocity", () => {

@@ -6,7 +6,7 @@
 // constant-power pan, so a centred voice sits 3 dB down in each channel.
 
 import type { PcmAudio } from "../types";
-import { CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
+import { CLAP, CLAVES, COWBELL, SHAKER, TAMBOURINE, CLOSED_HAT, CRASH, HIGH_TOM, KICK, LOW_TOM, MID_TOM, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { ATTACK_ENVELOPE_SAMPLES } from "./beat-grid";
 import { STICK_SECONDS, STICK_TRANSPOSE, STICK_CLICK } from "./count-in";
 import { organSample } from "./keys-organ";
@@ -76,6 +76,7 @@ function onAttack(voice: Voice): Voice {
 
 /** Where each kit piece sits, from -1 (left) to 1 (right), as a drummer hears it. Pitches not listed are centred. */
 export const DRUM_PAN: Readonly<Record<number, number>> = {
+  [CLAP]: 0.07, [CLAVES]: -0.19, [COWBELL]: 0.26, [SHAKER]: -0.32, [TAMBOURINE]: 0.31,
   [KICK]: 0,
   [SNARE]: 0,
   [SIDE_STICK]: 0,
@@ -205,7 +206,7 @@ function drumVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
     // A stick click is the cross-stick sample moved up and cut short: the kit has no sample of its own for it (count-in.ts).
     const stick = note.pitch === STICK_CLICK;
     const cutAt = stick ? start + Math.round(STICK_SECONDS * sampleRate) : note.pitch === OPEN_HAT ? nextAfter(chokes, start) : Infinity;
-    return pickDrumLayers(samples, stick ? SIDE_STICK : note.pitch, note.velocity, take).map(({ pick, weight }) => ({
+    return pickDrumLayers(samples, stick ? SIDE_STICK : note.pitch, note.velocity, take, note.stroke).map(({ pick, weight }) => ({
       sample: pick.audio,
       rate: rateOf(pick.transpose + (stick ? STICK_TRANSPOSE : 0), pick.audio.sampleRate, sampleRate),
       gain: pick.gain * weight,

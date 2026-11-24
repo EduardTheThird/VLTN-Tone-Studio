@@ -1,3 +1,4 @@
+import { PERCUSSION_CHOICES, type PercussionChoice } from "@/song/band/percussion";
 import { SYNTH_PARTS, type SynthPart } from "@/song/band/synth-presets";
 import { KEYS_PARTS, type KeysPart } from "@/song/band/keys-types";
 import { DrumPatternPicker } from "./DrumPatternPicker";
@@ -11,6 +12,11 @@ import { ENERGIES, findStyle, type StyleId } from "@/song/band/styles";
 import { SECTION_PLAY_CHOICES, SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
 
 const SYNTH_PART_LABELS: Record<SynthPart, string> = { auto: "Auto", pad: "Pad", moving: "Moving pad", stabs: "Stabs", pulse: "Pulse", rest: "Rest" };
+
+const PERCUSSION_LABELS: Record<PercussionChoice, string> = {
+  auto: "Auto", none: "None", "tamb-backbeat": "Tambourine backbeat", "tamb-eighths": "Tambourine eighths",
+  "shaker-eighths": "Shaker eighths", "shaker-sixteenths": "Shaker sixteenths", claps: "Claps", cowbell: "Cowbell",
+};
 
 const OCTAVE_LABELS: Record<string, string> = { "-1": "−1 octave", "0": "Same", "1": "+1 octave" };
 
@@ -127,6 +133,15 @@ export function BandSectionMore({
             </SelectContent>
           </Select>
         </label>}
+        <label className="flex items-center justify-between gap-2 text-sm">
+          Percussion
+          <Select value={plan.percussion ?? "auto"} disabled={disabled} onValueChange={(value) => onChange({ percussion: value as PercussionChoice })}>
+            <SelectTrigger aria-label={`Percussion of ${name}`} className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PERCUSSION_CHOICES.map((choice) => <SelectItem key={choice} value={choice}>{PERCUSSION_LABELS[choice]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
         <DrumPatternPicker
           label={`Drum pattern of ${name}`}
           value={drumPattern}

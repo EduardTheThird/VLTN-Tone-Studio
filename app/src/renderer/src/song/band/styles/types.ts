@@ -1,3 +1,4 @@
+import type { PercussionStroke, PercussionStyle } from "../percussion";
 import type { KeysPattern } from "./keys-patterns";
 import type { Figure } from "../bass-figures";
 
@@ -44,6 +45,7 @@ export interface DrumHit {
   /** A ghost note: dropped when ghost notes are off. */
   ghost?: boolean;
   rim?: true;
+  stroke?: PercussionStroke;
 }
 
 /** One bar of drums. `steps` is `meter.beatsPerBar × meter.stepsPerBeat` for the style it belongs to. */
@@ -103,6 +105,7 @@ export interface Style {
   turnarounds: DrumPattern[];
   bass: BassStyle;
   keys: Record<Energy, KeysPattern[]>;
+  percussion?: PercussionStyle;
 }
 
 /** How many half fills and bar fills a style had before the drum phrases (engine 3). Songs on engine 2 or earlier draw from these only. */

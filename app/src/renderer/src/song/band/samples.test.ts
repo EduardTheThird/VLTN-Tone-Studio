@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { PcmAudio } from "../types";
 import { DRUM_KITS } from "./arrangement";
-import { DRUM_PITCHES } from "./note";
+import { CLAP, COWBELL, DRUM_PITCHES, PERCUSSION_PITCHES, SHAKER, TAMBOURINE } from "./note";
 import { SAMPLE_MAP, bassFiles, loadSampleSetWith, pickBassLayers, pickBassSample, pickDrumLayers, pickDrumSample, readSampleMap, sampleSetFrom, takeFiles, type SampleSet } from "./samples";
 import { ENERGIES, STYLES } from "./styles";
 
@@ -60,7 +60,9 @@ function stubSet(kit = "standard", sound?: "fingers" | "pick"): { set: SampleSet
 /** Every file path in map.json, in drum and bass order. */
 function mappedFiles(): string[] {
   const drums = Object.values(SAMPLE_MAP.kits).flatMap((kit) => Object.values(kit.drums).flatMap((entry) => entry.layers.flatMap(takeFiles)));
-  return [...drums, ...bassFiles(SAMPLE_MAP, "pick"), ...bassFiles(SAMPLE_MAP, "fingers"), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])];
+  const percussion = Object.values(SAMPLE_MAP.kits).flatMap((kit) => Object.values(kit.percussion ?? {}).flatMap((piece) =>
+    [...piece.layers, ...Object.values(piece.strokes ?? {}).flat()].flatMap(takeFiles)));
+  return [...drums, ...percussion, ...bassFiles(SAMPLE_MAP, "pick"), ...bassFiles(SAMPLE_MAP, "fingers"), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])];
 }
 
 describe("map.json", () => {
@@ -151,7 +153,7 @@ describe("map.json", () => {
 
   it("keeps the original kit, bass and room library under 30 MB", () => {
     const total = readdirSync(SAMPLES, { recursive: true })
-      .filter((path) => !String(path).startsWith("keys/"))
+      .filter((path) => !String(path).startsWith("keys/") && !String(path).startsWith("percussion/"))
       .map((path) => join(SAMPLES, String(path)))
       .filter((path) => statSync(path).isFile())
       .reduce((sum, path) => sum + statSync(path).size, 0);
@@ -195,7 +197,7 @@ describe("drum kits", () => {
     });
     try {
       const set = await loadSampleSetWith(urls, async () => ({ sampleRate: 44100, channels: [new Float32Array(1)] }), "rock");
-      expect(set.drums.size).toBe(Object.keys(SAMPLE_MAP.kits.rock.drums).length);
+      expect(set.drums.size).toBe(Object.keys(SAMPLE_MAP.kits.rock.drums).length + PERCUSSION_PITCHES.length);
       expect(requested.filter((url) => url.includes("/bass/")).sort()).toEqual(bassFiles(SAMPLE_MAP, "pick").map((file) => `https://app.test/${file}`).sort());
       const wanted = new Set(Object.values(SAMPLE_MAP.kits.rock.drums).flatMap((entry) => entry.layers.flatMap(takeFiles)));
       expect(requested.filter((url) => url.includes("/drums/")).length).toBe(wanted.size);
@@ -418,4 +420,18 @@ it("ships four sampled keys banks with a loaded root within two semitones across
     }
   }
   expect(bytes).toBeLessThan(25_000_000);
+});
+
+it("maps layered percussion and alternate strokes in every drum kit", () => {
+  for (const [kit, entry] of Object.entries(SAMPLE_MAP.kits)) {
+    for (const pitch of PERCUSSION_PITCHES) expect(entry.percussion?.[pitch]?.layers.length, `${kit} ${pitch}`).toBeGreaterThan(1);
+    expect(entry.percussion?.[CLAP]?.layers.every((layer) => takeFiles(layer).length === 3)).toBe(true);
+    expect(entry.percussion?.[TAMBOURINE]?.strokes?.shake?.length).toBe(3);
+    expect(entry.percussion?.[SHAKER]?.strokes?.back?.every((layer) => takeFiles(layer).length === 3)).toBe(true);
+    expect(entry.percussion?.[COWBELL]?.layers.length).toBe(2);
+    const { set } = stubSet(kit);
+    expect(pickDrumSample(set, SHAKER, 55, 0, "back").audio).not.toBe(pickDrumSample(set, SHAKER, 55).audio);
+  }
+  const path = join(SAMPLES, "percussion");
+  expect(readdirSync(path).reduce((sum, file) => sum + statSync(join(path, file)).size, 0)).toBeLessThan(3_000_000);
 });

@@ -2,7 +2,7 @@
 import { rhythmTempo } from "../performance/rhythm-tempo";
 import type { SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
-import { DRUM_PITCHES, type NoteEvent } from "./note";
+import { DRUM_PITCHES, PERCUSSION_PITCHES, type NoteEvent } from "./note";
 import { barSpans, beatSpan } from "./timing";
 import type { Section } from "../performance/sections";
 import { encodeDrumSmf, EXPORT_PPQ, type SmfTickNote } from "../performance/smf";
@@ -199,10 +199,12 @@ export function assembleRhythmPart(snapshot: RhythmSnapshot, setup: RhythmSetup,
   const ticksPerPulse = EXPORT_PPQ * meter.quarters;
   const endTick = selection.bars * meter.pulses * ticksPerPulse;
   let clipped = 0;
+  let percussion = 0;
   const notes: SmfTickNote[] = [];
   for (const note of snapshot.notes) {
     if (!Number.isFinite(note.time)) throw new Error("A generated drum hit has an invalid time. Generate the drums again.");
     if (note.time < start.start || note.time >= end.end) continue;
+    if (PERCUSSION_PITCHES.includes(note.pitch)) { percussion++; continue; }
     if (!DRUM_PITCHES.includes(note.pitch)) throw new Error(`${label}: drum note ${note.pitch} is not supported by this export.`);
     if (!Number.isInteger(note.velocity) || note.velocity < 1 || note.velocity > 127 || !Number.isFinite(note.duration) || note.duration <= 0)
       throw new Error("A generated drum hit is invalid. Generate the drums again.");
@@ -230,6 +232,7 @@ export function assembleRhythmPart(snapshot: RhythmSnapshot, setup: RhythmSetup,
   }
   const warnings = clipped ? [`${label}: ${clipped} hit(s) shortened or adjusted at the passage boundary.`] : [];
   const early = snapshot.notes.filter((note) => note.time >= start.start - 0.04 && note.time < start.start).length;
+  if (percussion) warnings.push(`${label}: ${percussion} app percussion hits omitted from the RC-10R rhythm.`);
   if (early) warnings.push(`${label}: ${early} hit(s) just before the first bar are excluded. Preview the start of this passage.`);
   return { role, source: source.name, firstBar: selection.firstBar, startBar: 1, bars: selection.bars, notes: merged, endTick, warnings };
 }

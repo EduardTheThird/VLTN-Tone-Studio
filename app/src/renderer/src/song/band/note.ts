@@ -1,3 +1,4 @@
+import type { PercussionStroke } from "./percussion";
 import type { SynthMode } from "./synth-presets";
 import type { KeysInstrument } from "./keys-types";
 
@@ -20,6 +21,7 @@ export interface NoteEvent {
   staccato?: true;
   /** Emphasise the snare's high frequencies for this hit. */
   rim?: true;
+  stroke?: PercussionStroke;
   instrument?: KeysInstrument;
   synthMode?: SynthMode;
   /** An explicit bass articulation selected for a section. */
@@ -35,6 +37,12 @@ export const PEDAL_HAT = 44;
 export const OPEN_HAT = 46;
 export const RIDE = 51;
 export const CRASH = 49;
+export const CLAP = 39;
+export const TAMBOURINE = 54;
+export const COWBELL = 56;
+export const SHAKER = 70;
+export const CLAVES = 75;
+export const PERCUSSION_PITCHES: readonly number[] = [CLAP, TAMBOURINE, COWBELL, SHAKER, CLAVES];
 /**
  * Three toms, the GM low, low-mid and high toms. The two floor toms (41 and 43) are left out on purpose: fills are written
  * for the toms a standard kit has above the snare, and a floor tom sits too low for most fills.

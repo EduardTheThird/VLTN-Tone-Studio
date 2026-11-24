@@ -11,6 +11,7 @@ export const COUNTRY: Style = {
   id: "country",
   name: "Country",
   meter: { beatsPerBar: 4, stepsPerBeat: 4 },
+  percussion: { chorus: "tamb-backbeat" },
   keys: keysPatterns("country", { beatsPerBar: 4, stepsPerBeat: 4 }),
   swingDefault: 0,
   feelDefault: "natural",

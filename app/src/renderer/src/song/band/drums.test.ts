@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BAND_SETTINGS, type BandSettings, type SectionPlan } from "./arrangement";
+import { DEFAULT_BAND_SETTINGS, parseBandSettings, type BandSettings, type SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { generateDrums, playsAt, tempoLimitedComplexity } from "./drums";
 import type { EndingSettings } from "./ending";
 import { rankGrooves, type Feel } from "./feel";
 import type { BarMark } from "./marks";
-import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
+import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, RIDE, SHAKER, SIDE_STICK, SNARE, TAMBOURINE, type NoteEvent } from "./note";
 import { findStyle, STYLES } from "./styles";
 import { BUSY_FROM, LEAN_FROM, STYLE_IDS, type DrumGroove, type DrumHit } from "./styles/types";
 
@@ -1190,4 +1190,27 @@ describe("section drum choices", () => {
     expect(play({ snare: "stick" }).some(({ pitch }) => pitch === SNARE)).toBe(false);
     expect(play({ snare: "rim" }).some(({ pitch, rim }) => pitch === SNARE && rim)).toBe(true);
   });
+});
+
+it("plays tambourine on the backbeat, rests on marked stops and leaves saved Auto unchanged", () => {
+  const grid = steady(16);
+  const settings = settingsFor({ engine: 4, ending: { kind: "none" }, percussionAuto: false, marks: [{ time: 2, kind: "stop", beats: 4 }] });
+  const play = (choice?: SectionPlan["percussion"]) => generateDrums(grid, [
+    plan(0, 16, { name: "Chorus", style: "pop", percussion: choice }),
+  ], settings, 9);
+  expect(play("tamb-backbeat").filter((note) => note.pitch === TAMBOURINE && note.time < 4).map((note) => note.time)).toEqual([0.5, 1.5]);
+  expect(play("auto")).toEqual(play("none"));
+  expect(play("none")).toEqual(play());
+  expect(parseBandSettings({ engine: 4 }).percussionAuto).toBe(false);
+  expect(parseBandSettings(undefined).percussionAuto).toBe(true);
+});
+
+it("adds percussion from new-song style defaults and alternates shaker strokes", () => {
+  const grid = steady(16);
+  const settings = settingsFor({ engine: 4, ending: { kind: "none" }, percussionAuto: true });
+  const pop = generateDrums(grid, [plan(0, 16, { name: "Chorus", style: "pop" })], settings, 3);
+  expect(pop.some((note) => note.pitch === TAMBOURINE)).toBe(true);
+  const funk = generateDrums(grid, [plan(0, 16, { name: "Verse", style: "funk" })], settings, 3).filter((note) => note.pitch === SHAKER);
+  expect(funk.slice(0, 4).map((note) => note.stroke)).toEqual([undefined, "back", undefined, "back"]);
+  expect(funk[1].velocity).toBeLessThan(funk[0].velocity);
 });

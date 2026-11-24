@@ -1,3 +1,4 @@
+import { percussionHits, type PercussionStroke } from "./percussion";
 // Drum generation: turns the beat grid, the section plans and the style's grooves into timed drum notes. Pure: no audio and no store.
 // Every bar is placed on the real beats, so a part follows tempo drift. Humanising is not done here; that is a later layer.
 //
@@ -234,8 +235,8 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
   const spans = barSpans(grid);
   const starts = spans.map((span) => span.start);
   const planOf = spans.map((span) => planOfBar(plans, beats, span));
-  const emit = (time: number, pitch: number, velocity: number, rim?: true) => notes.push({
-    time, pitch, velocity: clampVelocity(velocity), duration: DRUM_DURATION, ...(rim ? { rim } : {}),
+  const emit = (time: number, pitch: number, velocity: number, rim?: true, stroke?: PercussionStroke) => notes.push({
+    time, pitch, velocity: clampVelocity(velocity), duration: DRUM_DURATION, ...(rim ? { rim } : {}), ...(stroke ? { stroke } : {}),
   });
   const quiet = (beat: number): boolean => feel?.stops.has(beat) === true;
   const ending = endingBar(grid, plans, settings.ending, endTime);
@@ -334,6 +335,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     let groove: DrumGroove;
     let hits: DrumHit[];
     let filled = false;
+    let hasFill = false;
     // The loud level of the bar: a build lifts its last two bars by one.
     let barLoud: Energy = plan.loud;
     if (phrased || original) {
@@ -363,6 +365,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
         const { from, fill } = fillOf(style, draw, size, groove.steps);
         hits = [...hits.filter((hit) => hit.step < from), ...fill];
         filled = size >= 2;
+        hasFill = true;
       };
       if (hold) {
         // The bar before a hold is a whole-bar fill whatever the section's energy, so the band stops together.
@@ -394,6 +397,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
             const played = learnedHits(fill, plan.busy, style.meter.stepsPerBeat);
             hits = [...hits.filter((hit) => hit.step < cutoff), ...played.filter((hit) => hit.step >= cutoff)];
             filled = cutoff < lastBeat;
+            hasFill = true;
           } else if (typeof plan.fill === "number" && plan.fill !== 0) asFill(plan.fill);
         } else if (fillSize !== 0) asFill(drumShape === "drop" ? 2 : fillSize);
         // Before a section with the drums off the last bar ends with a kick and a crash, if the section is loud.
@@ -520,6 +524,17 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       ];
       filled = false;
     }
+    if (!markOf(marked, k, "hit")) {
+      const auto = measured && settings.percussionAuto
+        ? isChorusName(plan.name) ? style.percussion?.chorus : /verse/i.test(plan.name) && plan.busy >= 3 ? style.percussion?.verse : undefined
+        : undefined;
+      const choice = plan.percussion === undefined || plan.percussion === "auto" ? auto : plan.percussion;
+      const percussion = percussionHits(choice, style.meter, plan.busy);
+      if (percussion.length) {
+        const from = filled || hasFill ? groove.steps / 2 : groove.steps;
+        hits = [...hits, ...percussion.filter((hit) => hit.step < from)];
+      }
+    }
     // A bar the drums rest in is still drawn from the same random numbers, so the bars after it keep their notes.
     const resting = markOf(marked, k, "drums-out") !== undefined;
     if (resting) filled = false;
@@ -544,7 +559,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       if (at.beat >= beats.length || quiet(at.beat)) continue;
       let velocity = hit.velocity * LOUD_DRUM_SCALE[barLoud];
       if (hit.ghost) velocity = Math.min(velocity, GHOST_CEILING);
-      emit(at.time, hit.pitch, velocity, hit.rim);
+      emit(at.time, hit.pitch, velocity, hit.rim, hit.stroke);
     }
   }
 

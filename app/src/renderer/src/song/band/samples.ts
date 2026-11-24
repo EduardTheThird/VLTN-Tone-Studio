@@ -1,3 +1,4 @@
+import type { PercussionStroke } from "./percussion";
 import type { KeysInstrument } from "./keys-types";
 // Samples for the generated drum and bass parts (spec 50). The FLAC files and samples/map.json ship with the app; their licences are in
 // NOTICE.md next to this file. Loading decodes every file once and keeps the result in memory. The pickers are pure, so the generators
@@ -38,6 +39,7 @@ export interface BassSample {
 export interface SampleSet {
   /** Drum layers by GM pitch, sorted by velocity. */
   drums: Map<number, DrumLayer[]>;
+  percussionStrokes?: Map<number, Partial<Record<PercussionStroke, DrumLayer[]>>>;
   bass: BassSample[];
   keys?: Partial<Record<SampledKeys, KeysRoot<{ audio: PcmAudio }>[]>>;
   bassInstrument?: Partial<Record<BassArticulation, BassRoot[]>>;
@@ -65,6 +67,7 @@ export function takeFiles(layer: DrumLayerEntry): string[] {
 export interface KitEntry {
   name: string;
   drums: Record<string, { name: string; layers: DrumLayerEntry[] }>;
+  percussion?: Record<string, { name: string; layers: DrumLayerEntry[]; strokes?: Partial<Record<PercussionStroke, DrumLayerEntry[]>> }>;
   /** The kit wants this many times the Room setting. */
   roomScale?: number;
   /** Processing applied to the kit's recordings as it loads (kit-voicing.ts): a thump and click for the kick, a shelf in dB for the snare. */
@@ -135,10 +138,18 @@ export function readSampleMap(value: unknown): SampleMap {
     layer.files !== undefined ? Array.isArray(layer.files) && layer.files.length > 0 && layer.files.every((f) => typeof f === "string") : typeof layer.file === "string";
   for (const [kit, kitEntry] of Object.entries(map.kits ?? {})) {
     if (!kitEntry || typeof kitEntry.name !== "string" || !kitEntry.drums || typeof kitEntry.drums !== "object") fail(`kit ${kit}`);
-    for (const [pitch, entry] of Object.entries(kitEntry.drums)) {
+    for (const [pitch, entry] of Object.entries({ ...kitEntry.drums, ...kitEntry.percussion })) {
       if (!/^\d+$/.test(pitch) || !Array.isArray(entry.layers) || entry.layers.length === 0) fail(`kit ${kit} drum ${pitch}`);
       for (const layer of entry.layers)
         if (!isTakeList(layer) || !isRange(layer.velocity) || !Number.isFinite(layer.nominal)) fail(`kit ${kit} drum ${pitch} layer`);
+    }
+  }
+  for (const [kit, entry] of Object.entries(map.kits)) {
+    for (const piece of Object.values(entry.percussion ?? {})) {
+      for (const [stroke, layers] of Object.entries(piece.strokes ?? {})) {
+        if ((stroke !== "shake" && stroke !== "back") || !Array.isArray(layers) || !layers.length ||
+          !layers.every((layer) => isTakeList(layer) && isRange(layer.velocity) && Number.isFinite(layer.nominal))) fail(`kit ${kit} percussion stroke`);
+      }
     }
   }
   const bass = Array.isArray(map.bass) ? map.bass : map.bass.legacy ?? [];
@@ -213,8 +224,12 @@ function layerFor<T extends { velocity: VelocityRange }>(layers: readonly T[], v
  * The layer and gain for one drum hit. `take` is the hit's number among the hits of this pitch: hit n plays take n of the layer, wrapping
  * around, so the same notes always give the same audio. A GM pitch with no layers throws; the tests check every pitch the styles use has some.
  */
-export function pickDrumSample(set: SampleSet, pitch: number, velocity: number, take = 0): DrumPick {
-  const layers = set.drums.get(pitch);
+function drumLayers(set: SampleSet, pitch: number, stroke?: PercussionStroke): DrumLayer[] | undefined {
+  return (stroke ? set.percussionStrokes?.get(pitch)?.[stroke] : undefined) ?? set.drums.get(pitch);
+}
+
+export function pickDrumSample(set: SampleSet, pitch: number, velocity: number, take = 0, stroke?: PercussionStroke): DrumPick {
+  const layers = drumLayers(set, pitch, stroke);
   const layer = layers && layerFor(layers, clampVelocity(velocity));
   if (!layer) throw new Error(`No drum sample for GM pitch ${pitch}.`);
   return { audio: layer.takes[take % layer.takes.length], gain: clampVelocity(velocity) / layer.nominal, transpose: layer.transpose };
@@ -234,9 +249,9 @@ export interface DrumLayerMix {
  * layers, both play with linear weights, so a velocity crossing a boundary does not step. Both
  * layers use the same take number.
  */
-export function pickDrumLayers(set: SampleSet, pitch: number, velocity: number, take = 0): DrumLayerMix[] {
+export function pickDrumLayers(set: SampleSet, pitch: number, velocity: number, take = 0, stroke?: PercussionStroke): DrumLayerMix[] {
   const v = clampVelocity(velocity);
-  const layers = set.drums.get(pitch);
+  const layers = drumLayers(set, pitch, stroke);
   const main = layers && layerFor(layers, v);
   if (!layers || !main) throw new Error(`No drum sample for GM pitch ${pitch}.`);
   const index = layers.indexOf(main);
@@ -245,7 +260,7 @@ export function pickDrumLayers(set: SampleSet, pitch: number, velocity: number, 
   const other = layers[index + side];
   const boundary = side === 1 ? main.velocity[1] + 0.5 : main.velocity[0] - 0.5;
   const distance = Math.abs(v - boundary);
-  if (!other || distance >= DRUM_CROSSFADE_STEPS) return [{ pick: pickDrumSample(set, pitch, v, take), weight: 1 }];
+  if (!other || distance >= DRUM_CROSSFADE_STEPS) return [{ pick: pickDrumSample(set, pitch, v, take, stroke), weight: 1 }];
   // The other layer's share grows from 0 at the edge of the zone to one half at the boundary itself.
   const toOther = 0.5 * (1 - distance / DRUM_CROSSFADE_STEPS);
   const pickOf = (layer: DrumLayer): DrumPick => ({ audio: layer.takes[take % layer.takes.length], gain: v / layer.nominal, transpose: layer.transpose });
@@ -341,18 +356,20 @@ export function sampleSetFrom(map: SampleMap, kit: string, audioFor: (file: stri
     return audio;
   };
   const drums = new Map<number, DrumLayer[]>();
-  for (const [pitch, piece] of Object.entries(entry.drums)) {
-    const layers = piece.layers.map((layer) => ({
-      velocity: layer.velocity,
-      nominal: layer.nominal,
-      transpose: layer.transpose ?? 0,
-      takes: takeFiles(layer).map((file) => voice(Number(pitch), audioFor(file))),
-    }));
-    drums.set(
-      Number(pitch),
-      layers.sort((a, b) => a.velocity[0] - b.velocity[0]),
-    );
+  const percussionStrokes = new Map<number, Partial<Record<PercussionStroke, DrumLayer[]>>>();
+  const layersFor = (pitch: number, layers: DrumLayerEntry[]) => layers.map((layer) => ({
+    velocity: layer.velocity,
+    nominal: layer.nominal,
+    transpose: layer.transpose ?? 0,
+    takes: takeFiles(layer).map((file) => voice(pitch, audioFor(file))),
+  })).sort((a, b) => a.velocity[0] - b.velocity[0]);
+  for (const [pitch, piece] of Object.entries({ ...entry.drums, ...entry.percussion })) drums.set(Number(pitch), layersFor(Number(pitch), piece.layers));
+  for (const [pitch, piece] of Object.entries(entry.percussion ?? {})) {
+    if (piece.strokes) percussionStrokes.set(Number(pitch), Object.fromEntries(
+      Object.entries(piece.strokes).map(([stroke, layers]) => [stroke, layersFor(Number(pitch), layers)]),
+    ));
   }
+
   const instrument = bank === "pick" || bank === "fingers" ? map.bassSounds?.[bank] : undefined;
   const bass = bank === "none" || instrument ? [] : map.bass.map((sample) => ({ ...sample, audio: audioFor(sample.file) }));
   const bassInstrument: SampleSet["bassInstrument"] = instrument && {};
@@ -364,7 +381,7 @@ export function sampleSetFrom(map: SampleMap, kit: string, audioFor: (file: stri
       }));
     }
   }
-  return { drums, bass, bassInstrument, room: map.room ? audioFor(map.room) : undefined, roomScale: entry.roomScale };
+  return { drums, ...(percussionStrokes.size ? { percussionStrokes } : {}), bass, bassInstrument, room: map.room ? audioFor(map.room) : undefined, roomScale: entry.roomScale };
 }
 
 // Vite emits each FLAC as an asset and gives its URL (the same pattern as the Gp5 fixtures and the capture clips).
@@ -389,8 +406,11 @@ export function bassFiles(map: SampleMap, bank: BassBank): string[] {
 }
 
 function sampleFiles(kit: string, bank: BassBank): string[] {
-  const drums = Object.values(SAMPLE_MAP.kits[kit]?.drums ?? {}).flatMap((e) => e.layers.flatMap(takeFiles));
-  return [...new Set([...drums, ...bassFiles(SAMPLE_MAP, bank), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])])];
+  const entry = SAMPLE_MAP.kits[kit];
+  const drums = Object.values(entry?.drums ?? {}).flatMap((piece) => piece.layers.flatMap(takeFiles));
+  const percussion = Object.values(entry?.percussion ?? {}).flatMap((piece) =>
+    [...piece.layers, ...Object.values(piece.strokes ?? {}).flat()].flatMap(takeFiles));
+  return [...new Set([...drums, ...percussion, ...bassFiles(SAMPLE_MAP, bank), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])])];
 }
 
 export function pickKeysLayers(set: SampleSet, instrument: SampledKeys, pitch: number, velocity: number): { audio: PcmAudio; semitones: number; gain: number }[] {

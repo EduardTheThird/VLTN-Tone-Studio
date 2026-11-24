@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- Add tambourine, shaker, claps or cowbell to individual sections.
 - Synth pads and rhythmic chords follow the song’s harmony, and bass can use Sub, Pumping or Sequenced synth voices.
 - A keys player with piano, electric piano and organ that follows the song’s chords, with left- and right-hand choices.
 - Set each section’s cymbal, kick, snare and bass articulation, and give later choruses a lift.

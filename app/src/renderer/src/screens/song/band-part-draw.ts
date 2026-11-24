@@ -21,11 +21,13 @@ const BASS_TOP = DRUMS_TOP + DRUMS_HEIGHT + 6;
 /** The height of one line of four bars, with the gap under it. */
 export const LINE_HEIGHT = BASS_TOP + BASS_HEIGHT + NUMBER_HEIGHT + LINE_GAP;
 
+const PERC_HEIGHT = LANE_HEIGHT;
+const hasPercussion = (layout: SectionLayout) => layout.bars.some((bar) => bar.drums.some((dot) => dot.lane === "percussion"));
 const PITCHED_LANES = ["keys", "synth"] as const;
 const pitchedLanes = (layout: SectionLayout) => PITCHED_LANES.filter((part) => layout.bars.some((bar) => bar[part]?.length));
-export const lineHeightOf = (layout: SectionLayout): number => LINE_HEIGHT + pitchedLanes(layout).length * KEYS_HEIGHT;
+export const lineHeightOf = (layout: SectionLayout): number => LINE_HEIGHT + pitchedLanes(layout).length * KEYS_HEIGHT + (hasPercussion(layout) ? PERC_HEIGHT : 0);
 
-const LANE_NAMES: Record<DrumLane, string> = { crash: "Crash", ride: "Ride", "open-hat": "Open", hat: "Hat", toms: "Toms", snare: "Snare", kick: "Kick" };
+const LANE_NAMES: Record<DrumLane, string> = { crash: "Crash", ride: "Ride", "open-hat": "Open", hat: "Hat", toms: "Toms", snare: "Snare", kick: "Kick", percussion: "Perc." };
 
 /** The colours the view draws with, read from the page so a theme change reaches the canvas. */
 export interface PartColours {
@@ -47,7 +49,7 @@ function laneBox(lane: DrumLane): { top: number; height: number } {
     if (name === lane) return { top, height };
     top += height;
   }
-  return { top, height: LANE_HEIGHT };
+  return { top, height: PERC_HEIGHT };
 }
 
 /** The vertical centre of a dot, where the toms' three heights share the toms lane. */
@@ -74,7 +76,8 @@ function drawBar(
   markTint?: string,
 ) {
   const { drums, bass, text, strong, line } = colours;
-  const keysHeight = lineHeightOf(layout) - LINE_HEIGHT;
+  const extraHeight = lineHeightOf(layout) - LINE_HEIGHT;
+  const bassTop = BASS_TOP + (hasPercussion(layout) ? PERC_HEIGHT : 0);
   if (bar.fill) {
     ctx.globalAlpha = 0.14;
     ctx.fillStyle = drums;
@@ -92,7 +95,7 @@ function drawBar(
   ctx.lineWidth = bar.phraseEnd ? 2 : 1;
   ctx.beginPath();
   ctx.moveTo(left + width, top + DRUMS_TOP - 2);
-  ctx.lineTo(left + width, top + BASS_TOP + BASS_HEIGHT + keysHeight);
+  ctx.lineTo(left + width, top + BASS_TOP + BASS_HEIGHT + extraHeight);
   ctx.stroke();
 
   ctx.font = "600 11px system-ui, sans-serif";
@@ -129,14 +132,14 @@ function drawBar(
   // The bar's number, counted from the section's start, under the bass.
   ctx.font = "10px system-ui, sans-serif";
   ctx.fillStyle = text;
-  ctx.fillText(String(bar.number), left + 4, top + BASS_TOP + BASS_HEIGHT + keysHeight + NUMBER_HEIGHT / 2);
+  ctx.fillText(String(bar.number), left + 4, top + BASS_TOP + BASS_HEIGHT + extraHeight + NUMBER_HEIGHT / 2);
 
   pitchedLanes(layout).forEach((part, lane) => {
     ctx.fillStyle = part === "keys" ? strong : drums;
     ctx.globalAlpha = 0.8;
     for (const note of bar[part] ?? []) {
       const y = Math.max(0, Math.min(1, (96 - note.pitch) / 72));
-      ctx.fillRect(left + 4 + note.x * (width - 8), top + BASS_TOP + BASS_HEIGHT + lane * KEYS_HEIGHT + 2 + y * (KEYS_HEIGHT - 5),
+      ctx.fillRect(left + 4 + note.x * (width - 8), top + bassTop + BASS_HEIGHT + lane * KEYS_HEIGHT + 2 + y * (KEYS_HEIGHT - 5),
         Math.max(2, note.width * (width - 8)), 3);
     }
     ctx.globalAlpha = 1;
@@ -144,7 +147,7 @@ function drawBar(
   const scale = layout.bassScale;
   if (!scale) return;
   const span = Math.max(1, scale.high - scale.low);
-  const y = (pitch: number) => top + BASS_TOP + 8 + (1 - (pitch - scale.low) / span) * (BASS_HEIGHT - 20);
+  const y = (pitch: number) => top + bassTop + 8 + (1 - (pitch - scale.low) / span) * (BASS_HEIGHT - 20);
   for (const note of bar.bass) {
     const x = left + 4 + note.x * (width - 8);
     const length = Math.max(3, note.width * (width - 8));
@@ -188,6 +191,9 @@ export function drawSection(
   marked: (bar: PartBar) => string | undefined = () => undefined,
 ) {
   const lineHeight = lineHeightOf(layout);
+  const percussion = hasPercussion(layout);
+  const bassTop = BASS_TOP + (percussion ? PERC_HEIGHT : 0);
+  const lanes: readonly DrumLane[] = percussion ? [...DRUM_LANES, "percussion"] : DRUM_LANES;
   ctx.clearRect(0, 0, width, layout.lines.length * lineHeight);
   const w = barWidth(width);
   layout.lines.forEach((line, row) => {
@@ -198,7 +204,7 @@ export function drawSection(
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillStyle = colours.text;
-    for (const lane of DRUM_LANES) {
+    for (const lane of lanes) {
       const box = laneBox(lane);
       ctx.fillText(LANE_NAMES[lane], GUTTER - 5, top + box.top + box.height / 2);
       ctx.globalAlpha = 0.18;
@@ -212,15 +218,15 @@ export function drawSection(
       const span = Math.max(1, scale.high - scale.low);
       let lastY = Infinity;
       for (const label of scale.labels) {
-        const y = top + BASS_TOP + 8 + (1 - (label.pitch - scale.low) / span) * (BASS_HEIGHT - 20);
+        const y = top + bassTop + 8 + (1 - (label.pitch - scale.low) / span) * (BASS_HEIGHT - 20);
         // Labels run from the bottom up, and one too close to the one below it is left out.
         if (lastY - y < LABEL_SPACING) continue;
         ctx.fillText(noteName(label.pitch), GUTTER - 5, y);
         lastY = y;
       }
-    } else ctx.fillText("Bass", GUTTER - 5, top + BASS_TOP + BASS_HEIGHT / 2);
+    } else ctx.fillText("Bass", GUTTER - 5, top + bassTop + BASS_HEIGHT / 2);
     pitchedLanes(layout).forEach((part, lane) => ctx.fillText(part === "keys" ? "Keys" : "Synth", GUTTER - 5,
-      top + BASS_TOP + BASS_HEIGHT + (lane + 0.5) * KEYS_HEIGHT));
+      top + bassTop + BASS_HEIGHT + (lane + 0.5) * KEYS_HEIGHT));
     line.forEach((bar, column) => drawBar(ctx, bar, GUTTER + column * w, top, w, layout, colours, marked(bar)));
   });
 }

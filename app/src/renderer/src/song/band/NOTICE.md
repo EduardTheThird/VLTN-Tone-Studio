@@ -391,3 +391,17 @@ timing and dynamics. See `app/scripts/groove-data/extract.py` for reproduction.
 The sample pack uses selected root notes and takes. Recordings were retuned using the sample maps,
 resampled to mono 44.1 kHz, trimmed and faded. Some gaps are filled with a retuned nearest recording.
 The organ is generated in code.
+
+## Percussion recordings
+
+[VCSL](https://github.com/sgossner/VCSL) by Sam Gossner and contributors, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+Source commit `c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e`. All paths below are under `Idiophones/Struck Idiophones/`.
+The shipped recordings are trimmed, faded, level-matched and encoded as mono 44.1 kHz FLAC. Takes are grouped and level-matched where the source provides fewer recorded velocity/take combinations.
+
+- tambourine: Tambourine 1/Tamb1_Hit_v1_rr1_Mid.wav, Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav, Tambourine 2/Tamb2_Hit_v1_rr1_Mid.wav, Tambourine 2/Tamb2_Hit_v2_rr2_Mid.wav
+- tambourine-shake: Tambourine 1/Tamb1_Shake_rr1_Mid.wav, Tambourine 1/Tamb1_Shake_rr2_Mid.wav, Tambourine 2/Tamb2_Shake_rr3_Mid.wav, Tambourine 2/Tamb2_Shake_rr4_Mid.wav
+- shaker: Shaker, Large/LShaker_Shake1D_rr2_Mid.wav, Shaker, Large/LShaker_Shake1D_rr3_Mid.wav, Shaker, Small/Mid_ShakerHighFaster_Down_rr1.wav, Shaker, Small/Mid_ShakerHighFaster_Down_rr2.wav, Shaker, Small/Mid_ShakerLowFaster_Down_rr1.wav, Shaker, Small/Mid_ShakerLowFaster_Down_rr2.wav
+- shaker-back: Shaker, Large/LShaker_Shake1U_rr1_Mid.wav, Shaker, Large/LShaker_Shake1U_rr4_Mid.wav, Shaker, Small/Mid_ShakerHighFaster_Up_rr1.wav, Shaker, Small/Mid_ShakerHighFaster_Up_rr2.wav, Shaker, Small/Mid_ShakerLowFaster_Up_rr1.wav, Shaker, Small/Mid_ShakerLowFaster_Up_rr2.wav
+- claps: Claps/Clap_rr1.wav, Claps/Clap_rr2.wav, Claps/Clap_rr3.wav, Claps/Clap_rr4.wav, Claps/Clap_rr5.wav, Claps/Clap_rr6.wav, Claps/SoloClap_vl1.wav, Claps/SoloClap_vl2.wav, Claps/SoloClap_vl4.wav
+- cowbell: Cowbells/Cowbell1_Hit_v2_rr1_Mid.wav, Cowbells/Cowbell1_Hit_v4_rr1_Mid.wav
+- claves: Claves/Claves1_Hit_v1_rr1_Mid.wav, Claves/Claves1_Hit_v3_rr1_Mid.wav

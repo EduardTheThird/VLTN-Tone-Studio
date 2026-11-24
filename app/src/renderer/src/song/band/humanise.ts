@@ -5,7 +5,7 @@
 import type { HumaniseSettings, SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
 import { LOUD_DRUM_SCALE } from "./drums";
-import { CLOSED_HAT, KICK, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
+import { CLOSED_HAT, KICK, OPEN_HAT, PEDAL_HAT, PERCUSSION_PITCHES, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { createRandom, type Random } from "./random";
 import { findStyle } from "./styles";
 import { measuredFeel } from "./styles/measured";
@@ -59,7 +59,7 @@ export const MIN_BASS_DURATION = 0.03;
  * The timing groups. Each drum voice sits in one, and the bass has its own. The hats include the ride. The toms group holds the toms and
  * the crash, and any other drum pitch.
  */
-export type TimingGroup = "kick" | "snare" | "hats" | "toms" | "bass";
+export type TimingGroup = "kick" | "snare" | "hats" | "toms" | "bass" | "perc";
 
 /** Each group's timing shift at each feel, in ms at full amount. Positive is later than the grid. */
 export const FEEL_SHIFT_MS: Record<TimingGroup, Record<GenericFeel, number>> = {
@@ -68,6 +68,7 @@ export const FEEL_SHIFT_MS: Record<TimingGroup, Record<GenericFeel, number>> = {
   hats: { tight: 0, natural: 0, "laid-back": 0, pushed: 0 },
   toms: { tight: 0, natural: 0, "laid-back": 0, pushed: 0 },
   bass: { tight: 0, natural: 0, "laid-back": 6, pushed: -4 },
+  perc: { tight: 0, natural: 3, "laid-back": 6, pushed: 1 },
 };
 
 /**
@@ -80,6 +81,7 @@ export const FEEL_SPREAD_MS: Record<TimingGroup, Record<GenericFeel, number>> = 
   hats: { tight: 2, natural: 4, "laid-back": 6, pushed: 4 },
   toms: { tight: 3, natural: 3, "laid-back": 3, pushed: 3 },
   bass: { tight: 1, natural: 3, "laid-back": 3, pushed: 3 },
+  perc: { tight: 0, natural: 2, "laid-back": 2, pushed: 2 },
 };
 
 /** The General MIDI hats the velocity rules treat as hats. The ride takes the hats' timing but not their accents. */
@@ -87,6 +89,7 @@ const HAT_PITCHES: readonly number[] = [CLOSED_HAT, PEDAL_HAT, OPEN_HAT];
 
 /** The timing group of a drum pitch. */
 function groupOf(pitch: number): TimingGroup {
+  if (PERCUSSION_PITCHES.includes(pitch)) return "perc";
   if (pitch === KICK) return "kick";
   if (pitch === SNARE || pitch === SIDE_STICK) return "snare";
   if (pitch === CLOSED_HAT || pitch === PEDAL_HAT || pitch === OPEN_HAT || pitch === RIDE) return "hats";
@@ -202,7 +205,7 @@ function accentOf(note: NoteEvent, grid: BeatGrid, inRun: boolean, weakSixteenth
   return accent;
 }
 
-function templateAt(grid: BeatGrid, time: number, style: NonNullable<ReturnType<typeof findStyle>>, group: Exclude<TimingGroup, "bass">) {
+function templateAt(grid: BeatGrid, time: number, style: NonNullable<ReturnType<typeof findStyle>>, group: Exclude<TimingGroup, "bass" | "perc">) {
   const beat = beatAtOrBefore(grid.beats, time);
   if (beat < 0) return undefined;
   const span = beatSpan(grid.beats, beat);
@@ -248,7 +251,7 @@ export function humanise(
     const group: TimingGroup = part === "bass" ? "bass" : groupOf(note.pitch);
     // Every note draws the same numbers whatever the amount, so the amount only scales how far each one moves.
     const learned = part === "drums" && learnedSections?.has(planIndex);
-    const template = engine >= 4 && style && group !== "bass" && !learned && (settings.feel === "style" || requestedFeel === "drummer")
+    const template = engine >= 4 && style && group !== "bass" && group !== "perc" && !learned && (settings.feel === "style" || requestedFeel === "drummer")
       ? templateAt(grid, note.time, style, group)
       : undefined;
     const draw = gaussian(random);

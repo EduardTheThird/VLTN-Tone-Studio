@@ -4,6 +4,13 @@
   "kits": {
     "standard": {
       "name": "Standard",
+      "percussion": {
+        "39": {"name": "claps", "layers": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/claps-44-1.flac", "percussion/claps-44-2.flac", "percussion/claps-44-3.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/claps-76-1.flac", "percussion/claps-76-2.flac", "percussion/claps-76-3.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/claps-106-1.flac", "percussion/claps-106-2.flac", "percussion/claps-106-3.flac"]}]},
+        "54": {"name": "tambourine", "layers": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/tambourine-44-1.flac", "percussion/tambourine-44-2.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/tambourine-76-1.flac", "percussion/tambourine-76-2.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/tambourine-106-1.flac", "percussion/tambourine-106-2.flac"]}], "strokes": {"shake": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/tambourine-shake-44-1.flac", "percussion/tambourine-shake-44-2.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/tambourine-shake-76-1.flac", "percussion/tambourine-shake-76-2.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/tambourine-shake-106-1.flac", "percussion/tambourine-shake-106-2.flac"]}]}},
+        "56": {"name": "cowbell", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/cowbell-51-1.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/cowbell-98-1.flac"]}]},
+        "70": {"name": "shaker", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/shaker-51-1.flac", "percussion/shaker-51-2.flac", "percussion/shaker-51-3.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/shaker-98-1.flac", "percussion/shaker-98-2.flac", "percussion/shaker-98-3.flac"]}], "strokes": {"back": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/shaker-back-51-1.flac", "percussion/shaker-back-51-2.flac", "percussion/shaker-back-51-3.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/shaker-back-98-1.flac", "percussion/shaker-back-98-2.flac", "percussion/shaker-back-98-3.flac"]}]}},
+        "75": {"name": "claves", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/claves-51-1.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/claves-98-1.flac"]}]}
+      },
       "drums": {
         "36": {
           "name": "kick",
@@ -612,6 +619,13 @@
       "voicing": {
         "kickThump": true,
         "snareShelfDb": 4
+      },
+      "percussion": {
+        "39": {"name": "claps", "layers": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/claps-44-1.flac", "percussion/claps-44-2.flac", "percussion/claps-44-3.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/claps-76-1.flac", "percussion/claps-76-2.flac", "percussion/claps-76-3.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/claps-106-1.flac", "percussion/claps-106-2.flac", "percussion/claps-106-3.flac"]}]},
+        "54": {"name": "tambourine", "layers": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/tambourine-44-1.flac", "percussion/tambourine-44-2.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/tambourine-76-1.flac", "percussion/tambourine-76-2.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/tambourine-106-1.flac", "percussion/tambourine-106-2.flac"]}], "strokes": {"shake": [{"velocity": [1, 60], "nominal": 44, "files": ["percussion/tambourine-shake-44-1.flac", "percussion/tambourine-shake-44-2.flac"]}, {"velocity": [61, 90], "nominal": 76, "files": ["percussion/tambourine-shake-76-1.flac", "percussion/tambourine-shake-76-2.flac"]}, {"velocity": [91, 127], "nominal": 106, "files": ["percussion/tambourine-shake-106-1.flac", "percussion/tambourine-shake-106-2.flac"]}]}},
+        "56": {"name": "cowbell", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/cowbell-51-1.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/cowbell-98-1.flac"]}]},
+        "70": {"name": "shaker", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/shaker-51-1.flac", "percussion/shaker-51-2.flac", "percussion/shaker-51-3.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/shaker-98-1.flac", "percussion/shaker-98-2.flac", "percussion/shaker-98-3.flac"]}], "strokes": {"back": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/shaker-back-51-1.flac", "percussion/shaker-back-51-2.flac", "percussion/shaker-back-51-3.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/shaker-back-98-1.flac", "percussion/shaker-back-98-2.flac", "percussion/shaker-back-98-3.flac"]}]}},
+        "75": {"name": "claves", "layers": [{"velocity": [1, 74], "nominal": 51, "files": ["percussion/claves-51-1.flac"]}, {"velocity": [75, 127], "nominal": 98, "files": ["percussion/claves-98-1.flac"]}]}
       },
       "drums": {
         "36": {
