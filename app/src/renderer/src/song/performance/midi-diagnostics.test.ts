@@ -35,3 +35,18 @@ it("keeps quarter frames out of the recent list, which is for notes and commands
   expect(useMidiDiagnostics.getState().queued).toBe(1);
   expect(useMidiDiagnostics.getState().recent).toEqual([]);
 });
+
+it("tracks effective clock tempo ranges separately for each song", () => {
+  const diagnostics = useMidiDiagnostics.getState();
+  diagnostics.reset();
+  diagnostics.recordClockTempo("first", 120);
+  diagnostics.recordClockTempo("first", 111);
+  diagnostics.recordClockTempo("second", 92);
+  diagnostics.recordClockTempo("first", 128);
+  expect([...useMidiDiagnostics.getState().clockTempo]).toEqual([
+    ["first", { min: 111, max: 128 }],
+    ["second", { min: 92, max: 92 }],
+  ]);
+  diagnostics.reset();
+  expect(useMidiDiagnostics.getState().clockTempo.size).toBe(0);
+});

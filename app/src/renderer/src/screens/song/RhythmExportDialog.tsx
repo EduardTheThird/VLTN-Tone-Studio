@@ -1,3 +1,4 @@
+import { clockSource, openingBeatTempo } from "@/song/performance/beat-clock";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -42,9 +43,12 @@ interface RhythmExportDialogProps {
 export function RhythmExportDialog({ snapshot, songKey, disabled, onClose }: RhythmExportDialogProps) {
   const device = useRc10rDevice(!!host.rc10r);
   const [setup, setSetup] = useState(() => {
-    const setup = parseRhythmSetup(readOptions<Record<string, unknown>>(songKey, {}).rhythmExport, snapshot);
+    const options = readOptions<Record<string, unknown>>(songKey, {});
+    const setup = parseRhythmSetup(options.rhythmExport, snapshot);
     const plan = currentRhythmAutomation({ key: songKey, title: snapshot.name, duration: snapshot.duration, settings: readSettings(songKey) });
-    if (plan) setup.bpm = plan.draft.bpm / RHYTHM_METERS[setup.meter].quarters;
+    const beatTempo = clockSource(options.clockFollows, false) === "beats" ? openingBeatTempo(snapshot.grid) : null;
+    if (beatTempo !== null) setup.bpm = beatTempo;
+    else if (plan) setup.bpm = plan.draft.bpm / RHYTHM_METERS[setup.meter].quarters;
     return setup;
   });
   const [message, setMessage] = useState("");

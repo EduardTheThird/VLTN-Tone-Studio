@@ -1092,3 +1092,13 @@ it("validates canonical saved-track metadata without materializing sample arrays
   expect(loaded.source).toBe(pcm);
   expect(getChannelData).not.toHaveBeenCalled();
 });
+
+it.each([undefined, "tempo"])("defaults new songs with a beat grid to beats while saving an explicit %s choice", async (clockFollows) => {
+  const source = { name: "drifting.wav", audio };
+  useSong.setState({ source });
+  setSetting(performanceKey(source), ":options", JSON.stringify({ clockFollows, beatGrid: { beats: [0, 0.5, 1.01], beatsPerBar: 4, downbeat: 0 } }));
+  await useSongLibrary.getState().save("Drifting", "");
+  const [metadata] = api.save.mock.calls[0];
+  expect(JSON.parse(metadata.settings[":options"]).clockFollows).toBe(clockFollows ?? "beats");
+  expect(JSON.parse(getSetting(performanceKey(useSong.getState().source), ":options")).clockFollows).toBe(clockFollows ?? "beats");
+});

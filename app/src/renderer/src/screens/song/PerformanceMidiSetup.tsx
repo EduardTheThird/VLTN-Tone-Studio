@@ -68,6 +68,7 @@ export function SessionMidiHealth({
   );
   return (
     <MidiHealth
+      songKey={session.songSettingsKey}
       cues={cues}
       sections={sections}
       duration={player?.length ?? 0}

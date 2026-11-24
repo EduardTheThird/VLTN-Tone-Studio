@@ -4,6 +4,9 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+- The MIDI clock can follow the song’s real beats, so pedals that sync to it stay with songs that speed up or slow down.
+
 ## [0.9.52] — 2026-11-23
 
 ### Added

@@ -1,3 +1,4 @@
+import { CLOCK_PPQN } from "./beat-clock";
 import { StemPlayer } from "@/song/stems/player";
 import { useSongLibrary } from "@/song/library";
 import { setStageBusy } from "@/state/stage-activity";
@@ -263,7 +264,7 @@ export class SessionEffects {
   /** The MIDI scheduler itself. */
   private schedulerEffect(): Effect {
     return {
-      deps: (s) => [s.playing, s.player, selectArmed(s), selectOutput(s), s.clock, s.bpm, this.core.playCues(s), s.timecode],
+      deps: (s) => [s.playing, s.player, selectArmed(s), selectOutput(s), s.clock, s.bpm, this.core.playCues(s), s.timecode, s.clockGrid, s.rhythmTempo],
       run: (s) => this.runScheduler(s),
     };
   }
@@ -410,6 +411,8 @@ export class SessionEffects {
       const offset = timecodeOffsetFrames(s.timecode);
       const timecodeTail = this.core.incomingTail;
       this.core.incomingTail = null;
+      const songKey = this.core.songSettingsKey;
+      let lastPulse: number | undefined;
       const handle = startMidiScheduler(
         {
           cues: this.core.playCues(s),
@@ -422,6 +425,7 @@ export class SessionEffects {
           bpm: s.rhythmTempo ?? s.bpm,
           rate,
           clock: s.clock && offset === null,
+          clockGrid: s.clockGrid ?? undefined,
           timecode: offset === null ? undefined : { fps: s.timecode.fps, offset },
           timecodeTail: timecodeTail ?? undefined,
           tempo: this.core.startTempo,
@@ -435,6 +439,11 @@ export class SessionEffects {
           // A replaced output object (same port id) is never sent to; the statechange handler disarms.
           if (this.core.output !== output) return;
           this.core.sendPerformance(message.bytes, message.due - performance.timeOrigin, message.label);
+          if (message.bytes[0] === 248) {
+            const length = lastPulse === undefined ? 0 : message.due - lastPulse;
+            if (length > 0) useMidiDiagnostics.getState().recordClockTempo(songKey, Math.round(600_000 / (CLOCK_PPQN * length)) / 10);
+            lastPulse = message.due;
+          }
         },
         fault,
         this.core.readyWorker ?? undefined,

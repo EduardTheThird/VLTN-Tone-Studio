@@ -207,6 +207,7 @@ export class PerformanceSession {
       armedOutput: carried?.armed && carried.output === first && first?.state === "connected" ? first : null,
       armedByPreference: false,
       clock: options.initialClock,
+      clockGrid: null,
       midiStatus: "",
       error: "",
       lateNotice: null,
@@ -449,6 +450,7 @@ export class PerformanceSession {
         this.state.preparing &&
         ((inputs.cues !== undefined && inputs.cues !== this.state.cues) ||
           (inputs.bpm !== undefined && inputs.bpm !== this.state.bpm) ||
+          (inputs.clockGrid !== undefined && inputs.clockGrid !== this.state.clockGrid) ||
           (inputs.rhythmTempo !== undefined && inputs.rhythmTempo !== this.state.rhythmTempo) ||
           (inputs.preparationSettings !== undefined && JSON.stringify(inputs.preparationSettings) !== JSON.stringify(this.state.preparationSettings)) ||
           (inputs.timecode !== undefined && JSON.stringify(inputs.timecode) !== JSON.stringify(this.state.timecode)) ||

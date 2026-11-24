@@ -18,10 +18,12 @@ const empty = () => ({
   dropped: 0,
   droppedMessages: [] as MidiTimingEvent[],
   resyncs: 0,
+  clockTempo: new Map<string, { min: number; max: number }>(),
 });
 export const useMidiDiagnostics = create<
   ReturnType<typeof empty> & {
     record: (event: MidiTimingEvent) => void;
+    recordClockTempo: (songKey: string, bpm: number) => void;
     drop: (events: MidiTimingEvent[]) => void;
     resync: () => void;
     fault: (error: string) => void;
@@ -39,6 +41,15 @@ export const useMidiDiagnostics = create<
           ? s.recent
           : [{ ...event, bytes: event.bytes.slice(0, 32), byteCount: event.bytes.length }, ...s.recent].slice(0, 30),
     }));
+  },
+  recordClockTempo(songKey, bpm) {
+    set((s) => {
+      const previous = s.clockTempo.get(songKey);
+      if (previous && bpm >= previous.min && bpm <= previous.max) return s;
+      const clockTempo = new Map(s.clockTempo);
+      clockTempo.set(songKey, { min: Math.min(bpm, previous?.min ?? bpm), max: Math.max(bpm, previous?.max ?? bpm) });
+      return { clockTempo };
+    });
   },
   drop(events) {
     set((s) => ({

@@ -855,3 +855,83 @@ it("does not emit a cancelled jump's future opening", () => {
   f.schedule.tick(4930);
   expect(f.messages().filter((m) => m.due === 5000)).toHaveLength(0);
 });
+
+describe("beat-grid MIDI clock", () => {
+  const grid = { beats: [0, 0.5, 1, 1.45, 1.9, 2.35, 2.8, 3.25], beatsPerBar: 4, downbeat: 0 };
+  const clockConfig = { clock: true, clockGrid: grid, cues: [] };
+  const pulses = (f: ReturnType<typeof fixture>) => f.messages().filter((message) => message.bytes[0] === 248).map((message) => message.due);
+
+  it.each([1, 0.8])("lands every 24th pulse on the recorded beat at rate %s", (rate) => {
+    const f = fixture({ ...clockConfig, rate, duration: 4 });
+    for (let t = 1000; t < 4800 / rate; t += 20) {
+      f.schedule.sync(((t - 1000) * rate) / 1000, t, t);
+      f.schedule.tick(t);
+    }
+    const due = pulses(f);
+    grid.beats.forEach((beat, i) => expect(due[i * 24]).toBeCloseTo(1000 + (beat * 1000) / rate, 5));
+    expect(due[11] - due[10]).toBeCloseTo(500 / 24 / rate, 5);
+    expect(due[110] - due[109]).toBeCloseTo(450 / 24 / rate, 5);
+  });
+
+  it("uses a steady extension during the count-in and after the final beat", () => {
+    const f = fixture({ clock: true, clockGrid: { ...grid, beats: [0.5, 1, 1.5] }, cues: [], tempoAt: 500, origin: 1500, duration: 2 });
+    for (let t = 500; t < 3500; t += 20) {
+      f.schedule.sync((t - 1500) / 1000, t, t);
+      f.schedule.tick(t);
+    }
+    expect(pulses(f)).toHaveLength(144);
+    pulses(f).forEach((time, i) => expect(time).toBeCloseTo(500 + (i * 500) / 24, 5));
+  });
+
+  it("starts midway through the beat on a seek and takes the loop destination without emitting song position", () => {
+    const steady = { ...grid, beats: Array.from({ length: 14 }, (_, i) => i * 0.5) };
+    const f = fixture({ ...clockConfig, clockGrid: steady, position: 5.25, origin: -4250, duration: 6.5 });
+    f.schedule.plan(6, { at: 1750, position: 5.25 }, 1000);
+    for (let t = 1000; t < 2250; t += 10) {
+      f.schedule.tick(t);
+      f.schedule.sync((t - (t < 1750 ? -4250 : -3500)) / 1000, t, t);
+    }
+    expect(pulses(f)[0]).toBe(1000);
+    expect(pulses(f)[36]).toBe(1750);
+    expect(pulses(f)[37]).toBeCloseTo(1750 + 500 / 24, 5);
+    expect(f.messages().every((message) => message.bytes[0] === 248)).toBe(true);
+  });
+
+  it("limits abrupt pulse changes for an isolated outlier while still reaching each exact beat", () => {
+    const beats = [0, 0.5, 1, 1.85, 2.35, 2.85];
+    const f = fixture({ ...clockConfig, clockGrid: { ...grid, beats }, duration: 3 });
+    for (let t = 1000; t < 4000; t += 20) {
+      f.schedule.sync((t - 1000) / 1000, t, t);
+      f.schedule.tick(t);
+    }
+    const due = pulses(f);
+    for (let i = 2; i < due.length; i++) {
+      const ratio = (due[i] - due[i - 1]) / (due[i - 1] - due[i - 2]);
+      expect(ratio).toBeGreaterThanOrEqual(0.92 - 1e-8);
+      expect(ratio).toBeLessThanOrEqual(1.08 + 1e-8);
+    }
+    beats.forEach((beat, i) => expect(due[i * 24]).toBeCloseTo(1000 + beat * 1000, 5));
+  });
+
+  it("falls back to written tempo when the grid has no interval", () => {
+    const f = fixture({ ...clockConfig, clockGrid: { ...grid, beats: [0.2] } });
+    f.schedule.tick(1000);
+    expect(pulses(f)[0]).toBe(1000);
+    expect(pulses(f)[1]).toBeCloseTo(1000 + 500 / 24, 5);
+  });
+});
+
+it("timestamps the destination pulse in advance and uses the new speed at the swap", () => {
+  const f = fixture({ cues: [], duration: 4, clock: true, clockGrid: { beats: [0, 0.5, 1, 1.5, 2, 2.5], downbeat: 0, beatsPerBar: 4 } });
+  f.schedule.plan(1, { at: 2000, position: 1, rate: 0.8, keepsPosition: true }, 1000);
+  for (let t = 1000; t <= 1920; t += 20) {
+    f.schedule.sync((t - 1000) / 1000, t, t);
+    f.schedule.tick(t);
+  }
+  const destination = f.messages().filter((message) => message.due >= 2000).map((message) => message.due);
+  expect(destination).toHaveLength(2);
+  expect(destination[0]).toBe(2000);
+  expect(destination[1]).toBeCloseTo(2000 + 500 / 24 / 0.8, 5);
+  f.schedule.tick(2000);
+  expect(f.messages().filter((message) => message.due === 2000)).toHaveLength(1);
+});

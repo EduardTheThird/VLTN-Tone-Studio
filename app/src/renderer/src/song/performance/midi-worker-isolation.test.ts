@@ -9,11 +9,12 @@ const toJs = (source: string) => transformSync(source, { loader: "ts", format: "
 
 async function createSchedulerWorker() {
   const engine = toJs(await readFile(new URL("./midi-scheduler.ts", import.meta.url), "utf8")).replace(
-    /import[^;]+from ['"]\.\/(midi-chase|midi-pedal-order|speed|timecode)['"];?/g,
+    /import[^;]+from ['"]\.\/(beat-clock|midi-chase|midi-pedal-order|speed|timecode)['"];?/g,
     "",
   );
   const chase = toJs(await readFile(new URL("./midi-chase.ts", import.meta.url), "utf8")).replace(/import[^;]+from ['"]\.\/chart['"];?/, "");
-  // These have no imports; the scheduler reads their clamp, frame encoding and pedal order, so the worker needs them too.
+  // The scheduler needs these pure timing and routing modules in the worker too.
+  const beatClock = toJs(await readFile(new URL("./beat-clock.ts", import.meta.url), "utf8"));
   const pedalOrder = toJs(await readFile(new URL("./midi-pedal-order.ts", import.meta.url), "utf8"));
   const speed = toJs(await readFile(new URL("./speed.ts", import.meta.url), "utf8"));
   const timecode = toJs(await readFile(new URL("./timecode.ts", import.meta.url), "utf8"));
@@ -25,6 +26,7 @@ async function createSchedulerWorker() {
     "import {parentPort} from 'node:worker_threads';",
     "const self={postMessage:reply=>parentPort.postMessage({reply,at:performance.timeOrigin+performance.now()})};",
     "parentPort.on('message',data=>{if(data.testDelay)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,data.testDelay);self.onmessage({data});});",
+    beatClock,
     chase,
     pedalOrder,
     speed,

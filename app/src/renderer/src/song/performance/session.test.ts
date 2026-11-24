@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StemPlayer } from "@/song/stems/player";
 import type { Stems } from "@/song/types";
-import type { MidiSchedule } from "./midi-scheduler";
+import type { MidiSchedule, SchedulerConfig } from "./midi-scheduler";
 import { PerformanceSession, carriedInto, selectArmed, type SessionInputs } from "./session";
 import { SONG_TRIGGER_DEFAULTS, type SongTriggerSettings } from "./song-triggers";
 import { usePracticeMute } from "./practice-mute";
@@ -44,15 +44,7 @@ const mocks = vi.hoisted(() => ({
   exitAt: null as number | null,
   exitCancels: 0,
   applied: [] as unknown[],
-  configs: [] as {
-    prepared?: { position: number; messages: number[][] };
-    bpm?: number;
-    rate?: number;
-    clock?: boolean;
-    tempo: number[][] | null;
-    playTriggers?: number[][];
-    timecode?: { fps: number; offset: number };
-  }[],
+  configs: [] as SchedulerConfig[],
   swapAt: 2.5,
   swapWhen: 2.6,
   faults: [] as ((message: string) => void)[],
@@ -3203,4 +3195,19 @@ it("does not clear the replacement song when an older load cleanup runs later", 
   expect(mocks.applied).toHaveLength(1);
   nextUnload();
   session.dispose();
+});
+
+it("sets the opening pedal tempo from the beat grid at the song’s actual playback rate", async () => {
+  const clockGrid = { beats: Array.from({ length: 13 }, (_, i) => i * 0.4), downbeat: 0, beatsPerBar: 4 };
+  const { session, unload } = armedSession(output(), { tempoOnStart: true, bpm: 100, tempoChannel: 16, clockGrid });
+  try {
+    expect(session.tempoMessages(true, session.output, 0.8)).toEqual([[0xbf, 73, 0], [0xbf, 74, 120]]);
+    await session.play();
+    expect(mocks.configs.at(-1)?.clockGrid).toEqual(clockGrid);
+    expect(mocks.configs.at(-1)?.tempo).toEqual([[0xbf, 73, 1], [0xbf, 74, 22]]);
+  } finally {
+    session.pause();
+    unload();
+    session.dispose();
+  }
 });

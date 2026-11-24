@@ -1,3 +1,5 @@
+import { clockSource, usableClockGrid, type ClockSource } from "@/song/performance/beat-clock";
+import { parseBeatGrid } from "@/song/band/beat-grid";
 import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -180,6 +182,19 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       }),
     [key],
   );
+  const clockOptions = useMemo(() => readOptions<{ clockFollows?: unknown; beatGrid?: unknown }>(key, {}), [key, settingsVersion]);
+  const gridJson = JSON.stringify(clockOptions.beatGrid ?? null);
+  const grid = useMemo(() => parseBeatGrid(JSON.parse(gridJson)), [gridJson]);
+  const clockFollows = clockSource(clockOptions.clockFollows, !!source && !source.libraryId);
+  const clockHasBeats = usableClockGrid(grid);
+  const clockGrid = clockFollows === "beats" && clockHasBeats ? grid : null;
+  const saveClockSource = (choice: ClockSource) => {
+    try {
+      setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), clockFollows: choice }));
+    } catch (e) {
+      session.fail(e);
+    }
+  };
   // Sections are part of the song; their live changes are not saved (see sections.ts).
   const [sectionList, setSectionList] = useState<Section[]>(() => parseSections(options.sections));
   // The sections the song analysis suggested most recently. They are applied only to a song with no sections; otherwise the editor offers them.
@@ -375,6 +390,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           parseError: parsed.error,
           bpm,
           rhythmTempo: parsed.rhythmTempo,
+          clockGrid,
           preparationSettings: beforeSong,
           sections: sectionList,
           bindings: midiConfig.bindings,
@@ -486,6 +502,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       parseError: parsed.error,
       bpm,
       rhythmTempo: parsed.rhythmTempo,
+      clockGrid,
       preparationSettings: beforeSong,
       timing,
       sections: sectionList,
@@ -819,6 +836,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
                   onSoundDefaults: setSoundDefault,
                 }}
                 onTap={tap}
+                clockSource={{ choice: clockFollows, hasBeats: clockHasBeats, onChange: saveClockSource }}
                 drumsChip={drumsChip}
               />
             </ScreenBoundary>

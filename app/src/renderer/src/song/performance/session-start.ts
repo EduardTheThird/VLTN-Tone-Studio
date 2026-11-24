@@ -1,3 +1,4 @@
+import { openingBeatTempo } from "./beat-clock";
 import { pedalTempoMessages } from "./pedal-tempo";
 import { preparationSequence, type PreparationSequence } from "./preparation-sequence";
 import { effectiveBpm } from "./speed";
@@ -39,6 +40,7 @@ export class SessionStart {
       parseError: state.parseError,
       bpm: state.bpm,
       rhythmTempo: state.rhythmTempo,
+      clockTempo: openingBeatTempo(state.clockGrid),
       preparation: state.preparationSettings,
       timing: state.timing,
       tempo: state.tempoOnStart,
@@ -324,8 +326,8 @@ export class SessionStart {
   }
 
   private configuredTempoMessages(rate = this.core.state.player?.playbackRate ?? 1): number[][] {
-    const { tempoChannel, bpm } = this.core.state;
-    const tempoBpm = effectiveBpm(this.core.state.rhythmTempo ?? bpm, rate);
+    const { tempoChannel, bpm, rhythmTempo, clockGrid } = this.core.state;
+    const tempoBpm = effectiveBpm(openingBeatTempo(clockGrid) ?? rhythmTempo ?? bpm, rate);
     return pedalTempoMessages(tempoBpm, tempoChannel);
   }
 

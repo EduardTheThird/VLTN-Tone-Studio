@@ -207,3 +207,14 @@ it("does not mark a file current when musical inputs change while the save dialo
   await screen.findByText("Saved the RC0 rhythm, MIDI and import guide.");
   expect(screen.getByText("RC-10R rhythm: Needs export.")).toBeTruthy();
 });
+
+it("starts a new RC-10R transfer at the opening two-bar beat tempo", () => {
+  const setup = completeSetup();
+  mocks.native = {};
+  mocks.device.connected = true;
+  const grid = { ...snapshot.grid, beats: snapshot.grid.beats.map((beat, i) => (i <= 8 ? i * 0.45 : beat - 0.4)) };
+  localStorage.setItem(`${key}:options`, JSON.stringify({ clockFollows: "beats", rhythmExport: setup }));
+  render(<RhythmExportDialog snapshot={{ ...snapshot, grid }} songKey={key} disabled={false} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: /send to RC-10R/i }));
+  expect(readRc10rRecord(mocks.nativeRecord!)).toMatchObject({ bpm: 133 });
+});

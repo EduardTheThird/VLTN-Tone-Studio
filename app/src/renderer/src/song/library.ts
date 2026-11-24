@@ -1,3 +1,5 @@
+import { clockSource, usableClockGrid } from "./performance/beat-clock";
+import { parseBeatGrid } from "./band/beat-grid";
 import { pcmMemoryShape } from "./audio/playback-pcm";
 import { create } from "zustand";
 import { clearResumePoint } from "./performance/resume-point";
@@ -54,6 +56,7 @@ import {
   forgetSettings,
   migrateLocalSettings,
   performanceKey,
+  readOptions,
   readSettings,
   seedSettings,
   writeSettings,
@@ -760,6 +763,17 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       const carried = unread.filter((track) => !heldKeys.has(trackKey(track)));
       audioInfo.unshift(...carried.filter((track) => trackKindOf(track) === "source"));
       audioInfo.push(...carried.filter((track) => trackKindOf(track) !== "source"));
+      const settingsForSave = () => {
+        const key = performanceKey(source);
+        const settings = readSettings(key);
+        if (!source.libraryId) {
+          const options = readOptions<Record<string, unknown>>(key, {});
+          if (usableClockGrid(parseBeatGrid(options.beatGrid))) {
+            settings[":options"] = JSON.stringify({ ...options, clockFollows: clockSource(options.clockFollows, true) });
+          }
+        }
+        return settings;
+      };
       const song: LibrarySong = {
         id,
         title: title.trim() || source.name,
@@ -767,7 +781,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         sourceName: source.name,
         duration: unreadSource ? unreadSource.frames / unreadSource.sampleRate : source.audio.channels[0].length / source.audio.sampleRate,
         audio: audioInfo,
-        settings: readSettings(performanceKey(source)),
+        settings: settingsForSave(),
         updated: new Date().toISOString(),
       };
       set({ saveStep: "Writing files…" });
@@ -784,7 +798,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const saved = { ...source, libraryId: id };
         // Background transcription/key analysis can finish while audio is being copied.
         // Promote the latest settings, not the snapshot taken before the async save.
-        const latest = readSettings(performanceKey(source));
+        const latest = settingsForSave();
         if (freshBand && sameBandInputs(latest, song.settings)) {
           latest[":options"] = JSON.stringify({ ...JSON.parse(latest[":options"] || "{}"), bandOutOfDate: false, bandTempoChanged: false });
         }

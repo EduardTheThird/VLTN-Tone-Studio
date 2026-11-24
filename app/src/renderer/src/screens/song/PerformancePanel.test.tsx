@@ -1165,3 +1165,17 @@ it("previews automatic/custom command order and total waits without sending, and
   expect(preview.getByText(/Configured preparation time/).textContent).toContain("1.4 s");
   expect(mocks.send).not.toHaveBeenCalled();
 });
+
+it("enables the clock source when beats are detected and remembers a written-tempo choice", async () => {
+  const key = "vltn.performance.v1:clock-test.wav:44100:44100";
+  render(<PerformancePanel />);
+  const choice = screen.getByRole<HTMLSelectElement>("combobox", { name: /clock follows/i });
+  expect(choice.disabled).toBe(true);
+  expect(screen.getByText("Generate the band or detect beats first.")).toBeTruthy();
+  act(() => setSetting(key, ":options", JSON.stringify({ beatGrid: { beats: [0, 0.5, 1.01], beatsPerBar: 4, downbeat: 0 } })));
+  expect(choice.disabled).toBe(false);
+  expect(choice.value).toBe("beats");
+  fireEvent.change(choice, { target: { value: "tempo" } });
+  expect(choice.value).toBe("tempo");
+  expect(JSON.parse(localStorage.getItem(key + ":options") ?? "{}").clockFollows).toBe("tempo");
+});

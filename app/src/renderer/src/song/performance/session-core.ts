@@ -1,3 +1,4 @@
+import type { ClockGrid } from "./beat-clock";
 import type { PreparationSequence } from "./preparation-sequence";
 import { StemPlayer } from "@/song/stems/player";
 import type { SpeedSettings } from "./speed";
@@ -64,6 +65,8 @@ export interface SessionState {
   /** Whether the session armed itself from the remembered Send cues preference, rather than the user arming it just now. */
   armedByPreference: boolean;
   clock: boolean;
+  /** A usable grid when the song follows its beats. */
+  clockGrid: ClockGrid | null;
   midiStatus: string;
   error: string;
   lateNotice: LateNotice | null;
@@ -112,7 +115,7 @@ export type SessionInputs = Pick<
   SessionState,
   "bluetooth" | "tempoOnStart" | "tempoChannel" | "savedOutput" | "savedInput" | "queued" | "playlistPlaying" | "busy" | "cues" | "parseError" | "bpm"
 > &
-  Partial<Pick<SessionState, "timing" | "sections" | "bindings" | "timecode" | "rhythmTempo" | "preparationSettings">>;
+  Partial<Pick<SessionState, "timing" | "sections" | "bindings" | "timecode" | "rhythmTempo" | "preparationSettings" | "clockGrid">>;
 
 /** The actions the session carries out itself: transport, songs, sections and arming. The screen supplies the rest (see `setView`). */
 export type SessionHost = Omit<ActionHost, keyof ViewHost>;

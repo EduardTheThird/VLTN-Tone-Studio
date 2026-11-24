@@ -1,3 +1,4 @@
+import { BeatClock, usableClockGrid, type ClockGrid } from "./beat-clock";
 import type { Cue } from "./chart";
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, settledAt, type TriggerCc } from "./midi-chase";
 import { orderForPedal } from "./midi-pedal-order";
@@ -43,6 +44,8 @@ export interface SchedulerConfig {
   /** Playback rate (see speed.ts). A song second takes 1 / rate of clock time. Defaults to 1. */
   rate?: number;
   clock: boolean;
+  /** The selected beat clock grid. Omitted when the song uses written tempo. */
+  clockGrid?: ClockGrid;
   tempo: number[][] | null;
   /**
    * Clock time (the same clock as `origin`) the start tempo and play trigger are due: the start of the count-in. A start from the middle of a
@@ -175,6 +178,10 @@ export function lateAction(bytes: number[]): "send" | "drop" | "ignore" {
 export class MidiSchedule {
   private next: number;
   private pulse: number;
+  private readonly beatClock: BeatClock | null;
+  /** Grid index of the next pulse. Jumps map it to the destination without resetting the receiving transport. */
+  private gridPulse = 0;
+  private gridJump: { at: number; position: number; rate: number; next: number } | null = null;
   /**
    * Where the clock pulses are anchored: pulse `index` is due at `time`. It stays put across a jump, so the 24-pulse clock never gaps
    * or bursts. A jump that changes the rate re-anchors it at the swap, so the spacing changes there and nowhere else.
@@ -235,6 +242,11 @@ export class MidiSchedule {
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
     this.pulseAnchor = { time: config.origin, index: 0 };
+    this.beatClock = config.clock && usableClockGrid(config.clockGrid) ? new BeatClock(config.clockGrid.beats) : null;
+    if (this.beatClock) {
+      const firstPosition = config.tempoAt === undefined ? config.position : ((config.tempoAt - config.origin) / 1000) * this.rate;
+      this.gridPulse = this.beatClock.next(firstPosition);
+    }
     this.lastTick = now;
     this.heartbeat = this.clockAt(config.position);
     this.lastPosition = config.position;
@@ -281,6 +293,8 @@ export class MidiSchedule {
     if (this.stopped) return;
     if (this.pendingJump && now >= this.pendingJump.at) this.jump();
     if (!jump || jump.at !== this.jumpOpening?.at || jump.position !== this.jumpOpening?.position) this.jumpOpening = null;
+    if (jump?.at !== this.gridJump?.at || jump?.position !== this.gridJump?.position || clampRate(jump?.rate ?? this.rate) !== this.gridJump?.rate)
+      this.gridJump = null;
     this.cap = cap ?? Infinity;
     this.pendingJump = jump;
   }
@@ -375,12 +389,13 @@ export class MidiSchedule {
     // A new rate re-anchors the clock on the last pulse already sent, so the spacing changes after it. Pulses sent in the lookahead
     // keep the old spacing, and none is sent twice or bunched up.
     if (jump.rate !== undefined && clampRate(jump.rate) !== this.rate) {
-      const last = this.pulseDue(this.pulse - 1);
+      if (!this.beatClock) this.pulseAnchor = { time: this.pulseDue(this.pulse - 1), index: this.pulse - 1 };
       this.rate = clampRate(jump.rate);
-      this.pulseAnchor = { time: last, index: this.pulse - 1 };
     }
     this.config.origin = jump.at - (jump.position * 1000) / this.rate;
     this.config.position = jump.position;
+    if (this.beatClock) this.gridPulse = this.gridJump?.next ?? this.beatClock.next(jump.position);
+    this.gridJump = null;
     // Keeping the position keeps the cursor too: a cue on the swap's own beat was already sent before the swap, and must not go out twice.
     if (!jump.keepsPosition) this.next = this.cursorAt(jump.position);
     this.cap = Infinity;
@@ -453,6 +468,29 @@ export class MidiSchedule {
   private pulseDue(k: number): number {
     return this.pulseAnchor.time + (((k - this.pulseAnchor.index) / 24) * 60 * 1000) / (this.config.bpm * this.rate);
   }
+  /** Queue the beat clock on both sides of an irreversible jump, using each side's position and rate. */
+  private gridPulses(now: number, horizon: number, candidates: ScheduledMessage[]) {
+    const grid = this.beatClock!;
+    const queue = (next: number, origin: number, rate: number, limit: number) => {
+      // After a dispatch stall, skip stale pulses instead of walking the whole missed span.
+      const oldest = ((now - STALE_MS - origin) / 1000) * rate;
+      let pulse = Math.max(next, grid.next(oldest));
+      for (let due = origin + (grid.at(pulse) * 1000) / rate; due < limit; due = origin + (grid.at(++pulse) * 1000) / rate)
+        candidates.push({ bytes: [248], due, label: "MIDI clock" });
+      return pulse;
+    };
+    const jump = this.pendingJump;
+    const limit = Math.min(horizon, this.clockAt(this.config.duration), jump?.at ?? this.clockAt(this.cap));
+    this.gridPulse = queue(this.gridPulse, this.config.origin, this.rate, limit);
+    // The audio jump cannot be cancelled within 150 ms. The same 100 ms window as the MIDI cues leaves time to timestamp the pulse
+    // on the new beat before the worker tick reaches the boundary.
+    if (!jump || jump.at > Math.min(horizon, now + 100)) return;
+    const rate = clampRate(jump.rate ?? this.rate);
+    const origin = jump.at - (jump.position * 1000) / rate;
+    const next = this.gridJump?.next ?? grid.next(jump.position);
+    const end = origin + (this.config.duration * 1000) / rate;
+    this.gridJump = { at: jump.at, position: jump.position, rate, next: queue(next, origin, rate, Math.min(horizon, end)) };
+  }
   tick(now: number) {
     if (this.stopped) return;
     if (this.pendingJump && now >= this.pendingJump.at) this.jump();
@@ -515,9 +553,13 @@ export class MidiSchedule {
     }
     // Clock and timecode are exclusive: a receiver gets one source of time, so clock is ignored when timecode is on.
     if (this.config.clock && !this.config.timecode) {
-      // The clock runs on its own clock time, not on the song's, so a jump does not change its phase.
-      const horizon = Math.min(now + lookahead * 1000, this.clockAt(this.config.duration));
-      while (this.pulseDue(this.pulse) < horizon) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
+      const horizon = now + lookahead * 1000;
+      if (this.beatClock) this.gridPulses(now, horizon, candidates);
+      else {
+        // The written-tempo clock runs on its own clock time, so a jump does not change its phase.
+        const limit = Math.min(horizon, this.clockAt(this.config.duration));
+        while (this.pulseDue(this.pulse) < limit) candidates.push({ bytes: [248], due: this.pulseDue(this.pulse++), label: "MIDI clock" });
+      }
     }
     // Quarter frames stop at a pending jump (the old passage ends there) and at the cap, and never run before song position zero.
     const timecodeLimit = Math.min(

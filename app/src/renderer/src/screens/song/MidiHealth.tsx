@@ -32,8 +32,10 @@ export function MidiHealth({
   parseError,
   timecode,
   pedalDrums,
+  songKey,
 }: {
   cues: Cue[];
+  songKey?: string;
   /** The song's sections, which the cues on a section are placed on */
   sections?: Section[];
   duration: number;
@@ -117,6 +119,7 @@ export function MidiHealth({
       unsubscribe.forEach((stop) => stop());
     };
   }, []);
+  const clockTempo = songKey ? timing.clockTempo.get(songKey) : undefined;
   return (
     <details className="rounded border border-seam p-3" aria-label="MIDI health" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer">
@@ -157,6 +160,7 @@ export function MidiHealth({
             Rendering or driver stalls can delay it; interrupted batches are discarded. Counters span songs in this app session.
           </p>
         </HelpNote>
+        {clockTempo && <p>MIDI clock tempo: {clockTempo.min}–{clockTempo.max} BPM</p>}
         {timing.lastFailure && <p>Last failure: {timing.lastFailure}</p>}
         {outputName && /bluetooth/i.test(outputName) && ble?.performanceTiming && (
           <p>

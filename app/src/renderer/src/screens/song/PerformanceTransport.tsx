@@ -1,3 +1,4 @@
+import type { ClockSource } from "@/song/performance/beat-clock";
 import { PreparePedalsButton } from "./PreparePedalsButton";
 import { SongPreparationStatus } from "./SongPreparationStatus";
 import { useState, type ReactNode } from "react";
@@ -104,6 +105,7 @@ export function PerformanceTransport({
   beatHint,
   onTap,
   metronome,
+  clockSource,
   drumsChip,
 }: {
   session: PerformanceSession;
@@ -118,6 +120,7 @@ export function PerformanceTransport({
   beatHint?: { bpm: number; onFind(lock: boolean): void };
   onTap: () => void;
   metronome: MetronomeSettings;
+  clockSource?: { choice: ClockSource; hasBeats: boolean; onChange: (choice: ClockSource) => void };
   /** Which drums play, shown next to the BPM. */
   drumsChip?: ReactNode;
 }) {
@@ -527,6 +530,21 @@ export function PerformanceTransport({
             />{" "}
             Send MIDI Clock
           </label>
+          {clockSource && (
+            <label className="flex flex-wrap items-center gap-2">
+              Clock follows
+              <select
+                className={field}
+                disabled={playing || starting || !clockSource.hasBeats}
+                value={clockSource.hasBeats ? clockSource.choice : "tempo"}
+                onChange={(event) => clockSource.onChange(event.target.value === "beats" ? "beats" : "tempo")}
+              >
+                <option value="tempo">Written tempo</option>
+                <option value="beats">The song’s beats</option>
+              </select>
+              {!clockSource.hasBeats && <span>Generate the band or detect beats first.</span>}
+            </label>
+          )}
         </div>
       </div>
     </>
