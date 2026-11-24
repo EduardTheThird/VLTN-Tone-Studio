@@ -1,3 +1,4 @@
+import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
@@ -249,4 +250,17 @@ it("counts bars and bars left on the song's saved bar lines when they move", () 
   expect(screen.getByLabelText("Stage status").textContent).toContain("Bar 34 · 2");
   // Verse 2 ends at 80 s: bar lines at 67.5 s, 69.5 s and so on, seven of them before the end, and a last bar of half a second.
   expect(screen.getByLabelText("Left in the section").textContent).toBe("8 bars");
+});
+
+it("shows the current manual preset name in the stage cue chip after the preset is renamed", async () => {
+  usePedalLibrary.setState({ presets: { "strymon-timeline": [{ slot: 25, name: "Ambient" }] } });
+  try {
+    mount(fakeSession(), "[00:04] {label:Strymon TimeLine: 12B Dotted 8th} {midi:cc 1 0 0} {midi:pc 1 25}");
+    fireEvent.keyDown(screen.getByLabelText("More stage settings"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Show MIDI commands" }));
+    expect(screen.getByLabelText("MIDI cue").textContent).toBe("Strymon TimeLine: 12B Ambient");
+  } finally {
+    cleanup();
+    usePedalLibrary.setState({ presets: {} });
+  }
 });

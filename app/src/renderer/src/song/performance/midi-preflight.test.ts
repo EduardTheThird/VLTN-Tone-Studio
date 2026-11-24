@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseChart } from "./chart";
 import { midiPreflight } from "./midi-preflight";
-import type { PresetNames } from "./pedal-preset-names";
+import { manualPresetProfiles, type PresetNames } from "./pedal-preset-names";
 const options = { duration: 10, clock: false, pedals: [], outputName: "Test MIDI" };
 it("identifies past-end cues and missing note-offs, accepting velocity-zero note releases", () => {
   const report = midiPreflight(
@@ -258,4 +258,14 @@ it("warns when the song chose RC-10R drums but the cues are not armed", () => {
   expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: true, armed: false } }).warnings.map((i) => i.code)).toEqual(["pedal-drums-off"]);
   expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: true, armed: true } }).warnings).toEqual([]);
   expect(midiPreflight(cues, { ...options, pedalDrums: { chosen: false, armed: false } }).warnings).toEqual([]);
+});
+
+it("gives advice for an unnamed manual preset and warns when a written name changed", () => {
+  const manualPresets = manualPresetProfiles({
+    profiles: [], channels: {}, presets: { "strymon-timeline": [{ slot: 25, name: "Ambient" }] },
+  });
+  const cues = parseChart("[00:01] {label:Strymon TimeLine: 12B Dotted 8th} {midi:cc 1 0 0} {midi:pc 1 25}\n[00:02] {midi:pc 4 44}");
+  const report = midiPreflight(cues, { ...options, manualPresets });
+  expect(report.warnings).toContainEqual({ code: "preset-renamed", text: "Strymon TimeLine 12B was “Dotted 8th” when the cue was written, now “Ambient”." });
+  expect(report.advice).toContainEqual({ code: "preset-unnamed", text: "BOSS SY-200 045 has no name. Check that it is the right sound.", level: "advice" });
 });

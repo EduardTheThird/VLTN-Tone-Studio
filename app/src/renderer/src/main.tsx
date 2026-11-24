@@ -6,6 +6,7 @@ import { ScreenBoundary } from "./components/ScreenBoundary";
 import { AudienceView } from "./screens/audience/AudienceView";
 import { logUncaughtErrors } from "./state/session-log";
 import { watchMemory } from "./song/audio/memory-usage";
+import { usePedalLibrary } from "./song/performance/pedal-library";
 import { watchSongs } from "./song/analysis/song-runner-app";
 
 logUncaughtErrors();
@@ -13,6 +14,7 @@ logUncaughtErrors();
 if (window.location.search.indexOf("view=audience") === -1) {
   watchSongs();
   watchMemory();
+  void usePedalLibrary.getState().load().catch(() => {});
 }
 
 // The audience display is a second window that loads this same bundle with ?view=audience (spec 43). It shows only the audience view.

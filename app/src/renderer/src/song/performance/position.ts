@@ -1,7 +1,7 @@
 import type { BeatGrid } from "../band/beat-grid";
 import { barStarts, beatInBar } from "../band/timing";
 import type { Cue } from "./chart";
-import { presetCueTarget, presetNumber, type PresetModel } from "./pedal-preset-names";
+import { manualPresetCueTarget, manualPresetNumber, presetCueTarget, presetNumber, type ManualPresetProfile, type PresetModel } from "./pedal-preset-names";
 
 /** How far past a bar line the playhead still counts as being on it, so clock jitter does not change a count. */
 const EDGE_S = 0.001;
@@ -70,13 +70,26 @@ export interface PatchCue {
   slot: number;
   name: string | null;
   model: PresetModel | null;
+  manual?: { id: string; name: string };
 }
 
 /** The timed cues of a song that recall a pedal memory, in time order. */
-export function patchCues(cues: readonly Cue[]): PatchCue[] {
+export function patchCues(cues: readonly Cue[], manualPresets: readonly ManualPresetProfile[] = []): PatchCue[] {
   const found: PatchCue[] = [];
   for (const cue of cues) {
-    if (cue.trigger || cue.managed || cue.messages.length !== 2) continue;
+    if (cue.trigger || cue.managed) continue;
+    const manual = manualPresets.length ? manualPresetCueTarget(cue, manualPresets) : null;
+    if (manual && (manual.current || manual.saved)) {
+      found.push({
+        time: cue.time,
+        slot: manual.slot,
+        model: null,
+        manual: { id: manual.profile.id, name: manual.profile.name },
+        name: manual.current?.name ?? manual.saved,
+      });
+      continue;
+    }
+    if (cue.messages.length !== 2) continue;
     const channel = (cue.messages[1][0] & 0x0f) + 1;
     const target = presetCueTarget(cue, channel);
     if (target) found.push({ time: cue.time, ...target });
@@ -98,10 +111,12 @@ export function patchNext(patches: readonly PatchCue[], time: number): PatchCue 
 
 /** "011 Crunch", or "011" for a cue without a name. */
 export function patchText(patch: PatchCue): string {
-  return patch.name ? `${presetNumber(patch.slot)} ${patch.name}` : presetNumber(patch.slot);
+  const number = patch.manual ? manualPresetNumber(patch.manual.id, patch.slot) : presetNumber(patch.slot);
+  return patch.name ? `${number} ${patch.name}` : number;
 }
 
 /** The pedal's name for the strip: "GP-180", or "Pedal" when the cue's label does not say. */
 export function patchPedal(patch: PatchCue): string {
+  if (patch.manual) return patch.manual.name;
   return patch.model === "gp150" ? "GP-150" : patch.model === "gp180" ? "GP-180" : "Pedal";
 }

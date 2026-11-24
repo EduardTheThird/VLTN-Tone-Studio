@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { c as createTar, x as extractTar, Header } from "tar";
 import { decodeFlac, encodeFlac, matchesQuantized } from "@shared/flac";
+import { emptyPedalSettings } from "@shared/pedal-settings";
 import { CONVERTING_PHASE, isLegacySong } from "@shared/song-library";
 import { SongLibraryStore } from "./song-library-store";
 import { FRAMES, flacSong, legacySong, pcm, readSaved, saveFlacSong, writeLegacyLibrary, type FixtureSong } from "./song-library-fixtures";
@@ -314,4 +315,50 @@ it("backs up and restores a rendered drum part with its track and the band recor
   expect(song.audio.find((a) => a.file === "track0.flac")).toMatchObject({ name: "Drums (generated)", kind: "user", bus: "main" });
   expect(JSON.parse(song.settings[":options"])).toEqual(options);
   await expectAudio(destination, song.id, { ...fixture, audio: { track0: rendered } });
+});
+
+it("backs up the checked pedal file and restores its channels, assignments and preset notes", async () => {
+  const data = {
+    ...emptyPedalSettings(),
+    channels: { "boss-ir200": 5 },
+    assignments: { "boss-ir200:solo-on": 82 },
+    presets: { "boss-ir200": [{ slot: 44, name: "Direct", note: "For solos" }] },
+  };
+  expect(await store.readPedalSettings()).toBeNull();
+  await store.savePedalSettings(data);
+  expect(await store.savePedalSettings(emptyPedalSettings(), true)).toEqual(data);
+  await store.exportBackup(archive);
+  const dir = await unpack();
+  const manifest = JSON.parse(await readFile(join(dir, "backup-manifest.json"), "utf8"));
+  expect(manifest.version).toBe(5);
+  expect(manifest.files).toEqual(expect.arrayContaining([expect.objectContaining({ path: "pedals.json" })]));
+  const restored = new SongLibraryStore(join(temp, "restored"));
+  expect(await restored.restoreBackup(archive)).toEqual({ songs: 0, playlists: 0 });
+  expect(await restored.readPedalSettings()).toEqual(data);
+});
+
+it("preserves the song library's pedals when restoring an older backup", async () => {
+  await store.exportBackup(archive);
+  const data = { ...emptyPedalSettings(), channels: { "boss-sy200": 4 } };
+  const restored = new SongLibraryStore(join(temp, "restored"));
+  await restored.savePedalSettings(data);
+  await restored.restoreBackup(archive);
+  expect(await restored.readPedalSettings()).toEqual(data);
+});
+
+it("rejects invalid preset data even when the backup's digest matches it", async () => {
+  await store.savePedalSettings(emptyPedalSettings());
+  await store.exportBackup(archive);
+  const dir = await unpack();
+  const path = join(dir, "backup-manifest.json");
+  const manifest = JSON.parse(await readFile(path, "utf8"));
+  const invalid = Buffer.from(JSON.stringify({ ...emptyPedalSettings(), presets: { "boss-ir200": [{ slot: -1, name: "Invalid" }] } }));
+  const entry = manifest.files.find((file: { path: string }) => file.path === "pedals.json");
+  Object.assign(entry, { bytes: invalid.length, sha256: createHash("sha256").update(invalid).digest("hex") });
+  await writeFile(path, JSON.stringify(manifest));
+  await writeFile(join(dir, "pedals.json"), invalid);
+  await createTar({ cwd: dir, file: archive, gzip: true, portable: true }, ["backup-manifest.json", "library.json", "pedals.json"]);
+  const restored = new SongLibraryStore(join(temp, "restored"));
+  await expect(restored.restoreBackup(archive)).rejects.toThrow(/pedal settings/i);
+  expect(await restored.readPedalSettings()).toBeNull();
 });

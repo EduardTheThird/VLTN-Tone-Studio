@@ -1,3 +1,4 @@
+import type { PedalSettingsApi } from "./pedal-settings";
 import { validateSmartRules, type SmartRules } from "./library-filter";
 import { isEntryOverride, type EntryOverride } from "./entry-overrides";
 
@@ -193,7 +194,7 @@ export interface LibraryPreflightSong {
   song?: LibrarySong;
   errors: string[];
 }
-export interface SongLibraryApi {
+export interface SongLibraryApi extends PedalSettingsApi {
   preflight(ids: string[]): Promise<LibraryPreflightSong[]>;
   exportBackup(): Promise<LibraryTransferResult | null>;
   /** Opens the file picker and reads the chosen backup's index. Null when cancelled. The path stays in the main process. */

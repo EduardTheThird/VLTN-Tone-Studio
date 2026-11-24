@@ -1,3 +1,4 @@
+import { MyPresets } from "./MyPresets";
 import { useMemo, useState } from "react";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { useMidiConfiguration } from "@/song/performance/midi-configuration";
@@ -10,6 +11,16 @@ const LEVEL_CLASS = { error: "text-red-400", warning: "text-amber-400", advice: 
 
 /** The connected GP-150 / GP-180's own MIDI settings against how the app drives it, with a button for each fix. */
 export function PedalSettings({ clock }: { clock: boolean }) {
+  const busy = useStageActivity((state) => state.busy);
+  return (
+    <div className="space-y-2">
+      <ConnectedPedalSettings clock={clock} />
+      <MyPresets disabled={busy} />
+    </div>
+  );
+}
+
+function ConnectedPedalSettings({ clock }: { clock: boolean }) {
   const device = useDevice((s) => s.device);
   const status = useDevice((s) => s.status);
   const globals = useDevice((s) => s.globals);

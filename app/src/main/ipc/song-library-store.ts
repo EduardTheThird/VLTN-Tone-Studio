@@ -1,7 +1,8 @@
+import { PEDAL_SETTINGS_FILE, parsePedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
 import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { exportBackup, readBackup, readBackupIndex } from "./song-library-backup";
+import { exportBackup, readBackup, readBackupIndex, readPedalSettingsFile } from "./song-library-backup";
 import { createTrash, sweepLibraryTrash, type TrashFn } from "./trash";
 import { decodeFlac, encodeFlac, matchesQuantized, storedBits } from "@shared/flac";
 import {
@@ -284,6 +285,21 @@ export class SongLibraryStore {
     await mkdir(this.root, { recursive: true });
     // A v4 library is refused by older apps, which would otherwise misread the metadata and folders. See SONG-LIBRARY.md.
     await writeJsonAtomic(join(this.root, "library.json"), { ...index, version: LIBRARY_VERSION });
+  }
+  async readPedalSettings(): Promise<PedalSettingsFile | null> {
+    return this.serial(async () => (await readPedalSettingsFile(this.root))?.data ?? null);
+  }
+  async savePedalSettings(value: unknown, onlyIfMissing = false): Promise<PedalSettingsFile> {
+    const data = parsePedalSettings(JSON.stringify(value, null, 2) ?? "");
+    return this.serial(async () => {
+      if (onlyIfMissing) {
+        const previous = await readPedalSettingsFile(this.root);
+        if (previous) return previous.data;
+      }
+      await mkdir(this.root, { recursive: true });
+      await writeJsonAtomic(join(this.root, PEDAL_SETTINGS_FILE), data);
+      return data;
+    });
   }
   async preflight(ids: string[]): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
     if (!Array.isArray(ids) || ids.length > 10000 || ids.some((id) => typeof id !== "string" || !validId(id))) throw new Error("Invalid playlist song IDs.");
@@ -596,7 +612,19 @@ export class SongLibraryStore {
         };
         validateOrganisation(next);
         validatePlaylists(next.playlists, next.songs);
-        await this.publish(next);
+        const pedals = await readPedalSettingsFile(stage);
+        const pedalPath = join(this.root, PEDAL_SETTINGS_FILE);
+        const previousPedals = pedals ? await readPedalSettingsFile(this.root) : null;
+        if (pedals) await writeJsonAtomic(pedalPath, pedals.data);
+        try {
+          await this.publish(next);
+        } catch (error) {
+          if (pedals) {
+            if (previousPedals) await writeJsonAtomic(pedalPath, previousPedals.data);
+            else await rm(pedalPath, { force: true });
+          }
+          throw error;
+        }
         moved.length = 0;
         const result = { songs: songs.length, playlists: playlists.length };
         return mode === "skip" ? { ...result, skipped: backup.songs.length - songs.length } : result;

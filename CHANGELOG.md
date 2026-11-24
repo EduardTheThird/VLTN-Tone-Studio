@@ -7,6 +7,11 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ### Added
 - The MIDI clock can follow the song’s real beats, so pedals that sync to it stay with songs that speed up or slow down.
 
+- Name your TimeLine, SY-200 and IR-200 presets. Names show in cues, pickers and stage mode.
+
+### Changed
+- Pedal settings are now saved with the song library and its backups.
+
 ## [0.9.52] — 2026-11-23
 
 ### Added

@@ -1,3 +1,5 @@
+import { displayPresetCue } from "@/song/performance/pedal-preset-names";
+import { useManualPresetProfiles } from "./use-preset-names";
 import { PreparationTimingFields } from "./PreparationTimingFields";
 import { PREPARATION_REPEAT_LABELS, type PreparationRepeat } from "@/song/performance/preparation-repeat";
 import { preparationLine } from "@/song/performance/start-preparation";
@@ -51,6 +53,7 @@ export function MidiCueBuilder({
   onTest: (bytes: number[]) => void;
   canTest: boolean;
 }) {
+  const manualPresets = useManualPresetProfiles();
   const [seconds, setSeconds] = useState(0),
     [channel, setChannel] = useState(1);
   const [type, setType] = useState("pc"),
@@ -314,7 +317,7 @@ export function MidiCueBuilder({
                     {whenLabel(cue)}
                   </td>
                   <td className="p-2">
-                    {cue.label || "Raw MIDI command"}
+                    {displayPresetCue(cue, manualPresets) || "Raw MIDI command"}
                     {cue.trigger === "prepare" && <div className="text-xs text-silkscreen-3">{PREPARATION_REPEAT_LABELS[cue.prepareRepeat ?? "always"]}</div>}
                   </td>
                   <td className="p-2">{[...new Set(cue.messages.map((bytes) => (bytes[0] < 0xf0 ? (bytes[0] & 15) + 1 : "System")))].join(", ")}</td>

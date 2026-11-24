@@ -1,3 +1,4 @@
+import { manualPresetProfiles } from "@/song/performance/pedal-preset-names";
 import { withToneWarnings } from "@/song/performance/tone-preflight";
 import { knownPresetNames } from "./use-preset-names";
 import { ArrangementAdvice } from "./ArrangementAdvice";
@@ -95,6 +96,7 @@ export function PlaylistPreflight({
         bindings: config.bindings,
         pedals: configuredPedals(pedals),
         presetNames: knownPresetNames(),
+        manualPresets: manualPresetProfiles(pedals),
         rig: currentRigFacts(false),
         rhythmControls: rhythmControlOverrides(pedals),
         cuesArmed: useSongLibrary.getState().midiSession?.armed,

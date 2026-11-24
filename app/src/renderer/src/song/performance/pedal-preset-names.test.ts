@@ -1,6 +1,18 @@
 import { expect, it } from "vitest";
 import { parseChart } from "./chart";
-import { nameSource, presetCueLabel, presetCueTarget, presetLabel, presetModelOf, usablePresetNames } from "./pedal-preset-names";
+import { PEDAL_PROFILES } from "./pedal-profiles";
+import {
+  displayPresetCue,
+  manualPresetCueLabel,
+  manualPresetProfiles,
+  parsePresetList,
+  nameSource,
+  presetCueLabel,
+  presetCueTarget,
+  presetLabel,
+  presetModelOf,
+  usablePresetNames,
+} from "./pedal-preset-names";
 
 it("labels a memory with its number and name, and falls back to today's label without one", () => {
   const names = ["Clean", "", "  Crunch Lead  "];
@@ -11,7 +23,7 @@ it("labels a memory with its number and name, and falls back to today's label wi
   expect(presetLabel(5, [])).toBe("Recall memory 006");
 });
 
-it("only GP-150 and GP-180 profiles have preset names", () => {
+it("reads hardware preset names from the GP-150 and GP-180 profiles", () => {
   expect(presetModelOf("valeton-gp180")).toBe("gp180");
   expect(presetModelOf("valeton-gp150")).toBe("gp150");
   expect(presetModelOf("strymon-timeline")).toBeNull();
@@ -56,4 +68,35 @@ it("has no target for a cue that is not the banked recall on the pedal's channel
   expect(presetCueTarget(parseChart(`[00:00] ${label} {midi:cc 1 7 0} {midi:pc 1 0}`)[0], 1)).toBeNull();
   expect(presetCueTarget(parseChart("[00:00] {midi:cc 1 0 0} {midi:pc 1 0}")[0], 1)).toEqual({ slot: 0, name: null, model: null });
   expect(presetCueTarget(parseChart("[00:00] {label:Old label} {midi:cc 1 0 0} {midi:pc 1 0}")[0], 1)?.name).toBeNull();
+});
+
+it("parses TimeLine banks and reports invalid or repeated pasted lines", () => {
+  const timeline = PEDAL_PROFILES.find((p) => p.id === "strymon-timeline")!;
+  expect(parsePresetList(timeline, "12A Dotted 8th\n00B Slap\nJunk\n12A Duplicate")).toEqual({
+    entries: [
+      { slot: 24, name: "Dotted 8th" },
+      { slot: 1, name: "Slap" },
+    ],
+    errors: ["Line 3: Junk", "Line 4: 12A Duplicate"],
+  });
+  expect(manualPresetCueLabel(timeline, 25, "Dotted 8th")).toBe("Strymon TimeLine: 12B Dotted 8th");
+});
+
+it.each(["boss-ir200", "boss-sy200"])("parses both BOSS number spellings for %s", (id) => {
+  const profile = PEDAL_PROFILES.find((p) => p.id === id)!;
+  for (const number of ["045", "45"]) {
+    expect(parsePresetList(profile, `${number} Pad`)).toEqual({ entries: [{ slot: 44, name: "Pad" }], errors: [] });
+  }
+});
+
+it("uses a current name on old cues and never rewrites cue bytes or a Valeton preset label", () => {
+  const profiles = manualPresetProfiles({ presets: { "strymon-timeline": [{ slot: 25, name: "Ambient" }] }, profiles: [], channels: {} });
+  const [cue] = parseChart("[00:01] {label:Strymon TimeLine: 12B Dotted 8th} {midi:cc 1 0 0} {midi:pc 1 25}");
+  expect(displayPresetCue(cue, profiles)).toBe("Strymon TimeLine: 12B Ambient");
+  expect(cue.messages).toEqual([
+    [0xb0, 0, 0],
+    [0xc0, 25],
+  ]);
+  const [gp] = parseChart("[00:01] {label:GP-180: 026 Lead} {midi:cc 1 0 0} {midi:pc 1 25}");
+  expect(displayPresetCue(gp, profiles)).toBe("GP-180: 026 Lead");
 });

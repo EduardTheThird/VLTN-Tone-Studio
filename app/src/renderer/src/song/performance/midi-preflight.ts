@@ -5,7 +5,9 @@ import { chaseTriggerSet, isChased, triggerKey, type TriggerCc } from "./midi-ch
 import { sectionIssues, type Section } from "./sections";
 import { parseOffset, type TimecodeRate } from "./timecode";
 import { pedalDrumsOffWarning } from "../band/drum-source";
-import { presetCueTarget, presetNumber, type PresetNames } from "./pedal-preset-names";
+import {
+  manualPresetCueLabel, manualPresetCueTarget, manualPresetNumber, presetCueTarget, presetNumber, type ManualPresetProfile, type PresetNames,
+} from "./pedal-preset-names";
 export interface PreflightOptions {
   duration: number;
   /** Actual initial MIDI position, including pre-roll; defaults to the playable range start. */
@@ -30,6 +32,7 @@ export interface PreflightOptions {
   timecode?: { fps: TimecodeRate; offset: string; bluetooth: boolean };
   /** The GP-150 / GP-180 preset names as last known (index = slot). Unset while they are unknown, which skips the preset-name check. */
   presetNames?: PresetNames;
+  manualPresets?: readonly ManualPresetProfile[];
   /** The song chose RC-10R pedal drums, and whether the cues are armed. A chosen pedal with cues off plays the fallback drums, which is warned about. */
   pedalDrums?: { chosen: boolean; armed: boolean };
 }
@@ -223,6 +226,20 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
     }
   }
   if (options.presetNames) presetNameIssues([...events, ...preparation], options.presetNames, add);
+  if (options.manualPresets?.length) {
+    for (const cue of [...events, ...preparation, ...cues.filter((cue) => cue.trigger && cue.trigger !== "section" && cue.trigger !== "prepare")]) {
+      const target = manualPresetCueTarget(cue, options.manualPresets);
+      if (!target) continue;
+      const { profile, slot, saved, current } = target;
+      const number = manualPresetNumber(profile.id, slot);
+      if (!current) {
+        if (profile.entries.size || ["strymon-timeline", "boss-sy200", "boss-ir200"].includes(profile.id))
+          add("preset-unnamed", `${profile.name} ${number} has no name. Check that it is the right sound.`, "advice");
+      } else if (saved && cue.label !== manualPresetCueLabel(profile, slot, current.name)) {
+        add("preset-renamed", `${profile.name} ${number} was “${saved}” when the cue was written, now “${current.name}”.`);
+      }
+    }
+  }
   const playbackStart = options.playbackStart ?? options.range?.start ?? 0;
   const prepared = options.preparation?.enabled
     ? new Set(

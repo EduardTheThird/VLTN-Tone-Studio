@@ -1,3 +1,4 @@
+import { usePedalLibrary } from "./performance/pedal-library";
 import { clockSource, usableClockGrid } from "./performance/beat-clock";
 import { parseBeatGrid } from "./band/beat-grid";
 import { pcmMemoryShape } from "./audio/playback-pcm";
@@ -514,7 +515,9 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     set({ transfer: "Checking library backup…" });
     const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
     try {
+      await usePedalLibrary.getState().flush();
       const result = await service.restoreBackup(mode);
+      await usePedalLibrary.getState().load(true);
       set({
         index: await service.index(),
         queue: [],
@@ -919,6 +922,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
         try {
           await flushSettings();
+          await usePedalLibrary.getState().flush();
           const result = await service.exportBackup();
           set({ notice: result ? `Exported ${result.songs} songs and ${result.playlists} playlists to ${result.fileName}.` : "Backup export cancelled." });
         } finally {

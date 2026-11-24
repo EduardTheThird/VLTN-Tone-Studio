@@ -1,3 +1,4 @@
+import { useManualPresetProfiles } from "./use-preset-names";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Ellipsis } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -190,7 +191,8 @@ export function StageStatusStrip({
   const sections = useSession(session, (s) => s.sections);
   const cues = useSession(session, (s) => s.cues);
   const ordered = useMemo(() => sortedSections(sections), [sections]);
-  const patches = useMemo(() => patchCues(cues), [cues]);
+  const manualPresets = useManualPresetProfiles();
+  const patches = useMemo(() => patchCues(cues, manualPresets), [cues, manualPresets]);
   const size = useReaderText((s) => s.size);
   const autoscroll = useAutoscroll((s) => s.mode);
   const lastBar = usePlaybackClock((s) => {

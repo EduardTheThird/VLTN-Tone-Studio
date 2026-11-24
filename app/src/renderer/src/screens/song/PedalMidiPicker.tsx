@@ -8,7 +8,7 @@ import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/peda
 import { saveMacro, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { macroCodeFor } from "@/song/performance/midi-macros";
 import { HelpNote } from "@/components/ui/help-note";
-import { nameSource, presetCueLabel, presetLabel, presetModelOf } from "@/song/performance/pedal-preset-names";
+import { manualMemorySlot, manualPresetCueLabel, manualPresetNumber, nameSource, presetCueLabel, presetLabel, presetModelOf } from "@/song/performance/pedal-preset-names";
 import { usePresetNames } from "./use-preset-names";
 
 export function PedalMidiPicker({
@@ -43,10 +43,15 @@ export function PedalMidiPicker({
     action = profile?.actions.find((a) => a.id === actionId);
   const presetModel = presetModelOf(pedal);
   const { presetNames, lastConnectedAt } = usePresetNames(presetModel);
-  /** The command as listed: a GP-150 / GP-180 memory shows the preset name when the app knows it. */
-  const actionLabel = (a: (typeof profiles)[number]["actions"][number]) => {
-    const memory = presetModel && presetNames ? /^memory-(\d+)$/.exec(a.id) : null;
-    return memory ? presetLabel(Number(memory[1]) - 1, presetNames!.names) : a.label;
+  const manualNames = library.presets[pedal];
+  const actionLabel = (action: (typeof profiles)[number]["actions"][number]) => {
+    if (presetModel) {
+      const memory = /^memory-(\d+)$/.exec(action.id);
+      return memory && presetNames ? presetLabel(Number(memory[1]) - 1, presetNames.names) : action.label;
+    }
+    const slot = manualMemorySlot(action);
+    const name = manualNames?.find((entry) => entry.slot === slot)?.name;
+    return slot !== null && name ? `${manualPresetNumber(pedal, slot)} ${name}` : action.label;
   };
   const channel = library.channels[pedal] ?? DEFAULT_PEDAL_CHANNELS[pedal] ?? 1;
   const field = "rounded border border-seam bg-background p-2";
@@ -88,11 +93,15 @@ export function PedalMidiPicker({
       else {
         const memory = presetModel && presetNames ? /^memory-(\d+)$/.exec(action.id) : null;
         const name = memory ? presetNames!.names[Number(memory[1]) - 1]?.trim() : "";
+        const slot = manualMemorySlot(action);
+        const manualName = !presetModel && slot !== null ? manualNames?.find((entry) => entry.slot === slot)?.name : undefined;
         // A named preset is labelled "GP-180: 069 Crunch Lead", which preflight reads back to notice a changed slot.
         const label = (
           memory && name
             ? presetCueLabel(presetModel!, Number(memory[1]) - 1, name)
-            : `${profile.name}: ${action.label}${action.value ? ` — ${action.value.label} ${value}` : ""} (ch ${channel})`
+            : manualName && slot !== null
+              ? manualPresetCueLabel(profile, slot, manualName)
+              : `${profile.name}: ${action.label}${action.value ? ` — ${action.value.label} ${value}` : ""} (ch ${channel})`
         ).replace(/[{}\r\n]/g, " ");
         onAdd(`${lrcTime(time)} {label:${label}}${action.momentary ? " {nochase}" : ""} ${commands.map((c) => `{midi:${c}}`).join(" ")}`);
       }
@@ -287,6 +296,7 @@ export function PedalMidiPicker({
               {nameSource(presetNames, lastConnectedAt)}
             </p>
           )}
+          {library.saveError && <p role="alert">{library.saveError}</p>}
           {action?.description && <p className="text-sm text-silkscreen-3">{action.description}</p>}
           <HelpNote label="Reference">
             <p>

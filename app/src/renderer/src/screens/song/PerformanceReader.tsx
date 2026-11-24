@@ -35,8 +35,9 @@ import { useSong } from "@/song/store";
 import { useSongLibrary } from "@/song/library";
 import { ClockText } from "./PlaybackDisplay";
 import { sectionColours } from "./section-colours";
-import { patchCues, patchPedal } from "@/song/performance/position";
-import { presetNumber } from "@/song/performance/pedal-preset-names";
+import { patchCues, patchPedal, patchText } from "@/song/performance/position";
+import { useManualPresetProfiles } from "./use-preset-names";
+import { displayPresetCue, presetNumber, type ManualPresetProfile } from "@/song/performance/pedal-preset-names";
 import { PdfChart } from "./PdfChart";
 import { PdfControls } from "./PdfControls";
 import type { ChartView } from "@shared/song-library";
@@ -52,8 +53,9 @@ export interface PdfReaderState {
 }
 
 /** The short label a cue shows as a chip on stage: "GP-180 011" for a pedal memory, else its label, with no byte detail. */
-function cueChip(cue: Cue): string {
-  const patch = patchCues([cue])[0];
+function cueChip(cue: Cue, profiles: readonly ManualPresetProfile[]): string {
+  const patch = patchCues([cue], profiles)[0];
+  if (patch?.manual) return `${patchPedal(patch)}: ${patchText(patch)}`;
   if (patch) return `${patchPedal(patch)} ${presetNumber(patch.slot)}`;
   return cue.label || "MIDI";
 }
@@ -142,6 +144,7 @@ export function PerformanceReader({
     }
     return result;
   }, [chart, lyrics, chords, showCommands, macros]);
+  const manualPresets = useManualPresetProfiles();
   const pdfShown = !!pdf?.chart && pdf.view === "pdf";
   const [expanded, setExpanded] = useState(false),
     [follow, setFollow] = useState(true),
@@ -432,14 +435,14 @@ export function PerformanceReader({
                           aria-label="MIDI cue"
                           className="float-right ml-3 rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-sm font-semibold text-amber-300"
                         >
-                          {cueChip(cue)}
+                          {cueChip(cue, manualPresets)}
                         </span>
                       ))}
                     {!stage &&
                       line.midi.map((cue, i) => (
                         <div key={i} aria-label="MIDI cue" className="my-2 rounded border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-sm text-amber-300">
                           <strong>
-                            {lrcTime(cue.time)} · {cue.label || "MIDI command"}
+                            {lrcTime(cue.time)} · {displayPresetCue(cue, manualPresets) || "MIDI command"}
                           </strong>
                           <span className="ml-2 font-mono">
                             {cue.messages

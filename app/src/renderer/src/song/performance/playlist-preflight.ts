@@ -66,6 +66,7 @@ export function playlistPreflight(
     pedals: PreflightOptions["pedals"];
     /** The GP-150 / GP-180 preset names as last known, to warn about a cue that recalls a preset which has changed. */
     presetNames?: PreflightOptions["presetNames"];
+    manualPresets?: PreflightOptions["manualPresets"];
     /** Whether a song's speed or pitch render was built in advance. Unset means the render is not checked. */
     renderReady?: (id: string) => boolean;
     /** The MIDI macros the charts refer to. A chart that uses a missing one cannot play. */
@@ -182,6 +183,7 @@ export function playlistPreflight(
           outputName: config.outputName,
           pedals: config.pedals,
           presetNames: config.presetNames,
+          manualPresets: config.manualPresets,
           sections: parseSections(options.sections),
           range: trimRange(duration, options),
           preparation: settings,

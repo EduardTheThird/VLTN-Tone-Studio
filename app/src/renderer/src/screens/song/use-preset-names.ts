@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useDevice } from "@/state/device";
 import { loadCachedNames, loadDevice } from "@/state/device-storage";
-import { usablePresetNames, type PresetModel, type PresetNames } from "@/song/performance/pedal-preset-names";
+import { usePedalLibrary } from "@/song/performance/pedal-library";
+import { manualPresetProfiles, usablePresetNames, type PresetModel, type PresetNames } from "@/song/performance/pedal-preset-names";
 
 /** The names of `model`'s presets as of now: read from a connected pedal of that model, else cached from its last connection. */
 export function currentPresetNames(model: PresetModel): PresetNames | null {
@@ -50,4 +51,12 @@ export function useKnownPresetNames(): PresetNames | undefined {
   const device = useDevice((s) => s.device);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the store values above are what change the result
   return useMemo(() => knownPresetNames(), [names, status, device]);
+}
+
+/** Manual preset labels, rebuilt only when the song library's pedal configuration changes. */
+export function useManualPresetProfiles() {
+  const profiles = usePedalLibrary((s) => s.profiles);
+  const presets = usePedalLibrary((s) => s.presets);
+  const channels = usePedalLibrary((s) => s.channels);
+  return useMemo(() => manualPresetProfiles({ profiles, presets, channels }), [profiles, presets, channels]);
 }

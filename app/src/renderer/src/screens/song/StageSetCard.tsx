@@ -1,3 +1,4 @@
+import { useManualPresetProfiles } from "./use-preset-names";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useSongLibrary } from "@/song/library";
@@ -29,7 +30,8 @@ export function StageSetCard({
   const cues = useSession(session, (s) => s.cues);
   const ready = useSession(session, (s) => s.pedalsReady);
   const settings = useSession(session, (s) => s.preparationSettings);
-  const first = useMemo(() => patchCues(cues)[0], [cues]);
+  const manualPresets = useManualPresetProfiles();
+  const first = useMemo(() => patchCues(cues, manualPresets)[0], [cues, manualPresets]);
   const pedals = ready ? "Ready" : settings?.enabled ? "Not prepared yet: press Prepare pedals" : "No setup commands";
   return (
     <div aria-label="Next song" className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 text-center">

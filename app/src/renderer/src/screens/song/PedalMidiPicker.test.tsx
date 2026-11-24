@@ -9,7 +9,7 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   useMidiConfiguration.setState(readMidiConfiguration());
-  usePedalLibrary.setState({ profiles: [], channels: {}, assignments: {} });
+  usePedalLibrary.setState({ profiles: [], channels: {}, assignments: {}, presets: {} });
   useDevice.setState({ device: null, status: "idle", names: [], lastConnectedAt: null });
 });
 
@@ -177,5 +177,18 @@ it("writes the preset name into the cue's label, with the same bytes as an unnam
       [0xb2, 0, 0],
       [0xc2, 1],
     ],
+  });
+});
+
+it("labels a named TimeLine bank using its existing recall bytes", () => {
+  usePedalLibrary.getState().savePresets("strymon-timeline", [{ slot: 25, name: "Dotted 8th" }]);
+  const add = vi.fn();
+  render(<PedalMidiPicker time={8} onAdd={add} onTest={vi.fn()} canTest={false} />);
+  fireEvent.change(screen.getByLabelText("MIDI pedal"), { target: { value: "strymon-timeline" } });
+  expect(screen.getByRole("option", { name: "12B Dotted 8th" })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Pedal command preset"), { target: { value: "memory-26" } });
+  fireEvent.click(screen.getByText("Add pedal command"));
+  expect(parseChart(add.mock.calls[0][0])[0]).toMatchObject({
+    label: "Strymon TimeLine: 12B Dotted 8th", messages: [[0xb0, 0, 0], [0xc0, 25]],
   });
 });

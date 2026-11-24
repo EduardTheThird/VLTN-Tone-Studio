@@ -1,3 +1,4 @@
+import { PEDAL_SETTINGS_FILE, PEDAL_SETTINGS_MAX_BYTES, parsePedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
 import { createReadStream, createWriteStream } from "node:fs";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -33,8 +34,8 @@ interface BackupFile {
 }
 interface Manifest {
   format: "vltn-song-library";
-  /** 1: raw float32 files. 2: FLAC files. 3: FLAC files and per-track settings. 4: song details, folders, history and sets. All are read. */
-  version: 1 | 2 | 3 | 4;
+  /** 1–4 are the historical library formats. Version 5 includes the pedal settings file with a v4 library index. */
+  version: 1 | 2 | 3 | 4 | 5;
   files: BackupFile[];
 }
 type Progress = (value: LibraryTransferProgress) => void;
@@ -47,7 +48,7 @@ const SAFE_FLAC = /^[a-f0-9-]{36}\/([^/]+)$/;
  * a name with a slash, a dot-dot or a different extension, is refused before any file is written.
  */
 const safePath = (path: string) => {
-  if (path === INDEX || SAFE_RAW.test(path)) return true;
+  if (path === INDEX || path === PEDAL_SETTINGS_FILE || SAFE_RAW.test(path)) return true;
   const name = SAFE_FLAC.exec(path)?.[1];
   return name !== undefined && (isTrackFileName(name) || isChartFileName(name));
 };
@@ -101,6 +102,19 @@ async function fileHash(path: string): Promise<string> {
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
+/** A missing pedal file is valid for libraries from earlier versions. */
+export async function readPedalSettingsFile(root: string): Promise<{ data: PedalSettingsFile; bytes: number } | null> {
+  const path = join(root, PEDAL_SETTINGS_FILE);
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.size > PEDAL_SETTINGS_MAX_BYTES) throw new Error("Invalid pedal settings file.");
+    return { data: parsePedalSettings(await readFile(path, "utf8")), bytes: info.size };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+
 /** The caller holds the store's serialization lock for a consistent snapshot. */
 export async function exportBackup(root: string, index: DiskIndex, target: string, progress: Progress = () => {}): Promise<void> {
   validateDiskIndex(index);
@@ -111,11 +125,13 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
   if (!inside || (!inside.startsWith(".." + (process.platform === "win32" ? "\\" : "/")) && inside !== ".." && !isAbsolute(inside)))
     throw new Error("Choose a backup location outside the managed song-library folder.");
   const files = audioFiles(index);
-  if (files.size + 1 > MAX_FILES) throw new Error("This library exceeds the backup file limit.");
   const metadata = await readFile(join(root, INDEX));
   if (metadata.length > MAX_METADATA) throw new Error("Library metadata exceeds the supported backup size.");
   files.set(INDEX, metadata.length);
-  const manifest: Manifest = { format: "vltn-song-library", version: LIBRARY_VERSION, files: [] };
+  const pedals = await readPedalSettingsFile(root);
+  if (pedals) files.set(PEDAL_SETTINGS_FILE, pedals.bytes);
+  if (files.size > MAX_FILES) throw new Error("This library exceeds the backup file limit.");
+  const manifest: Manifest = { format: "vltn-song-library", version: pedals ? 5 : LIBRARY_VERSION, files: [] };
   let total = 0,
     done = 0;
   for (const [path, bytes] of files) {
@@ -202,7 +218,7 @@ export async function readBackup(file: string, stage: string, progress: Progress
               if (
                 !manifest ||
                 manifest.format !== "vltn-song-library" ||
-                ![1, 2, 3, 4].includes(manifest.version) ||
+                ![1, 2, 3, 4, 5].includes(manifest.version) ||
                 !Array.isArray(manifest.files) ||
                 !manifest.files.length ||
                 manifest.files.length > MAX_FILES
@@ -225,7 +241,9 @@ export async function readBackup(file: string, stage: string, progress: Progress
                 declared.set(f.path, f);
                 bytes += f.bytes;
               }
-              if (!paths.has(INDEX) || bytes > MAX_BYTES) throw invalid();
+              const pedals = declared.get(PEDAL_SETTINGS_FILE);
+              if (!paths.has(INDEX) || bytes > MAX_BYTES || (manifest.version === 5) !== !!pedals || (pedals && pedals.bytes > PEDAL_SETTINGS_MAX_BYTES))
+                throw invalid();
             } catch (e) {
               fail(e);
             }
@@ -245,11 +263,11 @@ export async function readBackup(file: string, stage: string, progress: Progress
               if (createHash("sha256").update(bytes).digest("hex") !== expected.sha256) throw invalid();
               index = validateDiskIndex(JSON.parse(bytes.toString("utf8")));
               const required = audioFiles(index);
-              if (required.size + 1 !== manifest!.files.length) throw invalid();
+              if (required.size + 1 + Number(declared.has(PEDAL_SETTINGS_FILE)) !== manifest!.files.length) throw invalid();
               const hashes = audioHashes(index);
               for (const f of manifest!.files)
                 if (
-                  f.path !== INDEX &&
+                  f.path !== INDEX && f.path !== PEDAL_SETTINGS_FILE &&
                   (required.get(f.path) !== f.bytes || (hashes.has(f.path) && hashes.get(f.path) !== f.sha256))
                 )
                   throw invalid();
@@ -296,6 +314,7 @@ export async function readBackup(file: string, stage: string, progress: Progress
     await complete;
     await Promise.all(pending);
     if (!manifest || !index || seen.size !== manifest.files.length + 1 || manifest.files.some((f) => !seen.has(f.path))) throw invalid();
+    if (declared.has(PEDAL_SETTINGS_FILE) && !(await readPedalSettingsFile(stage))) throw invalid();
     return index;
   } catch (e) {
     controller.abort();

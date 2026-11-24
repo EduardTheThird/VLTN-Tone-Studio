@@ -1,5 +1,70 @@
-import { describe, expect, it } from "vitest";
-import { configuredPedals } from "./pedal-library";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { emptyPedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
+import { configuredPedals, createPedalLibrary, PEDAL_LEGACY_KEY } from "./pedal-library";
+
+afterEach(() => localStorage.clear());
+
+function backing(initial: PedalSettingsFile | null) {
+  let data = initial;
+  return {
+    readPedalSettings: vi.fn(async () => data),
+    savePedalSettings: vi.fn(async (next: PedalSettingsFile, onlyIfMissing?: boolean) => {
+      if (!onlyIfMissing || !data) data = next;
+      return data;
+    }),
+  };
+}
+
+it("migrates the legacy key only when the song library has no file and preserves the old key", async () => {
+  const old = JSON.stringify({ profiles: [], channels: { "boss-sy200": 6 }, assignments: { "boss-sy200:ctl1": 82 } });
+  localStorage.setItem(PEDAL_LEGACY_KEY, old);
+  const api = backing(null);
+  const first = createPedalLibrary(localStorage, () => api);
+  await first.getState().load();
+  await first.getState().load();
+  expect(api.savePedalSettings).toHaveBeenCalledExactlyOnceWith(
+    {
+      version: 1,
+      profiles: [],
+      channels: { "boss-sy200": 6 },
+      assignments: { "boss-sy200:ctl1": 82 },
+      presets: {},
+    },
+    true,
+  );
+  first.getState().savePresets("boss-sy200", [{ slot: 44, name: "Pad" }]);
+  await first.getState().flush();
+  const second = createPedalLibrary(localStorage, () => api);
+  await second.getState().load();
+  expect(second.getState().presets["boss-sy200"]).toEqual([{ slot: 44, name: "Pad" }]);
+  expect(api.savePedalSettings.mock.calls.filter(([, migrate]) => migrate)).toHaveLength(1);
+  expect(localStorage.getItem(PEDAL_LEGACY_KEY)).toBe(old);
+});
+
+it("reads the file instead of the old key and replays edits made while initial settings are read", async () => {
+  localStorage.setItem(PEDAL_LEGACY_KEY, JSON.stringify({ channels: { "boss-sy200": 6 } }));
+  const api = backing({ ...emptyPedalSettings(), channels: { "boss-sy200": 4, "boss-ir200": 3 } });
+  const library = createPedalLibrary(localStorage, () => api);
+  library.getState().setChannel("strymon-timeline", 7);
+  await library.getState().flush();
+  expect(library.getState().channels).toEqual({ "boss-sy200": 4, "boss-ir200": 3, "strymon-timeline": 7 });
+  expect(api.savePedalSettings.mock.calls.every(([, migrate]) => !migrate)).toBe(true);
+});
+
+it("keeps failed edits pending, retries them and reloads settings after a restore", async () => {
+  const api = backing(emptyPedalSettings());
+  const library = createPedalLibrary(localStorage, () => api);
+  const state = library.getState();
+  await state.load();
+  api.savePedalSettings.mockRejectedValueOnce(new Error("Disk full"));
+  state.savePresets("boss-ir200", [{ slot: 44, name: "Solo", note: "Clean" }]);
+  await vi.waitFor(() => expect(library.getState().saveError).toBe("Disk full"));
+  await state.flush();
+  expect((await api.readPedalSettings())?.presets["boss-ir200"]).toEqual([{ slot: 44, name: "Solo", note: "Clean" }]);
+  await api.savePedalSettings({ ...emptyPedalSettings(), presets: { "boss-ir200": [{ slot: 1, name: "After restore" }] } });
+  await state.load(true);
+  expect(library.getState().presets["boss-ir200"]).toEqual([{ slot: 1, name: "After restore" }]);
+});
 
 const pedal = (pedals: ReturnType<typeof configuredPedals>, name: string) => pedals.find((p) => p.name === name)!;
 

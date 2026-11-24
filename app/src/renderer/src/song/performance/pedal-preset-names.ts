@@ -1,7 +1,9 @@
 // GP-150 and GP-180 cues recall a preset by number, but the player thinks in preset names. These helpers label the recall actions with the
 // pedal's own names and write the name into the cue's label, so a later preflight can tell when the slot holds a different sound. The cue's
 // bytes never change, which keeps old charts valid.
-import type { Cue } from "./chart";
+import { midiCommand, type Cue } from "./chart";
+import { actionCommands, DEFAULT_PEDAL_CHANNELS, PEDAL_PROFILES, type MidiAction, type PedalProfile } from "./pedal-profiles";
+import type { PedalSettingsFile, PresetEntry } from "@shared/pedal-settings";
 
 export type PresetModel = "gp150" | "gp180";
 
@@ -71,4 +73,109 @@ export function presetCueTarget(cue: Pick<Cue, "messages" | "label">, pedalChann
   // A label whose number disagrees with the bytes was edited by hand; the bytes win and the stale name is ignored.
   if (!found || Number(found[2]) !== slot + 1) return { slot, name: null, model: null };
   return { slot, name: found[3].trim(), model: found[1] === "5" ? "gp150" : "gp180" };
+}
+
+/** Side A or B of each TimeLine bank. Other manual presets use one-based memory numbers. */
+export function manualPresetNumber(profileId: string, slot: number): string {
+  if (profileId !== "strymon-timeline") return presetNumber(slot);
+  return String(Math.floor(slot / 2)).padStart(2, "0") + (slot % 2 ? "B" : "A");
+}
+
+function recallSlot(messages: readonly number[][]): number | null {
+  const program = messages.at(-1);
+  if (!program || program.length !== 2 || (program[0] & 0xf0) !== 0xc0) return null;
+  const control = 0xb0 | (program[0] & 15);
+  const [bank, low] = messages;
+  if (messages.length === 1) return program[1];
+  if (messages.length > 3 || bank[0] !== control || bank[1] !== 0) return null;
+  if (messages.length === 3 && (low[0] !== control || low[1] !== 32 || low[2] !== 0)) return null;
+  return bank[2] * 128 + program[1];
+}
+
+/** Static memory recalls can be named even when an imported profile uses its own action IDs. */
+export function manualMemorySlot(action: MidiAction): number | null {
+  if (action.value || action.assignment || action.momentary || action.commands.length > 3 || !action.commands.at(-1)?.startsWith("pc ")) return null;
+  try {
+    return recallSlot(actionCommands(action, 1).map(midiCommand));
+  } catch {
+    return null;
+  }
+}
+
+export function manualMemorySlots(profile: PedalProfile): Set<number> {
+  if (presetModelOf(profile.id)) return new Set();
+  return new Set(profile.actions.map(manualMemorySlot).filter((slot): slot is number => slot !== null));
+}
+
+export function parsePresetList(profile: PedalProfile, text: string): { entries: PresetEntry[]; errors: string[] } {
+  const slots = manualMemorySlots(profile);
+  const entries = new Map<number, PresetEntry>();
+  const errors: string[] = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim()) return;
+    const match = /^(\d+[AaBb]?)\s+(.+)$/.exec(line.trim());
+    const number = match?.[1] ?? "";
+    const bank = profile.id === "strymon-timeline" ? /^(\d{1,2})([ab])$/i.exec(number) : null;
+    const slot = bank ? Number(bank[1]) * 2 + Number(bank[2].toUpperCase() === "B") : Number(number) - 1;
+    const name = match?.[2].trim() ?? "";
+    if (!slots.has(slot) || !name || name.length > 32 || entries.has(slot)) {
+      errors.push(`Line ${i + 1}: ${line}`);
+      return;
+    }
+    entries.set(slot, { slot, name });
+  });
+  return { entries: [...entries.values()], errors };
+}
+
+export interface ManualPresetProfile {
+  id: string;
+  name: string;
+  channel: number;
+  slots: ReadonlySet<number>;
+  entries: ReadonlyMap<number, PresetEntry>;
+}
+
+export function manualPresetProfiles(library: Pick<PedalSettingsFile, "presets" | "profiles" | "channels">): ManualPresetProfile[] {
+  return [...PEDAL_PROFILES, ...library.profiles].flatMap((profile) => {
+    const slots = manualMemorySlots(profile);
+    if (!slots.size) return [];
+    return [
+      {
+        id: profile.id,
+        name: profile.name,
+        channel: library.channels[profile.id] ?? DEFAULT_PEDAL_CHANNELS[profile.id] ?? 1,
+        slots,
+        entries: new Map((library.presets[profile.id] ?? []).map((entry) => [entry.slot, entry])),
+      },
+    ];
+  });
+}
+
+const cueText = (value: string) => value.replace(/[{}\r\n]/g, " ").trim();
+
+export function manualPresetCueLabel(profile: Pick<PedalProfile, "id" | "name">, slot: number, name: string): string {
+  return `${cueText(profile.name)}: ${manualPresetNumber(profile.id, slot)} ${cueText(name)}`;
+}
+
+/** An explicit profile label wins. Without a label, the bytes must identify exactly one named profile on the cue's channel. */
+export function manualPresetCueTarget(cue: Pick<Cue, "label" | "messages">, profiles: readonly ManualPresetProfile[]) {
+  const slot = recallSlot(cue.messages);
+  if (slot === null) return null;
+  const channel = (cue.messages[0][0] & 15) + 1;
+  const label = cue.label ?? "";
+  if (/^(?:Valeton )?GP-1[58]0:/.test(label)) return null;
+  const byLabel = profiles.filter((profile) => label.startsWith(`${cueText(profile.name)}: `));
+  const candidates = byLabel.length ? byLabel : profiles.filter((profile) => profile.channel === channel);
+  const matches = candidates.filter((profile) => profile.slots.has(slot) && (profile.id !== "strymon-timeline" || cue.messages.length > 1));
+  if (matches.length !== 1) return null;
+  const profile = matches[0];
+  const prefix = manualPresetCueLabel(profile, slot, "");
+  const name = label.startsWith(prefix) ? label.slice(prefix.length).trim() : "";
+  return { profile, slot, saved: name || null, current: profile.entries.get(slot) };
+}
+
+/** Read the current name without rewriting the chart's recorded name or MIDI bytes. */
+export function displayPresetCue(cue: Pick<Cue, "label" | "messages">, profiles: readonly ManualPresetProfile[]): string | undefined {
+  const target = manualPresetCueTarget(cue, profiles);
+  return target?.current ? manualPresetCueLabel(target.profile, target.slot, target.current.name) : cue.label;
 }
