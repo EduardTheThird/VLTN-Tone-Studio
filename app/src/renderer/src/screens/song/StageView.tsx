@@ -42,6 +42,7 @@ export function StageView({
   soloScale,
   settingsKey,
   drumsChip,
+  rigNext,
 }: {
   session: PerformanceSession;
   stage: boolean;
@@ -65,6 +66,7 @@ export function StageView({
   settingsKey?: string;
   /** Which drums play, shown in the status strip. */
   drumsChip?: ReactNode;
+  rigNext?: ReactNode;
 }) {
   const library = useSongLibrary();
   const source = useSong((s) => s.source);
@@ -163,6 +165,7 @@ export function StageView({
               beat={beat}
               speedNote={speedNote}
               notices={notices}
+              rigNext={rigNext}
               extra={
                 <>
                   {drumsChip}

@@ -1,3 +1,5 @@
+import { managedChartSpan } from "./managed-chart";
+import { RIG_MARKERS } from "./rig";
 import { parseChart, type Cue } from "./chart";
 import type { MidiMacro } from "./midi-macros";
 import { decodeMidiFile, smfCues, type MidiFileOption } from "./smf";
@@ -39,6 +41,15 @@ export function songCues(
       chartCues = chartCues.map((cue) => {
         const line = cue.source?.line ?? cue.line?.index ?? -1;
         return line > begin && line < end ? { ...cue, managed: "rhythm" } : cue;
+      });
+    }
+    let rig: ReturnType<typeof managedChartSpan> = null;
+    try { rig = managedChartSpan(effective, RIG_MARKERS); } catch { /* Keep the performer’s edited chart playable. */ }
+    if (rig) {
+      const { begin, end } = rig;
+      chartCues = chartCues.map((cue) => {
+        const line = cue.source?.line ?? cue.line?.index ?? -1;
+        return line > begin && line < end ? { ...cue, rig: true } : cue;
       });
     }
   } catch (e) {

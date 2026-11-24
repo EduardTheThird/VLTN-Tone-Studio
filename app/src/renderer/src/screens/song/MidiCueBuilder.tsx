@@ -325,6 +325,8 @@ export function MidiCueBuilder({
                   <td className="p-2">
                     {cue.managed === "rhythm" ? (
                       <span className="text-xs text-silkscreen-3">Automatic RC-10R</span>
+                    ) : cue.rig ? (
+                      <span className="text-xs text-silkscreen-3">Song Rig table</span>
                     ) : (
                       <div className="flex flex-wrap items-center gap-1">
                         {cue.trigger === "prepare" &&
@@ -406,7 +408,7 @@ export function MidiCueBuilder({
             </tbody>
           </table>
           <p className="text-xs text-silkscreen-3">Multi-message actions are sent in the order shown.</p>
-          {scheduled.some((cue) => !cue.managed && !cue.source) && (
+          {scheduled.some((cue) => !cue.managed && !cue.rig && !cue.source) && (
             <p className="text-xs text-silkscreen-3">
               Some cues share a line with other cues or timestamps, so they are changed in the chart text. To change the chart text directly, open Lyrics &
               chords → Edit chords, lyrics & MIDI

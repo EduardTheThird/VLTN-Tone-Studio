@@ -171,6 +171,7 @@ export function StageStatusStrip({
   controls,
   notices,
   extra,
+  rigNext,
 }: {
   session: PerformanceSession;
   title: string;
@@ -187,6 +188,7 @@ export function StageStatusStrip({
   notices: string;
   /** More controls for the right end, such as the PDF view switch */
   extra?: ReactNode;
+  rigNext?: ReactNode;
 }) {
   const sections = useSession(session, (s) => s.sections);
   const cues = useSession(session, (s) => s.cues);
@@ -212,7 +214,12 @@ export function StageStatusStrip({
         </p>
         {setPosition && <p className="text-sm text-silkscreen-3">{setPosition}</p>}
       </div>
-      {nextTitle ? <p className="text-2xl font-bold">Next: {nextTitle}</p> : <SectionNow session={session} sections={ordered} />}
+      {nextTitle ? <p className="text-2xl font-bold">Next: {nextTitle}</p> : (
+        <div className="min-w-0">
+          <SectionNow session={session} sections={ordered} />
+          {rigNext}
+        </div>
+      )}
       {!nextTitle && (
         <span className="[@media(max-height:719px)]:hidden">
           <BarsLeft sections={ordered} grid={grid} />

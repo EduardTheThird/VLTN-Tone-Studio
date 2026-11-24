@@ -43,6 +43,8 @@ export interface Cue {
   label?: string;
   /** Recomputed from the song's current settings; edited through its automatic setup instead of as a frozen chart token. */
   managed?: "rhythm";
+  /** Written from the song’s Rig table. */
+  rig?: true;
   /** `{chase}` forces this cue's PC/CC/SysEx to be replayed when starting mid-song; `{nochase}` never replays them. Unset uses the defaults. */
   chase?: boolean;
   /** Set on a `{midi@…}` trigger, which has no song time. `time` is 0 and is never used for scheduling. A section cue has `"section"`. */

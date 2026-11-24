@@ -72,6 +72,7 @@ import { showToast } from "@/app/notify";
 import { effectiveMute, noTrackNote, practiceSet, readCountsAs, usePracticeMute, type CountsAs, type PracticeTracks } from "@/song/performance/practice-mute";
 import { PracticeMuteBanner, PracticeMuteMenu } from "./PracticeMute";
 import { StageView } from "./StageView";
+import { RigStageNext, RigTable } from "./RigTable";
 import { SessionTimeline } from "./SessionTimeline";
 import { AnalysisCard } from "./AnalysisCard";
 import { TransportBar } from "./TransportBar";
@@ -960,6 +961,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               speedNote={speedNote(speed)}
               pdf={pdfState}
               settingsKey={key}
+              rigNext={<RigStageNext value={cueOptions.rig} sections={sectionList} chart={chart} />}
               soloScale={{ storageKey: key, capo, onChange: () => setSoloVersion((v) => v + 1) }}
             />
           </ScreenBoundary>
@@ -1001,6 +1003,14 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
                 )}
               </Rc10rSetupCard>
             </div>
+            {source && <RigTable value={cueOptions.rig} chart={chart} sections={sectionList} bpm={bpm} beats={beats}
+              duration={pcmMemoryShape(source.audio).frames / source.audio.sampleRate}
+              memory={(cueOptions.rhythmAutomation as { memory?: number } | undefined)?.memory}
+              locked={playing || !!library.playlistPlaying}
+              onSave={(rig, nextChart) => {
+                setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), rig }));
+                if (nextChart !== chart) saveChart(nextChart);
+              }} />}
             <PerformanceMidiSetup
               session={session}
               songKey={key}

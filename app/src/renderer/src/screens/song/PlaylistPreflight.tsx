@@ -103,6 +103,7 @@ export function PlaylistPreflight({
         presetNames: knownPresetNames(),
         manualPresets: manualPresetProfiles(pedals),
         rig,
+        rigLibrary: pedals,
         rhythmControls: rhythmControlOverrides(pedals),
         cuesArmed: useSongLibrary.getState().midiSession?.armed,
       });

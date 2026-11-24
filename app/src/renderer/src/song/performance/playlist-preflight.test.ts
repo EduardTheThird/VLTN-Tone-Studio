@@ -322,3 +322,18 @@ it("includes live band renders in the active and preloaded song memory estimate"
   expect(result[0].warnings.join(" ")).toContain("1.5 GiB audio memory budget");
   expect(result[1].warnings.join(" ")).not.toContain("1.5 GiB audio memory budget");
 });
+
+
+it("flags a Rig table that uses an unassigned effect control", () => {
+  const song = {
+    ...saved.song!,
+    settings: { ...saved.song!.settings, ":options": JSON.stringify({ rig: {
+      rows: [{ id: "load", cells: { "boss-ir200": { extras: [{ action: "solo" }] } } }],
+    } }) },
+  };
+  const [checked] = playlistPreflight(["one"], [{ ...saved, song }], {
+    ...config,
+    rigLibrary: { profiles: [], owned: ["boss-ir200"], channels: {}, assignments: {}, presets: {} },
+  });
+  expect(checked.warnings).toContain("Rig pedal BOSS IR-200 needs SOLO SW CC assigned.");
+});

@@ -13,6 +13,7 @@ import { pedalTempoMessages } from "./pedal-tempo";
 import type { LibraryPreflightSong } from "@shared/song-library";
 import { trackKey, trackKindOf } from "@shared/song-library";
 import { midiPreflight, type PreflightOptions } from "./midi-preflight";
+import { parseSongRig, rigSetupWarnings, type RigLibrary } from "./rig";
 import { rigCheck, type RigFacts } from "./rig-check";
 import type { MidiMacro } from "./midi-macros";
 import { parseSections } from "./sections";
@@ -82,6 +83,7 @@ export function playlistPreflight(
     leadInDefaults?: LeadIn;
     /** The connected GP-150 / GP-180's settings and the app's side. Its issues are added once, to the first entry; `appClock` is taken from the songs. */
     rig?: RigFacts | null;
+    rigLibrary?: RigLibrary;
     /** Whether the cues are armed now. Unset skips the pedal drums check; false warns about every song that chose RC-10R drums. */
     cuesArmed?: boolean;
   },
@@ -119,6 +121,7 @@ export function playlistPreflight(
         errors.push("Saved performance options are invalid.");
       }
       anyClock ||= options.clock === true;
+      if (config.rigLibrary && options.rig) warnings.push(...rigSetupWarnings(parseSongRig(options.rig), config.rigLibrary, parseSections(options.sections)));
       const raw = song.settings[":bpm"];
       const bpm = raw ? Number(raw) : 120;
       if (!raw) warnings.push("No saved BPM; playback defaults to 120. Confirm the recording tempo.");

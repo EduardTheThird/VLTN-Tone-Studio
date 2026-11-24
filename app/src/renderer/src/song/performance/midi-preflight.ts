@@ -1,3 +1,4 @@
+import { rigCueConflicts } from "./rig";
 import type { RigChannelIssue } from "./my-rig";
 import { PREFLIGHT_TIME_TOLERANCE_S } from "./preflight-timing";
 import { isPresetMessage, startPreparation, type PreparationSettings } from "./start-preparation";
@@ -61,6 +62,7 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
     else warningCount++;
     issues.push({ code, text, ...(level ? { level } : {}) });
   };
+  for (const warning of rigCueConflicts(cues)) add("rig-hand-cue", warning);
   const preparation = cues.filter((cue) => cue.trigger === "prepare");
   if (
     options.tempoChannel &&

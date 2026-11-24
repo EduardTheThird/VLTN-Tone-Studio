@@ -1,3 +1,4 @@
+import { replaceManagedChart } from "./managed-chart";
 import { rhythmTempo } from "./rhythm-tempo";
 import { lrcTime, parseChart } from "./chart";
 import { parseSections, type Section } from "./sections";
@@ -222,17 +223,7 @@ export function currentRhythmChart(song: RhythmAutomationSong, controls: Partial
 
 /** Replaces only the app's generated block. Missing or duplicated markers are refused instead of deleting chart text. */
 export function replaceRhythmAutomation(chart: string, block: string): string {
-  const lines = chart.split(/\r?\n/);
-  const begins = lines.flatMap((line, index) => (line === BEGIN ? [index] : []));
-  const ends = lines.flatMap((line, index) => (line === END ? [index] : []));
-  if (!begins.length && !ends.length) return block ? `${chart}${chart && !chart.endsWith("\n") ? "\n" : ""}${block}` : chart;
-  if (begins.length !== 1 || ends.length !== 1 || begins[0] >= ends[0])
-    throw new Error("The automatic rhythm cue markers were edited. Restore their begin/end lines in Lyrics & chords before rebuilding.");
-  const newline = chart.includes("\r\n") ? "\r\n" : "\n";
-  const before = lines.slice(0, begins[0]);
-  const after = lines.slice(ends[0] + 1);
-  const prefix = before.length ? before.join(newline) + newline : "";
-  return prefix + (block ? block.split("\n").join(newline) + (after.length ? newline : "") : "") + after.join(newline);
+  return replaceManagedChart(chart, block, { begin: BEGIN, end: END, error: "The automatic rhythm cue markers were edited. Restore their begin/end lines in Lyrics & chords before rebuilding." });
 }
 
 /** Builds ordinary chart cues, so song saves, playlist handovers, arming and the existing MIDI scheduler all use the same path. */

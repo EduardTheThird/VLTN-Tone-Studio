@@ -7,7 +7,11 @@ import { manualPresetProfiles, usablePresetNames, type PresetModel, type PresetN
 /** The names of `model`'s presets as of now: read from a connected pedal of that model, else cached from its last connection. */
 export function currentPresetNames(model: PresetModel): PresetNames | null {
   const { device, status, names } = useDevice.getState();
-  const live = status === "connected" && device === model ? { names: names.map((n) => n.name), source: "live" as const } : null;
+  return presetNamesFor(model, status === "connected" && device === model ? names : undefined);
+}
+
+function presetNamesFor(model: PresetModel, connected: readonly { name: string }[] | undefined): PresetNames | null {
+  const live = connected ? { names: connected.map((n) => n.name), source: "live" as const } : null;
   const cached: string[] = [];
   for (const n of loadCachedNames(model)) cached[n.slot] = n.name;
   return usablePresetNames(
@@ -26,8 +30,7 @@ export function usePresetNames(model: PresetModel | null): { presetNames: Preset
   const status = useDevice((s) => s.status);
   const device = useDevice((s) => s.device);
   const lastConnectedAt = useDevice((s) => s.lastConnectedAt);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the store values above are what change the result
-  const presetNames = useMemo(() => (model ? currentPresetNames(model) : null), [model, names, status, device]);
+  const presetNames = useMemo(() => model ? presetNamesFor(model, status === "connected" && device === model ? names : undefined) : null, [model, names, status, device]);
   return useMemo(() => ({ presetNames, lastConnectedAt }), [presetNames, lastConnectedAt]);
 }
 
