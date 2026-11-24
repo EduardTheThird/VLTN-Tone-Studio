@@ -1,3 +1,4 @@
+import { supportsRigTempo } from "@/song/performance/rig-tempo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { host } from "@/host";
 import { Button } from "@/components/ui/button";
@@ -228,6 +229,13 @@ export function MyRig({ session }: { session: PerformanceSession }) {
                 </label>
               ))}
             </div>
+            {supportsRigTempo(id) && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" aria-label={`${profile.name} follows the song’s tempo`} disabled={playing || starting}
+                  checked={library.tempoFollow?.[id] !== false} onChange={(event) => library.setTempoFollow(id, event.target.checked)} />
+                Follows the song’s tempo
+              </label>
+            )}
             {id === "valeton-gp180" && (
               <a className="underline" href="#gp-rig-settings">
                 Open GP-180 rig check

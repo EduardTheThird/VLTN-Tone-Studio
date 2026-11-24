@@ -17,6 +17,7 @@ export interface PedalSettingsFile {
   assignments: Record<string, number>;
   presets: Record<string, PresetEntry[]>;
   owned: string[];
+  tempoFollow?: Record<string, boolean>;
 }
 
 export const emptyPedalSettings = (): PedalSettingsFile => ({
@@ -88,7 +89,15 @@ export function parsePedalSettings(text: string): PedalSettingsFile {
   });
   const owned = data.owned ?? DEFAULT_OWNED_PEDALS;
   if (!Array.isArray(owned) || owned.some((id) => typeof id !== "string" || !profileId(id))) return fail();
-  return { version: 1, profiles, channels, assignments, presets: Object.fromEntries(presets), owned: [...new Set<string>(owned)] };
+  let tempoFollow: Record<string, boolean> | undefined;
+  if (data.tempoFollow !== undefined) {
+    if (!record(data.tempoFollow)) return fail();
+    const entries = Object.entries(data.tempoFollow);
+    if (entries.some(([id, value]) => !profileId(id) || typeof value !== "boolean")) return fail();
+    tempoFollow = Object.fromEntries(entries) as Record<string, boolean>;
+  }
+  return { version: 1, profiles, channels, assignments, presets: Object.fromEntries(presets), owned: [...new Set<string>(owned)],
+    ...(tempoFollow ? { tempoFollow } : {}) };
 }
 
 export interface PedalSettingsApi {

@@ -54,8 +54,8 @@ function readLegacy(storage: LegacyStorage): PedalSettingsFile | null {
   }
 }
 
-function libraryData({ profiles, channels, assignments, presets, owned }: LibraryData): LibraryData {
-  return { profiles: profiles.filter((profile) => !PEDAL_PROFILES.some((builtIn) => builtIn.id === profile.id)), channels, assignments, presets, owned };
+function libraryData({ profiles, channels, assignments, presets, owned, tempoFollow }: LibraryData): LibraryData {
+  return { profiles: profiles.filter((profile) => !PEDAL_PROFILES.some((builtIn) => builtIn.id === profile.id)), channels, assignments, presets, owned, tempoFollow };
 }
 
 export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalSettingsApi | undefined) {
@@ -69,6 +69,7 @@ export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalS
       setAssignment: (id: string, action: string, cc: number) => void;
       savePresets: (id: string, entries: PresetEntry[]) => void;
       setOwned: (id: string, enabled: boolean) => void;
+      setTempoFollow: (id: string, enabled: boolean) => void;
     }
   >((set, get) => {
     const legacy = readLegacy(storage);
@@ -139,6 +140,9 @@ export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalS
       },
       setOwned(id, enabled) {
         save(({ owned }) => ({ owned: enabled ? [...new Set([...owned, id])] : owned.filter((other) => other !== id) }));
+      },
+      setTempoFollow(id, enabled) {
+        save(({ tempoFollow }) => ({ tempoFollow: { ...tempoFollow, [id]: enabled } }));
       },
       savePresets(id, entries) {
         if (entries.some(({ slot, name, note }) => !Number.isInteger(slot) || slot < 0 || slot > 16_383 || name.length > 32 || (note?.length ?? 0) > 1000))

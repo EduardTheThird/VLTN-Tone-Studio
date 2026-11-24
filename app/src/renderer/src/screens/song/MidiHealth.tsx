@@ -1,3 +1,4 @@
+import type { RigTempoPlan } from "@/song/performance/rig-tempo";
 import type { RigChannelIssue } from "@/song/performance/my-rig";
 import { ArrangementAdvice } from "./ArrangementAdvice";
 import type { PreparationSettings } from "@/song/performance/start-preparation";
@@ -36,11 +37,13 @@ export function MidiHealth({
   songKey,
   myRig,
   rigChannelWarnings,
+  rigTempo,
 }: {
   cues: Cue[];
   songKey?: string;
   myRig?: ReactNode;
   rigChannelWarnings?: readonly RigChannelIssue[];
+  rigTempo?: RigTempoPlan | null;
   /** The song's sections, which the cues on a section are placed on */
   sections?: Section[];
   duration: number;
@@ -81,6 +84,7 @@ export function MidiHealth({
         presetNames,
         manualPresets,
         rigChannelWarnings,
+        rigTempo,
         pedalDrums,
         pedals: configuredPedals(library),
       }),
@@ -101,6 +105,7 @@ export function MidiHealth({
       presetNames,
       manualPresets,
       rigChannelWarnings,
+      rigTempo,
       pedalDrums?.chosen,
       pedalDrums?.armed,
       library.channels,

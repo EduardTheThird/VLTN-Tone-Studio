@@ -1,3 +1,4 @@
+import type { RigTempoPlan } from "@/song/performance/rig-tempo";
 import { MyRig } from "./MyRig";
 import { useDevice } from "@/state/device";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
@@ -39,11 +40,13 @@ export function SessionMidiHealth({
   session,
   firstBeat = 0,
   pedalDrumsChosen = false,
+  rigTempo,
 }: {
   session: PerformanceSession;
   firstBeat?: number;
   /** The song chose RC-10R pedal drums, so the check warns when the cues are off. */
   pedalDrumsChosen?: boolean;
+  rigTempo?: RigTempoPlan | null;
 }) {
   const armed = useSession(session, selectArmed);
   const cues = useSession(session, (s) => s.cues);
@@ -89,12 +92,13 @@ export function SessionMidiHealth({
       duration={player?.length ?? 0}
       range={range}
       clock={clock}
+      rigTempo={rigTempo}
       preparation={preparation ?? undefined}
       playbackStart={player ? preRollStart(player.start, timing.preRollBeats, bpm) : undefined}
       bpm={bpm}
       beats={timing.beatsPerBar}
       firstBeat={firstBeat}
-      tempoChannel={tempoOnStart ? midiConfig.tempoChannel : undefined}
+      tempoChannel={tempoOnStart ? rigTempo?.gpChannel ?? midiConfig.tempoChannel : undefined}
       timecode={timecode}
       outputName={portId === BLUETOOTH_PORT_ID ? `Bluetooth ${output?.name || ""}` : output?.name || undefined}
       parseError={parseError}

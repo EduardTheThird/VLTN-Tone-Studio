@@ -1,3 +1,4 @@
+import { readRigTempo, rigTempoPlan } from "./rig-tempo";
 import { parseBandSettings } from "../band/arrangement";
 import { extraKeysIn } from "../band/extras";
 import { variantExtraBytes } from "../band/live-variants";
@@ -122,6 +123,10 @@ export function playlistPreflight(
       }
       anyClock ||= options.clock === true;
       if (config.rigLibrary && options.rig) warnings.push(...rigSetupWarnings(parseSongRig(options.rig), config.rigLibrary, parseSections(options.sections)));
+      const rigTempo = config.rigLibrary ? rigTempoPlan(readRigTempo(options.rigTempo), config.rigLibrary) : null;
+      const tempoOnStart = rigTempo?.gpTempo ?? config.tempoOnStart;
+      const tempoChannel = rigTempo?.gpChannel ?? config.tempoChannel;
+      const clock = rigTempo?.clock ?? options.clock === true;
       const raw = song.settings[":bpm"];
       const bpm = raw ? Number(raw) : 120;
       if (!raw) warnings.push("No saved BPM; playback defaults to 120. Confirm the recording tempo.");
@@ -138,7 +143,7 @@ export function playlistPreflight(
         /* Song-cue validation reports malformed plans below. */
       }
       const played = effectiveBpm(rhythmBpm ?? bpm, speed.rate);
-      if (Number.isFinite(played) && config.tempoOnStart && (played < 40 || played > 300))
+      if (Number.isFinite(played) && tempoOnStart && (played < 40 || played > 300))
         errors.push(`At ${Math.round(speed.rate * 100)}% this song plays at ${Math.round(played)} BPM; automatic pedal tempo requires 40–300 BPM.`);
       const changed = speed.rate !== 1 || speed.semitones !== 0 || speed.cents !== 0;
       // The first song renders as it loads and the second is the one the set prepares next, so a render that is not ready for either is
@@ -148,7 +153,7 @@ export function playlistPreflight(
         if (entry <= 1) warnings.push(text);
         else notes.push(text);
       }
-      if (config.tempoOnStart && options.clock)
+      if (!rigTempo && tempoOnStart && options.clock)
         warnings.push("Saved continuous clock is enabled alongside automatic tempo. Disable continuous clock for this setup.");
       // Every playable track, split stems and imported tracks alike. The source is a mix of them, not a track of its own.
       // In player order: the first one plays first, and its length is the one the song is checked against.
@@ -182,6 +187,7 @@ export function playlistPreflight(
         duration,
         settings: song.settings,
         rhythmControls: config.rhythmControls,
+        rigTempo,
       });
       if (cued.error) errors.push(`${cued.part === "midi-file" ? "MIDI file" : "Chart"} cannot play: ${cued.error}`);
       else {
@@ -194,8 +200,9 @@ export function playlistPreflight(
         const playbackStart = preRollStart(start, lead.preRollBeats, bpm);
         const report = midiPreflight(cued.cues, {
           duration,
-          clock: options.clock === true,
-          tempoChannel: config.tempoOnStart ? config.tempoChannel : undefined,
+          clock,
+          rigTempo,
+          tempoChannel: tempoOnStart ? tempoChannel : undefined,
           outputName: config.outputName,
           pedals: config.pedals,
           presetNames: config.presetNames,
@@ -213,7 +220,7 @@ export function playlistPreflight(
         try {
           // An invalid tempo already has its own actionable error above. Do not encode it as MIDI.
           const tempo =
-            config.tempoOnStart && Number.isFinite(played) && played >= 40 && played <= 300 ? pedalTempoMessages(played, config.tempoChannel) : null;
+            tempoOnStart && Number.isFinite(played) && played >= 40 && played <= 300 ? pedalTempoMessages(played, tempoChannel) : null;
           const plan = preparationSequence({
             cues: expandSectionCues(cued.cues, parseSections(options.sections)),
             position: playbackStart,

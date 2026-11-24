@@ -1,3 +1,4 @@
+import { readRigTempo, rigTempoPlan, TIMELINE_DIVISIONS, TIMELINE_ID } from "@/song/performance/rig-tempo";
 import { clockSource, usableClockGrid, type ClockSource } from "@/song/performance/beat-clock";
 import { parseBeatGrid } from "@/song/band/beat-grid";
 import { pcmMemoryShape } from "@/song/audio/playback-pcm";
@@ -288,6 +289,16 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   const pedalSettings = usePedalLibrary();
   const rhythmControls = rhythmControlOverrides(pedalSettings);
   const cueOptions = useMemo(() => readOptions<Record<string, unknown>>(key, {}), [key, settingsVersion]);
+  const songRigTempo = readRigTempo(cueOptions.rigTempo);
+  const rigTempo = useMemo(
+    () => rigTempoPlan(readRigTempo(cueOptions.rigTempo), pedalSettings),
+    [cueOptions.rigTempo, pedalSettings.owned, pedalSettings.channels, pedalSettings.tempoFollow],
+  );
+  const tempoOnStart = rigTempo?.gpTempo ?? midiConfig.tempoOnStart;
+  const tempoChannel = rigTempo?.gpChannel ?? midiConfig.tempoChannel;
+  const saveRigTempo = (value: ReturnType<typeof readRigTempo>) => {
+    setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), rigTempo: value ?? undefined }));
+  };
   const preparationDefaults = usePreparationDefaults((s) => s.settings);
   const beforeSong = useMemo(() => preparationSettings(cueOptions.preparation, preparationDefaults), [cueOptions.preparation, preparationDefaults]);
   // Mixer and display edits must not restart an armed scheduler. Only dependencies of the automatic rhythm change its cues.
@@ -322,6 +333,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       duration: source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0,
       settings,
       rhythmControls,
+      rigTempo,
     });
     return {
       cues: cued.cues,
@@ -331,7 +343,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         : (currentRhythmAutomation({ key, title: "", duration: source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0, settings })?.draft
             .bpm ?? null),
     };
-  }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature]);
+  }, [chart, midiConfig.macros, midiFile, key, source, rhythmCueSignature, rigTempo]);
   // Which drums play. The pedal plays only when the song has RC-10R cues and the cues are armed. This is decided while stopped and held
   // while playing, so the drum tracks never switch mid-song; the next Play decides again.
   const [heldArmed, setHeldArmed] = useState(() => !!carriedInto(library.midiSession, { queued, playlistPlaying: !!library.playlistPlaying })?.armed);
@@ -384,8 +396,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         carried: carriedInto(library.midiSession, { queued, playlistPlaying: !!library.playlistPlaying }),
         initial: {
           bluetooth,
-          tempoOnStart: midiConfig.tempoOnStart,
-          tempoChannel: midiConfig.tempoChannel,
+          tempoOnStart,
+          tempoChannel,
           savedOutput: midiConfig.output,
           savedInput: midiConfig.input,
           queued,
@@ -494,10 +506,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
   }, [session]);
   // Values owned by other stores; the session re-runs only the effects whose inputs changed.
   useEffect(() => {
+    session.setRigClock(rigTempo?.clock);
     session.update({
       bluetooth,
-      tempoOnStart: midiConfig.tempoOnStart,
-      tempoChannel: midiConfig.tempoChannel,
+      tempoOnStart,
+      tempoChannel,
       savedOutput: midiConfig.output,
       savedInput: midiConfig.input,
       queued,
@@ -706,7 +719,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
           beats,
           shift,
           capo,
-          clock,
+          clock: session.manualClock,
           volume,
           mix: mergedMix,
           trackBuses,
@@ -972,7 +985,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         </div>
         <div style={{ display: shownView("midi") }}>
           <ScreenBoundary name="Performance MIDI">
-            <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} />
+            <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} rigTempo={rigTempo} />
             <div id="rc10r-rig-settings">
               <Rc10rSetupCard
                 state={{
@@ -1012,6 +1025,32 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
                 )}
               </Rc10rSetupCard>
             </div>
+            {source && (
+              <fieldset aria-label="Rig tempo for this song" disabled={playing || !!library.playlistPlaying} className="flex flex-wrap gap-4 py-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!songRigTempo} onChange={(event) => saveRigTempo(event.target.checked ? { enabled: true } : null)} />
+                  Use My rig tempo for this song
+                </label>
+                {songRigTempo && (
+                  <>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={songRigTempo.noClock === true} onChange={(event) => saveRigTempo({ ...songRigTempo, noClock: event.target.checked ? true : undefined })} />
+                      No clock for this song
+                    </label>
+                    {pedalSettings.owned.includes(TIMELINE_ID) && (
+                      <label className="flex items-center gap-2">
+                        TimeLine division
+                        <select aria-label="TimeLine division" className="rounded border border-seam bg-background p-1" value={songRigTempo.timelineDivision ?? ""}
+                          onChange={(event) => saveRigTempo({ ...songRigTempo, timelineDivision: event.target.value === "" ? undefined : Number(event.target.value) })}>
+                          <option value="">Use preset division</option>
+                          {TIMELINE_DIVISIONS.map((label, i) => <option key={label} value={i}>{label}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </>
+                )}
+              </fieldset>
+            )}
             {source && <RigTable value={cueOptions.rig} chart={chart} sections={sectionList} bpm={bpm} beats={beats}
               duration={pcmMemoryShape(source.audio).frames / source.audio.sampleRate}
               memory={(cueOptions.rhythmAutomation as { memory?: number } | undefined)?.memory}

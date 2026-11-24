@@ -1,3 +1,4 @@
+import { readRigTempo, rigTempoPlan } from "./rig-tempo";
 import { parseSections } from "./sections";
 import { songCues } from "./song-cues";
 import { midiFileFromOptions } from "./smf";
@@ -77,10 +78,12 @@ export class SessionPlaylist {
     try {
       const options = JSON.parse(next.settings[":options"] || "{}");
       const timing = songCountIn(next.settings);
+      const rigTempo = rigTempoPlan(readRigTempo(options.rigTempo), usePedalLibrary.getState());
       const loaded = songCues(next.settings[""] ?? "", useMidiConfiguration.getState().macros, midiFileFromOptions(options), {
         duration: next.player.duration,
         settings: next.settings,
         rhythmControls: rhythmControlOverrides(usePedalLibrary.getState()),
+        rigTempo,
       });
       if (loaded.error) return true;
       const cues = expandSectionCues(loaded.cues, parseSections(options.sections));
@@ -94,7 +97,7 @@ export class SessionPlaylist {
         triggers: chaseTriggers(),
         history: preparationHistoryFor(next.source.audio),
         pedalChannel: this.core.state.tempoChannel,
-        tempo: this.core.state.tempoOnStart ? pedalTempoMessages(timing.bpm * next.player.playbackRate, this.core.state.tempoChannel) : null,
+        tempo: (rigTempo?.gpTempo ?? this.core.state.tempoOnStart) ? pedalTempoMessages(timing.bpm * next.player.playbackRate, rigTempo?.gpChannel ?? this.core.state.tempoChannel) : null,
       });
       return plan.steps.some((step) => step.kind === "send" && step.commands.length > 0);
     } catch {

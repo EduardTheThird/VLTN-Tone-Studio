@@ -1,3 +1,4 @@
+import { rigTempoCues, type RigTempoPlan } from "./rig-tempo";
 import { managedChartSpan } from "./managed-chart";
 import { RIG_MARKERS } from "./rig";
 import { parseChart, type Cue } from "./chart";
@@ -24,7 +25,7 @@ export function songCues(
   chart: string,
   macros: readonly MidiMacro[],
   midiFile: MidiFileOption | null,
-  current?: { duration: number; settings: Record<string, string>; rhythmControls?: Partial<RhythmControls> },
+  current?: { duration: number; settings: Record<string, string>; rhythmControls?: Partial<RhythmControls>; rigTempo?: RigTempoPlan | null },
 ): SongCues {
   let chartCues: Cue[];
   try {
@@ -55,6 +56,7 @@ export function songCues(
   } catch (e) {
     return { cues: [], error: message(e), part: "chart" };
   }
+  chartCues = rigTempoCues(chartCues, current?.rigTempo ?? null);
   if (!midiFile) return { cues: chartCues, error: "", part: "" };
   try {
     const fileCues = smfCues(decodeMidiFile(midiFile));

@@ -1,3 +1,4 @@
+import { rigClockWarnings, type RigTempoPlan } from "./rig-tempo";
 import { rigCueConflicts } from "./rig";
 import type { RigChannelIssue } from "./my-rig";
 import { PREFLIGHT_TIME_TOLERANCE_S } from "./preflight-timing";
@@ -17,6 +18,7 @@ export interface PreflightOptions {
   preparation?: PreparationSettings;
   tempoChannel?: number;
   clock: boolean;
+  rigTempo?: RigTempoPlan | null;
   outputName?: string;
   /**
    * The configured pedals. `unassigned` counts trigger commands whose CC is not set; `triggers` lists the assigned trigger controllers
@@ -63,6 +65,7 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
     issues.push({ code, text, ...(level ? { level } : {}) });
   };
   for (const warning of rigCueConflicts(cues)) add("rig-hand-cue", warning);
+  for (const warning of rigClockWarnings(options.rigTempo ?? null, options.clock && !options.timecode)) add("rig-clock-off", warning);
   const preparation = cues.filter((cue) => cue.trigger === "prepare");
   if (
     options.tempoChannel &&

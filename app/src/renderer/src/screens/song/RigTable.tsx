@@ -1,3 +1,4 @@
+import { TIMELINE_DIVISIONS, TIMELINE_ID } from "@/song/performance/rig-tempo";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SettingsCard } from "@/components/ui/settings-card";
@@ -97,7 +98,13 @@ function RigCellEditor({
               return (
                 <div key={extra.action + i} className="flex flex-wrap items-center gap-1">
                   <span className="text-xs">{action.label}</span>
-                  {value && (
+                  {profile.id === TIMELINE_ID && action.id === "division" ? (
+                    <select className={field} aria-label={title + " tap division"} value={extra.value ?? value?.default ?? 0}
+                      disabled={disabled} onChange={(event) => onChange({ ...cell, extras: extras.map((item, index) =>
+                        i === index ? { ...item, value: Number(event.target.value) } : item) })}>
+                      {TIMELINE_DIVISIONS.map((label, index) => <option key={label} value={index}>{label}</option>)}
+                    </select>
+                  ) : value && (
                     <input type="number" min={value.min} max={value.max} className={field + " w-20"} disabled={disabled}
                       aria-label={title + " " + action.label} value={extra.value ?? value.default}
                       onChange={(event) => {

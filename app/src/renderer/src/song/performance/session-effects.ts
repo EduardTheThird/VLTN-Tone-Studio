@@ -1,3 +1,4 @@
+import { rigTempoLoadKey } from "./rig-tempo";
 import { CLOCK_PPQN } from "./beat-clock";
 import { StemPlayer } from "@/song/stems/player";
 import { useSongLibrary } from "@/song/library";
@@ -35,6 +36,7 @@ export class SessionEffects {
   /** The player whose `{midi@load}` messages were sent while armed. Disarming clears it, so arming again sends them again. */
   private loadedPlayer: StemPlayer | null = null;
   private loadedRhythmKey = "";
+  private loadedRigTempo = "";
 
   createEffects(): Effect[] {
     return [
@@ -241,22 +243,28 @@ export class SessionEffects {
   /** A song's load triggers go out when it is loaded while armed, and again each time the session arms for it. */
   private loadTriggersEffect(): Effect {
     return {
-      deps: (s) => [selectArmed(s), s.player, rhythmMemoryKey(s.cues)],
+      deps: (s) => [selectArmed(s), s.player, rhythmMemoryKey(s.cues), rigTempoLoadKey(s.cues)],
       run: (s) => {
         if (!selectArmed(s) || !s.player) {
           this.loadedPlayer = null;
           this.loadedRhythmKey = "";
+          this.loadedRigTempo = "";
           return;
         }
         const key = rhythmMemoryKey(s.cues);
+        const rigTempo = rigTempoLoadKey(s.cues);
         if (this.loadedPlayer === s.player) {
           if (this.loadedRhythmKey !== key && !s.playing)
             for (const bytes of rhythmMemory(s.cues)) this.core.sendPerformance(bytes, undefined, "RC-10R memory preparation");
+          if (this.loadedRigTempo !== rigTempo && !s.playing)
+            for (const cue of s.cues.filter((cue) => cue.rigTempo))
+              for (const bytes of cue.messages) this.core.sendPerformance(bytes, undefined, "Rig tempo: TimeLine");
         } else {
           this.loadedPlayer = s.player;
           this.core.sendTriggers("load", s.cues);
         }
         this.loadedRhythmKey = key;
+        this.loadedRigTempo = rigTempo;
       },
     };
   }

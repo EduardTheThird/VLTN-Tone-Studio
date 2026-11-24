@@ -169,6 +169,8 @@ export class PerformanceSession {
   restartingLoop = false;
   /** The stems at 100%, which every render is made from */
   baseStems: Stems | null = null;
+  manualClock: boolean;
+  private rigClock: boolean | undefined;
   private bandGrid: BeatGrid | null = null;
   private bandFirstBeat = 0;
   private bandReturnAtSection = false;
@@ -208,6 +210,7 @@ export class PerformanceSession {
 
   constructor(options: SessionOptions) {
     const { initial, carried } = options;
+    this.manualClock = options.initialClock;
     const bluetooth = initial.bluetooth;
     // An empty carried id means nothing was carried, so the saved choice still applies to a song loaded by hand.
     const portId =
@@ -607,7 +610,15 @@ export class PerformanceSession {
   fail = (e: unknown) => this.set({ error: e instanceof Error ? e.message : String(e) });
 
   setMidiStatus = (midiStatus: string) => this.set({ midiStatus });
-  setClock = (clock: boolean) => this.set({ clock });
+  setClock = (clock: boolean) => {
+    this.manualClock = clock;
+    this.set({ clock: this.rigClock ?? clock });
+  };
+  setRigClock = (clock: boolean | undefined) => {
+    if (this.rigClock === clock) return;
+    this.rigClock = clock;
+    this.set({ clock: clock ?? this.manualClock });
+  };
   setPortId = (portId: string) => {
     if (portId !== this.state.portId && (hasPedalRhythm(this.state.cues) || this.state.preparing)) this.pause();
     this.set({ portId });
