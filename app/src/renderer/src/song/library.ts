@@ -47,7 +47,8 @@ import { mixDefaults } from "./tracks";
 import type { Mix } from "./stems/mix";
 import { StemPlayer, yieldToMain } from "./stems/player";
 import { playableStems } from "./stems/playable";
-import { extraKeysIn } from "./band/extras";
+import { bandPlayback, extraKeysIn, loadExtras } from "./band/extras";
+import { parseBandSettings } from "./band/arrangement";
 import { RenderQueue, isPlainSpeed } from "./audio/render-queue";
 import { speedFromOptions } from "./performance/speed";
 import { bandChartKey, bandOptionsKey } from "./band/dependencies";
@@ -576,14 +577,16 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         const speed = speedFromOptions(options);
         // A song saved without a stem split plays its whole source, as the session does when it loads the song.
         // The extras of the generated parts are not tracks of the song (band/extras.ts), so the player is built without them, as the session builds it.
-        const playable = playableStems(next.stems, next.source.audio, extraKeysIn(parseExtrasOptions(options)));
-        let stems = playable;
+        const saved = parseExtrasOptions(options);
+        const playable = bandPlayback(playableStems(next.stems, next.source.audio, extraKeysIn(saved)), saved, loadExtras(saved, next.stems), parseBandSettings(saved.band).liveVariants === true);
+        let stems = playable.stems;
         if (!isPlainSpeed(speed)) {
-          stems = (await new RenderQueue().render(playable, speed)) ?? playable;
+          stems = (await new RenderQueue().render(playable.stems, speed)) ?? playable.stems;
           renderedAhead.add(next.id);
         }
         const player = await StemPlayer.create(stems, sharedPlaybackEngine(), playerShapeFromOptions(options), yieldToMain, speed.rate, {
           sharePcm: true,
+          bandTracks: playable.tracks,
         });
         if (generation !== prefetchGeneration) {
           if (import.meta.env.DEV) console.debug(`[prefetch] ${id} dropped: superseded while loading`);

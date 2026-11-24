@@ -285,6 +285,9 @@ export interface BandSettings {
   /** Generated drum hits move onto the original drummer's hits when the song has a drums stem (drummer-timing.ts, spec 107). */
   followDrummer: boolean;
   drumPattern: DrumPattern;
+  /** Pre-render alternate band performances for use during a song. */
+  liveVariants?: true;
+  variantReturn?: "section";
   /** Humanising of the generated drums and bass (humanise.ts). */
   humanise: HumaniseSettings;
   /** How long each bass note rings, from 0 (tight) to 1 (ring). Scales the lengths the bass part gives (bass.ts). */
@@ -346,6 +349,8 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   followSource: "auto",
   followDrummer: true,
   drumPattern: "style",
+  liveVariants: undefined,
+  variantReturn: undefined,
   humanise: { amount: 0.5, feel: "style" },
   bassTone: { kind: "clean" },
   drumTone: { kind: "clean" },
@@ -734,6 +739,8 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isFollowSource(value.followSource) &&
     isBool(value.followDrummer) &&
     isDrumPattern(value.drumPattern) &&
+    (value.liveVariants === undefined || value.liveVariants === true) &&
+    (value.variantReturn === undefined || value.variantReturn === "section") &&
     isHumanise(value.humanise) &&
     isUnit(value.bassFeel) &&
     isUnit(value.drumRoom) &&
@@ -828,6 +835,8 @@ export function parseBandSettings(value: unknown): BandSettings {
     followSource: isFollowSource(source.followSource) ? source.followSource : defaults.followSource,
     followDrummer: isBool(source.followDrummer) ? source.followDrummer : defaults.followDrummer,
     drumPattern: isDrumPattern(source.drumPattern) ? source.drumPattern : defaults.drumPattern,
+    liveVariants: source.liveVariants === true ? true : undefined,
+    variantReturn: source.variantReturn === "section" ? "section" : undefined,
     humanise: parseHumanise(source.humanise),
     bassTone: parseBassTone(source.bassTone),
     drumTone: parseDrumTone(source.drumTone),

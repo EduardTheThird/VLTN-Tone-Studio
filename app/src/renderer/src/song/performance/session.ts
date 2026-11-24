@@ -6,8 +6,10 @@ import { DEFAULT_SPEED, speedFromOptions, type SpeedSettings } from "./speed";
 import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
 import { type HandedOverSong, useSongLibrary } from "@/song/library";
 import { playableStems } from "@/song/stems/playable";
-import { extraKeysIn, type ExtrasPart, type LoadedExtras, loadExtras } from "@/song/band/extras";
+import { bandPlayback, extraKeysIn, variantTrack, type ExtrasPart, type LoadedExtras, loadExtras } from "@/song/band/extras";
 import { parseBandSettings } from "@/song/band/arrangement";
+import { fixedBeatGrid, parseBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
+import { BAND_VARIANT_LABELS, RENDERED_VARIANTS, nextBandBar, type BandVariant } from "@/song/band/live-variants";
 import { useNav } from "@/state/nav";
 import { setStageBusy } from "@/state/stage-activity";
 import { stageOperationActive } from "@/state/stage-operation";
@@ -79,14 +81,18 @@ const NO_VIEW: ViewHost = {
 };
 
 /** The exit bars of a song's generated parts, joined by section: one bar with each part's audio on the track that part plays on. */
-function exitBarsOf(extras: Partial<Record<ExtrasPart, LoadedExtras>>): Record<string, ExitBar> {
+function exitBarsOf(extras: Partial<Record<ExtrasPart, LoadedExtras>>, variants: boolean): Record<string, ExitBar> {
   const bars: Record<string, ExitBar> = {};
-  for (const loaded of Object.values(extras)) {
-    for (const [id, exit] of Object.entries(loaded.extras.exits)) {
+  const add = (name: string, exits: LoadedExtras["extras"]["exits"]) => {
+    for (const [id, exit] of Object.entries(exits)) {
       const bar = (bars[id] ??= { from: exit.from, to: exit.to, tracks: {} });
-      // Two parts' exits are of the same bar. A part whose bar is somewhere else is left out rather than played against the other.
-      if (Math.abs(bar.from - exit.from) < 1e-3 && Math.abs(bar.to - exit.to) < 1e-3) bar.tracks[loaded.track] = exit.audio;
+      if (Math.abs(bar.from - exit.from) < 1e-3 && Math.abs(bar.to - exit.to) < 1e-3) bar.tracks[name] = exit.audio;
     }
+  };
+  for (const loaded of Object.values(extras)) {
+    add(loaded.track, loaded.extras.exits);
+    if (!variants || !loaded.extras.variants?.soft || !loaded.extras.variants.lift) continue;
+    for (const variant of RENDERED_VARIANTS) add(variantTrack(loaded.track, variant), loaded.extras.variants[variant]!.exits);
   }
   return bars;
 }
@@ -160,6 +166,11 @@ export class PerformanceSession {
   restartingLoop = false;
   /** The stems at 100%, which every render is made from */
   baseStems: Stems | null = null;
+  private bandGrid: BeatGrid | null = null;
+  private bandFirstBeat = 0;
+  private bandReturnAtSection = false;
+  private bandLastPosition = 0;
+  private bandAutoReturn = false;
   /** The drummer's count and a vamp's exit bars of the loaded song's generated parts (band/extras.ts). Empty for a song without them. */
   bandExtras: Partial<Record<ExtrasPart, LoadedExtras>> = {};
   /** Whether the loaded song's settings ask for the drummer's count. A count rendered earlier is not played once the setting is off. */
@@ -201,6 +212,9 @@ export class PerformanceSession {
     this.store = createStore<SessionState>(() => ({
       player: null,
       playing: false,
+      bandVariant: "normal",
+      pendingBandVariant: null,
+      bandVariantLog: [],
       access,
       portId,
       inputId: carried?.inputId || (initial.savedInput?.transport === "bluetooth" ? BLUETOOTH_PORT_ID : ""),
@@ -271,16 +285,24 @@ export class PerformanceSession {
     const shape = playerShapeFromOptions(options);
     const speed = speedFromOptions(options);
     const saved = parseOptions(options);
-    this.baseStems = playableStems(stems, source.audio, extraKeysIn(saved));
+    const band = parseBandSettings(saved.band);
     this.bandExtras = loadExtras(saved, stems);
-    this.drummerCounts = parseBandSettings(saved.band).countIn.bars > 0;
-    this.exitBars = exitBarsOf(this.bandExtras);
+    const playback = bandPlayback(playableStems(stems, source.audio, extraKeysIn(saved)), saved, this.bandExtras, band.liveVariants === true);
+    this.baseStems = playback.stems;
+    this.bandGrid = parseBeatGrid(saved.beatGrid);
+    this.bandFirstBeat = typeof saved.firstBeat === "number" && Number.isFinite(saved.firstBeat) ? Math.max(0, saved.firstBeat) : 0;
+    this.bandReturnAtSection = band.variantReturn === "section";
+    this.bandAutoReturn = false;
+    this.bandLastPosition = 0;
+    this.set({ bandVariant: "normal", pendingBandVariant: null, bandVariantLog: [] });
+    this.drummerCounts = band.countIn.bars > 0;
+    this.exitBars = exitBarsOf(this.bandExtras, band.liveVariants === true);
     this.pendingRelease = null;
     this.songSettingsKey = performanceKey(source);
     this.renders.clear();
     this.pendingRender = null;
     this.renderSwap = null;
-    const player = handover?.player ?? new StemPlayer(this.baseStems, sharedPlaybackEngine(), shape, "now", 1, { sharePcm: true });
+    const player = handover?.player ?? new StemPlayer(this.baseStems, sharedPlaybackEngine(), shape, "now", 1, { sharePcm: true, bandTracks: playback.tracks });
     // The song is now the playing entry, so its end behaviour is the entry's override, when it has one.
     player.setEndBehaviour(this.behaviourOf(player));
     const stopWiring = this.wirePlayer(player, source);
@@ -386,7 +408,8 @@ export class PerformanceSession {
           this.sendTriggers("end");
           this.sendTriggers("stop");
         }
-        this.set({ playing: false });
+        if (player.liveBandAvailable) player.setBandVariant("normal");
+        this.set({ playing: false, bandVariant: "normal", pendingBandVariant: null });
         setClockPosition(player.duration);
         const library = useSongLibrary.getState();
         // A song set to stop the playlist ends it here, so the next song does not start on its own.
@@ -643,7 +666,7 @@ export class PerformanceSession {
       }
       player?.pause();
       this.sectionsPart.applyPendingRender();
-      this.set({ playing: false });
+      this.set({ playing: false, pendingBandVariant: null });
       // A pedal/THRU path can echo our Stop back into the selected input.
       // Repeated Stop while already stopped must not transmit another Stop.
       if (wasRunning) this.panic();
@@ -805,7 +828,57 @@ export class PerformanceSession {
   }
 
   /** Every 50 ms while playing: carries out a decision once its boundary has passed, and decides the next boundary when it is close. */
-  tickSections = () => this.sectionsPart.tickSections();
+  tickSections = () => {
+    this.sectionsPart.tickSections();
+    this.tickBandVariant();
+  };
+
+  private tickBandVariant(): void {
+    const { player, pendingBandVariant, sections } = this.state;
+    if (!player?.liveBandAvailable) return;
+    const position = player.position;
+    if (pendingBandVariant && player.commitBandSwitch()) {
+      this.set({ bandVariant: pendingBandVariant.variant, pendingBandVariant: null, bandVariantLog: [...this.state.bandVariantLog, pendingBandVariant].slice(-200) });
+      this.bandAutoReturn = pendingBandVariant.variant !== "normal" && this.bandReturnAtSection;
+    }
+    if (this.bandAutoReturn && !this.state.pendingBandVariant && this.state.bandVariant !== "normal") {
+      const next = sections.filter((section) => section.start > position && section.start < player.duration)
+        .sort((a, b) => a.start - b.start)[0];
+      if (next && player.audioTimeOf(next.start) - player.audioNow < 0.3 && player.setBandVariant("normal", next.start)) {
+        this.set({ pendingBandVariant: { variant: "normal", at: next.start } });
+      } else if (position < this.bandLastPosition || sections.some((section) => section.start > this.bandLastPosition && section.start <= position)) {
+        player.setBandVariant("normal");
+        const change = { variant: "normal" as const, at: position };
+        this.set({ bandVariant: "normal", bandVariantLog: [...this.state.bandVariantLog, change].slice(-200) });
+        this.bandAutoReturn = false;
+      }
+    }
+    this.bandLastPosition = position;
+  }
+
+  changeBandVariant = (requested: BandVariant | "toggle"): Hint => {
+    const { player, bandVariant, pendingBandVariant, bpm, timing } = this.state;
+    if (!player?.liveBandAvailable) return "Generate a band part first.";
+    const active = pendingBandVariant?.variant ?? bandVariant;
+    const variant = requested === "toggle" ? (active === "lift" ? "normal" : "lift") : requested;
+    if ((variant === "lift" || variant === "soft") && !player.renderedBandAvailable) return "Turn on live band changes in Band settings and generate the parts.";
+    if (!player.isPlaying) {
+      player.setBandVariant(variant);
+      this.bandAutoReturn = variant !== "normal" && this.bandReturnAtSection;
+      this.set({ bandVariant: variant, pendingBandVariant: null });
+      return;
+    }
+    const grid = this.bandGrid ?? fixedBeatGrid(bpm || 120, this.bandFirstBeat, timing.beatsPerBar, player.length);
+    const next = nextBandBar(grid, player.position);
+    if (!next || next.at >= player.duration) return "There is no next bar in this song.";
+    if (!player.setBandVariant(variant, next.at, next.precedingBar)) return "The band change is already taking effect.";
+    this.set({ pendingBandVariant: { variant, at: next.at } });
+    return `${BAND_VARIANT_LABELS[variant]} at next bar.`;
+  };
+
+  cancelBandVariant = (): void => {
+    if (this.state.player?.cancelBandSwitch()) this.set({ pendingBandVariant: null });
+  };
 
   /**
    * Sets the song's speed and pitch. The render is built in the background; the newest request wins. A built render is swapped in at

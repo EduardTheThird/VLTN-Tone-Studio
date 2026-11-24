@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 import { useSession, type PerformanceSession } from "@/song/performance/session";
+import { BAND_VARIANT_LABELS } from "@/song/band/live-variants";
 import { sortedSections } from "@/song/performance/sections";
 import { cachedPeaks } from "@/song/audio/peaks";
 import { SongTimeline } from "./SongTimeline";
 
 /** Peak count for the Play view's timeline: the width of a wide window, so one list serves every size. */
 const PEAK_WIDTH = 1200;
+const NO_BAND_CHANGES: import("@/song/band/live-variants").BandChange[] = [];
 
 /**
  * The song timeline wired to a performance session: its sections, loop and queued jump, the trim, the timed cues, and seeking and section
@@ -31,8 +33,12 @@ export function SessionTimeline({
   const live = useSession(session, (s) => s.sectionLive);
   const next = useSession(session, (s) => s.sectionNext);
   const cues = useSession(session, (s) => s.cues);
+  const changes = useSession(session, (s) => s.bandVariantLog ?? NO_BAND_CHANGES);
   const peaks = useMemo(() => (songId && channels?.length ? cachedPeaks(songId, channels, PEAK_WIDTH) : null), [songId, channels]);
-  const timed = useMemo(() => cues.filter((cue) => !cue.trigger && !cue.managed).map((cue) => ({ time: cue.time, label: cue.label || cue.text })), [cues]);
+  const timed = useMemo(() => [
+    ...cues.filter((cue) => !cue.trigger && !cue.managed).map((cue) => ({ time: cue.time, label: cue.label || cue.text })),
+    ...changes.map(({ at, variant }) => ({ time: at, label: `Band · ${BAND_VARIANT_LABELS[variant]}` })),
+  ], [cues, changes]);
   const length = useMemo(() => (channels?.[0]?.length ?? 0) / (sampleRate || 1), [channels, sampleRate]);
   if (!player) return null;
   const playing = sortedSections(sections).find((section) => live.loop === section.id || (section.mode === "loop" && !live.released.includes(section.id)));

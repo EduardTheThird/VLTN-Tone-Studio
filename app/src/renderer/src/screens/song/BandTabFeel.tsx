@@ -13,6 +13,7 @@ export function BandTabFeel({
   onChange,
   onStyle,
   beatsPerBar,
+  songSeconds,
   sections = [],
   keptAudio,
 }: {
@@ -22,6 +23,7 @@ export function BandTabFeel({
   onChange(patch: Partial<BandSettings>): void;
   onStyle(id: StyleId): void;
   beatsPerBar?: number;
+  songSeconds: number;
   /** The song's sections, for the ending's "End after". */
   sections?: readonly { id: string; name: string }[];
   /** The original tracks that keep playing under the band, for the ending's fade notice. */
@@ -29,7 +31,7 @@ export function BandTabFeel({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <BandSettingsForm hasOriginalDrums={hasOriginalDrums} settings={settings} followSources={followSources} onChange={onChange} onStyle={onStyle} beatsPerBar={beatsPerBar} />
+      <BandSettingsForm hasOriginalDrums={hasOriginalDrums} settings={settings} followSources={followSources} onChange={onChange} onStyle={onStyle} beatsPerBar={beatsPerBar} songSeconds={songSeconds} />
       <CountInControls settings={settings} onChange={onChange} />
       <EndingControls settings={settings} sections={sections} keptAudio={keptAudio} onChange={onChange} />
     </div>

@@ -93,6 +93,7 @@ export class SessionRemote {
       if (!this.core.state.sectionLive.jump) return "No jump is armed.";
       this.core.cancelSectionJump();
     },
+    bandVariant: (variant) => this.core.changeBandVariant(variant),
     arm: () => {
       const output = this.core.output;
       if (!output || output.state !== "connected") return "Choose a connected MIDI output first.";

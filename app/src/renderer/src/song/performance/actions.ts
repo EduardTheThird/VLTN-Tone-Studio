@@ -6,6 +6,7 @@
  * hint for the performer instead of throwing, and a binding that is malformed or names an unknown action does nothing at all.
  */
 
+import type { BandVariant } from "../band/live-variants";
 import type { PracticeKind } from "./practice-mute";
 
 /** A hint shown to the performer when an action did not do what it asked. Nothing returned means it did. */
@@ -29,6 +30,7 @@ export interface ActionHost {
   toggleSectionLoop(): Hint;
   exitSectionLoop(): Hint;
   cancelSectionJump(): Hint;
+  bandVariant(variant: BandVariant | "toggle"): Hint;
   arm(): Hint;
   disarm(): Hint;
   /** Scrolls the lyrics, or turns the page of a PDF chart on screen (a page action turns a page). */
@@ -98,6 +100,12 @@ const DEFINITIONS = {
     group: "Sections",
     run: (h) => (h.pdfOnScreen() ? h.scrollLyrics(-1, true) : h.previousSection()),
   },
+  "band.lift": { label: "Band lift", group: "Band", run: (h) => h.bandVariant("lift") },
+  "band.soft": { label: "Band soft", group: "Band", run: (h) => h.bandVariant("soft") },
+  "band.normal": { label: "Band normal", group: "Band", run: (h) => h.bandVariant("normal") },
+  "band.drums": { label: "Drums only", group: "Band", run: (h) => h.bandVariant("drums") },
+  "band.out": { label: "Band out", group: "Band", run: (h) => h.bandVariant("out") },
+  "band.toggleLift": { label: "Band lift/normal toggle", group: "Band", run: (h) => h.bandVariant("toggle") },
   "view.scrollUp": { label: "Scroll lyrics up", group: "View", run: (h) => h.scrollLyrics(-1, false) },
   "view.scrollDown": { label: "Scroll lyrics down", group: "View", run: (h) => h.scrollLyrics(1, false) },
   "view.pageUp": { label: "Page up", group: "View", run: (h) => h.scrollLyrics(-1, true) },

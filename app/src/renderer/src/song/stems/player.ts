@@ -11,6 +11,8 @@ import { createPlaybackEngine, type PlaybackEngine } from "../audio/playback-eng
 import { stemGains, type Mix } from "./mix";
 import { type BusName, type OutputConfig } from "../audio/outputs";
 import { clickAccent, clickNote, clickNotes, resolveCountInSound, type ClickSound, type CountInSound } from "../performance/click-sound";
+import { variantTrack, type BandTracks } from "../band/extras";
+import type { BandVariant } from "../band/live-variants";
 import { SYNTH, SYNTH_SECONDS, synthClick } from "./click-voices";
 
 // Plays a song's tracks in sync through WebAudio: one buffer source per track → its gain (mixer) → its pan → a fade (the song's
@@ -44,6 +46,8 @@ const LOOP_CHECK_MS = 50;
 interface Voice {
   buffer: AudioBuffer;
   gain: GainNode;
+  bandGain?: GainNode;
+  input: GainNode;
   pan: StereoPannerNode;
   fade: GainNode;
   analyser: AnalyserNode;
@@ -215,6 +219,9 @@ export class StemPlayer {
   private endBehaviour: EndBehaviour = "next";
   private loopTimer: ReturnType<typeof setInterval> | null = null;
   private voices: Record<string, Voice>;
+  private readonly bandTracks: BandTracks;
+  private bandMode: BandVariant = "normal";
+  private bandSwitch: { from: number; at: number; to: BandVariant } | null = null;
   private disposed = false;
   /** Set once the nodes are released. A mixer effect can still reach a closed player, so mix and routing changes are ignored then. */
   private released = false;
@@ -268,8 +275,9 @@ export class StemPlayer {
    * `stems` are the song's stems, or a render of them at `rate` (see `renderBuffers`). Shape and fades are in song seconds.
    * `sharePcm` lets the song store read samples from the filled playback buffers instead of keeping a second decoded copy.
    */
-  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now", rate = 1, options: { sharePcm?: boolean } = {}) {
+  constructor(stems: Stems, engine?: PlaybackEngine, shape: SongShape = {}, fill: "now" | "later" = "now", rate = 1, options: { sharePcm?: boolean; bandTracks?: BandTracks } = {}) {
     this.sharePcm = options.sharePcm === true;
+    this.bandTracks = options.bandTracks ?? {};
     this.names = orderedKeys(Object.keys(stems).filter((name) => stems[name]));
     if (!this.names.length) throw new Error("There are no stems to play.");
     this.rate = clampRate(rate);
@@ -301,11 +309,17 @@ export class StemPlayer {
         const fade = this.ctx.createGain();
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = this.meterBuffer.length;
+        const band = this.bandTracks[name];
+        const bandGain = band ? this.ctx.createGain() : undefined;
+        if (bandGain) {
+          bandGain.gain.value = band.variant ? 0 : 1;
+          bandGain.connect(gain);
+        }
         gain.connect(pan);
         pan.connect(fade);
         fade.connect(analyser);
         analyser.connect(this.router.buses.main);
-        return [name, { buffer, gain, pan, fade, analyser, source: null }];
+        return [name, { buffer, gain, bandGain, input: bandGain ?? gain, pan, fade, analyser, source: null }];
       }),
     );
   }
@@ -320,7 +334,7 @@ export class StemPlayer {
     shape: SongShape = {},
     pause: () => Promise<void> = yieldToMain,
     rate = 1,
-    options: { sharePcm?: boolean } = {},
+    options: { sharePcm?: boolean; bandTracks?: BandTracks } = {},
   ): Promise<StemPlayer> {
     const player = new StemPlayer(stems, engine, shape, "later", rate, options);
     try {
@@ -447,7 +461,7 @@ export class StemPlayer {
       const v = this.voice(name);
       const source = bufferSource(this.ctx);
       source.buffer = v.buffer;
-      source.connect(v.gain);
+      source.connect(v.input);
       source.start(start, from / this.rate);
       source.stop(start + (this.duration - from) / this.rate);
       v.source = source;
@@ -474,7 +488,7 @@ export class StemPlayer {
     const source = bufferSource(this.ctx);
     source.buffer = buffer;
     source.playbackRate.value = this.rate;
-    source.connect(this.voice(count.track).gain);
+    source.connect(this.voice(count.track).input);
     source.start(songStart + count.start / this.rate);
     this.countInClicks.add(source);
     source.onended = () => {
@@ -624,7 +638,7 @@ export class StemPlayer {
       const v = this.voice(name);
       const source = bufferSource(this.ctx);
       source.buffer = render?.buffers[name] ?? v.buffer;
-      source.connect(v.gain);
+      source.connect(v.input);
       source.start(when, to / rate);
       source.stop(Math.max(when, when + (this.duration - to) / rate));
       previous.push(v.source!);
@@ -672,13 +686,13 @@ export class StemPlayer {
       pcm.channels.forEach((channel, c) => buffer.copyToChannel(channel as Float32Array<ArrayBuffer>, c));
       const exit = bufferSource(this.ctx);
       exit.buffer = buffer;
-      exit.connect(v.gain);
+      exit.connect(v.input);
       exit.start(when);
       const main = v.source!;
       main.stop(when);
       const resume = bufferSource(this.ctx);
       resume.buffer = v.buffer;
-      resume.connect(v.gain);
+      resume.connect(v.input);
       resume.start(resumeAt, bar.to);
       resume.stop(end);
       v.source = resume;
@@ -861,7 +875,7 @@ export class StemPlayer {
     for (const name of this.names) {
       const analyser = this.voice(name).analyser;
       analyser.disconnect();
-      analyser.connect(this.router.buses[routes[name] ?? "main"]);
+      analyser.connect(this.router.buses[routes[this.bandTracks[name]?.track ?? name] ?? "main"]);
     }
   }
 
@@ -881,13 +895,92 @@ export class StemPlayer {
    */
   setMix(mix: Mix, master = 1): void {
     if (this.released) return;
-    const gains = stemGains(mix, this.names);
+    const gains = stemGains(mix, this.names.filter((name) => !this.bandTracks[name]?.variant));
     const now = this.ctx.currentTime;
     for (const name of this.names) {
       const v = this.voice(name);
-      v.gain.gain.setTargetAtTime(gains[name] * master, now, RAMP_S);
-      v.pan.pan.setTargetAtTime(mix[name]?.pan ?? 0, now, RAMP_S);
+      const mixer = this.bandTracks[name]?.track ?? name;
+      v.gain.gain.setTargetAtTime(gains[mixer] * master, now, RAMP_S);
+      v.pan.pan.setTargetAtTime(mix[mixer]?.pan ?? 0, now, RAMP_S);
     }
+  }
+
+  get liveBandAvailable(): boolean {
+    return Object.keys(this.bandTracks).length > 0;
+  }
+
+  get renderedBandAvailable(): boolean {
+    return Object.values(this.bandTracks).some((track) => track.variant !== undefined);
+  }
+
+  private bandLevel(name: string, mode: BandVariant): number {
+    const track = this.bandTracks[name];
+    if (mode === "out" || (mode === "drums" && track.part !== "drums")) return 0;
+    if (track.variant) return track.variant === mode ? 1 : 0;
+    return (mode === "lift" || mode === "soft") && this.bandTracks[variantTrack(name, mode)] ? 0 : 1;
+  }
+
+  /** Schedules gain automation on the player's clock, without changing its timeline. */
+  setBandVariant(mode: BandVariant, time?: number, precedingBar?: number): boolean {
+    const now = this.ctx.currentTime;
+    if (this.bandSwitch && this.bandSwitch.at <= now) this.commitBandSwitch();
+    if (time === undefined) {
+      this.bandSwitch = null;
+      this.bandMode = mode;
+      for (const name of Object.keys(this.bandTracks)) {
+        const gain = this.voice(name).bandGain!.gain;
+        if (typeof gain.cancelAndHoldAtTime === "function") {
+          gain.cancelAndHoldAtTime(now);
+          gain.linearRampToValueAtTime(this.bandLevel(name, mode), now + RAMP_S);
+        } else {
+          gain.cancelScheduledValues(now);
+          gain.setValueAtTime(this.bandLevel(name, mode), now);
+        }
+      }
+      return true;
+    }
+    const when = this.audioTimeOf(time);
+    if (!(when > now) || !this.cancelBandSwitch()) return false;
+    let from = when;
+    for (const [name, track] of Object.entries(this.bandTracks)) {
+      const gain = this.voice(name).bandGain!.gain;
+      const oldLevel = this.bandLevel(name, this.bandMode);
+      const newLevel = this.bandLevel(name, mode);
+      if (oldLevel === newLevel) continue;
+      const barFade = mode === "out" && track.part === "drums" && precedingBar !== undefined;
+      const begin = Math.max(now, barFade ? this.audioTimeOf(precedingBar) : when - RAMP_S);
+      const end = barFade ? when : when + RAMP_S;
+      gain.setValueCurveAtTime(equalPowerCurve(newLevel > oldLevel ? "in" : "out"), begin, end - begin);
+      from = Math.min(from, begin);
+    }
+    this.bandSwitch = { from, at: when, to: mode };
+    return true;
+  }
+
+  commitBandSwitch(): boolean {
+    if (!this.bandSwitch || this.bandSwitch.at > this.ctx.currentTime) return false;
+    this.bandMode = this.bandSwitch.to;
+    this.bandSwitch = null;
+    return true;
+  }
+
+  cancelBandSwitch(): boolean {
+    const next = this.bandSwitch;
+    if (!next) return true;
+    const now = this.ctx.currentTime;
+    if (now >= next.at) return false;
+    for (const name of Object.keys(this.bandTracks)) {
+      const gain = this.voice(name).bandGain!.gain;
+      if (now >= next.from && typeof gain.cancelAndHoldAtTime === "function") {
+        gain.cancelAndHoldAtTime(now);
+        gain.linearRampToValueAtTime(this.bandLevel(name, this.bandMode), now + RAMP_S);
+      } else {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(this.bandLevel(name, this.bandMode), now);
+      }
+    }
+    this.bandSwitch = null;
+    return true;
   }
 
   /** Uses the stems' AudioContext and song-time origin, including after pause/seek. */
@@ -1084,15 +1177,15 @@ export class StemPlayer {
 
   /** Current RMS level (0..1) of each stem after its gain */
   levels(): Record<string, number> {
-    return Object.fromEntries(
-      this.names.map((name) => {
-        if (!this.playing || this.released) return [name, 0];
-        this.voice(name).analyser.getFloatTimeDomainData(this.meterBuffer);
-        let sum = 0;
-        for (const x of this.meterBuffer) sum += x * x;
-        return [name, Math.sqrt(sum / this.meterBuffer.length)];
-      }),
-    );
+    const power: Record<string, number> = {};
+    for (const name of this.names) {
+      const track = this.bandTracks[name]?.track ?? name;
+      power[track] ??= 0;
+      if (!this.playing || this.released) continue;
+      this.voice(name).analyser.getFloatTimeDomainData(this.meterBuffer);
+      for (const x of this.meterBuffer) power[track] += x * x / this.meterBuffer.length;
+    }
+    return Object.fromEntries(Object.entries(power).map(([name, sum]) => [name, Math.sqrt(sum)]));
   }
 
   /** Sends the tracks and the click to the outputs in `config`. Never stops playback: a missing output falls back to the default. */
@@ -1123,7 +1216,8 @@ export class StemPlayer {
     this.unlisten();
     this.stopSources();
     for (const name of this.names) {
-      const { gain, pan, fade, analyser } = this.voice(name);
+      const { gain, bandGain, pan, fade, analyser } = this.voice(name);
+      bandGain?.disconnect();
       gain.disconnect();
       pan.disconnect();
       fade.disconnect();
@@ -1160,6 +1254,10 @@ export class StemPlayer {
   }
 
   private stopSources() {
+    if (this.bandSwitch) {
+      this.commitBandSwitch();
+      this.setBandVariant(this.bandMode);
+    }
     this.stopMetronome();
     this.onClicksStopped?.();
     if (this.loopTimer) {

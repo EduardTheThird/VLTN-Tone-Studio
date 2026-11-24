@@ -932,6 +932,7 @@ function BandBody({
               onChange={change}
               onStyle={changeStyle}
               beatsPerBar={grid?.beatsPerBar}
+              songSeconds={songEnd}
               keptAudio={keptOriginals(stems, source?.audio)}
               sections={rows.flatMap((row) => (row.plan.sectionId === null ? [] : [{ id: row.plan.sectionId, name: row.name }]))}
             />

@@ -72,3 +72,11 @@ describe("extraKeysIn and loadExtras", () => {
     expect(Object.keys(playableStems(stems, pcm(1000)))).toEqual(["track0", "track1"]);
   });
 });
+
+
+it("keeps full variant audio and its vamp exits through the saved extras format", () => {
+  const pcm = { sampleRate: 44100, channels: [Float32Array.of(0.1, 0.2, 0.3), Float32Array.of(0.1, 0.2, 0.3)] };
+  const exit = { audio: pcm, from: 3, to: 4 };
+  const packed = packExtras({ exits: {}, variants: { lift: { audio: pcm, exits: { verse: exit } }, soft: { audio: pcm, exits: {} } } })!;
+  expect(unpackExtras(packed.audio, packed.manifest)).toEqual({ exits: {}, variants: { lift: { audio: pcm, exits: { verse: exit } }, soft: { audio: pcm, exits: {} } } });
+});

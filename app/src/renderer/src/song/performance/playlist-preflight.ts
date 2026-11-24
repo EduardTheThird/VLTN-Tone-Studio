@@ -1,3 +1,6 @@
+import { parseBandSettings } from "../band/arrangement";
+import { extraKeysIn } from "../band/extras";
+import { variantExtraBytes } from "../band/live-variants";
 import type { MissingToneFile } from "../band/tone-check";
 import { expandSectionCues } from "./chart";
 import { PreparationHistory } from "./preparation-repeat";
@@ -85,6 +88,8 @@ export function playlistPreflight(
 ): PlaylistCheck[] {
   const byId = new Map(songs.map((s) => [s.id, s]));
   let anyClock = false;
+  const PCM_BUDGET = 1.5 * 1024 ** 3;
+  const memory: { total: number; variants: number }[] = [];
   const checks = ids.map((id, entry) => {
     const saved = byId.get(id),
       song = saved?.song;
@@ -96,7 +101,7 @@ export function playlistPreflight(
     if (song) {
       if (config.tempoOnStart && !config.outputName)
         warnings.push("Automatic tempo is enabled but no MIDI output preference is saved. Select and arm the intended output before performing.");
-      let options: {
+      let options: Record<string, unknown> & {
         clock?: boolean;
         sections?: unknown;
         beats?: unknown;
@@ -144,11 +149,19 @@ export function playlistPreflight(
         warnings.push("Saved continuous clock is enabled alongside automatic tempo. Disable continuous clock for this setup.");
       // Every playable track, split stems and imported tracks alike. The source is a mix of them, not a track of its own.
       // In player order: the first one plays first, and its length is the one the song is checked against.
-      const playable = song.audio.filter((a) => trackKindOf(a) !== "source");
+      const extras = new Set(extraKeysIn(options));
+      const playable = song.audio.filter((a) => trackKindOf(a) !== "source" && !extras.has(trackKey(a)));
       const byKey = new Map(playable.map((a) => [trackKey(a), a]));
       const tracks = playable.length ? orderedKeys([...byKey.keys()]).map((key) => byKey.get(key)!) : song.audio;
       if (!tracks.length) errors.push("Song has no playable audio tracks.");
       const duration = tracks.length ? tracks[0].frames / tracks[0].sampleRate : 0;
+      const band = parseBandSettings(options.band);
+      const parts = Number(band.parts.drums) + Number(band.parts.bass);
+      const variants = band.liveVariants ? variantExtraBytes(duration, parts) : 0;
+      const originalBytes = song.audio.filter((audio) => !extras.has(trackKey(audio)))
+        .reduce((total, audio) => total + audio.frames * audio.channels * Float32Array.BYTES_PER_ELEMENT, 0);
+      memory[entry] = { total: originalBytes + variants, variants };
+      if (variants) notes.push(`Live band changes add about ${Math.round(variants / 1_000_000)} MB of decoded audio.`);
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
       // The chart and the MIDI file are checked together, because the file's messages play beside the chart's.
@@ -221,6 +234,13 @@ export function playlistPreflight(
     }
     return { entry: entry + 1, id, title: song?.title ?? "Missing song", errors, warnings, advice, notes, ...(preparation ? { preparation } : {}) };
   });
+  for (let i = 0; i < memory.length; i++) {
+    const current = memory[i];
+    const next = memory[i + 1];
+    if (!current || !(current.variants || next?.variants)) continue;
+    const peak = current.total + (next?.total ?? 0);
+    if (peak > PCM_BUDGET) checks[i].warnings.push(`Live band changes can put this song and its preload over the 1.5 GiB audio memory budget (about ${(peak / 1024 ** 3).toFixed(2)} GiB).`);
+  }
   // Songs that chose RC-10R drums play their fallback when the cues are off. One warning counts them, on the first entry.
   if (config.cuesArmed === false && checks.length > 0) {
     const chosen = checks.filter((check) => choosesPedalDrums(byId.get(check.id)?.song?.settings[":options"])).length;

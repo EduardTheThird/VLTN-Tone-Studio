@@ -94,3 +94,14 @@ it("shows the saved bass sound and the two opt-in choices", () => {
   expect(display({ ...DEFAULT_BAND_SETTINGS, bassSampleVersion: 2 })).toBe("Fingers");
   expect(display({ ...DEFAULT_BAND_SETTINGS, bassSampleVersion: 2, bassSound: "pick" })).toBe("Pick");
 });
+
+
+it("offers Live band changes off by default with the decoded memory estimate", () => {
+  const changed = vi.fn();
+  const view = render(<BandSettingsForm settings={DEFAULT_BAND_SETTINGS} followSources={["auto"]} onChange={changed} onStyle={vi.fn()} songSeconds={300} />);
+  const toggle = view.getByRole("switch", { name: "Live band changes" });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(view.getByText(/about 423 MB/)).toBeTruthy();
+  toggle.click();
+  expect(changed).toHaveBeenCalledWith({ liveVariants: true });
+});

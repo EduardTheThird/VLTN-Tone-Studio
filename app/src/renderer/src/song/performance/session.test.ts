@@ -20,6 +20,8 @@ import { setClockPosition } from "./playback-clock";
 import { STAGE_IDLE_DEBOUNCE_MS, resetStageActivity, useStageActivity } from "@/state/stage-activity";
 import { registerBandRefresh } from "@/song/band/refresh";
 import { clearSettingsCache, performanceKey, setSetting } from "./settings";
+import type { BandTracks } from "@/song/band/extras";
+import type { BandVariant } from "@/song/band/live-variants";
 import { packExtras } from "@/song/band/extras";
 import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
 import { claimStageOperation } from "@/state/stage-operation";
@@ -137,6 +139,7 @@ vi.mock("@/song/audio/playback-engine", () => ({ sharedPlaybackEngine: () => ({}
 vi.mock("@/song/stems/player", () => ({
   StemPlayer: class {
     duration = 60;
+    length = 60;
     start = 0;
     behaviour = "next";
     disposed = false;
@@ -144,8 +147,27 @@ vi.mock("@/song/stems/player", () => ({
     onEnded?: () => void;
     onLoopScheduled: ((loop: { to: number; at: number; when: number }) => void) | null = null;
     onOutputWarning: ((message: string) => void) | null = null;
-    constructor() {
+    liveBandAvailable: boolean;
+    renderedBandAvailable: boolean;
+    private bandAt: number | null = null;
+    constructor(_stems?: Stems, _engine?: unknown, _shape?: unknown, _fill?: string, _rate?: number, options?: { bandTracks?: BandTracks }) {
+      const tracks = Object.values(options?.bandTracks ?? {});
+      this.liveBandAvailable = tracks.length > 0;
+      this.renderedBandAvailable = tracks.some((track) => track.variant !== undefined);
       mocks.players.push(this);
+    }
+    setBandVariant = vi.fn((_variant: BandVariant, at?: number) => {
+      this.bandAt = at === undefined ? null : this.audioTimeOf(at);
+      return true;
+    });
+    cancelBandSwitch() {
+      this.bandAt = null;
+      return true;
+    }
+    commitBandSwitch() {
+      if (this.bandAt === null || this.bandAt > mocks.audioNow) return false;
+      this.bandAt = null;
+      return true;
     }
     setEndBehaviour(behaviour: string) {
       this.behaviour = behaviour;
@@ -3210,4 +3232,50 @@ it("sets the opening pedal tempo from the beat grid at the song’s actual playb
     unload();
     session.dispose();
   }
+});
+
+it("queues live band changes at the next bar, cancels them, and returns at the next section", async () => {
+  const audio = { sampleRate: 44100, channels: [Float32Array.of(0.1, 0.2), Float32Array.of(0.1, 0.2)] };
+  const variants = { lift: { audio, exits: {} }, soft: { audio, exits: {} } };
+  const packed = packExtras({ exits: {}, variants })!;
+  setSetting(performanceKey(source), ":options", JSON.stringify({
+    band: { ...DEFAULT_BAND_SETTINGS, liveVariants: true, variantReturn: "section" },
+    generatedParts: { drums: "track0", drumsExtras: "track1" },
+    bandExtras: { drums: packed.manifest },
+  }));
+  const sections: Section[] = [
+    { id: "verse", name: "Verse", start: 0, end: 4, mode: "continue" },
+    { id: "chorus", name: "Chorus", start: 4, end: 8, mode: "continue" },
+  ];
+  const session = new PerformanceSession({ initial: inputs({ sections }), carried: null, initialClock: false });
+  const unload = session.loadSong(source, { track0: audio, track1: packed.audio });
+  const player = session.state.player!;
+  await player.play();
+  mocks.position = mocks.audioNow = 0.5;
+  expect(session.changeBandVariant("lift")).toContain("next bar");
+  expect(session.state.pendingBandVariant).toEqual({ variant: "lift", at: 2 });
+  session.cancelBandVariant();
+  mocks.position = mocks.audioNow = 2.1;
+  session.tickSections();
+  expect(session.state.bandVariant).toBe("normal");
+
+  mocks.position = mocks.audioNow = 0.7;
+  session.changeBandVariant("lift");
+  mocks.position = mocks.audioNow = 1.99;
+  session.tickSections();
+  expect(session.state.bandVariant).toBe("normal");
+  mocks.position = mocks.audioNow = 2;
+  session.tickSections();
+  expect(session.state.bandVariant).toBe("lift");
+  mocks.position = mocks.audioNow = 3.8;
+  session.tickSections();
+  expect(session.state.pendingBandVariant).toEqual({ variant: "normal", at: 4 });
+  mocks.position = mocks.audioNow = 4;
+  session.tickSections();
+  expect(session.state.bandVariantLog).toEqual([{ variant: "lift", at: 2 }, { variant: "normal", at: 4 }]);
+  unload();
+  const second = session.loadSong({ ...source, libraryId: "b" }, null);
+  expect(session.state.bandVariant).toBe("normal");
+  expect(session.state.bandVariantLog).toEqual([]);
+  second();
 });

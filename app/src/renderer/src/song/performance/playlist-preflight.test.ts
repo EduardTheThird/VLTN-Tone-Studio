@@ -311,3 +311,14 @@ it("counts the songs that choose RC-10R drums when the cues are off, once, on th
   expect(playlistPreflight(["a", "b"], songs, { ...config, cuesArmed: true })[0].warnings.join(" ")).not.toContain("RC-10R drums");
   expect(playlistPreflight(["a", "b"], songs, config)[0].warnings.join(" ")).not.toContain("RC-10R drums");
 });
+
+
+it("includes live band renders in the active and preloaded song memory estimate", () => {
+  const duration = 360;
+  const audio = ["source", "vocals", "guitar", "drums", "bass", "piano", "other"].map((name) => ({ name, sampleRate: 44100, frames: duration * 44100, channels: 2 }));
+  const song = { ...saved.song!, duration, audio, settings: { ...saved.song!.settings, ":options": JSON.stringify({ band: { liveVariants: true } }) } };
+  const result = playlistPreflight(["one", "one"], [{ ...saved, song }], config);
+  expect(result[0].notes.join(" ")).toContain("Live band changes add about 508 MB");
+  expect(result[0].warnings.join(" ")).toContain("1.5 GiB audio memory budget");
+  expect(result[1].warnings.join(" ")).not.toContain("1.5 GiB audio memory budget");
+});

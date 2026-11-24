@@ -6,6 +6,7 @@ import { sectionIndexAt, sortedSections } from "@/song/performance/sections";
 import { usePlaybackClock } from "@/song/performance/playback-clock";
 import { BeatIndicator } from "./BeatIndicator";
 import { PreparePedalsButton } from "./PreparePedalsButton";
+import { BandChangeStatus } from "./BandLiveControls";
 import { clock, tempo } from "./format";
 
 /** The time as `0:00 / 5:30`. It reads the playback clock itself, so the rest of the bar does not re-render while playing. */
@@ -61,6 +62,7 @@ export function TransportBar({ session, bpm, beats, firstBeat }: { session: Perf
       </Button>
       <TimeReadout duration={duration} />
       <CurrentSection session={session} />
+      <BandChangeStatus session={session} />
       <BeatIndicator bpm={bpm} beats={beats} firstBeat={firstBeat} />
       <span className="tabular-nums text-silkscreen-2">{tempo(bpm)}</span>
       {inPlaylist && (

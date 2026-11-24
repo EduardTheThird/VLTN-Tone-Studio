@@ -439,3 +439,19 @@ it("reports the style fallback when original drums are requested and the source 
   expect(original.learnedDrums).toEqual([{ start: 0, confidence: 0, learned: false }]);
   expect(original.notes).toEqual(style.notes);
 });
+
+
+it("renders opt-in Lift and Soft on the same backbeat and keeps them out of ordinary renders", () => {
+  const original = request();
+  const settings = { ...original.settings, liveVariants: true as const };
+  const plans = planSections([], SONG_SECONDS, settings).map((plan) => ({ ...plan, loud: 3 as const, busy: 3 as const }));
+  const result = runBandJob({ ...original, settings, plans }, stubSamples());
+  const { lift, soft } = result.variants!;
+  const backbeat = (notes: typeof lift.notes.drums) => notes.filter((note) => note.pitch === 36 || note.pitch === 38).map(({ time, pitch }) => [time, pitch]);
+  expect(backbeat(lift.notes.drums)).toEqual(backbeat(result.notes.drums));
+  expect(backbeat(soft.notes.drums)).toEqual(backbeat(result.notes.drums));
+  expect(lift.notes.drums.length).toBeGreaterThan(soft.notes.drums.length);
+  expect(soft.notes.drums.some((note) => note.pitch === 46)).toBe(false);
+  expect(lift.drums?.channels[0].length).toBeCloseTo(result.drums!.channels[0].length);
+  expect(runBandJob(original, stubSamples()).variants).toBeUndefined();
+});

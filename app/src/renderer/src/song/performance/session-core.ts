@@ -1,3 +1,4 @@
+import type { BandChange, BandVariant } from "../band/live-variants";
 import type { ClockGrid } from "./beat-clock";
 import type { PreparationSequence } from "./preparation-sequence";
 import { StemPlayer } from "@/song/stems/player";
@@ -57,6 +58,9 @@ export const NO_TIMING: Timing = { countInBars: 0, beatsPerBar: 4, preRollBeats:
 export interface SessionState {
   player: StemPlayer | null;
   playing: boolean;
+  bandVariant: BandVariant;
+  pendingBandVariant: BandChange | null;
+  bandVariantLog: BandChange[];
   access: MIDIAccess | null;
   portId: string;
   inputId: string;
@@ -218,6 +222,7 @@ export type SessionCore = Pick<
   | "disarm"
   | "dropChained"
   | "dropSectionPlan"
+  | "changeBandVariant"
   | "drummerCounts"
   | "endingIntoSet"
   | "exitBars"

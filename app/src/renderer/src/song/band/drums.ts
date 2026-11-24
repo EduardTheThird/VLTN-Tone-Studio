@@ -219,7 +219,7 @@ function learnedHits(hits: DrumHit[], busy: Energy, perBeat: number): DrumHit[] 
  * With `feel` (follow my playing), the variation follows the accents, strong off-beat accents get pushes, the beats of a stop are silent,
  * and a hit beat gets a crash and a kick. Without it the notes are the same as before the feel layer existed.
  */
-export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], settings: BandSettings, seed: number, follow?: Feel, endTime?: number, learned?: readonly LearnedSection[]): NoteEvent[] {
+export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], settings: BandSettings, seed: number, follow?: Feel, endTime?: number, learned?: readonly LearnedSection[], densityOffset = 0): NoteEvent[] {
   const beats = grid.beats;
   const notes: NoteEvent[] = [];
   if (beats.length === 0 || plans.length === 0) return notes;
@@ -517,7 +517,8 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     if (resting) filled = false;
     // Under the drum phrases a bar plays what its own tempo allows, so a song that speeds up thins out.
     const bpm = (60 * spans[k].beats) / Math.max(1e-6, barEnd(beats, start, spans[k].beats) - beats[start]);
-    const barComplexity = phrased ? tempoLimitedComplexity(settings.complexity, bpm, style.meter.stepsPerBeat) : settings.complexity;
+    const complexity = Math.max(0, Math.min(1, settings.complexity + densityOffset));
+    const barComplexity = phrased ? tempoLimitedComplexity(complexity, bpm, style.meter.stepsPerBeat) : complexity;
     const kickPlays = phrased ? kickComplexity(settings.complexity, bpm, style) : settings.complexity;
     // A crash on the downbeat takes the place of the hat or ride there (the earlier drums played both).
     if (phrased) hits = crashOnDownbeat(hits, (hit) => playsAt(hit, barComplexity), VEL.accent);

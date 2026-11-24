@@ -12,6 +12,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - Generated drums can play the original drummer’s pattern, learned from the drums stem.
 
 - Choose a fingers or pick bass sound.
+- Change the generated band live from a footswitch, key or stage mode. Lift, soften, switch to drums only or take the band out on the next bar.
 
 ### Changed
 - The generated bass uses more recordings and loudness levels, real ghost and short notes, and reaches low B.

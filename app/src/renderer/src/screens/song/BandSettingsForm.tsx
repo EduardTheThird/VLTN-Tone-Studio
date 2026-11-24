@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
+import { variantExtraBytes } from "@/song/band/live-variants";
 import { BASS_PART_LABELS, styleChoices } from "./band-labels";
 /**
  * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
@@ -35,10 +36,13 @@ export interface BandSettingsFormProps {
   onStyle(id: StyleId): void;
   /** The song's beats per bar, to list the styles written for it first. */
   beatsPerBar?: number;
+  songSeconds?: number;
 }
 
 /** The song-wide band settings, in two columns: drums, then bass. The tone chains are on the Sound tab. Changing one saves it; nothing is generated until Generate. */
-export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar, hasOriginalDrums = false }: BandSettingsFormProps) {
+export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar, songSeconds = 0, hasOriginalDrums = false }: BandSettingsFormProps) {
+  const parts = Number(settings.parts.drums) + Number(settings.parts.bass);
+  const extra = Math.round(variantExtraBytes(songSeconds, parts) / 1_000_000);
   return (
     <section aria-label="Band settings" className="grid gap-x-8 gap-y-4 md:grid-cols-2">
       <div className="flex min-w-0 flex-col gap-3">
@@ -280,6 +284,16 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
         <label className="flex items-center gap-2">
           <Switch aria-label="Lock bass to kick" checked={settings.lockToKick} onCheckedChange={(on) => onChange({ lockToKick: on })} />
           Lock bass to kick
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 md:col-span-2">
+        <label className="flex items-center gap-2">
+          <Switch aria-label="Live band changes" checked={settings.liveVariants === true} onCheckedChange={(on) => onChange({ liveVariants: on ? true : undefined })} />
+          Live band changes{extra > 0 && ` (+ about ${extra} MB)`}
+        </label>
+        <label className="flex items-center gap-2">
+          <Switch aria-label="Return to normal at the next section" checked={settings.variantReturn === "section"} onCheckedChange={(on) => onChange({ variantReturn: on ? "section" : undefined })} />
+          Return to normal at the next section
         </label>
       </div>
     </section>

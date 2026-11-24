@@ -8,7 +8,8 @@ import { renderPartChain } from "./bass-chain";
 import { automaticUpdateBlock } from "./tone-check";
 import { followStatus } from "./feel";
 import { levelStatus } from "./level";
-import { hasExtras, type ExitAudio } from "./extras";
+import { hasExtras, type ExitAudio, type PartExtras } from "./extras";
+import { RENDERED_VARIANTS } from "./live-variants";
 import type { PcmAudio } from "../types";
 import type { Chord } from "../performance/chords";
 import { info, type BandNotice } from "@/screens/song/band-status";
@@ -115,8 +116,27 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
   const levels = levelStatus(result.levels);
   if (levels) notes.push(info(levels));
 
+  const partExtras: Record<"drums" | "bass", PartExtras> = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass } };
+  for (const variant of RENDERED_VARIANTS) {
+    const resultVariant = result.variants?.[variant];
+    if (!resultVariant) continue;
+    for (const kind of ["drums", "bass"] as const) {
+      const source = resultVariant[kind];
+      if (!source) continue;
+      const tone = kind === "drums" ? using.drumTone : using.bassTone;
+      const applyTone = (audio: PcmAudio) => tone.kind !== "clean" && renderedTone[kind] === "chain"
+        ? tonePart(audio, tone, kind).then((value) => value.audio)
+        : Promise.resolve(audio);
+      const audio = await applyTone(source);
+      const variantExits: Record<string, ExitAudio> = {};
+      for (const [id, exit] of Object.entries(resultVariant.exits ?? {})) {
+        const exitAudio = exit[kind];
+        if (exitAudio) variantExits[id] = { audio: await applyTone(exitAudio), from: exit.from, to: exit.to };
+      }
+      (partExtras[kind].variants ??= {})[variant] = { audio, exits: variantExits };
+    }
+  }
   if (stageActivityBlocks(options.preparation?.())) throw new Error("Stop playback to update the set");
-  const partExtras = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass } };
   const extras = {
     ...(drums && hasExtras(partExtras.drums) ? { drums: partExtras.drums } : {}),
     ...(bass && hasExtras(partExtras.bass) ? { bass: partExtras.bass } : {}),

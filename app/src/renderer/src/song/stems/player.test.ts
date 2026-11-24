@@ -1306,3 +1306,50 @@ it("ignores mix, routing and meter calls after the player is released", async ()
   expect(() => player.setTrackBuses({ drums: "main" })).not.toThrow();
   expect(player.levels()).toEqual({ drums: 0 });
 });
+
+
+it("switches normal and lift with a 30 ms equal-power crossfade centred on the bar, and can cancel", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const audio = { sampleRate: 100, channels: [new Float32Array(1000)] };
+  const player = new StemPlayer({ track0: audio, "band:track0:lift": audio }, undefined, {}, "now", 1, { bandTracks: {
+    track0: { part: "drums", track: "track0" },
+    "band:track0:lift": { part: "drums", track: "track0", variant: "lift" },
+  } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 10.5;
+  expect(player.setBandVariant("lift", 2, 0)).toBe(true);
+  const automated = ctx.gains.filter((node) => node.gain.setValueCurveAtTime.mock.calls.length);
+  expect(automated).toHaveLength(2);
+  const [[from, time, duration], [to]] = automated.map((node) => node.gain.setValueCurveAtTime.mock.calls[0]);
+  expect(time).toBeCloseTo(12.005);
+  expect(duration).toBeCloseTo(0.03);
+  expect(from[0]).toBeCloseTo(1);
+  expect(to[0]).toBeCloseTo(0);
+  for (let i = 0; i < from.length; i++) {
+    expect(from[i] ** 2 + to[i] ** 2).toBeCloseTo(1, 5);
+    if (i > 0) expect(Math.abs(from[i] - from[i - 1]) + Math.abs(to[i] - to[i - 1])).toBeLessThan(0.08);
+  }
+  expect(player.cancelBandSwitch()).toBe(true);
+  ctx.currentTime = 12.02;
+  expect(player.commitBandSwitch()).toBe(false);
+  await player.dispose();
+});
+
+it("fades the generated drums to zero at the next bar for Band out", async () => {
+  vi.stubGlobal("AudioContext", Context);
+  const audio = { sampleRate: 100, channels: [new Float32Array(1000)] };
+  const player = new StemPlayer({ track0: audio }, undefined, {}, "now", 1, { bandTracks: {
+    track0: { part: "drums", track: "track0" },
+  } });
+  await player.play();
+  const ctx = Context.instances[0];
+  ctx.currentTime = 10.52;
+  expect(player.setBandVariant("out", 2, 0)).toBe(true);
+  const [curve, begin, duration] = ctx.gains.find((node) => node.gain.setValueCurveAtTime.mock.calls.length)!.gain.setValueCurveAtTime.mock.calls[0];
+  expect(curve[0]).toBeCloseTo(1);
+  expect(curve.at(-1)).toBeCloseTo(0);
+  expect(begin).toBeCloseTo(10.52);
+  expect(begin + duration).toBeCloseTo(12.02);
+  await player.dispose();
+});

@@ -22,6 +22,7 @@ function recordingHost(pdf = false): ActionHost & { calls: [string, ...unknown[]
     "toggleSectionLoop",
     "exitSectionLoop",
     "cancelSectionJump",
+    "bandVariant",
     "arm",
     "disarm",
     "scrollLyrics",
@@ -216,4 +217,16 @@ describe("runAction", () => {
     runAction({ action: "constructor" }, host);
     expect(spy).not.toHaveBeenCalled();
   });
+});
+
+it("routes the live band shortcuts through the bindable action registry", () => {
+  const host = recordingHost();
+  const names = ["lift", "soft", "normal", "drums", "out", "toggleLift"] as const;
+  for (const name of names) {
+    const action = `band.${name}` as const;
+    expect(isActionId(action)).toBe(true);
+    expect(ACTIONS[action].group).toBe("Band");
+    runAction({ action }, host);
+  }
+  expect(host.calls).toEqual(["lift", "soft", "normal", "drums", "out", "toggle"].map((mode) => ["bandVariant", mode]));
 });
