@@ -323,7 +323,7 @@ export function kitFor(settings: Pick<BandSettings, "kit" | "style">): DrumKit {
 }
 
 /** The newest generation rules. A new song starts on them; a saved song without an engine plays by the earlier ones (engine 1). */
-export const CURRENT_ENGINE = 3;
+export const CURRENT_ENGINE = 4;
 
 export const DEFAULT_BAND_SETTINGS: BandSettings = {
   parts: { drums: true, bass: true },

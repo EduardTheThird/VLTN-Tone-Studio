@@ -167,7 +167,7 @@ function generate(request: BandRequest, original = originalDrummer(request), den
     report.push({ start: plan.start, confidence: section?.confidence ?? 0, learned: learned.has(i) });
   });
   const bass = request.parts.bass ? generateBass(grid, request.harmony, plans, settings, drums, seed, feel, request.trimEnd, request.keys) : [];
-  const humanDrums = humanise(drums, "drums", grid, plans, settings.humanise, seed, learned.size ? learned : undefined);
+  const humanDrums = humanise(drums, "drums", grid, plans, settings.humanise, seed, learned.size ? learned : undefined, settings.engine);
   const humanBass = humanise(bass, "bass", grid, plans, settings.humanise, seed);
   const snapped = settings.followDrummer && original.hits ? followDrummer(humanDrums, humanBass, onsetTimes(original.hits)) : { drums: humanDrums, bass: humanBass };
   const drumNotes = snapped.drums;

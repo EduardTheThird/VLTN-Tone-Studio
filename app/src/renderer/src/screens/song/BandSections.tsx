@@ -2,12 +2,12 @@ import { Ellipsis } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ENERGIES, type StyleId } from "@/song/band/styles";
 import { BASS_PART_CHOICES, type BassPartChoice } from "@/song/band/bass-parts";
 import type { SectionOverride, SectionPlan } from "@/song/band/arrangement";
 import { BandSectionMore } from "./BandSectionMore";
-import { BASS_PART_LABELS, FILL_CHOICES, FILL_LABELS, fillChoiceOf, fillOfChoice, styleChoices, type FillChoice } from "./band-labels";
+import { BASS_PART_LABELS, FILL_CHOICES, FILL_LABELS, fillChoiceOf, fillOfChoice, groupedStyleChoices, type FillChoice } from "./band-labels";
 
 export interface BandSectionRow {
   plan: SectionPlan;
@@ -137,10 +137,11 @@ export function BandSections({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {styleChoices(beatsPerBar).map(({ id, label }) => (
-                          <SelectItem key={id} value={id}>
-                            {label}
-                          </SelectItem>
+                        {groupedStyleChoices(beatsPerBar).map(({ name, choices }) => (
+                          <SelectGroup key={name}>
+                            <SelectLabel>{name}</SelectLabel>
+                            {choices.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
+                          </SelectGroup>
                         ))}
                       </SelectContent>
                     </Select>

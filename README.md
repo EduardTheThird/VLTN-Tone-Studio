@@ -657,3 +657,5 @@ VLTN Tone Studio is free software under the [GNU General Public License v3.0](LI
 <br>
 
 </div>
+
+Band drum patterns and feel profiles are derived from the [Groove MIDI Dataset](https://magenta.tensorflow.org/datasets/groove) by Google LLC under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were quantized, clustered and averaged for this app.

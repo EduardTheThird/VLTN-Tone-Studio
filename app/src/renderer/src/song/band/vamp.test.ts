@@ -45,7 +45,7 @@ function request(mode: SectionMode, overrides: Partial<BandSettings> = {}): Band
   const grid = steadyGrid();
   const chord = parseChordName("C");
   const harmony: ChordAtBeat[] = grid.beats.map((time, beat) => ({ beat, time, chord }));
-  const settings: BandSettings = { ...DEFAULT_BAND_SETTINGS, ending: { kind: "none" }, complexity: 1, ...overrides };
+  const settings: BandSettings = { ...DEFAULT_BAND_SETTINGS, engine: 3, ending: { kind: "none" }, complexity: 1, ...overrides };
   return {
     grid,
     harmony,
@@ -86,6 +86,12 @@ describe("planSections marks a vamp", () => {
 describe("a vamp's drums", () => {
   const vamped = runBandJob(request("loop"), stubSamples());
   const plain = runBandJob(request("continue"), stubSamples());
+
+  it("omits a measured downbeat crash at the start of an engine 4 loop", () => {
+    const loop = runBandJob(request("loop", { engine: 4 }), stubSamples());
+    expect(pitches(inBar(loop.notes.drums, SOLO_FIRST_BAR))).not.toContain(CRASH);
+    expect(loop.exits).toBeDefined();
+  });
 
   it("play no fill on the last bar, which an ordinary section has", () => {
     expect(snareRun(plain.notes.drums, SOLO_LAST_BAR)).toBeGreaterThan(3);

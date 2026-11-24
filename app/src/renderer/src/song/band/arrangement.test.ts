@@ -194,8 +194,9 @@ describe("bass notes from", () => {
     expect(parseBandSettings({ bassFrom: "chords" }).engine).toBe(1);
     expect(parseBandSettings({ engine: 2 }).engine).toBe(2);
     expect(parseBandSettings({ engine: 3 }).engine).toBe(3);
-    expect(parseBandSettings({ engine: 4 }).engine).toBe(1);
-    expect(parseBandSettings(undefined).engine).toBe(3);
+    expect(parseBandSettings({ engine: 5 }).engine).toBe(1);
+    expect(parseBandSettings({ engine: 4 }).engine).toBe(4);
+    expect(parseBandSettings(undefined).engine).toBe(4);
     expect(parseBandSettings({ bassFrom: "piano" }).bassFrom).toBe("original");
     expect(parseBandSettings({}).bassFrom).toBe("original");
   });

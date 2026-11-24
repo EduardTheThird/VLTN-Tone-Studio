@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, planSections, type BandSettings } from "./arrangement";
@@ -84,4 +84,12 @@ describe("drums of songs on an earlier engine", () => {
     if (process.env.UPDATE_GOLDEN) writeFileSync(join(__dirname, "drums-golden.snapshot.json"), JSON.stringify(actual));
     expect(JSON.parse(JSON.stringify(actual))).toEqual(golden);
   });
+});
+
+
+it("matches the engine 4 rock golden", () => {
+  const snapshot = join(__dirname, "drums-engine-4.snapshot.json");
+  const actual = notesFor("rock", 4).slice(0, 60).map(({ time, pitch, velocity }) => [time, pitch, velocity]);
+  if (process.env.UPDATE_ENGINE_4_GOLDEN) writeFileSync(snapshot, JSON.stringify(actual) + "\n");
+  expect(actual).toEqual(JSON.parse(readFileSync(snapshot, "utf8")));
 });

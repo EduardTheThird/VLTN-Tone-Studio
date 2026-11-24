@@ -4,9 +4,11 @@
 
 import type { HumaniseSettings, SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
+import { LOUD_DRUM_SCALE } from "./drums";
 import { CLOSED_HAT, KICK, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE, type NoteEvent } from "./note";
 import { createRandom, type Random } from "./random";
 import { findStyle } from "./styles";
+import { measuredFeel } from "./styles/measured";
 import type { HumaniseFeel } from "./styles/types";
 import { beatInBar, beatSpan, clampVelocity, planIndexAt } from "./timing";
 
@@ -14,7 +16,9 @@ import { beatInBar, beatSpan, clampVelocity, planIndexAt } from "./timing";
 export type HumanisePart = "drums" | "bass";
 
 /** The feel used for a note no plan covers. It is the middle of the range, so it is the least surprising. */
-export const DEFAULT_FEEL: HumaniseFeel = "natural";
+type GenericFeel = Exclude<HumaniseFeel, "drummer">;
+
+export const DEFAULT_FEEL: GenericFeel = "natural";
 
 /** Salts that give each part its own stream of the seed. They differ from the generators' stream, which is the plain seed. */
 export const DRUM_STREAM = 0x243f6a88;
@@ -58,7 +62,7 @@ export const MIN_BASS_DURATION = 0.03;
 export type TimingGroup = "kick" | "snare" | "hats" | "toms" | "bass";
 
 /** Each group's timing shift at each feel, in ms at full amount. Positive is later than the grid. */
-export const FEEL_SHIFT_MS: Record<TimingGroup, Record<HumaniseFeel, number>> = {
+export const FEEL_SHIFT_MS: Record<TimingGroup, Record<GenericFeel, number>> = {
   kick: { tight: 0, natural: -2, "laid-back": -2, pushed: -2 },
   snare: { tight: 0, natural: 2, "laid-back": 8, pushed: -6 },
   hats: { tight: 0, natural: 0, "laid-back": 0, pushed: 0 },
@@ -70,7 +74,7 @@ export const FEEL_SHIFT_MS: Record<TimingGroup, Record<HumaniseFeel, number>> = 
  * Each group's random timing spread (one standard deviation) at each feel, in ms at full amount. The spread is what makes a part sound
  * loose rather than only late or early. A feel with no spread for a group is the plain shift.
  */
-export const FEEL_SPREAD_MS: Record<TimingGroup, Record<HumaniseFeel, number>> = {
+export const FEEL_SPREAD_MS: Record<TimingGroup, Record<GenericFeel, number>> = {
   kick: { tight: 0, natural: 0, "laid-back": 0, pushed: 0 },
   snare: { tight: 0, natural: 0, "laid-back": 0, pushed: 0 },
   hats: { tight: 2, natural: 4, "laid-back": 6, pushed: 4 },
@@ -198,12 +202,16 @@ function accentOf(note: NoteEvent, grid: BeatGrid, inRun: boolean, weakSixteenth
   return accent;
 }
 
-/** The feel a note plays with. "style" takes the feel of the style whose plan covers the note's time. */
-function feelAt(plans: readonly SectionPlan[], settings: HumaniseSettings, time: number): HumaniseFeel {
-  if (settings.feel !== "style") return settings.feel;
-  const index = planIndexAt(plans, time);
-  const style = index >= 0 ? findStyle(plans[index].style) : undefined;
-  return style?.feelDefault ?? DEFAULT_FEEL;
+function templateAt(grid: BeatGrid, time: number, style: NonNullable<ReturnType<typeof findStyle>>, group: Exclude<TimingGroup, "bass">) {
+  const beat = beatAtOrBefore(grid.beats, time);
+  if (beat < 0) return undefined;
+  const span = beatSpan(grid.beats, beat);
+  if (span <= 0) return undefined;
+  const position = beatInBar(grid, beat);
+  const division = style.meter.stepsPerBeat;
+  const step = Math.round((position + (time - grid.beats[beat]) / span) * division) % (grid.beatsPerBar * division);
+  const cell = measuredFeel(style.id, grid.beatsPerBar, division, step, group);
+  return cell ? { shift: cell[0] * span / 0.5, spread: cell[1] * span / 0.5, velocity: cell[2] } : undefined;
 }
 
 /**
@@ -222,6 +230,7 @@ export function humanise(
   settings: HumaniseSettings,
   seed: number,
   learnedSections?: ReadonlySet<number>,
+  engine = 3,
 ): NoteEvent[] {
   const amount = clamp(settings.amount, 0, 1);
   if (amount <= 0) return [...notes];
@@ -231,10 +240,21 @@ export function humanise(
   const weak = part === "drums" ? weakSixteenths(grid, notes) : new Set<number>();
 
   const out = notes.map((note, index): NoteEvent => {
-    const feel = feelAt(plans, settings, note.time);
+    const planIndex = planIndexAt(plans, note.time);
+    const plan = plans[planIndex];
+    const style = plan ? findStyle(plan.style) : undefined;
+    const requestedFeel = settings.feel === "style" ? style?.feelDefault ?? DEFAULT_FEEL : settings.feel;
+    const feel = requestedFeel === "drummer" ? DEFAULT_FEEL : requestedFeel;
     const group: TimingGroup = part === "bass" ? "bass" : groupOf(note.pitch);
     // Every note draws the same numbers whatever the amount, so the amount only scales how far each one moves.
-    const offsetMs = clamp(amount * (FEEL_SHIFT_MS[group][feel] + FEEL_SPREAD_MS[group][feel] * gaussian(random)), -MAX_SHIFT_MS, MAX_SHIFT_MS);
+    const learned = part === "drums" && learnedSections?.has(planIndex);
+    const template = engine >= 4 && style && group !== "bass" && !learned && (settings.feel === "style" || requestedFeel === "drummer")
+      ? templateAt(grid, note.time, style, group)
+      : undefined;
+    const draw = gaussian(random);
+    const offsetMs = template
+      ? amount * (template.shift + template.spread * clamp(draw, -2, 2) * 0.25)
+      : clamp(amount * (FEEL_SHIFT_MS[group][feel] + FEEL_SPREAD_MS[group][feel] * draw), -MAX_SHIFT_MS, MAX_SHIFT_MS);
     const jitter = 2 * random.next() - 1;
     const accent = part === "drums" ? accentOf(note, grid, runs.has(index), weak.has(index)) : 0;
     const spread = part === "bass" ? BASS_VELOCITY_SPREAD : group === "hats" ? HAT_VELOCITY_SPREAD : DRUM_VELOCITY_SPREAD;
@@ -242,8 +262,11 @@ export function humanise(
     // A dead note keeps its own velocity and length: only its timing moves, so it stays just before the note it belongs to.
     if (note.dead) return { ...note, time: Math.max(0, note.time + offsetMs / 1000) };
 
-    const learned = part === "drums" && learnedSections?.has(planIndexAt(plans, note.time));
     let velocity = note.velocity + amount * (learned ? spread * jitter * 0.5 : accent + spread * jitter);
+    if (template) {
+      const target = group === "hats" ? 112 * LOUD_DRUM_SCALE[plan.loud] * template.velocity : note.velocity;
+      velocity = note.velocity + amount * (target - note.velocity + spread * jitter * 0.25);
+    }
     // A ghost stays a ghost: its humanised velocity stays under GHOST_BELOW.
     if (note.velocity < GHOST_BELOW) velocity = Math.min(velocity, GHOST_BELOW - 1);
 

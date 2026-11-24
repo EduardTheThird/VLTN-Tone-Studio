@@ -103,11 +103,12 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
   await rm(copy, { recursive: true, force: true });
 });
-it("updates engines 1/2 on a copied library, skips engine 3 and missing tones, and preserves original audio and musical edits", async () => {
+it("updates engines 1 to 3 on a copied library, skips engine 4 and missing tones, and preserves original audio and musical edits", async () => {
   const ids = [
     await add(1),
     await add(2),
     await add(3),
+    await add(4),
     await add(1, {
       bassTone: {
         kind: "chain",
@@ -125,18 +126,18 @@ it("updates engines 1/2 on a copied library, skips engine 3 and missing tones, a
     const song = before.songs.find((song) => song.id === id)!;
     const result = await upgradeSavedSong(song, DEFAULT_SET_UPGRADE, [], []);
     expect(result.band).toBe(
-      index < 2
+      index < 3
         ? "Done"
-        : index === 2
+        : index === 3
           ? "Skipped: Already current"
           : "Skipped: Not updated: the bass tone's amp capture is missing. Download it or switch to Clean, then Generate.",
     );
     const after = (await store.index()).songs.find((song) => song.id === id)!;
-    if (index >= 2) expect(after).toEqual(song);
+    if (index >= 3) expect(after).toEqual(song);
     else {
       const saved = JSON.parse(after.settings[":options"]);
       const previous = JSON.parse(song.settings[":options"]);
-      expect(saved.band.engine).toBe(3);
+      expect(saved.band.engine).toBe(4);
       expect(saved.band.bassOverrides).toEqual(previous.band.bassOverrides);
       expect(saved.band.marks).toEqual(previous.band.marks);
       expect(saved.untouched).toBe("keep me");
@@ -144,7 +145,7 @@ it("updates engines 1/2 on a copied library, skips engine 3 and missing tones, a
       expect(await fileBytes(copy, id, "source.flac")).toEqual(await fileBytes(root, id, "source.flac"));
     }
   }
-  expect(mocks.render).toHaveBeenCalledTimes(2);
+  expect(mocks.render).toHaveBeenCalledTimes(3);
   expect(await readFile(join(root, "library.json"))).toEqual(baseline);
 });
 it("keeps owned rendered audio intact and renders clean bass Warm once, including cue names", async () => {

@@ -30,6 +30,20 @@ export function styleChoices(beatsPerBar?: number): { id: StyleId; label: string
   return [...STYLE_IDS.filter(fits), ...STYLE_IDS.filter((id) => !fits(id))].map(choice);
 }
 
+const STYLE_GROUPS: { name: string; ids: StyleId[] }[] = [
+  { name: "Rock & pop", ids: ["rock", "pop", "ballad", "metal", "half-time"] },
+  { name: "Groove", ids: ["funk", "reggae"] },
+  { name: "Swing & blues", ids: ["shuffle", "country"] },
+  { name: "Other meters", ids: ["six-eight", "three-four"] },
+];
+
+export function groupedStyleChoices(beatsPerBar?: number) {
+  const choices = styleChoices(beatsPerBar);
+  return STYLE_GROUPS.map(({ name, ids }) => ({ name, choices: choices.filter(({ id }) => ids.includes(id)) }))
+    .sort((a, b) => Number(b.choices.some(({ id }) => STYLES[id].meter.beatsPerBar === beatsPerBar)) -
+      Number(a.choices.some(({ id }) => STYLES[id].meter.beatsPerBar === beatsPerBar)));
+}
+
 /** The choices of the Fill menu: Auto sizes the fill to the change into the next section. */
 export const FILL_CHOICES = ["auto", "none", "short", "half", "whole"] as const;
 export type FillChoice = (typeof FILL_CHOICES)[number];

@@ -2,11 +2,11 @@ import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { defaultFills, FILLS, type Fills, type SectionOverride, type SectionPlan, type SectionShape } from "@/song/band/arrangement";
 import { OCTAVE_SHIFTS, type OctaveShift } from "@/song/band/bass-parts";
 import { ENERGIES, findStyle, type StyleId } from "@/song/band/styles";
-import { SHAPE_CHOICES, SHAPE_LABELS, styleChoices } from "./band-labels";
+import { SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
 
 const OCTAVE_LABELS: Record<string, string> = { "-1": "−1 octave", "0": "Same", "1": "+1 octave" };
 
@@ -53,10 +53,11 @@ export function BandSectionMore({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {styleChoices(beatsPerBar).map(({ id, label }) => (
-                <SelectItem key={id} value={id}>
-                  {label}
-                </SelectItem>
+              {groupedStyleChoices(beatsPerBar).map(({ name, choices }) => (
+                <SelectGroup key={name}>
+                  <SelectLabel>{name}</SelectLabel>
+                  {choices.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
+                </SelectGroup>
               ))}
             </SelectContent>
           </Select>

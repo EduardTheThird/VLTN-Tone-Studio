@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DRUM_PITCHES } from "../note";
 import { ENERGIES, LEGACY_FILLS, STYLE_IDS, type DrumPattern, type Style } from "./types";
 import { ramp } from "./notation";
+import { withMeasuredPatterns } from "./measured";
 import { STYLES, findStyle } from "./index";
 
 const styles = STYLE_IDS.map((id) => STYLES[id]);
@@ -157,4 +158,23 @@ describe("style data", () => {
     expect(findStyle("polka")).toBeUndefined();
     expect(findStyle("constructor")).toBeUndefined();
   });
+});
+
+it.each(styles.map((style) => [style.id, style] as const))("%s has playable engine 4 variations", (_id, legacy) => {
+  const style = withMeasuredPatterns(legacy);
+  const steps = style.meter.beatsPerBar * style.meter.stepsPerBeat;
+  for (const energy of ENERGIES) {
+    expect(style.grooves[energy].length).toBeGreaterThan(0);
+    expect(style.bass.figures[energy].length).toBeGreaterThanOrEqual(3);
+  }
+  for (const size of ["short", "half", "bar"] as const) expect(style.fills[size].length).toBeGreaterThan(0);
+  for (const { pattern } of patternsOf(style)) {
+    expect(pattern.steps).toBe(steps);
+    expect(pattern.hits.length).toBeGreaterThan(0);
+    for (const hit of pattern.hits) {
+      expect(DRUM_PITCHES).toContain(hit.pitch);
+      expect(hit.step).toBeGreaterThanOrEqual(0);
+      expect(hit.step).toBeLessThan(steps);
+    }
+  }
 });

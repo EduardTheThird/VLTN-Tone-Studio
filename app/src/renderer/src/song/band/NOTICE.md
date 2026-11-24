@@ -374,3 +374,11 @@ Recordings were downmixed to mono and encoded as 44.1 kHz, 24-bit FLAC. The lead
 | `pick-release-47-90-1.flac` | `release/b2_release_rr1.wav` |
 | `pick-release-53-90-1.flac` | `release/f3_release_rr1.wav` |
 | `pick-release-59-90-1.flac` | `release/b3_release_rr1.wav` |
+
+## Groove MIDI Dataset
+
+The drum patterns, fills and feel profiles in `styles/data/` are derived from the
+[Groove MIDI Dataset](https://magenta.tensorflow.org/datasets/groove), made
+available by Google LLC under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+The derived tables remap kit pieces, quantize and cluster bars, and summarize
+timing and dynamics. See `app/scripts/groove-data/extract.py` for reproduction.

@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- New drum grooves and fills learned from recordings of real drummers, and a drummer feel measured from them.
 - The MIDI clock can follow the song’s real beats, so pedals that sync to it stay with songs that speed up or slow down.
 
 - Name your TimeLine, SY-200 and IR-200 presets. Names show in cues, pickers and stage mode.

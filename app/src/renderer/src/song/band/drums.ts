@@ -16,6 +16,7 @@ import { variationSeed } from "./bass-phrases";
 import { createRandom, type Random } from "./random";
 import { findStyle, type Style } from "./styles";
 import { addKickEighths, barRoles, choked, crashOnDownbeat, dropBar, fillSizeOf, overlay, riseHats, shapeFill, snareBuild } from "./drum-phrases";
+import { withMeasuredPatterns } from "./styles/measured";
 import { VEL } from "./styles/notation";
 import { isChorusName } from "./arrangement";
 import { BUSY_FROM, LEAN_FROM, LEGACY_FILLS, playsAt, type DrumGroove, type DrumHit, type Energy } from "./styles/types";
@@ -101,11 +102,12 @@ function kickComplexity(complexity: number, bpm: number, style: Style): number {
 }
 
 /** The style a section plays: its own, or at drum engine 3 the half-time style's grooves for a half-time shape, when the two share a bar. */
-function styleOf(plan: SectionPlan, phrased: boolean): Style | undefined {
+function styleOf(plan: SectionPlan, phrased: boolean, measured: boolean): Style | undefined {
   const own = findStyle(plan.style);
   const half = findStyle("half-time");
   const fits = own && half && half.meter.beatsPerBar === own.meter.beatsPerBar && half.meter.stepsPerBeat === own.meter.stepsPerBeat;
-  return phrased && plan.shape === "half" && fits ? half : own;
+  const style = phrased && plan.shape === "half" && fits ? half : own;
+  return measured && style ? withMeasuredPatterns(style) : style;
 }
 
 /** The draws a bar makes under the drum phrases: which turnaround, short fill, half fill and bar fill it would use. Always drawn, whether used or not. */
@@ -254,6 +256,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
   };
   // Under the drum phrases (engine 3) every bar knows its place in its section's phrases, and a section draws from streams of its own.
   const phrased = settings.engine >= 3;
+  const measured = settings.engine >= 4;
   const barsOf = plans.map((_, i) => planOf.filter((index) => index === i).length);
   const counted = plans.map(() => 0);
   const barIndex = planOf.map((index) => (index >= 0 ? counted[index]++ : -1));
@@ -268,7 +271,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
         seed,
         occurrence[planIndex],
         barsOf[planIndex],
-        styleOf(plans[planIndex], true) ?? findStyle("rock")!,
+        styleOf(plans[planIndex], true, measured) ?? findStyle("rock")!,
         isAccented(accented) ? accented : undefined,
         settings.complexity,
       );
@@ -285,10 +288,10 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     const known = fillDraws.get(key);
     if (known !== undefined) return known;
     const last = sectionFor(planIndex).draws[barsOf[planIndex] - 1];
-    const style = styleOf(plans[planIndex], true);
+    const style = styleOf(plans[planIndex], true, measured);
     let choice = last[kind];
     const before = planIndex > 0 ? plans[planIndex - 1] : undefined;
-    if (before && style && styleOf(before, true)?.id === style.id && before.seed === undefined && plans[planIndex].seed === undefined) {
+    if (before && style && styleOf(before, true, measured)?.id === style.id && before.seed === undefined && plans[planIndex].seed === undefined) {
       if (sectionFill(planIndex - 1, kind) === choice) choice = (choice + 1) % style.fills[kind].length;
     }
     fillDraws.set(key, choice);
@@ -313,7 +316,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     const recorded = plan && (plan.drumPattern ?? settings.drumPattern) === "original" ? learned?.[planIndex] : undefined;
     const original = recorded?.groove ? recorded : undefined;
     const drumShape = original && !plan?.drumShapeExplicit ? "steady" : plan?.shape;
-    const style = plan && plan.play.drums ? styleOf(drumShape === plan.shape ? plan : { ...plan, shape: drumShape }, phrased) : undefined;
+    const style = plan && plan.play.drums ? styleOf(drumShape === plan.shape ? plan : { ...plan, shape: drumShape }, phrased, measured) : undefined;
     if (!plan || !style) {
       segment = null;
       continue;
@@ -501,6 +504,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     if (!(plan.vamp && newPlan) && (sectionCrash || crashAfterFill || phraseCrash) && !hits.some((hit) => hit.step === 0 && hit.pitch === CRASH)) {
       hits = [...hits, { step: 0, pitch: CRASH, velocity: CRASH_VELOCITY }];
     }
+    if (measured && plan.vamp && newPlan) hits = hits.filter((hit) => !(hit.step === 0 && hit.pitch === CRASH));
     if (markOf(marked, k, "crash") && !hits.some((hit) => hit.step === 0 && hit.pitch === CRASH)) hits = [...hits, { step: 0, pitch: CRASH, velocity: CRASH_VELOCITY }];
     if (feel) hits = hitBeatHits(hits, feel, start, perBar, stepsPerGridBeat(style, perBar));
     if (markOf(marked, k, "no-crash")) hits = hits.filter((hit) => !(hit.step === 0 && hit.pitch === CRASH));

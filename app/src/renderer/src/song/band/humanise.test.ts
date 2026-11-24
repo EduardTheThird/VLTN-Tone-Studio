@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, planSections, type HumaniseSettings, type SectionPlan } from "./arrangement";
 import type { BeatGrid } from "./beat-grid";
+import { LOUD_DRUM_SCALE } from "./drums";
 import { CLOSED_HAT, CRASH, KICK, SNARE, type NoteEvent } from "./note";
 import { DEFAULT_FEEL, GHOST_BELOW, MAX_SHIFT_MS, humanise } from "./humanise";
+import { measuredFeel } from "./styles/measured";
 import { HUMANISE_FEELS } from "./styles/types";
 
 const SECONDS = 64;
@@ -221,4 +223,27 @@ it("keeps learned drum dynamics with half the velocity spread and the same timin
   expect(learned.map(({ time }) => time)).toEqual(style.map(({ time }) => time));
   expect(Math.max(...learned.map(({ velocity }) => Math.abs(velocity - 90)))).toBeLessThanOrEqual(3);
   expect(style.some(({ velocity }) => Math.abs(velocity - 90) > 3)).toBe(true);
+});
+
+
+describe("measured drummer feel (engine 4)", () => {
+  const plans = planSections([], SECONDS, { ...DEFAULT_BAND_SETTINGS, style: "funk" });
+  const hats = hits(CLOSED_HAT, Array.from({ length: 16 }, (_, step) => 4 + step * 0.125));
+
+  it("uses the funk timing and velocity profile and leaves the grid alone at zero", () => {
+    const settings = settingsOf(1, "drummer");
+    const out = humanise(hats, "drums", grid, plans, settings, 42, undefined, 4);
+    let compared = 0;
+    out.forEach((hit, step) => {
+      const template = measuredFeel("funk", 4, 4, step, "hats");
+      if (!template) return;
+      compared += 1;
+      const [offset, spread, relativeVelocity] = template;
+      expect(Math.abs((hit.time - hats[step].time) * 1000 - offset)).toBeLessThanOrEqual(spread / 2 + 0.001);
+      expect(Math.abs(hit.velocity - 112 * LOUD_DRUM_SCALE[plans[0].loud] * relativeVelocity)).toBeLessThan(3);
+    });
+    expect(compared).toBeGreaterThan(8);
+    expect(humanise(hats, "drums", grid, plans, settingsOf(1), 42, undefined, 4)).toEqual(out);
+    expect(humanise(hats, "drums", grid, plans, settingsOf(0, "drummer"), 42, undefined, 4)).toEqual(hats);
+  });
 });

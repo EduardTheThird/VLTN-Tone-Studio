@@ -1,12 +1,12 @@
 import { DrumPatternPicker } from "./DrumPatternPicker";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
 import { variantExtraBytes } from "@/song/band/live-variants";
-import { BASS_PART_LABELS, styleChoices } from "./band-labels";
+import { BASS_PART_LABELS, groupedStyleChoices } from "./band-labels";
 /**
  * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
  * A lighter track keeps the full length visible at any value.
@@ -24,6 +24,7 @@ const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
   natural: "Natural",
   "laid-back": "Laid back",
   pushed: "Pushed",
+  drummer: "Drummer",
 };
 
 export interface BandSettingsFormProps {
@@ -58,10 +59,11 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {styleChoices(beatsPerBar).map(({ id, label }) => (
-                <SelectItem key={id} value={id}>
-                  {label}
-                </SelectItem>
+              {groupedStyleChoices(beatsPerBar).map(({ name, choices }) => (
+                <SelectGroup key={name}>
+                  <SelectLabel>{name}</SelectLabel>
+                  {choices.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
+                </SelectGroup>
               ))}
             </SelectContent>
           </Select>
@@ -132,7 +134,7 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {HUMANISE_CHOICES.map((choice) => (
+              {HUMANISE_CHOICES.filter((choice) => choice !== "drummer" || settings.engine >= 4).map((choice) => (
                 <SelectItem key={choice} value={choice}>
                   {HUMANISE_LABELS[choice]}
                 </SelectItem>

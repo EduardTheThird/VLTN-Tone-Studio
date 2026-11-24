@@ -11,7 +11,7 @@ export type StyleId = (typeof STYLE_IDS)[number];
  * The feels the humanising gives the generated parts: how the timing and the velocities sit against the beat. "Tight" plays on the
  * grid, "laid back" drags the snare and the hats, "pushed" plays the snare early. The settings add "style", the style's own default.
  */
-export const HUMANISE_FEELS = ["tight", "natural", "laid-back", "pushed"] as const;
+export const HUMANISE_FEELS = ["tight", "natural", "laid-back", "pushed", "drummer"] as const;
 export type HumaniseFeel = (typeof HUMANISE_FEELS)[number];
 
 /** Energy 1 is sparse, 5 is busy. */

@@ -43,6 +43,12 @@ export function AboutDialog() {
           {`Editor and librarian for the Valeton ${MODELS}: shape presets live on the pedal, sort its ${SLOTS}preset slots, back them up, and bring NAM captures and IRs from TONE3000.`}
         </DialogDescription>
         <p className="text-xs text-pretty text-silkscreen-3">Valeton, {MODELS} are trademarks of their owners. This app is not made or endorsed by Valeton.</p>
+        <p className="text-xs text-pretty text-silkscreen-3">
+          Drum patterns and feel are derived from the{" "}
+          <a href="https://magenta.tensorflow.org/datasets/groove" target="_blank" rel="noreferrer" className="underline">Groove MIDI Dataset</a>
+          {" "}by Google LLC, licensed{" "}
+          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer" className="underline">CC BY 4.0</a>.
+        </p>
         <DialogFooter>
           {host.kind === "electron" && (
             <Button variant="outline" onClick={() => void checkForUpdates()}>
