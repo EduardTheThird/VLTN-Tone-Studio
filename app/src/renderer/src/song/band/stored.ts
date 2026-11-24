@@ -15,6 +15,8 @@ export interface StoredBand {
   outOfDate: boolean;
   /** True once the missing-part notice was dismissed for this song. */
   noticeDismissed: boolean;
+  /** The initial pattern check chose style because the original stem was a basic beat. */
+  basicDrums: boolean;
 }
 
 /** The options the Band panel writes. Only the fields given are changed. */
@@ -26,6 +28,7 @@ export interface BandPatch {
   bandOutOfDate?: boolean;
   bandTempoChanged?: boolean;
   bandNoticeDismissed?: boolean;
+  bandBasicDrums?: boolean;
 }
 
 export function readStoredBand(key: string): StoredBand {
@@ -38,6 +41,7 @@ export function readStoredBand(key: string): StoredBand {
     notes: parseBandNotes(options.bandNotes),
     outOfDate: options.bandOutOfDate === true,
     noticeDismissed: options.bandNoticeDismissed === true,
+    basicDrums: options.bandBasicDrums === true,
   };
 }
 

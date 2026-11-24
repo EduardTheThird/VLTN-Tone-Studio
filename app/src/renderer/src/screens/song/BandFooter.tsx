@@ -26,6 +26,7 @@ export interface BandFooterProps {
   playing: boolean;
   /** What the panel is doing, shown with a progress bar, or null. */
   work: string | null;
+  checkingDrumPattern?: boolean;
   /** True while Find the beat runs: its progress stays on the Timing tab, so the footer does not repeat it. */
   finding: boolean;
   /** What the running preview is ("Previewing Chorus (8 bars)…"), or null. */
@@ -98,6 +99,7 @@ export function BandFooter(props: BandFooterProps) {
             {PLAYING_TEXT}
           </p>
         )}
+        {props.checkingDrumPattern && <p role="status" className="truncate">Checking the original drum pattern…</p>}
         {work && !finding && (
           <div className="flex shrink-0 items-center gap-2" role="status">
             <LoaderCircle aria-hidden className="size-4 animate-spin" />

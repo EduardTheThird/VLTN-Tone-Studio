@@ -38,6 +38,7 @@ import type { RhythmSnapshot } from "@/song/band/rhythm-export";
 import { RhythmExportDialog } from "./RhythmExportDialog";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
 import { chordChangeTimesOf, fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
+import { startDrumPatternCheck } from "@/song/band/drum-pattern-client";
 import { bandSampleUrls, renderPreview, type BandJob } from "@/song/band/band-client";
 import type { ChordAtBeat } from "@/song/band/harmony";
 import type { BassOverride } from "@/song/band/bass-overrides";
@@ -185,6 +186,7 @@ function BandBody({
   const [useMyTempo, setUseMyTempo] = useState(true);
   const [stored] = useState(() => readStoredBand(songKey));
   const defaultDrumPattern = useRef(!useSong.getState().source?.libraryId && readOptions<Record<string, unknown>>(songKey, {}).band === undefined);
+  const [basicDrums, setBasicDrums] = useState(stored.basicDrums);
   const [settings, setSettings] = useState<BandSettings>(stored.settings);
   // The latest settings for the steps that finish later (a render, a rendered file), which would otherwise write the settings they started with.
   const settingsRef = useRef<BandSettings>(stored.settings);
@@ -270,15 +272,8 @@ function BandBody({
   const missing = checkedMissing && keysPresence
     ? { ...checkedMissing, keys: keysPresence.keys, absentSections: { ...checkedMissing.absentSections, keys: keysPresence.absentSections.keys } }
     : checkedMissing;
-  const hasOriginalDrums = !!stems?.drums && missing?.drums !== "absent";
-  useEffect(() => {
-    if (!defaultDrumPattern.current || !hasOriginalDrums || missing?.drums !== "present") return;
-    defaultDrumPattern.current = false;
-    const next: BandSettings = { ...settingsRef.current, drumPattern: "original" };
-    settingsRef.current = next;
-    setSettings(next);
-    writeStoredBand(songKey, { band: next });
-  }, [hasOriginalDrums, missing?.drums, songKey]);
+  const drumsStem = stems?.drums;
+  const hasOriginalDrums = !!drumsStem && missing?.drums !== "absent";
   const cues = useMemo<Cue[]>(() => {
     try {
       return parseChart(chart, useMidiConfiguration.getState().macros);
@@ -288,6 +283,26 @@ function BandBody({
   }, [chart]);
   const songEnd = source ? pcmMemoryShape(source.audio).frames / source.audio.sampleRate : 0;
   const plans = useMemo(() => planSections(sections, songEnd, settings, sectionHints), [sections, songEnd, settings, sectionHints]);
+  const checkingDrumPattern = defaultDrumPattern.current && !!source && !source.libraryId && !!drumsStem && missing?.drums === "present" && !playing;
+  useEffect(() => {
+    if (!checkingDrumPattern || !drumsStem) return;
+    const checkedGrid = grid ?? (typedTempo ? fixedBeatGrid(bpm, firstBeat, beats, songEnd) : null);
+    const check = startDrumPatternCheck(drumsStem, { grid: checkedGrid, plans, beats, tempoHint: bpm });
+    let current = true;
+    void check.done.then((basic) => {
+      if (!current || !defaultDrumPattern.current || useSong.getState().source !== source || source?.libraryId) return;
+      defaultDrumPattern.current = false;
+      const next: BandSettings = { ...settingsRef.current, drumPattern: basic ? "style" : "original" };
+      settingsRef.current = next;
+      setSettings(next);
+      setBasicDrums(basic);
+      writeStoredBand(songKey, { band: next, bandBasicDrums: basic });
+    });
+    return () => {
+      current = false;
+      check.cancel();
+    };
+  }, [checkingDrumPattern, drumsStem, source, grid, typedTempo, bpm, firstBeat, beats, songEnd, plans, songKey]);
   const harmony = useMemo<ChordAtBeat[]>(
     () => (grid ? bandHarmony({ grid, cues, chords, songEnd, settings, bassLine }) : []),
     [grid, cues, chords, songEnd, settings, bassLine],
@@ -295,7 +310,7 @@ function BandBody({
   const libraryBusy = useSongLibrary((state) => state.busy);
   const busy = work !== null;
   // With no song there is nothing to find a beat in or to render, so every action waits for one.
-  const blocked = busy || libraryBusy || playing || source === null;
+  const blocked = busy || libraryBusy || playing || source === null || checkingDrumPattern;
   // Audio bookkeeping changes after Generate are not musical edits. Everything that determines the notes belongs to this key.
   const generationInputs = (using: BandSettings) => {
     // What a part was rendered with is a result of Generate, not an input to it.
@@ -1052,6 +1067,7 @@ function BandBody({
             <BandTabFeel
               settings={settings}
               hasOriginalDrums={hasOriginalDrums}
+              basicDrums={basicDrums}
               followSources={followSources}
               onChange={change}
               onStyle={changeStyle}
@@ -1161,6 +1177,7 @@ function BandBody({
         noSong={source === null}
         playing={playing}
         work={work}
+        checkingDrumPattern={checkingDrumPattern}
         finding={finding}
         previewing={previewing}
         done={done}

@@ -18,6 +18,7 @@ vi.setConfig({ testTimeout: 20_000 });
 
 const mocks = vi.hoisted(() => ({
   startBeatGrid: vi.fn(),
+  startDrumPatternCheck: vi.fn(),
   startBandRender: vi.fn(),
   renderPreview: vi.fn(),
   startChordDetection: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock("@/song/store", async () => {
   const { create } = await import("zustand");
   const useSong = create(() => ({
     source: null as null | { name: string; audio: PcmAudio },
+    status: { kind: "idle" },
     stems: null,
     tracks: {} as Record<string, unknown>,
     missingParts: null,
@@ -57,6 +59,7 @@ vi.mock("@/song/store", async () => {
   return { useSong, selectWholeSongStems: (s: { stems: unknown }) => s.stems };
 });
 vi.mock("@/song/band/beat-grid-client", () => ({ startBeatGrid: mocks.startBeatGrid }));
+vi.mock("@/song/band/drum-pattern-client", () => ({ startDrumPatternCheck: mocks.startDrumPatternCheck }));
 vi.mock("@/song/band/chord-detect-client", () => ({ startChordDetection: mocks.startChordDetection }));
 vi.mock("@/song/band/band-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/song/band/band-client")>()),
@@ -160,6 +163,8 @@ beforeEach(() => {
     removeGeneratedParts: vi.fn(() => []),
   });
   mocks.startBeatGrid.mockReset();
+  mocks.startDrumPatternCheck.mockReset();
+  mocks.startDrumPatternCheck.mockReturnValue({ done: Promise.resolve(false), cancel: vi.fn() });
   mocks.saveFiles.mockClear();
   mocks.startBandRender.mockReset();
   mocks.renderPreview.mockReset();
@@ -1698,13 +1703,28 @@ describe("Band panel: playback guards", () => {
   });
 });
 
-it("defaults a new song with a present drum stem to the recorded pattern", () => {
+it("defaults a new song with a full drum pattern to the original", async () => {
   useSong.setState({
     stems: { drums: song().audio },
     missingParts: { drums: "present", bass: "unknown", absentSections: { drums: [], bass: [] } },
   });
   renderPanel();
+  await waitFor(() => expect(savedOptions().band?.drumPattern).toBe("original"));
+});
+
+it("defaults a new basic stem to the style and allows copying the original", async () => {
+  mocks.startDrumPatternCheck.mockReturnValue({ done: Promise.resolve(true), cancel: vi.fn() });
+  useSong.setState({
+    stems: { drums: song().audio },
+    missingParts: { drums: "present", bass: "unknown", absentSections: { drums: [], bass: [] } },
+  });
+  renderPanel();
+  await waitFor(() => expect(savedOptions().band).toMatchObject({ drumPattern: "style" }));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Feel" }), { button: 0, ctrlKey: false });
+  expect(screen.getByText(/original drums are a basic beat/)).toBeTruthy();
+  pick(screen.getByRole("combobox", { name: "Drum pattern" }), "From the original drummer");
   expect(savedOptions().band.drumPattern).toBe("original");
+  expect(screen.queryByText(/original drums are a basic beat/)).toBeNull();
 });
 
 it("keeps the style default for previously saved band settings", () => {
@@ -1715,4 +1735,16 @@ it("keeps the style default for previously saved band settings", () => {
   });
   renderPanel();
   expect(document.querySelector('[aria-label="Drum pattern"]')?.textContent).toContain("From the style");
+  expect(mocks.startDrumPatternCheck).not.toHaveBeenCalled();
+});
+
+it("does not select a pattern for an already saved song without band settings", () => {
+  useSong.setState({
+    source: { ...song(), libraryId: "saved-song" },
+    stems: { drums: song().audio },
+    missingParts: { drums: "present", bass: "unknown", absentSections: { drums: [], bass: [] } },
+  });
+  renderPanel();
+  expect(mocks.startDrumPatternCheck).not.toHaveBeenCalled();
+  expect(savedOptions().band).toBeUndefined();
 });

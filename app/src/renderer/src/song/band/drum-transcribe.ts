@@ -12,6 +12,9 @@ export const STICK_BELOW_DB = 8;
 const STICK_MAX_DECAY = 0.025;
 const MIN_PAIR_GAIN = 0.035;
 const MIN_VARIANT_DISTANCE = 0.02;
+const BASIC_QUARTER_SHARE = 0.95;
+const BASIC_LEARNED_SHARE = 0.7;
+const BASIC_VELOCITY_SPREAD = 28;
 
 export interface LearnedSection {
   confidence: number;
@@ -162,4 +165,64 @@ export function transcribeDrums(onsets: DrumHits, grid: BeatGrid, plans: readonl
     }
   }
   return plans.map((_, plan) => learn(hits.flatMap((bar, i) => (membership[i] === plan ? [[...bar.values()]] : []))));
+}
+
+/** A click or kick can show up in several filter bands on the same step. Count that as one attack. */
+function drumAttacks(bar: readonly DrumHit[]): Map<number, { pitches: number[]; velocity: number }> {
+  const attacks = new Map<number, { pitches: number[]; velocity: number }>();
+  for (const { step, pitch, velocity } of bar) {
+    const attack = attacks.get(step);
+    if (!attack) attacks.set(step, { pitches: [pitch], velocity });
+    else {
+      attack.pitches.push(pitch);
+      attack.velocity = Math.max(attack.velocity, velocity);
+    }
+  }
+  return attacks;
+}
+
+/** A phrase changes when an attack moves or gains a piece. Losing one filter band of the same attack is common on a split click. */
+function hasDifferentAttacks(bar: readonly DrumHit[], groove: ReturnType<typeof drumAttacks>): boolean {
+  const attacks = drumAttacks(bar);
+  return attacks.size !== groove.size || [...attacks].some(([step, attack]) =>
+    attack.pitches.some((pitch) => !groove.get(step)?.pitches.includes(pitch)));
+}
+
+/** Identifies a repeated, nearly quarter-note-only beat with at most two attack signatures and flat dynamics. */
+export function isBasicDrumPattern(onsets: DrumHits, grid: BeatGrid, plans: readonly SectionPlan[]): boolean {
+  const learned = transcribeDrums(onsets, grid, plans);
+  const spans = barSpans(grid);
+  const covered = spans.filter((span) => learned[planOfBar(plans, grid.beats, span)]?.groove).length;
+  if (!spans.length || covered / spans.length < BASIC_LEARNED_SHARE) return false;
+  let total = 0;
+  let onBeat = 0;
+  let pattern: string | undefined;
+  const signatures = new Set<string>();
+  const velocities: number[] = [];
+  for (const [index, section] of learned.entries()) {
+    if (!section.groove) continue;
+    const style = findStyle(plans[index].style);
+    if (!style) return false;
+    const groove = drumAttacks(section.groove);
+    const variants = [...section.fills, ...section.turnarounds.map(({ hits }) => hits), ...(section.alternate ? [section.alternate] : [])];
+    if (variants.some((bar) => hasDifferentAttacks(bar, groove))) return false;
+    const steps = stepsForBar(style, style.meter.beatsPerBar);
+    const beats = patternBeats(style, barBeats(grid));
+    const shape: string[] = [];
+    for (const [step, attack] of groove) {
+      const signature = attack.pitches.join(",");
+      signatures.add(signature);
+      total++;
+      if ((step * beats) % steps === 0) onBeat++;
+      velocities.push(attack.velocity);
+      shape.push(`${(step * beats) / steps}:${signature}`);
+    }
+    const next = shape.join("|");
+    if (pattern !== undefined && next !== pattern) return false;
+    pattern = next;
+  }
+  if (!total || onBeat / total < BASIC_QUARTER_SHARE || signatures.size > 2) return false;
+  velocities.sort((a, b) => a - b);
+  const percentile = (fraction: number) => velocities[Math.round((velocities.length - 1) * fraction)];
+  return percentile(0.9) - percentile(0.1) <= BASIC_VELOCITY_SPREAD;
 }

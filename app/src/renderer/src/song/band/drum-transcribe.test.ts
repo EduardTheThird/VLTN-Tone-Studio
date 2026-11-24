@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, planSections } from "./arrangement";
 import { fixedBeatGrid } from "./beat-grid";
-import { LEARN_MIN_CONFIDENCE, transcribeDrums } from "./drum-transcribe";
-import type { DrumBand, DrumHits } from "./drummer-timing";
+import { LEARN_MIN_CONFIDENCE, isBasicDrumPattern, transcribeDrums } from "./drum-transcribe";
+import { drumHits, type DrumBand, type DrumHits } from "./drummer-timing";
 import { CLOSED_HAT, KICK, SIDE_STICK, SNARE } from "./note";
 import { createRandom } from "./random";
 
@@ -72,4 +72,46 @@ it("falls back to the style when hits are random or further from any step than t
   const off = emptyHits();
   for (let bar = 0; bar < 8; bar++) place(off, "kick", bar, 4, 1, 0.04, 0.055);
   expect(learned(off, 8).groove).toBeNull();
+});
+
+it.each([false, true])("classifies a quarter-note stem with optional hats, ghosts and a fill (%s)", (busy) => {
+  const sampleRate = 44100;
+  const firstBeat = 0.15;
+  const duration = 16.15;
+  const channel = new Float32Array(Math.round(duration * sampleRate));
+  const hit = (step: number, hz: number, peak: number) => {
+    const start = Math.round((firstBeat + step * 0.125) * sampleRate);
+    for (let i = 0; i < 1000 && start + i < channel.length; i++) {
+      channel[start + i] += peak * Math.sin(2 * Math.PI * hz * i / sampleRate) * Math.exp(-i / 200);
+    }
+  };
+  for (let bar = 0; bar < 8; bar++) {
+    for (const step of [0, 8]) hit(bar * 16 + step, 75, 0.85);
+    for (const step of [4, 12]) hit(bar * 16 + step, 2100, 0.7);
+    if (busy) {
+      for (const step of [2, 6, 10, 14]) hit(bar * 16 + step, 10000, 0.3);
+      hit(bar * 16 + 7, 2100, 0.25);
+    }
+  }
+  if (busy) hit(125, 2100, 0.78);
+  const hits = drumHits({ sampleRate, channels: [channel] });
+  const grid = fixedBeatGrid(120, firstBeat, 4, duration);
+  const plans = planSections([], duration, DEFAULT_BAND_SETTINGS);
+  expect(isBasicDrumPattern(hits, grid, plans)).toBe(!busy);
+});
+
+it("ignores one missing coincident filter band but notices a new fill hit", () => {
+  const hits = emptyHits();
+  for (let bar = 0; bar < 8; bar++) {
+    for (const step of [0, 4, 8, 12]) {
+      place(hits, "kick", bar, step);
+      place(hits, "mid", bar, step);
+      if (bar !== 7 || step !== 12) place(hits, "high", bar, step);
+    }
+  }
+  const grid = fixedBeatGrid(120, 0, 4, 16);
+  const plans = planSections([], 16, DEFAULT_BAND_SETTINGS);
+  expect(isBasicDrumPattern(hits, grid, plans)).toBe(true);
+  place(hits, "mid", 7, 15, 0.8);
+  expect(isBasicDrumPattern(hits, grid, plans)).toBe(false);
 });

@@ -6,6 +6,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ### Fixed
 - Held notes in the generated Fingers and Pick bass parts ring for their written duration.
+- New songs with a basic beat in the original drum stem default to the generated style. You can still choose the original pattern.
 
 ## [0.9.53] — 2026-11-24
 

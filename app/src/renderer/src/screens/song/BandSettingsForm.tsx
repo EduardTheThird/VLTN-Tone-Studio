@@ -32,6 +32,7 @@ const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
 export interface BandSettingsFormProps {
   settings: BandSettings;
   hasOriginalDrums?: boolean;
+  basicDrums?: boolean;
   /** The follow sources the song can read: auto, then the stems that were split, then the mix. */
   followSources: readonly FollowSource[];
   onChange(patch: Partial<BandSettings>): void;
@@ -43,7 +44,9 @@ export interface BandSettingsFormProps {
 }
 
 /** The song-wide band settings, in two columns: drums, then bass. The tone chains are on the Sound tab. Changing one saves it; nothing is generated until Generate. */
-export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar, songSeconds = 0, hasOriginalDrums = false }: BandSettingsFormProps) {
+export function BandSettingsForm({
+  settings, followSources, onChange, onStyle, beatsPerBar, songSeconds = 0, hasOriginalDrums = false, basicDrums,
+}: BandSettingsFormProps) {
   const parts = BAND_PARTS.filter((part) => settings.parts[part]).length;
   const extra = Math.round(variantExtraBytes(songSeconds, parts) / 1_000_000);
   return (
@@ -88,6 +91,11 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
           onChange={(pattern) => onChange({ drumPattern: pattern ?? "style" })}
         />
         {!hasOriginalDrums && <p className="text-xs text-silkscreen-3">A drums stem is needed to learn the original pattern.</p>}
+        {hasOriginalDrums && basicDrums && settings.drumPattern === "style" && (
+          <p className="text-xs text-silkscreen-3">
+            The original drums are a basic beat, so the style’s drums play. Choose From the original drummer to copy it anyway.
+          </p>
+        )}
         <label className="flex items-center gap-3">
           Kit
           <Select value={settings.kit ?? AUTO_KIT} onValueChange={(value) => onChange({ kit: value === AUTO_KIT ? undefined : (value as DrumKit) })}>
