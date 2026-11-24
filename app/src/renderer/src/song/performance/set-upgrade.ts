@@ -38,7 +38,7 @@ export function planSetUpgrade(song: LibrarySong, options: SetUpgradeOptions): S
   const update = options.updateBand && generated.length > 0 && settings.engine < CURRENT_ENGINE;
   const warm = options.warmBass && generated.includes("bass") && settings.bassTone.kind === "clean";
   return {
-    settings: { ...settings, ...(update ? { engine: CURRENT_ENGINE } : {}), ...(warm ? { bassTone: { kind: "builtin", id: "warm" } as const } : {}) },
+    settings: { ...settings, ...(update ? { engine: CURRENT_ENGINE, bassSampleVersion: 2 as const } : {}), ...(warm ? { bassTone: { kind: "builtin", id: "warm" } as const } : {}) },
     generated: [...generated],
     render: update || warm,
     band: !generated.length ? "Skipped: No generated parts" : !options.updateBand ? "Skipped: Not selected" : update ? "To do" : "Skipped: Already current",

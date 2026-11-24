@@ -33,7 +33,7 @@ export function readStoredBand(key: string): StoredBand {
   return {
     // A song that has never had band settings saved starts on the built-in Warm bass tone, which needs no download. A song saved before
     // that keeps the tone it has (clean when it has none).
-    settings: options.band === undefined ? { ...parseBandSettings(undefined), bassTone: { kind: "builtin", id: "warm" } } : parseBandSettings(options.band),
+    settings: options.band === undefined ? { ...parseBandSettings(undefined), bassSampleVersion: 2, bassTone: { kind: "builtin", id: "warm" } } : parseBandSettings(options.band),
     grid: parseBeatGrid(options.beatGrid),
     notes: parseBandNotes(options.bandNotes),
     outOfDate: options.bandOutOfDate === true,

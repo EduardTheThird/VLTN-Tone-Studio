@@ -1,10 +1,7 @@
 // Checks that the bundled bass samples sound at the note their map.json root names, and that renderPart plays other notes at the right
 // pitch. The check runs offline on the real FLAC files, decoded with the same codec the app uses.
 //
-// The pitch is read from the sustain, 0.6 to 1.5 s into each note. The first 0.6 s carries a pluck transient: the hard (f) layers read up
-// to about 80 cents sharp in the first 0.2 s and up to 42 cents sharp over 0.15 to 0.6 s, then settle. A window taken from the attack
-// would measure the pluck, not the tuning. The Karoryfer SFZ sets one pitch_keycenter per key range and has no tune or transpose
-// opcodes, so no tune offsets are applied.
+// Read the pitch after the attack and before the short bundled recordings' tail fade.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,10 +14,10 @@ import { SAMPLE_MAP, sampleSetFrom, type SampleSet } from "./samples";
 
 const SAMPLES = join(dirname(fileURLToPath(import.meta.url)), "samples");
 const CENTS_TOLERANCE = 15;
-const SETTLED_FROM_SECONDS = 0.6;
-const SETTLED_TO_SECONDS = 1.5;
+const SETTLED_FROM_SECONDS = 0.40;
+const SETTLED_TO_SECONDS = 0.64;
 /** Notes that the renderer must place: below the lowest root, between roots, and up to G3. */
-const RENDER_NOTES = [28, 31, 33, 36, 41, 45, 48, 55];
+const RENDER_NOTES = [23, 26, 28, 31, 33, 36, 41, 45, 48, 55];
 
 /** Equal-tempered frequency of a MIDI note, with A4 at 440 Hz. */
 const hertz = (midi: number): number => 440 * 2 ** ((midi - 69) / 12);
@@ -77,17 +74,21 @@ function settledCents(audio: PcmAudio, midi: number): number {
 
 describe("bass samples are in tune", () => {
   const decoded = new Map<string, PcmAudio>();
+  const roots = Object.values(SAMPLE_MAP.bassSounds!).flatMap((instrument) => instrument.notes);
+  const checks = roots.map(({ root, layers }) => [layers[1].files[0], root, layers[1].cents?.[0] ?? 0] as const);
 
   beforeAll(async () => {
-    for (const sample of SAMPLE_MAP.bass) {
-      const bytes = new Uint8Array(readFileSync(join(SAMPLES, sample.file)));
-      decoded.set(sample.file, await decodeFlac(bytes));
+    for (const { layers } of roots) {
+      for (const layer of layers) for (const file of layer.files) {
+        const bytes = new Uint8Array(readFileSync(join(SAMPLES, file)));
+        decoded.set(file, await decodeFlac(bytes));
+      }
     }
   });
 
-  it.each(SAMPLE_MAP.bass.map((sample) => [sample.file, sample.root, sample.layer] as const))("%s sounds at its root (MIDI %i, layer %s)", (file, root) => {
+  it.each(checks)("%s sounds at its root (MIDI %i) after tuning by %f cents", (file, root, measuredOffset) => {
     const cents = settledCents(decoded.get(file)!, root);
-    expect(Math.abs(cents)).toBeLessThanOrEqual(CENTS_TOLERANCE);
+    expect(Math.abs(cents - measuredOffset)).toBeLessThanOrEqual(CENTS_TOLERANCE);
   });
 
   it("reads a sample at its own sample rate, not the output rate, and moves it in the right direction", () => {
@@ -103,11 +104,11 @@ describe("bass samples are in tune", () => {
     }
   });
 
-  it("renders each note in the test set at its pitch, from the nearest root", () => {
-    const set: SampleSet = sampleSetFrom(SAMPLE_MAP, "standard", (file) => decoded.get(file) ?? { sampleRate: RENDER_RATE, channels: [new Float32Array(1)] });
+  it.each(["fingers", "pick"] as const)("renders each note at its pitch from the nearest %s root", (bank) => {
+    const set: SampleSet = sampleSetFrom(SAMPLE_MAP, "standard", (file) => decoded.get(file) ?? { sampleRate: RENDER_RATE, channels: [new Float32Array(1)] }, bank);
     for (const midi of RENDER_NOTES) {
       const length = Math.round(2.5 * RENDER_RATE);
-      const { audio } = renderPart([{ time: 0, pitch: midi, velocity: 90, duration: 2 }], "bass", set, length);
+      const { audio } = renderPart([{ time: 0, pitch: midi, velocity: 65, duration: 2 }], "bass", set, length);
       const cents = settledCents(audio, midi);
       expect(Math.abs(cents), `MIDI ${midi}`).toBeLessThanOrEqual(CENTS_TOLERANCE);
     }

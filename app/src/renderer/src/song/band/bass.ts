@@ -867,7 +867,10 @@ export function generateBass(
   const { byBar: marked } = marksByBar(grid, settings.marks);
   const feel = withMarkStops(grid, marked, follow);
   const slots = buildSlots(grid, harmony, plans, settings, kick, random, feel, seed, endTime, keys, marked);
-  const range = BASS_NOTE_RANGES[bassRangeFor(settings, keys).range];
+  const rangeId = bassRangeFor(settings, keys).range;
+  const range = rangeId === "low" && settings.bassSampleVersion === 2 && settings.bassSound === "fingers"
+    ? { low: 23, high: BASS_NOTE_RANGES.low.high, centre: 28 }
+    : BASS_NOTE_RANGES[rangeId];
   // Engine 2 keeps each section's roots in one register: its home note (see homeNotes).
   const homes = settings.engine >= 2 ? homeNotes(slots, range) : null;
   for (const slot of slots) slot.home = homes?.get(slot.plan) ?? null;
@@ -927,7 +930,9 @@ export function generateBass(
   const sorted = picked
     .map((entry) => ({
       slot: entry.slot,
-      note: { time: entry.time, pitch: entry.pitch + (shifts.get(entry.slot.plan) ?? 0), velocity: entry.velocity, duration: entry.duration } as NoteEvent,
+      note: { time: entry.time, pitch: entry.pitch + (shifts.get(entry.slot.plan) ?? 0), velocity: entry.velocity, duration: entry.duration,
+        ...(settings.bassSampleVersion === 2 && settings.bassFeel <= 0.1 && !entry.slot.ending && !entry.slot.hitOne ? { staccato: true } : {}),
+      } as NoteEvent,
     }))
     .sort((a, b) => a.note.time - b.note.time || a.note.pitch - b.note.pitch);
   return endBeforeNext(addTechniques(sorted, grid.beats, seed));

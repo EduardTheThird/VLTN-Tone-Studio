@@ -263,3 +263,22 @@ describe("bass slides and dead notes", () => {
     expect(power(dead)).toBeLessThan(power(live) * 0.5);
   });
 });
+
+
+it("uses both recorded bass takes deterministically, with separate short notes and note-off audio", () => {
+  const takes = (amplitudes: number[]) => [{ root: 26, layers: [{ velocity: 90, takes: amplitudes.map((a) => impulse(a, 1)) }] }];
+  const samples: SampleSet = { drums: new Map(), bass: [], bassInstrument: {
+    notes: takes([0.1, 0.2]), ghost: takes([0.3]), staccato: takes([0.4]), release: takes([0.5]),
+  } };
+  const first = hit(0, 26, 90, 0.01);
+  const notes: NoteEvent[] = [first, hit(0.1, 26, 90), { ...hit(0.25, 26, 90), dead: true }, { ...hit(0.4, 26, 90), staccato: true }];
+  const render = () => renderPart(notes, "bass", samples, RATE).audio.channels[0];
+  const output = render();
+  expect(output).toEqual(render());
+  const valueNear = (time: number) => Math.max(...output.subarray(Math.max(0, time * RATE - 3), time * RATE + 4)) / CENTRE;
+  expect(valueNear(0)).toBeCloseTo(0.1);
+  expect(valueNear(0.01)).toBeCloseTo(0.5 * 10 ** (-18 / 20));
+  expect(valueNear(0.1)).toBeCloseTo(0.2);
+  expect(valueNear(0.25)).toBeCloseTo(0.3);
+  expect(valueNear(0.4)).toBeCloseTo(0.4);
+});

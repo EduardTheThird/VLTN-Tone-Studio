@@ -1226,226 +1226,1961 @@
       }
     }
   },
-  "bass": [
-    {
-      "file": "bass/bass-f1-p.flac",
-      "root": 29,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "f1_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-f1-f.flac",
-      "root": 29,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "f1_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab1-p.flac",
-      "root": 32,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "ab1_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab1-f.flac",
-      "root": 32,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "ab1_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b1-p.flac",
-      "root": 35,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "b1_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b1-f.flac",
-      "root": 35,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "b1_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-d2-p.flac",
-      "root": 38,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "d2_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-d2-f.flac",
-      "root": 38,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "d2_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-f2-p.flac",
-      "root": 41,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "f2_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-f2-f.flac",
-      "root": 41,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "f2_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab2-p.flac",
-      "root": 44,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "ab2_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab2-f.flac",
-      "root": 44,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "ab2_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b2-p.flac",
-      "root": 47,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "b2_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b2-f.flac",
-      "root": 47,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "b2_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-d3-p.flac",
-      "root": 50,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "d3_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-d3-f.flac",
-      "root": 50,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "d3_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-f3-p.flac",
-      "root": 53,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "f3_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-f3-f.flac",
-      "root": 53,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "f3_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab3-p.flac",
-      "root": 56,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "ab3_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-ab3-f.flac",
-      "root": 56,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "ab3_f_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b3-p.flac",
-      "root": 59,
-      "layer": "p",
-      "velocity": [
-        1,
-        75
-      ],
-      "source": "b3_p_rr1.wav"
-    },
-    {
-      "file": "bass/bass-b3-f.flac",
-      "root": 59,
-      "layer": "f",
-      "velocity": [
-        76,
-        127
-      ],
-      "source": "b3_f_rr1.wav"
+  "bass": {
+    "legacy": [
+      {"file": "bass/pick-notes-29-65-1.flac", "root": 29, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-29-90-1.flac", "root": 29, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-32-65-1.flac", "root": 32, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-32-90-1.flac", "root": 32, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-35-65-1.flac", "root": 35, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-35-90-1.flac", "root": 35, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-38-65-1.flac", "root": 38, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-38-90-1.flac", "root": 38, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-41-65-1.flac", "root": 41, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-41-90-1.flac", "root": 41, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-44-65-1.flac", "root": 44, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-44-90-1.flac", "root": 44, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-47-65-1.flac", "root": 47, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-47-90-1.flac", "root": 47, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-50-65-1.flac", "root": 50, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-50-90-1.flac", "root": 50, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-53-65-1.flac", "root": 53, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-53-90-1.flac", "root": 53, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-56-65-1.flac", "root": 56, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-56-90-1.flac", "root": 56, "layer": "f", "velocity": [76, 127]},
+      {"file": "bass/pick-notes-59-65-1.flac", "root": 59, "layer": "p", "velocity": [1, 75]},
+      {"file": "bass/pick-notes-59-90-1.flac", "root": 59, "layer": "f", "velocity": [76, 127]}
+    ],
+    "sounds": {
+      "fingers": {
+        "notes": [
+          {
+            "root": 23,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-23-40-1.flac",
+                  "bass/fingers-notes-23-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-23-65-1.flac",
+                  "bass/fingers-notes-23-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-23-90-1.flac",
+                  "bass/fingers-notes-23-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-23-115-1.flac",
+                  "bass/fingers-notes-23-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 25,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-25-40-1.flac",
+                  "bass/fingers-notes-25-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-25-65-1.flac",
+                  "bass/fingers-notes-25-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-25-90-1.flac",
+                  "bass/fingers-notes-25-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-25-115-1.flac",
+                  "bass/fingers-notes-25-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 27,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-27-40-1.flac",
+                  "bass/fingers-notes-27-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-27-65-1.flac",
+                  "bass/fingers-notes-27-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-27-90-1.flac",
+                  "bass/fingers-notes-27-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-27-115-1.flac",
+                  "bass/fingers-notes-27-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 29,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-29-40-1.flac",
+                  "bass/fingers-notes-29-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-29-65-1.flac",
+                  "bass/fingers-notes-29-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-29-90-1.flac",
+                  "bass/fingers-notes-29-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-29-115-1.flac",
+                  "bass/fingers-notes-29-115-2.flac"
+                ],
+                "cents": [
+                  11.3,
+                  13.8
+                ]
+              }
+            ]
+          },
+          {
+            "root": 31,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-31-40-1.flac",
+                  "bass/fingers-notes-31-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-31-65-1.flac",
+                  "bass/fingers-notes-31-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-31-90-1.flac",
+                  "bass/fingers-notes-31-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-31-115-1.flac",
+                  "bass/fingers-notes-31-115-2.flac"
+                ],
+                "cents": [
+                  13.3,
+                  11.7
+                ]
+              }
+            ]
+          },
+          {
+            "root": 33,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-33-40-1.flac",
+                  "bass/fingers-notes-33-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-33-65-1.flac",
+                  "bass/fingers-notes-33-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-33-90-1.flac",
+                  "bass/fingers-notes-33-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-33-115-1.flac",
+                  "bass/fingers-notes-33-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-35-40-1.flac",
+                  "bass/fingers-notes-35-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-35-65-1.flac",
+                  "bass/fingers-notes-35-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-35-90-1.flac",
+                  "bass/fingers-notes-35-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-35-115-1.flac",
+                  "bass/fingers-notes-35-115-2.flac"
+                ],
+                "cents": [
+                  10.9,
+                  12.9
+                ]
+              }
+            ]
+          },
+          {
+            "root": 37,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-37-40-1.flac",
+                  "bass/fingers-notes-37-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-37-65-1.flac",
+                  "bass/fingers-notes-37-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-37-90-1.flac",
+                  "bass/fingers-notes-37-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-37-115-1.flac",
+                  "bass/fingers-notes-37-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 39,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-39-40-1.flac",
+                  "bass/fingers-notes-39-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-39-65-1.flac",
+                  "bass/fingers-notes-39-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-39-90-1.flac",
+                  "bass/fingers-notes-39-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-39-115-1.flac",
+                  "bass/fingers-notes-39-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 41,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-41-40-1.flac",
+                  "bass/fingers-notes-41-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-41-65-1.flac",
+                  "bass/fingers-notes-41-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-41-90-1.flac",
+                  "bass/fingers-notes-41-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-41-115-1.flac",
+                  "bass/fingers-notes-41-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 43,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-43-40-1.flac",
+                  "bass/fingers-notes-43-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-43-65-1.flac",
+                  "bass/fingers-notes-43-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-43-90-1.flac",
+                  "bass/fingers-notes-43-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-43-115-1.flac",
+                  "bass/fingers-notes-43-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 45,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-45-40-1.flac",
+                  "bass/fingers-notes-45-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-45-65-1.flac",
+                  "bass/fingers-notes-45-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-45-90-1.flac",
+                  "bass/fingers-notes-45-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-45-115-1.flac",
+                  "bass/fingers-notes-45-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-47-40-1.flac",
+                  "bass/fingers-notes-47-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-47-65-1.flac",
+                  "bass/fingers-notes-47-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-47-90-1.flac",
+                  "bass/fingers-notes-47-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-47-115-1.flac",
+                  "bass/fingers-notes-47-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 49,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-49-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-49-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-49-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-49-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 52,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-52-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-52-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-52-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-52-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 55,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-55-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-55-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-55-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-55-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 58,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-58-40-1.flac"
+                ],
+                "cents": [
+                  -15.1
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-58-65-1.flac"
+                ],
+                "cents": [
+                  -15.1
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-58-90-1.flac"
+                ],
+                "cents": [
+                  -13.7
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-58-115-1.flac"
+                ],
+                "cents": [
+                  -14.4
+                ]
+              }
+            ]
+          },
+          {
+            "root": 61,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-notes-61-40-1.flac"
+                ],
+                "cents": [
+                  -16.5
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/fingers-notes-61-65-1.flac"
+                ],
+                "cents": [
+                  -16.9
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-notes-61-90-1.flac"
+                ],
+                "cents": [
+                  -17.3
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/fingers-notes-61-115-1.flac"
+                ],
+                "cents": [
+                  -17
+                ]
+              }
+            ]
+          }
+        ],
+        "ghost": [
+          {
+            "root": 23,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-23-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-23-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 25,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-25-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-25-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 27,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-27-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-27-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 29,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-29-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-29-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 31,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-31-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-31-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 33,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-33-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-33-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-35-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-35-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 37,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-37-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-37-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 39,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-39-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-39-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 41,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-41-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-41-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 43,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-43-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-43-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 45,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-45-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-45-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-47-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-47-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 49,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-49-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-49-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 52,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-52-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-52-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 55,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-55-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-55-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 58,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-58-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-58-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 61,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/fingers-ghost-61-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-ghost-61-90-1.flac"
+                ]
+              }
+            ]
+          }
+        ],
+        "staccato": [
+          {
+            "root": 23,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-23-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 25,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-25-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 27,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-27-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 29,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-29-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 31,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-31-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 33,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-33-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-35-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 37,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-37-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 39,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-39-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 41,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-41-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 43,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-43-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 45,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-45-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-47-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 49,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-49-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 52,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-52-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 55,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-55-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 58,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-58-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 61,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-staccato-61-90-1.flac"
+                ]
+              }
+            ]
+          }
+        ],
+        "release": [
+          {
+            "root": 23,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-23-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 27,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-27-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 31,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-31-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-35-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 39,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-39-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 43,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-43-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-47-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 52,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-52-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 58,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/fingers-release-58-90-1.flac"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "pick": {
+        "notes": [
+          {
+            "root": 18,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-18-40-1.flac",
+                  "bass/pick-notes-18-40-2.flac"
+                ],
+                "cents": [
+                  38.7,
+                  47
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-18-65-1.flac",
+                  "bass/pick-notes-18-65-2.flac"
+                ],
+                "cents": [
+                  83.7,
+                  75.7
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-18-90-1.flac",
+                  "bass/pick-notes-18-90-2.flac"
+                ],
+                "cents": [
+                  122,
+                  123.6
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-18-115-1.flac",
+                  "bass/pick-notes-18-115-2.flac"
+                ],
+                "cents": [
+                  123.7,
+                  136.4
+                ]
+              }
+            ]
+          },
+          {
+            "root": 21,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-21-40-1.flac",
+                  "bass/pick-notes-21-40-2.flac"
+                ],
+                "cents": [
+                  30.6,
+                  12.6
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-21-65-1.flac",
+                  "bass/pick-notes-21-65-2.flac"
+                ],
+                "cents": [
+                  56.2,
+                  40.3
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-21-90-1.flac",
+                  "bass/pick-notes-21-90-2.flac"
+                ],
+                "cents": [
+                  83.4,
+                  80.8
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-21-115-1.flac",
+                  "bass/pick-notes-21-115-2.flac"
+                ],
+                "cents": [
+                  86.5,
+                  89.1
+                ]
+              }
+            ]
+          },
+          {
+            "root": 24,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-24-40-1.flac",
+                  "bass/pick-notes-24-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-24-65-1.flac",
+                  "bass/pick-notes-24-65-2.flac"
+                ],
+                "cents": [
+                  16.7,
+                  16.8
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-24-90-1.flac",
+                  "bass/pick-notes-24-90-2.flac"
+                ],
+                "cents": [
+                  54.7,
+                  46.2
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-24-115-1.flac",
+                  "bass/pick-notes-24-115-2.flac"
+                ],
+                "cents": [
+                  47.3,
+                  51.8
+                ]
+              }
+            ]
+          },
+          {
+            "root": 26,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-26-40-1.flac",
+                  "bass/pick-notes-26-40-2.flac"
+                ],
+                "cents": [
+                  20.9,
+                  14
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-26-65-1.flac",
+                  "bass/pick-notes-26-65-2.flac"
+                ],
+                "cents": [
+                  0,
+                  15.5
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-26-90-1.flac",
+                  "bass/pick-notes-26-90-2.flac"
+                ],
+                "cents": [
+                  11.9,
+                  13.9
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-26-115-1.flac",
+                  "bass/pick-notes-26-115-2.flac"
+                ],
+                "cents": [
+                  27.8,
+                  18.4
+                ]
+              }
+            ]
+          },
+          {
+            "root": 29,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-29-40-1.flac",
+                  "bass/pick-notes-29-40-2.flac"
+                ],
+                "cents": [
+                  0,
+                  -11.7
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-29-65-1.flac",
+                  "bass/pick-notes-29-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-29-90-1.flac",
+                  "bass/pick-notes-29-90-2.flac"
+                ],
+                "cents": [
+                  17.1,
+                  25.2
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-29-115-1.flac",
+                  "bass/pick-notes-29-115-2.flac"
+                ],
+                "cents": [
+                  32.1,
+                  33.7
+                ]
+              }
+            ]
+          },
+          {
+            "root": 32,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-32-40-1.flac",
+                  "bass/pick-notes-32-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-32-65-1.flac",
+                  "bass/pick-notes-32-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-32-90-1.flac",
+                  "bass/pick-notes-32-90-2.flac"
+                ],
+                "cents": [
+                  22,
+                  0
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-32-115-1.flac",
+                  "bass/pick-notes-32-115-2.flac"
+                ],
+                "cents": [
+                  21.9,
+                  21
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-35-40-1.flac",
+                  "bass/pick-notes-35-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-35-65-1.flac",
+                  "bass/pick-notes-35-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-35-90-1.flac",
+                  "bass/pick-notes-35-90-2.flac"
+                ],
+                "cents": [
+                  0,
+                  10.8
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-35-115-1.flac",
+                  "bass/pick-notes-35-115-2.flac"
+                ],
+                "cents": [
+                  12.2,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "root": 38,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-38-40-1.flac",
+                  "bass/pick-notes-38-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-38-65-1.flac",
+                  "bass/pick-notes-38-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-38-90-1.flac",
+                  "bass/pick-notes-38-90-2.flac"
+                ],
+                "cents": [
+                  15.8,
+                  11.4
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-38-115-1.flac",
+                  "bass/pick-notes-38-115-2.flac"
+                ],
+                "cents": [
+                  13.5,
+                  14.7
+                ]
+              }
+            ]
+          },
+          {
+            "root": 41,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-41-40-1.flac",
+                  "bass/pick-notes-41-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-41-65-1.flac",
+                  "bass/pick-notes-41-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-41-90-1.flac",
+                  "bass/pick-notes-41-90-2.flac"
+                ],
+                "cents": [
+                  17.4,
+                  16.2
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-41-115-1.flac",
+                  "bass/pick-notes-41-115-2.flac"
+                ],
+                "cents": [
+                  0,
+                  13.7
+                ]
+              }
+            ]
+          },
+          {
+            "root": 44,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-44-40-1.flac",
+                  "bass/pick-notes-44-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-44-65-1.flac",
+                  "bass/pick-notes-44-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-44-90-1.flac",
+                  "bass/pick-notes-44-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-44-115-1.flac",
+                  "bass/pick-notes-44-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-47-40-1.flac",
+                  "bass/pick-notes-47-40-2.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-47-65-1.flac",
+                  "bass/pick-notes-47-65-2.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-47-90-1.flac",
+                  "bass/pick-notes-47-90-2.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-47-115-1.flac",
+                  "bass/pick-notes-47-115-2.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 50,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-50-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-50-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-50-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-50-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 53,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-53-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-53-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-53-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-53-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 56,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-56-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-56-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-56-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-56-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 59,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-59-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-59-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-59-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-59-115-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 62,
+            "layers": [
+              {
+                "velocity": 40,
+                "files": [
+                  "bass/pick-notes-62-40-1.flac"
+                ]
+              },
+              {
+                "velocity": 65,
+                "files": [
+                  "bass/pick-notes-62-65-1.flac"
+                ]
+              },
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-notes-62-90-1.flac"
+                ]
+              },
+              {
+                "velocity": 115,
+                "files": [
+                  "bass/pick-notes-62-115-1.flac"
+                ]
+              }
+            ]
+          }
+        ],
+        "release": [
+          {
+            "root": 18,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-18-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 24,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-24-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 29,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-29-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 35,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-35-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 41,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-41-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 47,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-47-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 53,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-53-90-1.flac"
+                ]
+              }
+            ]
+          },
+          {
+            "root": 59,
+            "layers": [
+              {
+                "velocity": 90,
+                "files": [
+                  "bass/pick-release-59-90-1.flac"
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
-  ]
+  }
 }

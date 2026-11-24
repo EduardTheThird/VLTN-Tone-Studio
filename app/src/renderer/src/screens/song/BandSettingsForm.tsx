@@ -2,7 +2,7 @@ import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_FROM, BASS_RANGES, DRUM_KITS, HUMANISE_CHOICES, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
+import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
 import { BASS_PART_LABELS, styleChoices } from "./band-labels";
@@ -193,7 +193,23 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
           <Switch aria-label="Generate bass" checked={settings.parts.bass} onCheckedChange={(on) => onChange({ parts: { ...settings.parts, bass: on } })} />
           Bass
         </label>
-        {/* The bass sound choice is hidden until a second bass sample set exists. The field stays in BandSettings. */}
+        <label className="flex items-center gap-3">
+          Sound
+          <Select
+            value={settings.bassSampleVersion === 2 ? settings.bassSound : "saved"}
+            onValueChange={(value) => onChange({ bassSound: value as BandSettings["bassSound"], bassSampleVersion: 2 })}
+          >
+            <SelectTrigger aria-label="Bass sound" className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {settings.bassSampleVersion !== 2 && <SelectItem value="saved" disabled>Saved sound</SelectItem>}
+              {BASS_SOUNDS.map((sound) => (
+                <SelectItem key={sound} value={sound}>{sound === "fingers" ? "Fingers" : "Pick"}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
         <label className="flex items-center gap-3">
           Bass range
           <Select value={settings.bassRange} onValueChange={(value) => onChange({ bassRange: value as BandSettings["bassRange"] })}>

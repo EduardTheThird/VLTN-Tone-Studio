@@ -696,7 +696,7 @@ function BandBody({
 
   /** A song saved with the earlier band patterns moves to the newest ones, and generates again with them, so the replace and tone questions still apply. */
   const updateEngine = () => {
-    const next = { ...settingsRef.current, engine: CURRENT_ENGINE };
+    const next = { ...settingsRef.current, engine: CURRENT_ENGINE, bassSampleVersion: 2 as const };
     save(next);
     void generateOrAsk(next);
   };

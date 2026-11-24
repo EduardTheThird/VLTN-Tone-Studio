@@ -2,22 +2,30 @@ import { decodeFlac } from "@shared/flac";
 import { runBandJob, runBandPreview, transferables } from "./band-job";
 import type { BandWorkerMessage, BandWorkerReply } from "./band-client";
 import { kitFor } from "./arrangement";
-import { loadSampleSetWith, type SampleSet, type SampleCache } from "./samples";
+import { loadSampleSetWith, type BassBank, type SampleSet, type SampleCache } from "./samples";
 
 // The decoded samples live as long as this worker. The client keeps one worker across jobs, so a second render does not decode them again.
 // The worker decodes with decodeFlac directly: it is already off the window's thread, so it does not need another worker for each file.
 // Only the kit a request names is decoded, and each kit is kept once it has been.
 const samples = new Map<string, Promise<SampleSet>>();
+let activeBass: BassBank = "none";
 const decodedSamples: SampleCache = new Map();
+let decodedBass: SampleCache = new Map();
 
-function loadSamples(urls: Record<string, string>, kit: string): Promise<SampleSet> {
-  let set = samples.get(kit);
+function loadSamples(urls: Record<string, string>, kit: string, bass: BassBank): Promise<SampleSet> {
+  if (bass !== "none" && bass !== activeBass) {
+    decodedBass = new Map();
+    for (const key of samples.keys()) if (key.endsWith(`:${activeBass}`)) samples.delete(key);
+    activeBass = bass;
+  }
+  const key = `${kit}:${bass}`;
+  let set = samples.get(key);
   if (!set) {
-    set = loadSampleSetWith(new Map(Object.entries(urls)), async (file) => decodeFlac(new Uint8Array(file)), kit, decodedSamples).catch((error: unknown) => {
-      samples.delete(kit);
+    set = loadSampleSetWith(new Map(Object.entries(urls)), async (file) => decodeFlac(new Uint8Array(file)), kit, decodedSamples, bass, decodedBass).catch((error: unknown) => {
+      if (samples.get(key) === set) samples.delete(key);
       throw error;
     });
-    samples.set(kit, set);
+    samples.set(key, set);
   }
   return set;
 }
@@ -30,7 +38,9 @@ async function run({ id, request, preview }: BandWorkerMessage): Promise<void> {
   const stage = (name: "loading" | "generating" | "rendering") => post({ id, stage: name });
   try {
     stage("loading");
-    const set = await loadSamples(request.sampleUrls, kitFor(request.settings));
+    const { settings } = request;
+    const bass = !settings.parts.bass ? "none" : settings.bassSampleVersion === 2 ? settings.bassSound : "legacy";
+    const set = await loadSamples(request.sampleUrls, kitFor(settings), bass);
     const result = preview ? runBandPreview(request, set, preview.fromTime, preview.bars, stage) : runBandJob(request, set, stage);
     post({ id, result }, transferables(result));
   } catch (error) {

@@ -65,3 +65,11 @@ it("keeps learned-drum results across a bass-only render and clears them when dr
   const removed = updatedBandNotes(saved, notes, { drums: false, bass: true }, { drums: false, bass: true }, 3, 20);
   expect(removed.learnedDrums).toBeUndefined();
 });
+
+
+it("preserves the staccato flag alongside the earlier note flags", () => {
+  const note = { time: 1, pitch: 26, velocity: 90, duration: 0.1, staccato: true } as const;
+  const stored = toStoredNotes([note]);
+  expect(parseBandNotes({ engine: 3, seed: 2, drums: [], bass: stored })?.bass).toEqual(stored);
+  expect(fromStoredNotes(stored)).toEqual([note]);
+});

@@ -11,7 +11,10 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 - My rig gives each of your pedals a setup card, test buttons and a printable setup sheet.
 - Generated drums can play the original drummer’s pattern, learned from the drums stem.
 
+- Choose a fingers or pick bass sound.
+
 ### Changed
+- The generated bass uses more recordings and loudness levels, real ghost and short notes, and reaches low B.
 - Pedal settings are now saved with the song library and its backups.
 
 ## [0.9.52] — 2026-11-23

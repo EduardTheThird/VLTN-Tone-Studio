@@ -25,7 +25,7 @@ import { ENERGIES, HUMANISE_FEELS, STYLE_IDS, type Energy, type StyleId } from "
 export const DRUM_KITS = ["standard", "rock"] as const;
 /** The styles whose generated drums use the heavier kit when the song has not chosen a kit. */
 export const HEAVY_KIT_STYLES: readonly StyleId[] = ["metal", "rock", "half-time"];
-export const BASS_SOUNDS = ["finger", "pick"] as const;
+export const BASS_SOUNDS = ["fingers", "pick"] as const;
 export const BASS_RANGES = ["low", "normal", "high", "extended"] as const;
 export const BASS_MODES = ["roots", "fifths", "octaves", "melodic", "walking"] as const;
 /** Where the generated bass's notes come from: the bass the song's own bassist played (when the song has a bass stem), or the chords. */
@@ -266,6 +266,8 @@ export interface BandSettings {
   /** The drum kit the performer chose. Left out, the style picks it (kitFor). A song saved with "standard" keeps it. */
   kit?: DrumKit;
   bassSound: BassSound;
+  /** Absent for songs saved before the sampled instruments became selectable. */
+  bassSampleVersion?: 2;
   bassRange: BassRange;
   bassMode: BassMode;
   /** The notes the generated bass plays under each chord: the song's original bass where it has one, or the chords' own bass (spec 86). */
@@ -329,7 +331,8 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   crashOnSections: true,
   ending: { ...DEFAULT_ENDING },
   countIn: { ...DEFAULT_COUNT_IN },
-  bassSound: "finger",
+  bassSound: "fingers",
+  bassSampleVersion: undefined,
   bassRange: "normal",
   bassMode: "roots",
   bassFrom: "original",
@@ -719,6 +722,7 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isCountIn(value.countIn) &&
     (value.kit === undefined || isDrumKit(value.kit)) &&
     isBassSound(value.bassSound) &&
+    (value.bassSampleVersion === undefined || value.bassSampleVersion === 2) &&
     isBassRange(value.bassRange) &&
     isBassMode(value.bassMode) &&
     isBassFrom(value.bassFrom) &&
@@ -804,7 +808,8 @@ export function parseBandSettings(value: unknown): BandSettings {
     ending: parseEnding(source.ending),
     countIn: parseCountIn(source.countIn),
     kit: isDrumKit(source.kit) ? source.kit : defaults.kit,
-    bassSound: isBassSound(source.bassSound) ? source.bassSound : defaults.bassSound,
+    bassSound: source.bassSound === "finger" ? "fingers" : isBassSound(source.bassSound) ? source.bassSound : defaults.bassSound,
+    bassSampleVersion: source.bassSampleVersion === 2 ? 2 : undefined,
     bassRange: isBassRange(source.bassRange) ? source.bassRange : defaults.bassRange,
     bassMode: isBassMode(source.bassMode) ? source.bassMode : defaults.bassMode,
     bassFrom: isBassFrom(source.bassFrom) ? source.bassFrom : defaults.bassFrom,

@@ -855,3 +855,13 @@ describe("generateBass with a seed for one section", () => {
     expect(timesAndPitches(generate(1, 9), 2)).toEqual(timesAndPitches(without, 2));
   });
 });
+
+
+it("places a low Fingers line in D below open E only after the sample update", () => {
+  const chords = barsOf("D", "D");
+  const settings = settingsFor({ engine: 2, bassRange: "low", bassSound: "fingers" });
+  const args = [gridOf(chords.length), harmonyFor(chords), [planFor(chords.length)]] as const;
+  expect(generateBass(...args, settings, [], 42)[0].pitch).toBe(38);
+  const updated = generateBass(...args, { ...settings, bassSampleVersion: 2, bassFeel: 0 }, [], 42);
+  expect(updated[0]).toMatchObject({ pitch: 26, staccato: true });
+});

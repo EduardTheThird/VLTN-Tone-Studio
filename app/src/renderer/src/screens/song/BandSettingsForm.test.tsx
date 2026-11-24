@@ -82,3 +82,15 @@ describe("Bass notes from", () => {
     expect(container.querySelector('[aria-label="Bass notes from"]')?.textContent).toContain("Chords");
   });
 });
+
+it("shows the saved bass sound and the two opt-in choices", () => {
+  const display = (settings: BandSettings) => {
+    const view = renderWith(settings);
+    const label = view.getByRole("combobox", { name: "Bass sound" }).textContent;
+    view.unmount();
+    return label;
+  };
+  expect(display(DEFAULT_BAND_SETTINGS)).toBe("Saved sound");
+  expect(display({ ...DEFAULT_BAND_SETTINGS, bassSampleVersion: 2 })).toBe("Fingers");
+  expect(display({ ...DEFAULT_BAND_SETTINGS, bassSampleVersion: 2, bassSound: "pick" })).toBe("Pick");
+});

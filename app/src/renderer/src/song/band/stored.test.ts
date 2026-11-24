@@ -15,7 +15,7 @@ describe("stored band options", () => {
   });
 
   it("reads the defaults from a song with nothing saved", () => {
-    expect(readStoredBand(KEY).settings).toEqual({ ...DEFAULT_BAND_SETTINGS, bassTone: { kind: "builtin", id: "warm" } });
+    expect(readStoredBand(KEY).settings).toEqual({ ...DEFAULT_BAND_SETTINGS, bassSampleVersion: 2, bassTone: { kind: "builtin", id: "warm" } });
     expect(readStoredBand(KEY)).toMatchObject({ grid: null, outOfDate: false, noticeDismissed: false });
   });
 
@@ -23,6 +23,7 @@ describe("stored band options", () => {
     expect(readStoredBand(KEY).settings.bassTone).toEqual({ kind: "builtin", id: "warm" });
     localStorage.setItem(`${KEY}:options`, JSON.stringify({ band: { style: "rock" } }));
     expect(readStoredBand(KEY).settings.bassTone).toEqual({ kind: "clean" });
+    expect(readStoredBand(KEY).settings.bassSampleVersion).toBeUndefined();
     localStorage.setItem(`${KEY}:options`, JSON.stringify({ band: { bassTone: { kind: "builtin", id: "warm" } } }));
     expect(readStoredBand(KEY).settings.bassTone).toEqual({ kind: "builtin", id: "warm" });
   });

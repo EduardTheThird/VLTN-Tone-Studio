@@ -650,3 +650,10 @@ it("keeps old songs on the style and resolves per-section overrides of original 
   expect(planSections([], 20, settings)[0]).toMatchObject({ drumPattern: "style" });
   expect(planSections([], 20, { ...settings, sections: {} })[0]).toMatchObject({ drumPattern: "original" });
 });
+
+
+it("reads the former finger setting and retains the old range until the sample update", () => {
+  expect(parseBandSettings({ bassSound: "finger" })).toMatchObject({ bassSound: "fingers" });
+  expect(parseBandSettings({ bassSound: "finger" }).bassSampleVersion).toBeUndefined();
+  expect(parseBandSettings({ bassSound: "pick", bassSampleVersion: 2 })).toMatchObject({ bassSound: "pick", bassSampleVersion: 2 });
+});

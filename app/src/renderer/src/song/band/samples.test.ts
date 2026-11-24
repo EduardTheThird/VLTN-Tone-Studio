@@ -5,22 +5,48 @@ import { describe, expect, it, vi } from "vitest";
 import type { PcmAudio } from "../types";
 import { DRUM_KITS } from "./arrangement";
 import { DRUM_PITCHES } from "./note";
-import { SAMPLE_MAP, loadSampleSetWith, pickBassLayers, pickBassSample, pickDrumLayers, pickDrumSample, readSampleMap, sampleSetFrom, takeFiles, type SampleSet } from "./samples";
+import { SAMPLE_MAP, bassFiles, loadSampleSetWith, pickBassLayers, pickBassSample, pickDrumLayers, pickDrumSample, readSampleMap, sampleSetFrom, takeFiles, type SampleSet } from "./samples";
 import { ENERGIES, STYLES } from "./styles";
 
 const SAMPLES = join(dirname(fileURLToPath(import.meta.url)), "samples");
 
+const LEGACY_BASS = [
+  {"file": "bass/bass-f1-p.flac", "root": 29, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-f1-f.flac", "root": 29, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-ab1-p.flac", "root": 32, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-ab1-f.flac", "root": 32, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-b1-p.flac", "root": 35, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-b1-f.flac", "root": 35, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-d2-p.flac", "root": 38, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-d2-f.flac", "root": 38, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-f2-p.flac", "root": 41, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-f2-f.flac", "root": 41, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-ab2-p.flac", "root": 44, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-ab2-f.flac", "root": 44, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-b2-p.flac", "root": 47, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-b2-f.flac", "root": 47, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-d3-p.flac", "root": 50, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-d3-f.flac", "root": 50, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-f3-p.flac", "root": 53, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-f3-f.flac", "root": 53, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-ab3-p.flac", "root": 56, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-ab3-f.flac", "root": 56, "layer": "f", "velocity": [76, 127]},
+  {"file": "bass/bass-b3-p.flac", "root": 59, "layer": "p", "velocity": [1, 75]},
+  {"file": "bass/bass-b3-f.flac", "root": 59, "layer": "f", "velocity": [76, 127]},
+];
+const LEGACY_MAP = readSampleMap({ ...SAMPLE_MAP, bass: LEGACY_BASS });
+
 /** A SampleSet whose audio is one stub object per file, so a test can tell which file a pick came from. */
-function stubSet(kit = "standard"): { set: SampleSet; audio: (file: string) => PcmAudio } {
+function stubSet(kit = "standard", sound?: "fingers" | "pick"): { set: SampleSet; audio: (file: string) => PcmAudio } {
   const stubs = new Map<string, PcmAudio>();
-  const set = sampleSetFrom(SAMPLE_MAP, kit, (file) => {
+  const set = sampleSetFrom(sound ? SAMPLE_MAP : LEGACY_MAP, kit, (file) => {
     let stub = stubs.get(file);
     if (!stub) {
       stub = { sampleRate: 44100, channels: [new Float32Array(1)] };
       stubs.set(file, stub);
     }
     return stub;
-  });
+  }, sound);
   return {
     set,
     audio: (file) => {
@@ -34,7 +60,7 @@ function stubSet(kit = "standard"): { set: SampleSet; audio: (file: string) => P
 /** Every file path in map.json, in drum and bass order. */
 function mappedFiles(): string[] {
   const drums = Object.values(SAMPLE_MAP.kits).flatMap((kit) => Object.values(kit.drums).flatMap((entry) => entry.layers.flatMap(takeFiles)));
-  return [...drums, ...SAMPLE_MAP.bass.map((sample) => sample.file), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])];
+  return [...drums, ...bassFiles(SAMPLE_MAP, "pick"), ...bassFiles(SAMPLE_MAP, "fingers"), ...(SAMPLE_MAP.room ? [SAMPLE_MAP.room] : [])];
 }
 
 describe("map.json", () => {
@@ -80,23 +106,22 @@ describe("map.json", () => {
     expect(drums["47"].layers.every((layer) => layer.transpose === 3)).toBe(true);
   });
 
-  it("covers MIDI 28 to 60 within 2 semitones of a bass root", () => {
-    const roots = SAMPLE_MAP.bass.map((sample) => sample.root);
-    const uncovered: number[] = [];
-    for (let midi = 28; midi <= 60; midi++) if (!roots.some((root) => Math.abs(root - midi) <= 2)) uncovered.push(midi);
-    expect(uncovered).toEqual([]);
+  it.each(["fingers", "pick"] as const)("covers every MIDI pitch between the %s roots within one semitone", (sound) => {
+    const notes = SAMPLE_MAP.bassSounds![sound].notes;
+    const roots = notes.map((note) => note.root);
+    for (let midi = Math.min(...roots); midi <= Math.max(...roots); midi++) {
+      expect(roots.some((root) => Math.abs(root - midi) <= 1), String(midi)).toBe(true);
+    }
+    for (const { layers } of notes) expect(layers.map((layer) => layer.velocity)).toEqual([40, 65, 90, 115]);
   });
 
-  it("gives every bass root a p layer and an f layer that together cover velocities 1 to 127", () => {
-    const byRoot = new Map<number, { velocity: [number, number]; layer: string }[]>();
-    for (const sample of SAMPLE_MAP.bass) byRoot.set(sample.root, [...(byRoot.get(sample.root) ?? []), sample]);
-    for (const [root, samples] of byRoot) {
-      expect(samples.map((s) => s.layer).sort(), `root ${root}`).toEqual(["f", "p"]);
-      const [p, f] = [...samples].sort((a, b) => a.velocity[0] - b.velocity[0]);
-      expect(p.velocity[0]).toBe(1);
-      expect(f.velocity[1]).toBe(127);
-      expect(f.velocity[0]).toBe(p.velocity[1] + 1);
-    }
+  it("keeps the bass files under 15 MB and maps the same recordings for legacy songs", () => {
+    const files = new Set([...bassFiles(SAMPLE_MAP, "fingers"), ...bassFiles(SAMPLE_MAP, "pick")]);
+    const total = [...files].reduce((sum, file) => sum + statSync(join(SAMPLES, file)).size, 0);
+    expect(total).toBeLessThan(15_000_000);
+    expect(SAMPLE_MAP.bass).toHaveLength(22);
+    expect(SAMPLE_MAP.bass.every((sample) => files.has(sample.file))).toBe(true);
+    expect(LEGACY_MAP.bass).toEqual(LEGACY_BASS);
   });
 
   it("names only files that exist, and ships no FLAC the map does not use", () => {
@@ -170,6 +195,7 @@ describe("drum kits", () => {
     try {
       const set = await loadSampleSetWith(urls, async () => ({ sampleRate: 44100, channels: [new Float32Array(1)] }), "rock");
       expect(set.drums.size).toBe(Object.keys(SAMPLE_MAP.kits.rock.drums).length);
+      expect(requested.filter((url) => url.includes("/bass/")).sort()).toEqual(bassFiles(SAMPLE_MAP, "pick").map((file) => `https://app.test/${file}`).sort());
       const wanted = new Set(Object.values(SAMPLE_MAP.kits.rock.drums).flatMap((entry) => entry.layers.flatMap(takeFiles)));
       expect(requested.filter((url) => url.includes("/drums/")).length).toBe(wanted.size);
       await expect(loadSampleSetWith(urls, async () => ({ sampleRate: 44100, channels: [new Float32Array(1)] }), "jazz")).rejects.toThrow(/jazz/);
@@ -346,7 +372,7 @@ it("shares decoded audio between kits, including simultaneous requests, and retr
       loadSampleSetWith(urls, decode, "standard", cache),
       loadSampleSetWith(urls, decode, "rock", cache),
     ]);
-    expect(standard.bass[0].audio).toBe(rock.bass[0].audio);
+    expect(standard.bassInstrument!.notes![0].layers[0].takes[0]).toBe(rock.bassInstrument!.notes![0].layers[0].takes[0]);
     expect(standard.room).toBe(rock.room);
     expect(standard.drums.get(42)![0].takes[0]).toBe(rock.drums.get(42)![0].takes[0]);
     expect(fetcher).toHaveBeenCalledTimes(cache.size);
@@ -364,4 +390,16 @@ it("keeps correlated drum and bass layer amplitude flat across their crossfade",
     expect(pickDrumLayers(set, 36, velocity).reduce((sum, layer) => sum + layer.weight, 0)).toBeCloseTo(1);
     expect(pickBassLayers(set, 47, velocity).reduce((sum, layer) => sum + layer.weight, 0)).toBeCloseTo(1);
   }
+});
+
+
+it("crossfades recorded bass layers at constant power and cycles both layers together", () => {
+  const { set, audio } = stubSet("standard", "fingers");
+  const first = pickBassLayers(set, 23, 50, 0);
+  const second = pickBassLayers(set, 23, 50, 1);
+  expect(first.map((layer) => layer.pick.audio)).toEqual([audio("bass/fingers-notes-23-40-1.flac"), audio("bass/fingers-notes-23-65-1.flac")]);
+  expect(second.map((layer) => layer.pick.audio)).toEqual([audio("bass/fingers-notes-23-40-2.flac"), audio("bass/fingers-notes-23-65-2.flac")]);
+  expect(first.reduce((power, layer) => power + layer.weight ** 2, 0)).toBeCloseTo(1);
+  expect(pickBassLayers(set, 23, 50, 2)).toEqual(first);
+  expect(pickBassLayers(set, 23, 90, 0, "ghost")[0].pick.audio).toBe(audio("bass/fingers-ghost-23-90-1.flac"));
 });

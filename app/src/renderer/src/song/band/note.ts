@@ -13,6 +13,8 @@ export interface NoteEvent {
   slideFrom?: number;
   /** A dead note: a muted, short note between two notes (bass only). Plays soft and dark. */
   dead?: true;
+  /** Use a recorded short note, if the bass instrument has one. */
+  staccato?: true;
 }
 
 // General MIDI drum map. These are the voices the style patterns use, so any GM kit plays them.
