@@ -51,6 +51,26 @@ export function RhythmAutomationSong({ entry, onChange }: { entry: RhythmAutomat
           <Checkbox checked={draft.fills} onCheckedChange={(checked) => onChange({ ...draft, fills: checked === true })} />
           Add a fill before sections that keep the same pattern
         </label>
+        <label className="flex items-center gap-2">
+          <Checkbox checked={draft.breaks === true} onCheckedChange={(checked) => onChange({ ...draft, breaks: checked === true })} />
+          Play rhythm breaks on the song’s stops
+        </label>
+        <label className="flex items-center gap-2">
+          <Checkbox checked={draft.followSectionLoudness === true} onCheckedChange={(checked) => onChange({ ...draft, followSectionLoudness: checked === true })} />
+          Follow section loudness
+        </label>
+        {!!plan?.breaks?.length && (
+          <div className="space-y-1" aria-label="Rhythm break bars">
+            {plan.breaks.map(({ id, at }) => {
+              const skipped = draft.skipBreaks ?? [];
+              return <label key={id} className="flex items-center gap-2">
+                <Checkbox disabled={!draft.breaks} checked={!skipped.includes(id)} onCheckedChange={(checked) =>
+                  onChange({ ...draft, skipBreaks: checked === true ? skipped.filter((bar) => bar !== id) : [...skipped, id] })} />
+                Break at {lrcTime(at)} (bar {id + 1})
+              </label>;
+            })}
+          </div>
+        )}
         {error && <p role="alert">{error}</p>}
         {plan && (
           <>

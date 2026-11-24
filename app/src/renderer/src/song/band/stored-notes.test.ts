@@ -73,3 +73,10 @@ it("preserves the staccato flag alongside the earlier note flags", () => {
   expect(parseBandNotes({ engine: 3, seed: 2, drums: [], bass: stored })?.bass).toEqual(stored);
   expect(fromStoredNotes(stored)).toEqual([note]);
 });
+
+
+it("preserves detected stop times and filters damaged entries", () => {
+  const saved = parseBandNotes({ engine: 3, seed: 1, drums: [], bass: [], detectedStops: [2, "3", -1, 2.5] })!;
+  expect(saved.detectedStops).toEqual([2, 2.5]);
+  expect(updatedBandNotes(saved, { drums: [], bass: [] }, { drums: true, bass: true }, { drums: true, bass: true }, 3, 1, undefined, [5]).detectedStops).toEqual([5]);
+});

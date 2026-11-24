@@ -84,6 +84,7 @@ export interface BandResult {
   /** Present when follow-my-playing was on for the request. */
   follow?: FollowReport;
   learnedDrums?: LearnedDrumsReport[];
+  detectedStops?: number[];
   /** How far under the song each generated part was set. Present for the parts that were matched. */
   levels?: PartLevels;
   /**
@@ -114,6 +115,7 @@ interface Generated {
   notes: Notes;
   follow?: FollowReport;
   learnedDrums?: LearnedDrumsReport[];
+  detectedStops?: number[];
   /** The notes of the song as if its vamps were ordinary sections, when it has vamps: their exit bars are cut from these. */
   exitNotes?: Notes;
 }
@@ -172,6 +174,7 @@ function generate(request: BandRequest, original = originalDrummer(request), den
   const bassNotes = endBeforeNext(snapped.bass);
   const result: Generated = { notes: { drums: request.parts.drums ? drumNotes : [], bass: bassNotes }, follow };
   if (request.parts.drums && report.length) result.learnedDrums = report;
+  if (feel?.stops.size) result.detectedStops = [...feel.stops].map((beat) => grid.beats[beat]).filter(Number.isFinite);
   // A song with vamps is generated a second time with them as ordinary sections, which gives each vamp's exit bar its fill and lead-in.
   if (vampBars(grid, plans).length > 0) result.exitNotes = generate({ ...request, plans: withoutVamps(plans) }, original, densityOffset).notes;
   return result;
@@ -219,6 +222,7 @@ function render(request: BandRequest, generated: Generated, samples: SampleSet, 
   const { notes } = generated;
   const result: BandResult = generated.follow ? { notes, follow: generated.follow } : { notes };
   if (generated.learnedDrums) result.learnedDrums = generated.learnedDrums;
+  if (generated.detectedStops) result.detectedStops = generated.detectedStops;
   const songLufs = request.mix ? loudnessOf(request.mix) : -Infinity;
   const levels: PartLevels = {};
   const vamps = vampBars(request.grid, request.plans);

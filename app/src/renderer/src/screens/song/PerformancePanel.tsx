@@ -60,7 +60,7 @@ import { rhythmTransferStatus } from "@/song/band/rhythm-transfer";
 import { RhythmAutomationSetup } from "./RhythmAutomationSetup";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
-import { currentRhythmAutomation, rhythmControlOverrides } from "@/song/performance/rhythm-automation";
+import { currentRhythmAutomation, rhythmControlOverrides, RHYTHM_DYNAMICS_CONTROLS } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { preparationSettings, usePreparationDefaults } from "@/song/performance/start-preparation";
 import { pedalDrumMix } from "@/song/performance/pedal-drums";
@@ -296,6 +296,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
       ? [
           cueOptions.rhythmAutomation,
           cueOptions.rhythmExport,
+          (cueOptions.band as { marks?: unknown; sections?: unknown } | undefined)?.marks,
+          (cueOptions.band as { sections?: unknown } | undefined)?.sections,
+          (cueOptions.bandNotes as { detectedStops?: unknown } | undefined)?.detectedStops,
+          cueOptions.beatGrid,
           cueOptions.trimStart,
           cueOptions.trimEnd,
           (cueOptions.analysis as { silence?: unknown } | undefined)?.silence,
@@ -979,6 +983,11 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
                   choice: partChoice.drums,
                   drums,
                   fallbackWhy: fallbackReason(drums, outputConnected),
+                  dynamics: RHYTHM_DYNAMICS_CONTROLS.flatMap(({ key, setting }) =>
+                    parsed.cues.some((cue) => cue.managed === "rhythm" && cue.label?.startsWith(key === "break" ? "RC-10R: Rhythm break" : "RC-10R: Rhythm level"))
+                      ? [{ label: setting, cc: rhythmControls[key] }]
+                      : [],
+                  ),
                 }}
                 onChoosePedalDrums={() => choosePart({ drums: "pedal" })}
                 onEnableMidi={() => void session.connectMidi()}

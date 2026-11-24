@@ -1,4 +1,5 @@
 import { replaceManagedChart } from "./managed-chart";
+import { RHYTHM_BREAK_CC, RHYTHM_BREAK_LEAD_S, RHYTHM_LEVEL_CC, rhythmBreaks, rhythmLevels, type RhythmBreak } from "./rhythm-dynamics";
 import { rhythmTempo } from "./rhythm-tempo";
 import { lrcTime, parseChart } from "./chart";
 import { parseSections, type Section } from "./sections";
@@ -12,18 +13,24 @@ export const RHYTHM_CONTROLS = [
   { key: "fill", action: "fill", setting: "RHY FILLIN CC", initial: 82 },
   { key: "stop", action: "rhythm-stop", setting: "RHY STOP CC", initial: 83 },
 ] as const;
+export const RHYTHM_DYNAMICS_CONTROLS = [
+  { key: "break", action: "break", setting: "RHY BREAK CC", initial: RHYTHM_BREAK_CC },
+  { key: "level", action: "rhythm-level", setting: "RHY LEVEL CC", initial: RHYTHM_LEVEL_CC },
+] as const;
 export interface RhythmControls {
   channel: number;
   start: number;
   division: number;
   fill: number;
   stop: number;
+  break?: number;
+  level?: number;
 }
 export function rhythmControlOverrides(library: { channels: Record<string, number>; assignments: Record<string, number> }): Partial<RhythmControls> {
   const result: Partial<RhythmControls> = {};
   const channel = library.channels[RHYTHM_PEDAL_ID];
   if (channel !== undefined) result.channel = channel;
-  for (const { key, action } of RHYTHM_CONTROLS) {
+  for (const { key, action } of [...RHYTHM_CONTROLS, ...RHYTHM_DYNAMICS_CONTROLS]) {
     const cc = library.assignments[`${RHYTHM_PEDAL_ID}:${action}`];
     if (cc !== undefined) result[key] = cc;
   }
@@ -48,12 +55,16 @@ export interface RhythmAutomationDraft {
   /** Division changes include a fill. Their lead is adjustable because the pedal decides when it changes. */
   changeLeadBars: number;
   fills: boolean;
+  breaks?: boolean;
+  skipBreaks?: number[];
+  followSectionLoudness?: boolean;
   patterns: Record<string, RhythmPattern>;
 }
 export interface RhythmAutomationEvent {
   time: number | "load" | "stop";
   label: string;
   commands: string[];
+  chase?: true;
 }
 export interface RhythmAutomationPlan {
   events: RhythmAutomationEvent[];
@@ -61,6 +72,7 @@ export interface RhythmAutomationPlan {
   sections: Section[];
   firstPattern: RhythmPattern;
   barSeconds: number;
+  breaks?: RhythmBreak[];
   chart: string;
 }
 const BEGIN = "// RC-10R automatic rhythm: begin";
@@ -130,6 +142,9 @@ export function suggestRhythmAutomation(song: RhythmAutomationSong, memory: numb
     introBars: integer(saved.introBars, 0, 32) ? saved.introBars : integer(object(parts.intro).bars, 1, 32) ? Number(object(parts.intro).bars) : 1,
     changeLeadBars: finite(saved.changeLeadBars) && saved.changeLeadBars >= 0 && saved.changeLeadBars <= 2 ? saved.changeLeadBars : 1,
     fills: saved.fills !== false,
+    ...(saved.breaks === true || saved.version !== 1 ? { breaks: true } : {}),
+    ...(Array.isArray(saved.skipBreaks) ? { skipBreaks: saved.skipBreaks.filter((bar): bar is number => integer(bar, 1, 10000)).slice(0, 200) } : {}),
+    ...(saved.followSectionLoudness === true ? { followSectionLoudness: true } : {}),
     patterns,
   };
 }
@@ -190,6 +205,8 @@ export function currentRhythmAutomation(song: RhythmAutomationSong): { draft: Rh
     division: Number(controls.division),
     fill: Number(controls.fill),
     stop: Number(controls.stop),
+    ...(controls.break !== undefined ? { break: Number(controls.break) } : {}),
+    ...(controls.level !== undefined ? { level: Number(controls.level) } : {}),
   };
   if (saved.referenceInputs === automaticReference(song)) return { draft, controls: configuredControls };
   const meter = object(options.rhythmExport).meter;
@@ -230,9 +247,6 @@ export function replaceRhythmAutomation(chart: string, block: string): string {
 export function buildRhythmAutomation(song: RhythmAutomationSong, draft: RhythmAutomationDraft, controls: RhythmControls): RhythmAutomationPlan {
   if (!integer(draft.memory, 1, 99)) throw new Error("Choose a pedal memory from 1–99.");
   if (!integer(controls.channel, 1, 16)) throw new Error("Choose a MIDI channel from 1–16.");
-  const controllers = RHYTHM_CONTROLS.map(({ key }) => controls[key]);
-  if (controllers.some((cc) => !integer(cc, 1, 95) || (cc > 31 && cc < 64))) throw new Error("Control numbers must be 1–31 or 64–95.");
-  if (new Set(controllers).size !== controllers.length) throw new Error("Give Start, Change pattern, Fill and Stop different control numbers.");
   const { sections, end, start, barQuarters, exported, options } = timing(song);
   const barSeconds = (60 * barQuarters) / draft.bpm;
   if (!finite(song.duration) || song.duration <= 0 || !integer(draft.bpm, 40, 350) || !finite(barSeconds) || barSeconds <= 0)
@@ -252,6 +266,15 @@ export function buildRhythmAutomation(song: RhythmAutomationSong, draft: RhythmA
   if (!body.length) throw new Error("No song sections fall between the intro and ending.");
   if (body.some((section) => draft.patterns[section.id] !== 1 && draft.patterns[section.id] !== 2))
     throw new Error("Choose Pattern 1 or Pattern 2 for every section.");
+  const breaks = rhythmBreaks(options, draft.start, barSeconds, draft.endingAt);
+  const activeBreaks = draft.breaks ? breaks.filter((entry) => !draft.skipBreaks?.includes(entry.id)) : [];
+  const breakCc = controls.break ?? RHYTHM_BREAK_CC;
+  const levelCc = controls.level ?? RHYTHM_LEVEL_CC;
+  const controllers = RHYTHM_CONTROLS.map(({ key }) => controls[key]);
+  if (activeBreaks.length) controllers.push(breakCc);
+  if (draft.followSectionLoudness) controllers.push(levelCc);
+  if (controllers.some((cc) => !integer(cc, 1, 95) || (cc > 31 && cc < 64))) throw new Error("Control numbers must be 1–31 or 64–95.");
+  if (new Set(controllers).size !== controllers.length) throw new Error(controllers.length === RHYTHM_CONTROLS.length ? "Give Start, Change pattern, Fill and Stop different control numbers." : "Give each rhythm action a different control number.");
   const warnings: string[] = [];
   if (exported.version !== 1)
     warnings.push("No export choices are saved for this song. Check its tempo, intro length and Pattern 1/2 against the rhythm on the pedal.");
@@ -290,9 +313,22 @@ export function buildRhythmAutomation(song: RhythmAutomationSong, draft: RhythmA
     previous = pattern;
     previousStart = Math.max(patternStart, section.start);
   }
+  for (const { at } of activeBreaks) {
+    events.push({
+      time: at - Math.min(RHYTHM_BREAK_LEAD_S, barSeconds / 4),
+      label: "RC-10R: Rhythm break",
+      commands: [`cc ${controls.channel} ${breakCc} 127`, `cc ${controls.channel} ${breakCc} 0`],
+    });
+  }
+  if (draft.followSectionLoudness) {
+    for (const { at, value, section } of rhythmLevels(sections, song.duration, options, draft.start, draft.endingAt)) {
+      events.push({ time: at, label: `RC-10R: Rhythm level for ${section || "song start"}`, commands: [`cc ${controls.channel} ${levelCc} ${value}`], chase: true });
+    }
+  }
+  events.sort((a, b) => (a.time === "load" ? -1 : Number(a.time)) - (b.time === "load" ? -1 : Number(b.time)));
   // MEAS END+ENDING waits for the next bar. Send during the preceding measure, not on the requested ending's downbeat.
   const stopTime = draft.endingAt - Math.min(0.1, barSeconds / 4);
-  if (stopTime <= patternStart || events.some((event) => typeof event.time === "number" && event.time > stopTime))
+  if (stopTime <= patternStart || events.some((event) => typeof event.time === "number" && event.time > stopTime && !event.chase && event.label !== "RC-10R: Rhythm break"))
     throw new Error("The last pattern change overlaps the ending. Move the ending later or reduce the change lead.");
   events.push({ time: stopTime, label: "RC-10R: Play ending and stop", commands: pulse("stop") });
   events.push({ time: "stop", label: "RC-10R: Stop when playback stops", commands: pulse("stop") });
@@ -301,12 +337,12 @@ export function buildRhythmAutomation(song: RhythmAutomationSong, draft: RhythmA
     ...events.map((event) => {
       // Trigger controls are never chased when playback starts halfway through a song.
       const tokens = event.commands.map((command) => (typeof event.time === "number" ? `{midi:${command}}` : `{midi@${event.time}:${command}}`)).join(" ");
-      return `${typeof event.time === "number" ? `${lrcTime(event.time)} {nochase} ` : ""}{label:${event.label.replace(/[{}]/g, "")}} ${tokens}`;
+      return `${typeof event.time === "number" ? `${lrcTime(event.time)} ${event.chase ? "" : "{nochase} "}` : ""}{label:${event.label.replace(/[{}]/g, "")}} ${tokens}`;
     }),
     END,
   ].join("\n");
   const chart = replaceRhythmAutomation(song.settings[""] ?? "", block);
   // Parse only generated cues: an unrelated macro in the performer's chart need not be resolved here.
   parseChart(block);
-  return { events, warnings, sections: body, firstPattern: draft.patterns[body[0].id], barSeconds, chart };
+  return { events, warnings, sections: body, firstPattern: draft.patterns[body[0].id], barSeconds, ...(breaks.length ? { breaks } : {}), chart };
 }

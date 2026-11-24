@@ -524,7 +524,7 @@ function BandBody({
       const latest = settingsRef.current;
       commitBand(regeneratedSettings(latest, using, prepared, turnedOff, applied.length === 0));
       if (applied.length === 0) {
-        const bandNotes = updatedBandNotes(savedNotes, result.notes, using.parts, latest.parts, using.engine, using.seed, result.learnedDrums);
+        const bandNotes = updatedBandNotes(savedNotes, result.notes, using.parts, latest.parts, using.engine, using.seed, result.learnedDrums, result.detectedStops);
         setSavedNotes(bandNotes);
         writeStoredBand(songKey, { bandNotes });
         setOutOfDate(false);

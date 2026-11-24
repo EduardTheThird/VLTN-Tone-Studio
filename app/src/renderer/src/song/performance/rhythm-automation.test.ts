@@ -222,3 +222,36 @@ describe("automatic pedal rhythm cues", () => {
     expect(() => buildRhythmAutomation(input, { ...setup(input), endingAt: 2.05 }, controls)).toThrow("overlaps the ending");
   });
 });
+
+
+it("sends one non-chased RC-10R break just before each marked bar", () => {
+  const input = song({ band: { marks: [{ kind: "stop", time: 6 }, { kind: "drums-out", time: 12 }, { kind: "stop", time: 14 }] } });
+  const draft = setup(input);
+  const complete = buildRhythmAutomation(input, draft, controls);
+  const breaks = complete.events.filter((cue) => cue.label.endsWith("Rhythm break"));
+  expect(breaks.map(({ time }) => time)).toEqual([5.85, 11.85, 13.85]);
+  expect(breaks.every(({ commands }) => commands.join("|") === "cc 2 84 127|cc 2 84 0")).toBe(true);
+  expect(parseChart(complete.chart).filter((cue) => cue.label?.endsWith("Rhythm break")).every((cue) => cue.chase === false)).toBe(true);
+  const skipped = buildRhythmAutomation(input, { ...draft, skipBreaks: [6] }, controls);
+  expect(skipped.events.filter((cue) => cue.label.endsWith("Rhythm break")).map(({ time }) => time)).toEqual([5.85, 13.85]);
+});
+
+it("does not add dynamics to saved plans until enabled, and sends a level at the song start and changes", () => {
+  const input = song({ band: {
+    marks: [{ kind: "stop", time: 6 }],
+    sections: Object.fromEntries(sections.map(({ id }) => [id, { loud: id === "c1" ? 4 : 2 }])),
+  }, rhythmAutomation: { version: 1 } });
+  const draft = setup(input);
+  expect(buildRhythmAutomation(input, draft, controls).events.some((cue) => /Rhythm (break|level)/.test(cue.label))).toBe(false);
+  const plan = buildRhythmAutomation(input, { ...draft, followSectionLoudness: true }, { ...controls, level: 86 });
+  expect(plan.events.filter((cue) => cue.label.startsWith("RC-10R: Rhythm level")).map(({ time, commands }) => [time, commands])).toEqual([
+    [0, ["cc 2 86 75"]], [10, ["cc 2 86 100"]], [18, ["cc 2 86 75"]],
+  ]);
+});
+
+it("adds a detected full-bar stop from the saved generated notes", () => {
+  const beatGrid = { beatsPerBar: 4, bpm: 120, downbeat: 0, beats: Array.from({ length: 72 }, (_, i) => i / 2) };
+  const input = song({ beatGrid, bandNotes: { engine: 3, seed: 1, drums: [], bass: [], detectedStops: [6, 6.5, 7, 7.5] } });
+  const plan = buildRhythmAutomation(input, setup(input), controls);
+  expect(plan.events.some((cue) => cue.time === 5.85 && cue.label.endsWith("Rhythm break"))).toBe(true);
+});

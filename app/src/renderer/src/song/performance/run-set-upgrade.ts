@@ -154,6 +154,7 @@ export async function upgradeSavedSong(
         plan.settings.engine,
         plan.settings.seed,
         prepared.result.learnedDrums,
+        prepared.result.detectedStops,
       ),
       generatedParts: generated,
       bandExtras: manifests,

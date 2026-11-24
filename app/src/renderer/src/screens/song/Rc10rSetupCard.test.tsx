@@ -91,3 +91,12 @@ it("summary follows resolveDrums", () => {
     "Not ready: this song plays both drums, not the RC-10R",
   );
 });
+
+it("marks a missing break assignment and opens the controls from the fix button", () => {
+  const state = ready({ dynamics: [{ label: "RHY BREAK CC" }] });
+  const onClick = vi.fn();
+  render(<Rc10rSetupCard state={state} onChoosePedalDrums={onClick} onEnableMidi={onClick} onChooseOutput={onClick} onSendCues={onClick}><input aria-label="RHY BREAK CC" /></Rc10rSetupCard>);
+  expect(line("RHY BREAK CC").getAttribute("data-ok")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Set RHY BREAK CC…" }));
+  expect(screen.getByLabelText("RHY BREAK CC").closest("details")?.open).toBe(true);
+});

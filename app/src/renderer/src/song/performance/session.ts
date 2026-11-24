@@ -21,9 +21,12 @@ import { host } from "@/host";
 import type { SongSource, Stems } from "@/song/types";
 import type { Cue, MidiTrigger } from "@/song/performance/chart";
 import { clockPosition, setClockPosition } from "@/song/performance/playback-clock";
-import { getSetting, performanceKey } from "@/song/performance/settings";
+import { getSetting, performanceKey, readOptions, readSettings } from "@/song/performance/settings";
 import { playerShapeFromOptions } from "@/song/performance/song-shape";
 import { prepareMidiScheduler, type SchedulerDegraded, startMidiScheduler } from "@/song/performance/midi-scheduler-client";
+import { usePedalLibrary } from "./pedal-library";
+import { currentRhythmAutomation, rhythmControlOverrides, type RhythmControls } from "./rhythm-automation";
+import { DEFAULT_RHYTHM_LEVEL, RHYTHM_BREAK_LEAD_S, liveRhythmLevel } from "./rhythm-dynamics";
 import { canStartRhythm, hasPedalRhythm } from "./rhythm-runtime";
 import { PreparationHistory, preparationHistoryFor } from "./preparation-repeat";
 import type { TimecodeTail } from "@/song/performance/midi-scheduler";
@@ -171,6 +174,9 @@ export class PerformanceSession {
   private bandReturnAtSection = false;
   private bandLastPosition = 0;
   private bandAutoReturn = false;
+  private liveRhythmChangeAt: number | null = null;
+  private liveRhythmBreakAt: number | null = null;
+  private liveRhythmLevelAt: number | null = null;
   /** The drummer's count and a vamp's exit bars of the loaded song's generated parts (band/extras.ts). Empty for a song without them. */
   bandExtras: Partial<Record<ExtrasPart, LoadedExtras>> = {};
   /** Whether the loaded song's settings ask for the drummer's count. A count rendered earlier is not played once the setting is off. */
@@ -294,6 +300,9 @@ export class PerformanceSession {
     this.bandReturnAtSection = band.variantReturn === "section";
     this.bandAutoReturn = false;
     this.bandLastPosition = 0;
+    this.liveRhythmChangeAt = null;
+    this.liveRhythmBreakAt = null;
+    this.liveRhythmLevelAt = null;
     this.set({ bandVariant: "normal", pendingBandVariant: null, bandVariantLog: [] });
     this.drummerCounts = band.countIn.bars > 0;
     this.exitBars = exitBarsOf(this.bandExtras, band.liveVariants === true);
@@ -666,6 +675,9 @@ export class PerformanceSession {
       }
       player?.pause();
       this.sectionsPart.applyPendingRender();
+      this.liveRhythmChangeAt = null;
+      this.liveRhythmBreakAt = null;
+      this.liveRhythmLevelAt = null;
       this.set({ playing: false, pendingBandVariant: null });
       // A pedal/THRU path can echo our Stop back into the selected input.
       // Repeated Stop while already stopped must not transmit another Stop.
@@ -837,6 +849,7 @@ export class PerformanceSession {
     const { player, pendingBandVariant, sections } = this.state;
     if (!player?.liveBandAvailable) return;
     const position = player.position;
+    this.tickBandPedal(player);
     if (pendingBandVariant && player.commitBandSwitch()) {
       this.set({ bandVariant: pendingBandVariant.variant, pendingBandVariant: null, bandVariantLog: [...this.state.bandVariantLog, pendingBandVariant].slice(-200) });
       this.bandAutoReturn = pendingBandVariant.variant !== "normal" && this.bandReturnAtSection;
@@ -856,6 +869,77 @@ export class PerformanceSession {
     this.bandLastPosition = position;
   }
 
+  private bandPedalControls(player: StemPlayer): RhythmControls | null {
+    if (!this.armed || !player.isPlaying || !hasPedalRhythm(this.state.cues)) return null;
+    const key = this.songSettingsKey;
+    const saved = readOptions<{ partChoice?: { drums?: string } }>(key, {});
+    if (saved.partChoice?.drums !== "pedal") return null;
+    const auto = currentRhythmAutomation({ key, title: "", duration: player.length, settings: readSettings(key) });
+    if (!auto) return null;
+    const assignments = rhythmControlOverrides(usePedalLibrary.getState());
+    const controls = { ...auto.controls, ...assignments };
+    const used = [controls.start, controls.fill, controls.stop, controls.division];
+    const available = (cc: number | undefined): cc is number => cc !== undefined &&
+      Number.isInteger(cc) && ((cc >= 1 && cc <= 31) || (cc >= 64 && cc <= 95)) && !used.includes(cc);
+    return {
+      ...controls,
+      break: available(assignments.break) && assignments.break !== assignments.level ? assignments.break : undefined,
+      level: available(assignments.level) && assignments.level !== assignments.break ? assignments.level : undefined,
+    };
+  }
+
+  /** Reuses the audio clock for the pedal's bar changes and leaves the song's regular cue queue intact. */
+  private tickBandPedal(player: StemPlayer): void {
+    const { bandVariant, pendingBandVariant, cues, bpm, timing } = this.state;
+    if (bandVariant === "normal" && !pendingBandVariant) return;
+    const controls = this.bandPedalControls(player);
+    if (!controls) return;
+    const position = player.position;
+    if (position < 0) return;
+    const status = 0xb0 | (controls.channel - 1);
+    const near = (at: number, lead = 0) => {
+      const due = player.audioTimeOf(at - lead) - player.audioNow;
+      return due >= -0.06 && due <= 0.06;
+    };
+    const time = (at: number) => Math.max(performance.now(), this.clockOf(player.audioTimeOf(at)) - performance.timeOrigin);
+    const send = (cc: number, value: number, at: number, label: string) =>
+      this.sendPerformance([status, cc, value], time(at), `RC-10R live: ${label}`);
+    const pulse = (cc: number, at: number, label: string) => {
+      const due = time(at);
+      this.sendPerformance([status, cc, 127], due, `RC-10R live: ${label}`);
+      this.sendPerformance([status, cc, 0], due + 100, `RC-10R live: ${label}`);
+    };
+    const rhythm = cues.filter((cue) => cue.managed === "rhythm" && !cue.trigger);
+    const first = rhythm.find((cue) => cue.label === "RC-10R: Start rhythm")?.time ?? Infinity;
+    const last = rhythm.find((cue) => cue.label === "RC-10R: Play ending and stop")?.time ?? player.duration;
+    const levels = rhythm.filter((cue) => cue.label?.startsWith("RC-10R: Rhythm level"));
+    const levelAt = (at: number) => levels.findLast((cue) => cue.time <= at + 0.001)?.messages[0]?.[2] ?? DEFAULT_RHYTHM_LEVEL;
+    const setLevel = (mode: BandVariant, at: number) => {
+      if (controls.level !== undefined) send(controls.level, liveRhythmLevel(levelAt(at), mode), at, BAND_VARIANT_LABELS[mode]);
+    };
+    if (pendingBandVariant && pendingBandVariant.at >= first && pendingBandVariant.at < last &&
+        pendingBandVariant.at !== this.liveRhythmChangeAt && near(pendingBandVariant.at)) {
+      const { variant, at } = pendingBandVariant;
+      if (variant === "soft" || variant === "lift" || variant === "normal") setLevel(variant, at);
+      if (variant === "lift") pulse(controls.fill, at, "Lift fill");
+      this.liveRhythmChangeAt = at;
+    }
+    const upcomingLevel = levels.find((cue) => cue.time > position - 0.06 && near(cue.time) && cue.time !== this.liveRhythmLevelAt);
+    if (upcomingLevel && (bandVariant === "lift" || bandVariant === "soft") && (!pendingBandVariant || upcomingLevel.time < pendingBandVariant.at)) {
+      setLevel(bandVariant, upcomingLevel.time + 0.008);
+      this.liveRhythmLevelAt = upcomingLevel.time;
+    }
+    const grid = this.bandGrid ?? fixedBeatGrid(bpm || 120, this.bandFirstBeat, timing.beatsPerBar, player.length);
+    const bar = nextBandBar(grid, position);
+    const outAtBar = bar && (pendingBandVariant && pendingBandVariant.at <= bar.at ? pendingBandVariant.variant : bandVariant) === "out";
+    if (bar && outAtBar && controls.break !== undefined && bar.at > first && bar.at < last &&
+        bar.at !== this.liveRhythmBreakAt && near(bar.at, RHYTHM_BREAK_LEAD_S)) {
+      const at = bar.at - RHYTHM_BREAK_LEAD_S;
+      if (!rhythm.some((cue) => cue.label === "RC-10R: Rhythm break" && Math.abs(cue.time - at) < 0.05)) pulse(controls.break, at, "Band out break");
+      this.liveRhythmBreakAt = bar.at;
+    }
+  }
+
   changeBandVariant = (requested: BandVariant | "toggle"): Hint => {
     const { player, bandVariant, pendingBandVariant, bpm, timing } = this.state;
     if (!player?.liveBandAvailable) return "Generate a band part first.";
@@ -871,12 +955,16 @@ export class PerformanceSession {
     const grid = this.bandGrid ?? fixedBeatGrid(bpm || 120, this.bandFirstBeat, timing.beatsPerBar, player.length);
     const next = nextBandBar(grid, player.position);
     if (!next || next.at >= player.duration) return "There is no next bar in this song.";
+    if (pendingBandVariant && (pendingBandVariant.at === this.liveRhythmChangeAt || pendingBandVariant.at === this.liveRhythmBreakAt))
+      return "The pedal change is already taking effect.";
     if (!player.setBandVariant(variant, next.at, next.precedingBar)) return "The band change is already taking effect.";
     this.set({ pendingBandVariant: { variant, at: next.at } });
     return `${BAND_VARIANT_LABELS[variant]} at next bar.`;
   };
 
   cancelBandVariant = (): void => {
+    const pending = this.state.pendingBandVariant;
+    if (pending && (pending.at === this.liveRhythmChangeAt || pending.at === this.liveRhythmBreakAt)) return;
     if (this.state.player?.cancelBandSwitch()) this.set({ pendingBandVariant: null });
   };
 

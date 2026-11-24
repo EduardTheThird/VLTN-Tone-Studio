@@ -19,6 +19,7 @@ export interface Rc10rSetupState {
   choice: PartChoice;
   drums: DrumSource;
   fallbackWhy: string;
+  dynamics?: { label: string; cc?: number }[];
 }
 
 interface Line {
@@ -92,6 +93,14 @@ export function Rc10rSetupCard({
       fixes: choice === "pedal" ? undefined : [{ label: "Use pedal drums for this song", run: onChoosePedalDrums }],
     },
   ];
+  for (const control of state.dynamics ?? []) {
+    lines.push({
+      id: control.label,
+      ok: control.cc !== undefined,
+      text: control.cc === undefined ? `${control.label} needs an assignment` : `Match ${control.label} to CC ${control.cc} on the pedal`,
+      fixes: control.cc === undefined ? [{ label: `Set ${control.label}…`, run: openDetails }] : undefined,
+    });
+  }
   const summary = rc10rSummary({ choice, drums });
   return (
     <SettingsCard title="RC-10R drums" summary={summary} storageKey="rc10r-setup">

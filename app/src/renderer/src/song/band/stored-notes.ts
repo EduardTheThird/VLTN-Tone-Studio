@@ -20,6 +20,7 @@ export interface BandNotes {
   drums: StoredNote[];
   bass: StoredNote[];
   learnedDrums?: LearnedDrumsReport[];
+  detectedStops?: number[];
 }
 
 /** A slide's distance is not kept: the part view only draws that a note slides. */
@@ -83,7 +84,9 @@ export function parseBandNotes(value: unknown): BandNotes | null {
     ? value.learnedDrums.filter((item): item is LearnedDrumsReport => isRecord(item) && isNumber(item.start) && item.start >= 0 &&
         isNumber(item.confidence) && item.confidence >= 0 && item.confidence <= 1 && typeof item.learned === "boolean")
     : [];
-  return { engine: value.engine, seed: value.seed, drums, bass, ...(learnedDrums.length ? { learnedDrums } : {}) };
+  const detectedStops = Array.isArray(value.detectedStops) ? value.detectedStops.slice(0, MAX_STORED_NOTES).filter((time): time is number => isNumber(time) && time >= 0) : [];
+  return { engine: value.engine, seed: value.seed, drums, bass, ...(learnedDrums.length ? { learnedDrums } : {}),
+    ...(detectedStops.length ? { detectedStops } : {}) };
 }
 
 /** The entry to save for a Generate's notes. */
@@ -103,8 +106,11 @@ export function updatedBandNotes(
   engine: number,
   seed: number,
   learnedDrums?: LearnedDrumsReport[],
+  detectedStops?: number[],
 ): BandNotes {
   const part = (kind: "drums" | "bass"): StoredNote[] => (generated[kind] ? toStoredNotes(made[kind]) : parts[kind] ? (previous?.[kind] ?? []) : []);
   const report = generated.drums ? learnedDrums : parts.drums ? previous?.learnedDrums : undefined;
-  return { engine, seed, drums: part("drums"), bass: part("bass"), ...(report?.length ? { learnedDrums: report } : {}) };
+  const stops = generated.drums || generated.bass ? detectedStops : previous?.detectedStops;
+  return { engine, seed, drums: part("drums"), bass: part("bass"), ...(report?.length ? { learnedDrums: report } : {}),
+    ...(stops?.length ? { detectedStops: stops } : {}) };
 }

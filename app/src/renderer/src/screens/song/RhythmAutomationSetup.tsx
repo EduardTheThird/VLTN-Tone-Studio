@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsCard } from "@/components/ui/settings-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RHYTHM_CONTROLS, type RhythmAutomationSong } from "@/song/performance/rhythm-automation";
+import { RHYTHM_CONTROLS, RHYTHM_DYNAMICS_CONTROLS, type RhythmAutomationSong } from "@/song/performance/rhythm-automation";
 import { RhythmAutomationSong as SongChoices } from "./RhythmAutomationSong";
 import { useRhythmAutomation } from "./use-rhythm-automation";
 
@@ -99,7 +99,7 @@ export function RhythmAutomationSetup({ current, locked, onSaveChart }: { curren
                   onChange={(event) => setControls({ ...controls, channel: event.target.valueAsNumber })}
                 />
               </label>
-              {RHYTHM_CONTROLS.map(({ key, setting }) => (
+              {[...RHYTHM_CONTROLS, ...RHYTHM_DYNAMICS_CONTROLS].map(({ key, setting }) => (
                 <label className="flex flex-col gap-1" key={key}>
                   {setting}
                   <Input
@@ -108,7 +108,7 @@ export function RhythmAutomationSetup({ current, locked, onSaveChart }: { curren
                     type="number"
                     min={1}
                     max={95}
-                    value={Number.isFinite(controls[key]) ? controls[key] : ""}
+                    value={Number.isFinite(controls[key]) ? controls[key]! : ""}
                     onChange={(event) => setControls({ ...controls, [key]: event.target.valueAsNumber })}
                   />
                 </label>

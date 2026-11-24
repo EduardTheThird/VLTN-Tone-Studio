@@ -22,6 +22,9 @@ import { registerBandRefresh } from "@/song/band/refresh";
 import { clearSettingsCache, performanceKey, setSetting } from "./settings";
 import type { BandTracks } from "@/song/band/extras";
 import type { BandVariant } from "@/song/band/live-variants";
+import { usePedalLibrary } from "./pedal-library";
+import { automaticRhythmSettings, buildRhythmAutomation, suggestRhythmAutomation } from "./rhythm-automation";
+import { songCues } from "./song-cues";
 import { packExtras } from "@/song/band/extras";
 import { DEFAULT_BAND_SETTINGS } from "@/song/band/arrangement";
 import { claimStageOperation } from "@/state/stage-operation";
@@ -3278,4 +3281,72 @@ it("queues live band changes at the next bar, cancels them, and returns at the n
   expect(session.state.bandVariant).toBe("normal");
   expect(session.state.bandVariantLog).toEqual([]);
   second();
+});
+
+it("uses assigned RC-10R controls for live lift, soft, and repeated breaks on the audio bar grid", async () => {
+  const audio = { sampleRate: 44100, channels: [Float32Array.of(0.1, 0.2), Float32Array.of(0.1, 0.2)] };
+  const variants = { lift: { audio, exits: {} }, soft: { audio, exits: {} } };
+  const packed = packExtras({ exits: {}, variants })!;
+  const sections: Section[] = [
+    { id: "verse", name: "Verse", start: 0, end: 4, mode: "continue" },
+    { id: "chorus", name: "Chorus", start: 4, end: 56, mode: "continue" },
+  ];
+  const band = { ...DEFAULT_BAND_SETTINGS, liveVariants: true, sections: { verse: { loud: 2 }, chorus: { loud: 4 } } };
+  const settings = {
+    band, sections, partChoice: { drums: "pedal" }, generatedParts: { drums: "track0", drumsExtras: "track1" },
+    bandExtras: { drums: packed.manifest },
+  };
+  const song = { key: performanceKey(source), title: "Song", duration: 60, settings: { ":bpm": "120", ":options": JSON.stringify(settings) } };
+  const controls = { channel: 2, start: 80, division: 81, fill: 82, stop: 83, break: 84, level: 85 };
+  const suggested = suggestRhythmAutomation(song, 1);
+  const draft = { ...suggested, fills: false, followSectionLoudness: true, patterns: { verse: 1 as const, chorus: 1 as const } };
+  const automation = automaticRhythmSettings(song, draft, controls);
+  setSetting(song.key, ":bpm", "120");
+  setSetting(song.key, ":options", JSON.stringify({ ...settings, rhythmAutomation: automation }));
+  const chart = buildRhythmAutomation(song, draft, controls).chart;
+  const cues = songCues(chart, [], null, { duration: 60, settings: { ...song.settings, ":options": JSON.stringify({ ...settings, rhythmAutomation: automation }) } }).cues;
+  const assignments = usePedalLibrary.getState().assignments;
+  usePedalLibrary.setState({ assignments: { "boss-rc10r:break": 84, "boss-rc10r:rhythm-level": 85 } });
+  try {
+    const out = output();
+    const access = Object.assign(new EventTarget(), { outputs: new Map([["usb", out]]), inputs: new Map() }) as unknown as MIDIAccess;
+    const session = new PerformanceSession({
+      initial: inputs({ sections, cues }),
+      carried: { access, portId: "usb", inputId: "", armed: true, output: out },
+      initialClock: false,
+    });
+    const unload = session.loadSong(source, { track0: audio, track1: packed.audio });
+    await session.state.player!.play();
+    const tick = (at: number) => {
+      mocks.position = mocks.audioNow = at;
+      session.tickSections();
+    };
+    const sent = () => out.send.mock.calls.map(([bytes]) => bytes);
+    tick(0.5);
+    session.changeBandVariant("soft");
+    tick(1.97);
+    tick(2);
+    expect(sent()).toContainEqual([0xb1, 85, 60]);
+
+    out.send.mockClear();
+    tick(2.5);
+    session.changeBandVariant("lift");
+    tick(3.97);
+    tick(4);
+    expect(sent()).toContainEqual([0xb1, 85, 110]);
+    expect(sent()).toContainEqual([0xb1, 82, 127]);
+    expect(sent()).toContainEqual([0xb1, 82, 0]);
+
+    out.send.mockClear();
+    tick(4.6);
+    session.changeBandVariant("out");
+    tick(5.84);
+    tick(6);
+    tick(7.84);
+    tick(8);
+    expect(sent()).toEqual([[0xb1, 84, 127], [0xb1, 84, 0], [0xb1, 84, 127], [0xb1, 84, 0]]);
+    unload();
+  } finally {
+    usePedalLibrary.setState({ assignments });
+  }
 });

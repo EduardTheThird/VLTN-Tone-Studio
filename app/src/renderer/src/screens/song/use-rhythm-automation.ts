@@ -8,6 +8,7 @@ import {
   currentRhythmAutomation,
   replaceRhythmAutomation,
   RHYTHM_CONTROLS,
+  RHYTHM_DYNAMICS_CONTROLS,
   RHYTHM_PEDAL_ID,
   rhythmSongOptions,
   suggestRhythmAutomation,
@@ -39,6 +40,7 @@ export function useRhythmAutomation(current: RhythmAutomationSong, locked: boole
     division: pedal.assignments[`${RHYTHM_PEDAL_ID}:rhythm-division`] ?? 81,
     fill: pedal.assignments[`${RHYTHM_PEDAL_ID}:fill`] ?? 82,
     stop: pedal.assignments[`${RHYTHM_PEDAL_ID}:rhythm-stop`] ?? 83,
+    ...Object.fromEntries(RHYTHM_DYNAMICS_CONTROLS.map(({ key, action, initial }) => [key, pedal.assignments[`${RHYTHM_PEDAL_ID}:${action}`] ?? initial])),
   }));
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
   const [message, setMessage] = useState("");
@@ -61,11 +63,12 @@ export function useRhythmAutomation(current: RhythmAutomationSong, locked: boole
     if (!fromIndex) throw new Error(`${song.title} is no longer in the library. Preview the playlist again.`);
     return { ...song, duration: fromIndex.duration, settings: savedSongSettings(id, fromIndex.settings) };
   };
-  const conflicts = RHYTHM_CONTROLS.flatMap(({ key, action }) =>
+  const activeControls = [...RHYTHM_CONTROLS, ...RHYTHM_DYNAMICS_CONTROLS.filter(({ key }) => drafts.some(({ draft }) => key === "break" ? draft.breaks : draft.followSectionLoudness))];
+  const conflicts = activeControls.flatMap(({ key, action }) =>
     Object.entries(pedal.assignments)
       .filter(
         ([name, cc]) =>
-          name.startsWith(`${RHYTHM_PEDAL_ID}:`) && !RHYTHM_CONTROLS.some((control) => name === `${RHYTHM_PEDAL_ID}:${control.action}`) && cc === controls[key],
+          name.startsWith(`${RHYTHM_PEDAL_ID}:`) && !activeControls.some((control) => name === `${RHYTHM_PEDAL_ID}:${control.action}`) && cc === controls[key],
       )
       .map(([name]) => `CC ${controls[key]} is already assigned to ${name.slice(RHYTHM_PEDAL_ID.length + 1)}. Choose a different number for ${action}.`),
   );
@@ -146,7 +149,10 @@ export function useRhythmAutomation(current: RhythmAutomationSong, locked: boole
       }));
       for (const edit of edits) write(edit.song, edit.chart, edit.options);
       pedal.setChannel(RHYTHM_PEDAL_ID, controls.channel);
-      for (const { key, action } of RHYTHM_CONTROLS) pedal.setAssignment(RHYTHM_PEDAL_ID, action, controls[key]);
+      for (const { key, action } of activeControls) {
+        const cc = controls[key];
+        if (cc !== undefined) pedal.setAssignment(RHYTHM_PEDAL_ID, action, cc);
+      }
       setSaved(edits);
       setDrafts([]);
       await finishSave(
