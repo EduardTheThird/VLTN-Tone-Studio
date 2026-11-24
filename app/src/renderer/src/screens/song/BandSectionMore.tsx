@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { defaultFills, FILLS, type Fills, type SectionOverride, type SectionPlan, type SectionShape } from "@/song/band/arrangement";
+import { defaultFills, FILLS, HAT_OPEN_LEVELS, OCTAVE_JUMPS, type HatOpen, type OctaveJumps, type Fills, type SectionOverride, type SectionPlan, type SectionShape } from "@/song/band/arrangement";
 import { OCTAVE_SHIFTS, type OctaveShift } from "@/song/band/bass-parts";
 import { ENERGIES, findStyle, type StyleId } from "@/song/band/styles";
-import { SECTION_PLAY_CHOICES, SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
+import { JUMP_LABELS, SECTION_PLAY_CHOICES, SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
 
 const SYNTH_PART_LABELS: Record<SynthPart, string> = { auto: "Auto", pad: "Pad", moving: "Moving pad", stabs: "Stabs", pulse: "Pulse", rest: "Rest" };
 
@@ -17,6 +17,8 @@ const PERCUSSION_LABELS: Record<PercussionChoice, string> = {
   auto: "Auto", none: "None", "tamb-backbeat": "Tambourine backbeat", "tamb-eighths": "Tambourine eighths",
   "shaker-eighths": "Shaker eighths", "shaker-sixteenths": "Shaker sixteenths", claps: "Claps", cowbell: "Cowbell",
 };
+
+const HAT_OPEN_LABELS: Record<HatOpen, string> = { 0: "As written", 1: "A little", 2: "Washy" };
 
 const OCTAVE_LABELS: Record<string, string> = { "-1": "−1 octave", "0": "Same", "1": "+1 octave" };
 
@@ -33,6 +35,7 @@ export function BandSectionMore({
   drumPhrases = true,
   hasOriginalDrums = false,
   drumPattern,
+  defaultOctaveJumps = 1,
 }: {
   name: string;
   plan: SectionPlan;
@@ -44,6 +47,7 @@ export function BandSectionMore({
   drumPhrases?: boolean;
   hasOriginalDrums?: boolean;
   drumPattern?: SectionOverride["drumPattern"];
+  defaultOctaveJumps?: OctaveJumps;
 }) {
   const technique = findStyle(plan.style)?.bass.techniques;
   const styleDefault = (on: boolean | undefined) => (on === undefined ? "" : `Style: ${on ? "on" : "off"}`);
@@ -140,6 +144,20 @@ export function BandSectionMore({
             <SelectContent>
               {PERCUSSION_CHOICES.map((choice) => <SelectItem key={choice} value={choice}>{PERCUSSION_LABELS[choice]}</SelectItem>)}
             </SelectContent>
+          </Select>
+        </label>
+        <label className="flex items-center justify-between gap-2 text-sm">
+          Octave jumps
+          <Select value={String(plan.octaveJumps ?? defaultOctaveJumps)} disabled={disabled} onValueChange={(value) => onChange({ octaveJumps: Number(value) as OctaveJumps })}>
+            <SelectTrigger aria-label={`Octave jumps of ${name}`} className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>{OCTAVE_JUMPS.map((level) => <SelectItem key={level} value={String(level)}>{JUMP_LABELS[level]}</SelectItem>)}</SelectContent>
+          </Select>
+        </label>
+        <label className="flex items-center justify-between gap-2 text-sm">
+          Hat openness
+          <Select value={String(plan.hatOpen ?? 0)} disabled={disabled} onValueChange={(value) => onChange({ hatOpen: Number(value) as HatOpen })}>
+            <SelectTrigger aria-label={`Hat openness of ${name}`} className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>{HAT_OPEN_LEVELS.map((level) => <SelectItem key={level} value={String(level)}>{HAT_OPEN_LABELS[level]}</SelectItem>)}</SelectContent>
           </Select>
         </label>
         <DrumPatternPicker

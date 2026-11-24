@@ -4,11 +4,11 @@ import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, BAND_PARTS, DRUM_KITS, HUMANISE_CHOICES, SONG_LIFTS, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice, type SongLift } from "@/song/band/arrangement";
+import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, BAND_PARTS, DRUM_KITS, HUMANISE_CHOICES, SONG_LIFTS, OCTAVE_JUMPS, type OctaveJumps, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice, type SongLift } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
 import { variantExtraBytes } from "@/song/band/live-variants";
-import { BASS_PART_LABELS, SONG_LIFT_LABELS, groupedStyleChoices } from "./band-labels";
+import { BASS_PART_LABELS, JUMP_LABELS, SONG_LIFT_LABELS, groupedStyleChoices } from "./band-labels";
 /**
  * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
  * A lighter track keeps the full length visible at any value.
@@ -227,6 +227,13 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
                 <SelectItem key={sound} value={sound}>{sound === "fingers" ? "Fingers" : sound === "pick" ? "Pick" : "Synth"}</SelectItem>
               ))}
             </SelectContent>
+          </Select>
+        </label>
+        <label className="flex items-center gap-3">
+          Octave jumps
+          <Select value={String(settings.octaveJumps ?? 1)} onValueChange={(value) => onChange({ octaveJumps: Number(value) as OctaveJumps })}>
+            <SelectTrigger aria-label="Bass octave jumps" className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>{OCTAVE_JUMPS.map((level) => <SelectItem key={level} value={String(level)}>{JUMP_LABELS[level]}</SelectItem>)}</SelectContent>
           </Select>
         </label>
         {settings.bassSound === "synth" && <label className="flex items-center gap-3">

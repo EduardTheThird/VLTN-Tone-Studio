@@ -43,7 +43,7 @@ async function run({ id, request, preview }: BandWorkerMessage): Promise<void> {
     const bass = !settings.parts.bass || settings.bassSound === "synth" ? "none" : settings.bassSampleVersion === 2 ? settings.bassSound : "legacy";
     const keys = request.parts.keys ? [...new Set(request.plans
       .filter((plan) => plan.play.keys)
-      .map((plan) => keysInstrument(plan, settings.keys))
+      .flatMap((plan) => [keysInstrument(plan, settings.keys), ...(plan.lock?.notes.keys ?? []).flatMap((note) => note.instrument ? [note.instrument] : [])])
       .filter((instrument): instrument is SampledKeys => instrument !== "organ"))].sort() : [];
     const set = await loadSamples(request.sampleUrls, kitFor(settings), bass, keys);
     const result = preview ? runBandPreview(request, set, preview.fromTime, preview.bars, stage) : runBandJob(request, set, stage);

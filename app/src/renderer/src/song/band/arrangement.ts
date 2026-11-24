@@ -1,6 +1,8 @@
+import type { SectionLock } from "./section-lock";
+import type { NoteEvent } from "./note";
 import { PERCUSSION_CHOICES, type PercussionChoice } from "./percussion";
 import { SYNTH_BASS_IDS, SYNTH_PARTS, SYNTH_PRESET_IDS, type SynthBass, type SynthPart, type SynthPreset } from "./synth-presets";
-import { DEFAULT_KEYS, KEYS_PARTS, parseKeysSettings, type KeysPart, type KeysSettings } from "./keys-types";
+import { DEFAULT_KEYS, KEYS_PARTS, KEYS_SOUNDS, parseKeysSettings, type KeysPart, type KeysSettings } from "./keys-types";
 // The arrangement: which style, energy, fill and parts play in each section of a song, and the song-wide settings the user tunes.
 // Pure data and rules. The settings travel in the song's options, so anything read back from a saved song goes through
 // parseBandSettings, which keeps valid fields and falls back to the defaults for the rest.
@@ -167,6 +169,10 @@ export const CYMBAL_CHOICES = ["auto", "hats", "ride", "open"] as const;
 export const KICK_CHOICES = ["auto", "four", "half"] as const;
 export const SNARE_CHOICES = ["auto", "stick", "rim"] as const;
 export const BASS_ARTICULATIONS = ["auto", "legato", "staccato"] as const;
+export const OCTAVE_JUMPS = [0, 1, 2, 3] as const;
+export const HAT_OPEN_LEVELS = [0, 1, 2] as const;
+export type OctaveJumps = (typeof OCTAVE_JUMPS)[number];
+export type HatOpen = (typeof HAT_OPEN_LEVELS)[number];
 export const SONG_LIFTS = [0, 1, 2] as const;
 export type SongLift = (typeof SONG_LIFTS)[number];
 
@@ -224,6 +230,10 @@ export interface SectionPlan {
   synthPart?: SynthPart;
   keysOctave?: OctaveShift;
   percussion?: PercussionChoice;
+  locked?: true;
+  lock?: SectionLock;
+  octaveJumps?: OctaveJumps;
+  hatOpen?: HatOpen;
   cymbal?: (typeof CYMBAL_CHOICES)[number];
   kick?: (typeof KICK_CHOICES)[number];
   snare?: (typeof SNARE_CHOICES)[number];
@@ -283,6 +293,7 @@ export interface BandSettings {
   /** 0 sparse to 1 busy. */
   complexity: number;
   lift: SongLift;
+  octaveJumps?: OctaveJumps;
   keys?: KeysSettings;
   synthPreset?: SynthPreset;
   synthBass?: SynthBass;
@@ -369,6 +380,7 @@ export const CURRENT_ENGINE = 4;
 export const DEFAULT_BAND_SETTINGS: BandSettings = {
   parts: { drums: true, bass: true },
   lift: 1,
+  octaveJumps: 1,
   keys: DEFAULT_KEYS,
   synthPreset: "warm",
   synthBass: "sub",
@@ -465,6 +477,9 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
     ...(override.synthPart ? { synthPart: override.synthPart } : {}),
     ...(override.keysOctave !== undefined ? { keysOctave: override.keysOctave } : {}),
     ...(override.cymbal ? { cymbal: override.cymbal } : {}),
+    ...(override.locked && override.lock ? { locked: true as const, lock: override.lock } : {}),
+    ...(override.octaveJumps !== undefined ? { octaveJumps: override.octaveJumps } : {}),
+    ...(override.hatOpen !== undefined ? { hatOpen: override.hatOpen } : {}),
     ...(override.percussion ? { percussion: override.percussion } : {}),
     ...(override.kick ? { kick: override.kick } : {}),
     ...(override.snare ? { snare: override.snare } : {}),
@@ -521,9 +536,15 @@ function withHint(override: SectionOverride, hint: SectionBandHint | undefined, 
   return { ...fromHint, ...override };
 }
 
+function lockedOverride(override: SectionOverride): SectionOverride {
+  return override.locked && override.lock ? { ...override, ...override.lock.plan, seed: override.lock.seed } : override;
+}
+
 /** Section names with a trailing number removed share a kind. */
 export function sectionKind(name: string): string {
-  return name.replace(/\s*\d+$/, "").trim().toLowerCase();
+  const label = name.replace(/\s*\d+$/, "").trim().toLowerCase();
+  if (/pre[\s-]*chorus/.test(label)) return "pre-chorus";
+  return (["chorus", "verse", "bridge", "solo", "intro", "outro"].find((kind) => new RegExp(`\\b${kind}\\b`).test(label))) ?? label;
 }
 
 /**
@@ -534,7 +555,7 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
   const chorusGroove = chorusIsGroove(sections, settings);
   if (sections.length === 0) {
     // A song without sections is one plan, and its overrides are kept under WHOLE_SONG_ID like a section's are under its id.
-    const override = withHint(settings.sections[WHOLE_SONG_ID] ?? {}, hintAt(hints, 0, songEnd), settings, "");
+    const override = lockedOverride(withHint(settings.sections[WHOLE_SONG_ID] ?? {}, hintAt(hints, 0, songEnd), settings, ""));
     return [
       {
         sectionId: null,
@@ -554,7 +575,7 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
     const next = ordered[i + 1];
     const previous = ordered[i - 1];
     const end = next ? next.start : Math.max(songEnd, section.end);
-    const override = withHint(settings.sections[section.id] ?? {}, hintAt(hints, i === 0 ? 0 : section.start, end), settings, section.name);
+    const override = lockedOverride(withHint(settings.sections[section.id] ?? {}, hintAt(hints, i === 0 ? 0 : section.start, end), settings, section.name));
     // A chorus after a section that is not a chorus hits the one by default.
     const followsOther = previous !== undefined && !isChorusName(previous.name);
     const fields = playFields(section.name, override, settings, chorusGroove);
@@ -563,7 +584,7 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
     seen.add(kind);
     const finalLift = settings.lift === 2 && i === lastChorus;
     const manual = settings.sections[section.id];
-    const adjustable = manual?.energy === undefined && manual?.loud === undefined && manual?.busy === undefined;
+    const adjustable = !override.locked && manual?.energy === undefined && manual?.loud === undefined && manual?.busy === undefined;
     const loud = settings.lift && adjustable && (repeated || finalLift)
       ? Math.min(5, fields.loud + 1) as Energy : fields.loud;
     const busy = finalLift && adjustable ? Math.min(5, fields.busy + 1) as Energy : fields.busy;
@@ -844,7 +865,7 @@ function parseHumanise(value: unknown): HumaniseSettings {
 }
 
 /** Keeps each valid field of a section override and drops the rest. */
-function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
+function parseSectionOverride(value: Record<string, unknown>, allowLock = true): SectionOverride {
   const override: SectionOverride = {};
   if (isStyleId(value.style)) override.style = value.style;
   if (isEnergy(value.energy)) override.energy = value.energy;
@@ -864,6 +885,17 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   const synth = SYNTH_PARTS.find((choice) => choice === value.synthPart);
   if (synth) override.synthPart = synth;
   if (isOctave(value.keysOctave)) override.keysOctave = value.keysOctave;
+  const octaveJumps = OCTAVE_JUMPS.find((level) => level === value.octaveJumps);
+  const hatOpen = HAT_OPEN_LEVELS.find((level) => level === value.hatOpen);
+  if (octaveJumps !== undefined) override.octaveJumps = octaveJumps;
+  if (hatOpen !== undefined) override.hatOpen = hatOpen;
+  if (allowLock && value.locked === true) {
+    const lock = parseSectionLock(value.lock);
+    if (lock) {
+      override.locked = true;
+      override.lock = lock;
+    }
+  }
   const percussion = PERCUSSION_CHOICES.find((choice) => choice === value.percussion);
   if (percussion) override.percussion = percussion;
   const cymbal = CYMBAL_CHOICES.find((choice) => choice === value.cymbal);
@@ -878,6 +910,36 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   if (isPartToggles(value.play)) override.play = parsedParts(value.play);
   if (isSeed(value.seed)) override.seed = value.seed;
   return override;
+}
+
+function parseSectionLock(value: unknown): SectionLock | undefined {
+  if (!isRecord(value) || !isTime(value.start) || !isEngine(value.engine) || !isSeed(value.seed) ||
+    !isRecord(value.plan) || !isRecord(value.notes)) return undefined;
+  const notes: SectionLock["notes"] = {};
+  for (const part of BAND_PARTS) {
+    const rows = value.notes[part];
+    if (rows === undefined) continue;
+    if (!Array.isArray(rows) || rows.length > 20000) return undefined;
+    const decoded: NoteEvent[] = [];
+    for (const row of rows) {
+      if (!isRecord(row) || !isTime(row.time) || !isTime(row.duration) || !isInRange(row.pitch, 0, 127) ||
+        !Number.isInteger(row.pitch) || !isInRange(row.velocity, 1, 127)) return undefined;
+      const note: NoteEvent = { time: row.time, duration: row.duration, pitch: row.pitch, velocity: row.velocity };
+      if (row.dead === true) note.dead = true;
+      if (row.staccato === true) note.staccato = true;
+      if (row.rim === true) note.rim = true;
+      if (row.stroke === "shake" || row.stroke === "back") note.stroke = row.stroke;
+      if (isInRange(row.slideFrom, 0, 12)) note.slideFrom = row.slideFrom;
+      if (row.articulation === "legato" || row.articulation === "staccato") note.articulation = row.articulation;
+      const instrument = KEYS_SOUNDS.find((sound) => sound === row.instrument);
+      if (instrument && instrument !== "auto") note.instrument = instrument;
+      const mode = SYNTH_PARTS.find((choice) => choice === row.synthMode);
+      if (mode && mode !== "auto" && mode !== "rest") note.synthMode = mode;
+      decoded.push(note);
+    }
+    notes[part] = decoded;
+  }
+  return { start: value.start, engine: value.engine, seed: value.seed, plan: parseSectionOverride(value.plan, false), notes };
 }
 
 /**
@@ -902,6 +964,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     parts: isPartToggles(source.parts) ? parsedParts(source.parts) : { ...defaults.parts },
     style: isStyleId(source.style) ? source.style : defaults.style,
     complexity: isUnit(source.complexity) ? source.complexity : defaults.complexity,
+    octaveJumps: OCTAVE_JUMPS.find((level) => level === source.octaveJumps) ?? defaults.octaveJumps,
     lift: SONG_LIFTS.find((lift) => lift === source.lift) ?? (isRecord(value) ? 0 : defaults.lift),
     keys: parseKeysSettings(source.keys),
     synthPreset: SYNTH_PRESET_IDS.find((id) => id === source.synthPreset) ?? defaults.synthPreset,

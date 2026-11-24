@@ -1,3 +1,7 @@
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { applyBandPreset, BAND_PRESETS, type BandPresetId } from "@/song/band/presets";
+import { copySectionChoices, lockSection } from "@/song/band/section-lock";
+import type { SectionLevels } from "./BandSectionPad";
 import { detectMissingParts } from "@/song/band/detect";
 import { pcmMemoryShape } from "@/song/audio/playback-pcm";
 import { regenerateSong, regeneratedSettings } from "@/song/band/regenerate";
@@ -63,7 +67,7 @@ import { parseChart, type Cue } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
 import type { Section } from "@/song/performance/sections";
 import { readStoredBand, writeStoredBand } from "@/song/band/stored";
-import { updatedBandNotes, type BandNotes } from "@/song/band/stored-notes";
+import { fromStoredNotes, updatedBandNotes, type BandNotes } from "@/song/band/stored-notes";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 import { registerBandRefresh, useBandRefreshStatus } from "@/song/band/refresh";
 import { readOptions } from "@/song/performance/settings";
@@ -213,6 +217,8 @@ function BandBody({
   const tab = useBandPanel((s) => s.tab);
   const setTab = useBandPanel((s) => s.setTab);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [undoBandEdit, setUndoBandEdit] = useState<{ label: string; run(): void } | null>(null);
+  const [confirmUnlock, setConfirmUnlock] = useState<{ name: string; run(): void } | null>(null);
   // The notes of the last Generate, kept so they can be exported as a MIDI file.
   // The notes saved with the song at the last Generate, for the part view. Songs generated before they were kept have none.
   const [savedNotes, setSavedNotes] = useState<BandNotes | null>(stored.notes);
@@ -320,6 +326,7 @@ function BandBody({
   const followSources: FollowSource[] = ["auto", ...(followSourcesIn(stems) as FollowSource[])];
 
   const save = (next: BandSettings) => {
+    setUndoBandEdit(null);
     settingsRef.current = next;
     setSettings(next);
     setOutOfDate(true);
@@ -345,28 +352,81 @@ function BandBody({
       bassMode: settings.bassMode === "walking" && !next?.bass.walking ? "roots" : settings.bassMode,
     });
   };
-  /** Writes a row's override. A song without sections keeps its one row's overrides under WHOLE_SONG_ID. */
-  const changeRow = (sectionId: string | null, patch: SectionOverride) => {
+  /** Section edits unlock only after the performer confirms. */
+  const editSection = (sectionId: string | null, patch: SectionOverride | null, done?: (next: BandSettings) => void) => {
     const key = sectionId ?? WHOLE_SONG_ID;
-    const current = settings.sections[key] ?? {};
-    save({ ...settings, sections: { ...settings.sections, [key]: { ...current, ...patch } } });
+    const apply = () => {
+      const current = settingsRef.current;
+      const sections = { ...current.sections };
+      if (patch === null) delete sections[key];
+      else {
+        const { locked: _, lock: _lock, ...own } = sections[key] ?? {};
+        sections[key] = { ...own, ...patch };
+      }
+      const next = { ...current, sections };
+      save(next);
+      done?.(next);
+    };
+    if (settingsRef.current.sections[key]?.locked) {
+      setConfirmUnlock({ name: rows.find((row) => row.plan.sectionId === sectionId)?.name ?? "Whole song", run: apply });
+    } else apply();
+  };
+  const changeRow = (sectionId: string | null, patch: SectionOverride) => editSection(sectionId, patch);
+  const resetRow = (sectionId: string | null) => editSection(sectionId, null);
+
+  const copyToSameKind = (sectionId: string | null) => {
+    const key = sectionId ?? WHOLE_SONG_ID;
+    const source = rows.find((row) => row.plan.sectionId === sectionId);
+    if (!settingsRef.current.sections[key] || !source) return;
+    const targets = rows.filter((row) => row.plan.sectionId !== null && row.plan.sectionId !== sectionId &&
+      sectionKind(row.name) === sectionKind(source.name));
+    if (!targets.length) return;
+    const apply = () => {
+      const current = settingsRef.current;
+      const from = current.sections[key];
+      if (!from) return;
+      const sections = { ...current.sections };
+      for (const row of targets) {
+        const id = row.plan.sectionId!;
+        const { locked: _, lock: _lock, ...target } = sections[id] ?? {};
+        sections[id] = copySectionChoices(from, target);
+      }
+      save({ ...current, sections });
+      setUndoBandEdit({ label: "Undo section copy", run: () => save({ ...settingsRef.current, sections: current.sections }) });
+    };
+    const frozen = targets.filter((row) => row.override.locked);
+    if (frozen.length) setConfirmUnlock({ name: frozen.map((row) => row.name).join(", "), run: apply });
+    else apply();
   };
 
-  /** Gives every section of the same kind (Verse 1, Verse 2 …) the overrides this one has. Other sections keep theirs. */
-  const copyToSameKind = (sectionId: string | null) => {
-    const from = settings.sections[sectionId ?? WHOLE_SONG_ID];
-    const source = rows.find((row) => row.plan.sectionId === sectionId);
-    if (!from || !source) return;
-    const next = { ...settings.sections };
-    for (const row of rows) {
-      if (row.plan.sectionId !== null && sectionKind(row.name) === sectionKind(source.name)) next[row.plan.sectionId] = { ...from };
-    }
-    save({ ...settings, sections: next });
+  const setPreset = (id: BandPresetId) => {
+    const current = settingsRef.current;
+    const next = applyBandPreset(current, id);
+    const restore = Object.fromEntries(Object.keys(BAND_PRESETS[id].settings).map((key) => [key, current[key as keyof BandSettings]]));
+    save(next);
+    setUndoBandEdit({ label: "Undo preset", run: () => save({ ...settingsRef.current, ...restore }) });
   };
-  /** Takes a section's overrides away, so its plan is automatic again. */
-  const resetRow = (sectionId: string | null) => {
-    const { [sectionId ?? WHOLE_SONG_ID]: _removed, ...rest } = settings.sections;
-    save({ ...settings, sections: rest });
+
+  const toggleSectionLock = (sectionId: string | null) => {
+    const current = settingsRef.current;
+    const key = sectionId ?? WHOLE_SONG_ID;
+    if (current.sections[key]?.locked) {
+      const { locked: _, lock: _lock, ...own } = current.sections[key];
+      save({ ...current, sections: { ...current.sections, [key]: own } });
+      return;
+    }
+    const plan = rows.find((row) => row.plan.sectionId === sectionId)?.plan;
+    if (!plan || !savedNotes || outOfDate) return;
+    const notes = {
+      drums: lastNotes?.drums.length ? lastNotes.drums : fromStoredNotes(savedNotes.drums),
+      bass: lastNotes?.bass.length ? lastNotes.bass : fromStoredNotes(savedNotes.bass),
+      keys: lastNotes?.keys?.length ? lastNotes.keys : fromStoredNotes(savedNotes.keys ?? []),
+      synth: lastNotes?.synth?.length ? lastNotes.synth : fromStoredNotes(savedNotes.synth ?? []),
+    };
+    const lock = lockSection(plan, notes, { ...current, engine: savedNotes.engine, seed: savedNotes.seed });
+    const next = { ...current, sections: { ...current.sections, [key]: { ...current.sections[key], locked: true as const, lock } } };
+    appliedInputs.current = generationInputs(next);
+    commitBand(next);
   };
 
   const applyGrid = (next: BeatGrid | null) => {
@@ -879,6 +939,25 @@ function BandBody({
     failedInputs.current = musicalInputs;
     job.current?.cancel();
   };
+  const padRow = shownRow;
+  const padKey = padRow?.plan.sectionId ?? WHOLE_SONG_ID;
+  const automaticLevels = useMemo(() => {
+    if (!padRow) return null;
+    const { busy: _, loud: _loud, locked: _locked, lock: _lock, ...original } = settings.sections[padKey] ?? {};
+    return planSections(sections, songEnd, { ...settings, sections: { ...settings.sections, [padKey]: original } }, sectionHints)
+      .find((plan) => plan.sectionId === padRow.plan.sectionId) ?? null;
+  }, [padKey, padRow, sections, songEnd, settings, sectionHints]);
+  const applyPad = (levels: SectionLevels | null, listen: boolean) => {
+    if (!padRow) return;
+    editSection(padRow.plan.sectionId, levels ?? { busy: undefined, loud: undefined }, (next) => {
+      if (!listen || !grid) return;
+      const index = rows.indexOf(padRow);
+      const forPreview = rows.map(({ plan, name }) => ({ id: plan.sectionId ?? WHOLE_SONG_ID, name, start: plan.start, end: plan.end, mode: "continue" as const }));
+      const bars = sectionPreviewBars(grid, forPreview, index, "whole", songEnd);
+      void previewWith(padRow.plan.start, bars, next, `Previewing ${padRow.name}…`);
+    });
+  };
+
   const chordEvidence = (id: string) => id === "" ? harmony.some((entry) => entry.chord) : rows.some(({ plan }) =>
     plan.sectionId === id && harmony.some((entry) => entry.chord && entry.time >= plan.start && entry.time < plan.end));
   const missingKeys = missing?.keys === "absent" ? chordEvidence("") :
@@ -908,7 +987,18 @@ function BandBody({
       }}
     >
       <DialogHeader>
-        <DialogTitle>Band</DialogTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <DialogTitle>Band</DialogTitle>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline" disabled={blocked}>Preset</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {(Object.entries(BAND_PRESETS) as [BandPresetId, (typeof BAND_PRESETS)[BandPresetId]][]).map(([id, preset]) => (
+                <DropdownMenuItem key={id} onSelect={() => setPreset(id)}>{preset.name}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {undoBandEdit && <Button type="button" size="sm" variant="ghost" disabled={blocked} onClick={undoBandEdit.run}>{undoBandEdit.label}</Button>}
+        </div>
         <DialogDescription>
           Generated parts update automatically after musical changes while playback is stopped. Generate also makes new parts on demand.
         </DialogDescription>
@@ -950,6 +1040,9 @@ function BandBody({
               onChange={changeRow}
               onCopyToSameKind={copyToSameKind}
               onReset={resetRow}
+              onLock={toggleSectionLock}
+              canLock={!!savedNotes && !outOfDate}
+              defaultOctaveJumps={settings.octaveJumps}
               beatsPerBar={grid?.beatsPerBar}
               drumPhrases={settings.engine >= 3}
               hasOriginalDrums={hasOriginalDrums}
@@ -997,7 +1090,7 @@ function BandBody({
                 notes: savedNotes,
                 grid,
                 harmony,
-                sections: rows.map(({ plan, name }) => ({ name, start: plan.start, end: plan.end, lifted: plan.lifted })),
+                sections: rows.map(({ plan, name }) => ({ name, start: plan.start, end: plan.end, lifted: plan.lifted, locked: plan.locked })),
                 selected: Math.min(selected ?? 0, Math.max(0, rows.length - 1)),
                 onSelect: (index) => {
                   setSelected(index);
@@ -1014,6 +1107,12 @@ function BandBody({
                 marks: settings.marks,
                 onMarks: (marks) => change({ marks }),
                 disabled: blocked,
+                sectionPad: padRow && automaticLevels ? {
+                  value: padRow.plan, automatic: automaticLevels,
+                  overridden: padRow.override.busy !== undefined || padRow.override.loud !== undefined,
+                  onChange: applyPad,
+                } : undefined,
+                sectionLock: padRow ? { locked: !!padRow.plan.locked, canLock: !!savedNotes && !outOfDate, toggle: () => toggleSectionLock(padRow.plan.sectionId) } : undefined,
                 sectionSeed: shownRow && {
                   kept: shownRow.override.seed !== undefined,
                   onTryAnother: () => changeRow(shownRow.plan.sectionId, { seed: newSeed() }),
@@ -1137,6 +1236,18 @@ function BandBody({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={confirmUnlock !== null} onOpenChange={(open) => !open && setConfirmUnlock(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlock {confirmUnlock?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>Future generation will use the current band settings for this section.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep locked</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { confirmUnlock?.run(); setConfirmUnlock(null); }}>Unlock section</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
         <AlertDialogContent>
           <AlertDialogHeader>

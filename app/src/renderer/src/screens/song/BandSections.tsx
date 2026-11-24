@@ -1,3 +1,5 @@
+import { Lock } from "lucide-react";
+import { sectionKind, type OctaveJumps } from "@/song/band/arrangement";
 import { Ellipsis } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -43,6 +45,9 @@ export function BandSections({
   onChange,
   onCopyToSameKind,
   onReset,
+  onLock,
+  canLock,
+  defaultOctaveJumps,
   beatsPerBar,
   drumPhrases = true,
   hasOriginalDrums = false,
@@ -57,6 +62,9 @@ export function BandSections({
   onCopyToSameKind(sectionId: string | null): void;
   /** Removes this section's overrides, so the plan is automatic again. */
   onReset(sectionId: string | null): void;
+  onLock?(sectionId: string | null): void;
+  canLock?: boolean;
+  defaultOctaveJumps?: OctaveJumps;
   /** The song's beats per bar, to list the styles written for it first. */
   beatsPerBar?: number;
   /** False for a song on the earlier drums, whose fill is on or off: the column is a checkbox then, not a menu of sizes. */
@@ -120,6 +128,7 @@ export function BandSections({
                       >
                         {name}
                       </button>
+                      {plan.locked && <Lock className="size-3 text-silkscreen-3" aria-label="Locked section" />}
                       {bars !== null && <span className="whitespace-nowrap text-xs text-silkscreen-3">{bars === 1 ? "1 bar" : `${bars} bars`}</span>}
                     </div>
                   </td>
@@ -211,6 +220,7 @@ export function BandSections({
                         plan={plan}
                         disabled={disabled}
                         beatsPerBar={beatsPerBar}
+                        defaultOctaveJumps={defaultOctaveJumps}
                         drumPhrases={drumPhrases}
                         hasOriginalDrums={hasOriginalDrums}
                         drumPattern={override.drumPattern}
@@ -224,8 +234,11 @@ export function BandSections({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem disabled={Object.keys(override).length === 0} onSelect={() => onCopyToSameKind(plan.sectionId)}>
-                            Copy settings to all sections named {name.replace(/\s*\d+$/, "").trim() || name}
+                            Copy to all {sectionKind(name) === "chorus" || sectionKind(name) === "pre-chorus" ? `${sectionKind(name)}es` : `${sectionKind(name) || "section"}s`}
                           </DropdownMenuItem>
+                          {onLock && <DropdownMenuItem disabled={!canLock && !plan.locked} onSelect={() => onLock(plan.sectionId)}>
+                            {plan.locked ? "Unlock section" : "Lock section"}
+                          </DropdownMenuItem>}
                           <DropdownMenuItem disabled={Object.keys(override).length === 0} onSelect={() => onReset(plan.sectionId)}>
                             Reset to automatic
                           </DropdownMenuItem>

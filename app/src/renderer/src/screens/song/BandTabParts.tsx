@@ -1,3 +1,4 @@
+import type { OctaveJumps } from "@/song/band/arrangement";
 import { BandSections, type BandSectionRow } from "./BandSections";
 import type { SectionOverride } from "@/song/band/arrangement";
 
@@ -10,6 +11,9 @@ export function BandTabParts({
   onChange,
   onCopyToSameKind,
   onReset,
+  onLock,
+  canLock,
+  defaultOctaveJumps,
   beatsPerBar,
   drumPhrases,
   hasOriginalDrums,
@@ -21,6 +25,9 @@ export function BandTabParts({
   onChange(sectionId: string | null, patch: SectionOverride): void;
   onCopyToSameKind(sectionId: string | null): void;
   onReset(sectionId: string | null): void;
+  onLock?(sectionId: string | null): void;
+  canLock?: boolean;
+  defaultOctaveJumps?: OctaveJumps;
   beatsPerBar?: number;
   drumPhrases?: boolean;
   hasOriginalDrums?: boolean;
@@ -35,6 +42,9 @@ export function BandTabParts({
         onChange={onChange}
         onCopyToSameKind={onCopyToSameKind}
         onReset={onReset}
+        onLock={onLock}
+        canLock={canLock}
+        defaultOctaveJumps={defaultOctaveJumps}
         beatsPerBar={beatsPerBar}
         drumPhrases={drumPhrases}
         hasOriginalDrums={hasOriginalDrums}

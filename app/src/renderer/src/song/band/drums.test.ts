@@ -1214,3 +1214,13 @@ it("adds percussion from new-song style defaults and alternates shaker strokes",
   expect(funk.slice(0, 4).map((note) => note.stroke)).toEqual([undefined, "back", undefined, "back"]);
   expect(funk[1].velocity).toBeLessThan(funk[0].velocity);
 });
+
+
+it("keeps written hats at zero and opens every closed hat in Washy", () => {
+  const grid = steady(16);
+  const run = (hatOpen?: SectionPlan["hatOpen"]) => generateDrums(grid, [plan(0, 16, { hatOpen })],
+    settingsFor({ engine: 4, ending: { kind: "none" } }), 9);
+  expect(run(0)).toEqual(run());
+  expect(run(2).some((note) => note.pitch === CLOSED_HAT)).toBe(false);
+  expect(run(2).some((note) => note.pitch === OPEN_HAT)).toBe(true);
+});

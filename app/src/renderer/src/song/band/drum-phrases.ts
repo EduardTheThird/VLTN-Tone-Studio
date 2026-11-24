@@ -93,6 +93,19 @@ export function sectionGroove(hits: DrumHit[], plan: SectionPlan, steps: number,
   return mapped;
 }
 
+/** Opens the last offbeat or makes every hat in the groove ring. */
+export function openHats(hits: DrumHit[], level: SectionPlan["hatOpen"], steps: number, division: number): DrumHit[] {
+  if (!level) return hits;
+  const pickup = steps - division + Math.ceil(division / 2);
+  const isHat = (hit: DrumHit) => hit.pitch === CLOSED_HAT || hit.pitch === OPEN_HAT;
+  const changed = hits.map((hit) => isHat(hit) && (level === 2 || hit.step === pickup)
+    ? { ...hit, pitch: OPEN_HAT, velocity: level === 2 ? Math.max(1, hit.velocity - 8) : hit.velocity } : hit);
+  if (level === 1 && hits.some(isHat) && !changed.some((hit) => hit.step === pickup && hit.pitch === OPEN_HAT)) {
+    changed.push({ step: pickup, pitch: OPEN_HAT, velocity: 70 });
+  }
+  return changed;
+}
+
 /**
  * A groove's hits with a patch laid over its steps from `from` on: groove hits there on a voice the patch plays are dropped, and so is a
  * hat or ride hit on a step where the patch plays a hat or a ride. The patch's hits are added. A turnaround is such a patch.

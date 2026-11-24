@@ -993,21 +993,52 @@ describe("Band panel", () => {
     expect(savedOptions().band.sections.verse.energy).toBe(4);
   });
 
-  it("Copy to all sections of a name writes the same override to Verse 1 to 3, and not to the Pre-chorus", () => {
+  it("copies a verse and keeps destination seeds, and undo restores the previous overrides", () => {
     const named: Section[] = [
       { id: "v1", name: "Verse 1", start: 0, end: 2, mode: "continue" },
       { id: "pre", name: "Pre-chorus", start: 2, end: 4, mode: "continue" },
       { id: "v2", name: "Verse 2", start: 4, end: 6, mode: "continue" },
       { id: "v3", name: "Verse 3", start: 6, end: 8, mode: "continue" },
     ];
+    stored({ band: { sections: { v1: { seed: 9 }, v2: { seed: 13, busy: 4 }, v3: { seed: 19 } } } });
     renderPanel({ sections: named });
     pick(screen.getByRole("combobox", { name: "Energy of Verse 1" }), "5");
     fireEvent.keyDown(screen.getByRole("button", { name: "Menu for Verse 1" }), { key: "Enter" });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy settings to all sections named Verse" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy to all verses" }));
     const saved = savedOptions().band.sections;
     expect(saved.v2.energy).toBe(5);
     expect(saved.v3.energy).toBe(5);
     expect(saved.pre).toBeUndefined();
+    expect(saved.v2.seed).toBe(13);
+    expect(saved.v3.seed).toBe(19);
+    fireEvent.click(screen.getByRole("button", { name: "Undo section copy" }));
+    expect(savedOptions().band.sections.v2).toEqual({ seed: 13, busy: 4 });
+    expect(savedOptions().band.sections.v3).toEqual({ seed: 19 });
+  });
+
+  it("locks rendered section notes and asks before changing their settings", async () => {
+    stored({ beatGrid: grid, bandNotes: { engine: 4, seed: 1, drums: [[0, 36, 90, 100, 0]], bass: [] } });
+    renderPanel({ sections: SECTIONS });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Menu for Verse" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Lock section" }));
+    expect(savedOptions().band.sections.verse.locked).toBe(true);
+    expect(savedOptions().band.sections.verse.lock.notes.drums).toMatchObject([{ pitch: 36 }]);
+    pick(screen.getByRole("combobox", { name: "Energy of Verse" }), "5");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Unlock Verse?")).toBeTruthy();
+    expect(savedOptions().band.sections.verse.locked).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlock section" }));
+    expect(savedOptions().band.sections.verse).toEqual({ energy: 5 });
+  });
+
+  it("applies a preset without changing section edits and offers one-step undo", async () => {
+    stored({ band: { style: "rock", sections: { verse: { busy: 4, seed: 12 } } } });
+    renderPanel({ sections: SECTIONS });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Preset" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Soft ballad trio" }));
+    expect(savedOptions().band).toMatchObject({ style: "ballad", parts: { keys: true }, sections: { verse: { busy: 4, seed: 12 } } });
+    fireEvent.click(screen.getByRole("button", { name: "Undo preset" }));
+    expect(savedOptions().band).toMatchObject({ style: "rock", sections: { verse: { busy: 4, seed: 12 } } });
   });
 
   it("detects chords from the audio when the chart and the analysis have none, and generates with them", async () => {

@@ -1,3 +1,4 @@
+import { BandSectionPad, type SectionLevels } from "./BandSectionPad";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Dices, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ export interface PartSection {
   start: number;
   end: number;
   lifted?: true;
+  locked?: true;
 }
 
 export interface BandPartViewProps {
@@ -42,6 +44,13 @@ export interface BandPartViewProps {
   /** True while the band works or the song plays: marks cannot be changed then. */
   disabled?: boolean;
   /** The shown section's own seed (spec 135): another draw for this section alone, and keeping it when the song's seed changes. Not shown when not given. */
+  sectionPad?: {
+    value: SectionLevels;
+    automatic: SectionLevels;
+    overridden: boolean;
+    onChange(levels: SectionLevels | null, preview: boolean): void;
+  };
+  sectionLock?: { locked: boolean; canLock: boolean; toggle(): void };
   sectionSeed?: {
     kept: boolean;
     onTryAnother(): void;
@@ -87,6 +96,8 @@ export function BandPartView({
   onMarks,
   disabled = false,
   sectionSeed,
+  sectionPad,
+  sectionLock,
 }: BandPartViewProps) {
   const section = sections[selected] ?? sections[0];
   const learning = notes?.learnedDrums?.find((entry) => entry.start === section?.start);
@@ -183,6 +194,15 @@ export function BandPartView({
         >
           <ChevronRight />
         </Button>
+        {sectionPad && <BandSectionPad {...sectionPad} disabled={disabled} />}
+        {sectionLock && (
+          <Button type="button" size="sm" variant={sectionLock.locked ? "secondary" : "outline"} aria-pressed={sectionLock.locked}
+            disabled={disabled || (!sectionLock.canLock && !sectionLock.locked)}
+            title={!sectionLock.canLock && !sectionLock.locked ? "Generate the band before locking a section." : undefined} onClick={sectionLock.toggle}>
+            {sectionLock.locked ? <Lock /> : <LockOpen />}
+            {sectionLock.locked ? "Locked section" : "Lock section"}
+          </Button>
+        )}
         {sectionSeed && (
           <>
             <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={sectionSeed.onTryAnother}>
@@ -197,7 +217,7 @@ export function BandPartView({
               title="Keeps this section as it is when you try another for the whole song. Its notes are drawn once more when you turn this on."
               onClick={() => sectionSeed.onKeep(!sectionSeed.kept)}
             >
-              {sectionSeed.kept ? <Lock /> : <LockOpen />} Keep this section
+              {sectionSeed.kept ? <Lock /> : <LockOpen />} Keep variation
             </Button>
           </>
         )}

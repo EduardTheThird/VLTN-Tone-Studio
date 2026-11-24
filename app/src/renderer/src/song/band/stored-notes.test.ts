@@ -39,7 +39,7 @@ describe("stored band notes", () => {
     expect(parseBandNotes({ ...good, seed: "x" })).toBeNull();
     expect(parseBandNotes({ ...good, drums: [[1, 2, 3]] })).toBeNull();
     expect(parseBandNotes({ ...good, drums: [[0, 200, 100, 100, 0]] })).toBeNull();
-    expect(parseBandNotes({ ...good, bass: [[0, 36, 100, 100, 64]] })).toBeNull();
+    expect(parseBandNotes({ ...good, bass: [[0, 36, 100, 100, 256]] })).toBeNull();
     expect(parseBandNotes({ ...good, bass: "none" })).toBeNull();
     expect(parseBandNotes({ ...good, drums: Array.from({ length: 20001 }, () => [0, 36, 100, 100, 0]) })).toBeNull();
   });

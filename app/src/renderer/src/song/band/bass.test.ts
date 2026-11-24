@@ -881,3 +881,15 @@ it("plays explicit short and legato bass while keeping rests and removing legato
   const beforeRest = legato.findLast((note) => note.time < 4)!;
   expect(beforeRest.time + beforeRest.duration).toBeLessThanOrEqual(4);
 });
+
+
+it("preserves the written octave jumps at one and removes octave figures at zero", () => {
+  const grid = gridOf(16);
+  const harmony = harmonyFor(barsOf("C", "C", "C", "C"));
+  const plans = [planFor(16, { bassPart: "groove" })];
+  const base = settingsFor({ bassMode: "octaves", ending: { kind: "none" } });
+  const notes = (octaveJumps?: BandSettings["octaveJumps"]) => generateBass(grid, harmony, plans, { ...base, octaveJumps }, [], 13);
+  expect(notes(1)).toEqual(notes());
+  expect(new Set(notes(1).map((note) => note.pitch)).size).toBeGreaterThan(1);
+  expect(new Set(notes(0).map((note) => note.pitch)).size).toBe(1);
+});

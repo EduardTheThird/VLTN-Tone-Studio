@@ -1,5 +1,6 @@
+import { lockSection } from "./section-lock";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BAND_SETTINGS, TONE_BLOCK_TYPE, planSections, type BandSettings } from "./arrangement";
+import { DEFAULT_BAND_SETTINGS, TONE_BLOCK_TYPE, parseBandSettings, planSections, type BandSettings } from "./arrangement";
 import { fixedBeatGrid, type BeatGrid } from "./beat-grid";
 import type { Section } from "../performance/sections";
 import { generateDrums } from "./drums";
@@ -485,4 +486,28 @@ it("adding synth leaves the keys, bass and drum tracks bit-identical", () => {
   expect(withSynth.notes.synth?.length).toBeGreaterThan(0);
   expect(withSynth.synth?.channels[0].some((sample) => sample !== 0)).toBe(true);
   for (const part of ["drums", "bass", "keys"] as const) expect(sameSamples(regular[part]?.channels[0], withSynth[part]?.channels[0])).toBe(true);
+});
+
+it("retains the locked section's exact notes and original engine across a saved upgrade", () => {
+  const sections: Section[] = [
+    { id: "v", name: "Verse", start: 0, end: 6, mode: "continue" },
+    { id: "b", name: "Bridge", start: 6, end: 12, mode: "continue" },
+    { id: "c", name: "Chorus", start: 12, end: 16, mode: "continue" },
+  ];
+  const settings: BandSettings = { ...DEFAULT_BAND_SETTINGS, engine: 2, lift: 0, ending: { kind: "none" }, seed: 5 };
+  const plans = planSections(sections, SONG_SECONDS, settings);
+  const before = runBandJob(request({ settings, plans, seed: settings.seed }), stubSamples()).notes;
+  const lock = lockSection(plans[1], before, settings);
+  const upgraded = parseBandSettings(JSON.parse(JSON.stringify({
+    ...settings, engine: 4, style: "metal", complexity: 0.15, seed: 77, sections: { b: { locked: true, lock } },
+  })));
+  const nextPlans = planSections(sections, SONG_SECONDS, upgraded);
+  expect(nextPlans[1].lock?.engine).toBe(2);
+  expect(nextPlans[1].style).toBe("rock");
+  expect(nextPlans[1].lock?.seed).toBe(5);
+  const after = runBandJob(request({ settings: upgraded, plans: nextPlans, seed: 77 }), stubSamples()).notes;
+  for (const part of ["drums", "bass"] as const) {
+    expect(after[part].filter(({ time }) => time >= 6 && time < 12)).toEqual(before[part].filter(({ time }) => time >= 6 && time < 12));
+  }
+  expect(after.drums.filter(({ time }) => time < 6)).not.toEqual(before.drums.filter(({ time }) => time < 6));
 });

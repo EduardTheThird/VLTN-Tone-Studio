@@ -20,6 +20,7 @@ import type { NoteEvent } from "./note";
 import { RENDER_RATE, renderPart } from "./render";
 import { addRoom } from "./room";
 import type { SampleSet } from "./samples";
+import { keepLockedNotes } from "./section-lock";
 import { generateSynth } from "./synth-notes";
 import { renderSynth } from "./synth";
 import { barBeats, beatSpan } from "./timing";
@@ -179,7 +180,7 @@ function generate(request: BandRequest, original = originalDrummer(request), den
   const notes: BandNoteSet = { drums: request.parts.drums ? drumNotes : [], bass: bassNotes };
   if (request.parts.keys) notes.keys = generateKeys(grid, request.harmony, plans, settings, seed, feel, request.trimEnd);
   if (request.parts.synth) notes.synth = generateSynth(grid, request.harmony, plans, settings, seed, feel, request.trimEnd);
-  const result: Generated = { notes, follow, ...(settings.bassSound === "synth" ? { kicks: drumNotes } : {}) };
+  const result: Generated = { notes: keepLockedNotes(notes, plans), follow, ...(settings.bassSound === "synth" ? { kicks: keepLockedNotes({ drums: drumNotes, bass: [] }, plans).drums } : {}) };
   if (request.parts.drums && report.length) result.learnedDrums = report;
   if (feel?.stops.size) result.detectedStops = [...feel.stops].map((beat) => grid.beats[beat]).filter(Number.isFinite);
   // A song with vamps is generated a second time with them as ordinary sections, which gives each vamp's exit bar its fill and lead-in.
@@ -343,7 +344,7 @@ export function runBandJob(request: BandRequest, samples: SampleSet, onStage?: (
       const settings = { ...request.settings, ghostNotes: variant === "soft" ? false : request.settings.ghostNotes, countIn: { ...request.settings.countIn, bars: 0 as const } };
       const using = { ...request, plans, settings };
       const alternative = generate(using, original, variant === "lift" ? 0.2 : -0.2);
-      const notes = variantNotes(variant, request.grid, request.plans, normal.notes, alternative.notes);
+      const notes = keepLockedNotes(variantNotes(variant, request.grid, request.plans, normal.notes, alternative.notes), request.plans);
       const exitNotes = normal.exitNotes && alternative.exitNotes
         ? variantNotes(variant, request.grid, request.plans, normal.exitNotes, alternative.exitNotes)
         : undefined;

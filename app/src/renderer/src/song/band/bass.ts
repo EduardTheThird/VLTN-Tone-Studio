@@ -151,6 +151,7 @@ interface Slot {
   loud: Energy;
   /** The section's octave shift: at engine 1 applied when every note of the section fits the range, at engine 2 part of the home note. */
   octave: OctaveShift;
+  octaveJumps?: BandSettings["octaveJumps"];
   /** The section's busy level, and whether its bass slides and plays dead notes (bass techniques). */
   busy: number;
   slides: boolean;
@@ -322,7 +323,7 @@ function plainPitch(slot: Slot, chord: ParsedChord, previous: number, method: Ba
   if (method === "octaves") {
     const base = rootNote(slot, chord.bass, previous, range, slot.strong);
     const upper = base + 12;
-    return slot.index % 2 === 1 && !slot.forced && upper <= range.high ? upper : base;
+    return slot.octaveJumps !== 0 && slot.index % 2 === 1 && !slot.forced && upper <= range.high ? upper : base;
   }
   // Fifths and melodic: the bass note on a strong or forced step, otherwise the fifth or the root in turn.
   if (slot.strong || slot.forced) return rootNote(slot, chord.bass, previous, range, slot.strong);
@@ -347,7 +348,7 @@ function figurePitch(slot: Slot, note: BarNote, chord: ParsedChord, previous: nu
     }
     return { pitch: place(pitchClass(chord.bass + fifthInterval(chord.quality))), approach: false, root };
   }
-  if (note.degree === "8") return { pitch: placeFromRoot(root, 12, home, range), approach: false, root };
+  if (note.degree === "8") return { pitch: slot.octaveJumps === 0 ? root : placeFromRoot(root, 12, home, range), approach: false, root };
   const pc = degreePitchClass(note.degree, chord, slot.key);
   return { pitch: pc === null ? root : place(pc), approach: false, root };
 }
@@ -556,6 +557,7 @@ function buildSlots(
       walking: false,
       loud: plan.loud,
       octave: plan.octave,
+      octaveJumps: plan.octaveJumps ?? settings.octaveJumps,
       busy: plan.busy,
       slides: plan.slides,
       deadNotes: plan.deadNotes && plan.bassArticulation !== "legato",
@@ -774,6 +776,7 @@ function buildSlots(
         walking,
         loud,
         octave: plan.octave,
+        octaveJumps: plan.octaveJumps ?? settings.octaveJumps,
         busy: plan.busy,
         slides: plan.slides,
         deadNotes: plan.deadNotes && plan.bassArticulation !== "legato",
@@ -901,7 +904,13 @@ export function generateBass(
     const chosen = slot.variant ? variantPitch(slot.chord, slot.variant, previous, range, homes ? (homes.get(slot.variant.plan) ?? null) : null) : pitchOf(slot, slot.chord, next, previous, range, settings);
     // A note the performer set by hand (bass-overrides.ts) moves by its octave nudge, on a chord note and not on an approach.
     const approach = chosen.approach;
-    const pitch = approach || slot.variant ? chosen.pitch : nudgedPitch(chosen.pitch, slot.chord.bassOctave, range);
+    let pitch = approach || slot.variant ? chosen.pitch : nudgedPitch(chosen.pitch, slot.chord.bassOctave, range);
+    const jumps = slot.octaveJumps ?? 1;
+    if (jumps > 1 && !approach && !slot.variant && !slot.forced && !slot.strong && !slot.chord.byHand &&
+      (slot.part === "groove" || slot.part === "melodic") && slot.figure?.degree !== "8" &&
+      (slot.beat + slot.index) % (jumps === 2 ? 3 : 2) === 0) {
+      pitch = pitch + 12 <= range.high ? pitch + 12 : pitch - 12 >= range.low ? pitch - 12 : pitch;
+    }
     const accent = (slot.downbeat ? DOWNBEAT_ACCENT : 0) + (slot.locked ? KICK_ACCENT : 0) + (approach ? APPROACH_DIP : 0) + (slot.hitOne ? HIT_ONE_ACCENT : 0) + (slot.figure?.accent ? FIGURE_ACCENT : 0);
     const nextTime = next ? next.time : slot.barEnd;
     const choice = plans[slot.plan]?.bassArticulation;

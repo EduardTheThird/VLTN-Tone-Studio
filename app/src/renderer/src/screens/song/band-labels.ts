@@ -1,4 +1,4 @@
-import { BASS_ARTICULATIONS, CYMBAL_CHOICES, KICK_CHOICES, SECTION_SHAPES, SNARE_CHOICES, type FillSize, type SectionShape, type SongLift } from "@/song/band/arrangement";
+import { BASS_ARTICULATIONS, CYMBAL_CHOICES, KICK_CHOICES, SECTION_SHAPES, SNARE_CHOICES, type FillSize, type SectionShape, type SongLift, type OctaveJumps } from "@/song/band/arrangement";
 import type { BassPartChoice } from "@/song/band/bass-parts";
 import { STYLE_IDS, STYLES, type StyleId } from "@/song/band/styles";
 
@@ -8,6 +8,8 @@ export const SECTION_PLAY_CHOICES = {
   snare: { label: "Snare", choices: SNARE_CHOICES, labels: { auto: "Auto", stick: "Side stick", rim: "Rimshot" } },
   bassArticulation: { label: "Bass notes", choices: BASS_ARTICULATIONS, labels: { auto: "Auto", legato: "Legato", staccato: "Staccato" } },
 } as const;
+
+export const JUMP_LABELS: Record<OctaveJumps, string> = { 0: "None", 1: "As written", 2: "More", 3: "Most offbeats" };
 
 export const SONG_LIFT_LABELS: Record<SongLift, string> = { 0: "Off", 1: "A little", 2: "More" };
 

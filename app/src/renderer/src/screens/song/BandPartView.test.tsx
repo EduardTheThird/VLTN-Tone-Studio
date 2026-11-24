@@ -163,7 +163,7 @@ describe("BandPartView", () => {
     view({ sectionSeed: { kept: false, onTryAnother, onKeep } });
     fireEvent.click(screen.getByRole("button", { name: "Try another for this section" }));
     expect(onTryAnother).toHaveBeenCalledOnce();
-    const keep = screen.getByRole("button", { name: "Keep this section" });
+    const keep = screen.getByRole("button", { name: "Keep variation" });
     expect(keep.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(keep);
     expect(onKeep).toHaveBeenCalledWith(true);
@@ -172,7 +172,7 @@ describe("BandPartView", () => {
   it("shows a kept section as kept, and unkeeping it says so", () => {
     const onKeep = vi.fn();
     view({ sectionSeed: { kept: true, onTryAnother: vi.fn(), onKeep } });
-    const keep = screen.getByRole("button", { name: "Keep this section" });
+    const keep = screen.getByRole("button", { name: "Keep variation" });
     expect(keep.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(keep);
     expect(onKeep).toHaveBeenCalledWith(false);

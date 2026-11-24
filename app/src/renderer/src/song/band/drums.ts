@@ -10,13 +10,13 @@ import type { BandSettings, SectionPlan } from "./arrangement";
 import type { LearnedSection } from "./drum-transcribe";
 import type { BeatGrid } from "./beat-grid";
 import { accentPushes, hitSteps, isAccented, rankGrooves, type AccentProfile, type Feel } from "./feel";
-import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, SNARE, type NoteEvent } from "./note";
+import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, OPEN_HAT, SNARE, type NoteEvent } from "./note";
 import { endingBar, endingShape, type EndingShape } from "./ending";
 import { markBeats, marksByBar, markOf, withMarkStops } from "./marks";
 import { variationSeed } from "./bass-phrases";
 import { createRandom, type Random } from "./random";
 import { findStyle, type Style } from "./styles";
-import { addKickEighths, barRoles, choked, crashOnDownbeat, dropBar, fillSizeOf, overlay, riseHats, sectionGroove, shapeFill, snareBuild } from "./drum-phrases";
+import { addKickEighths, barRoles, choked, crashOnDownbeat, dropBar, fillSizeOf, openHats, overlay, riseHats, sectionGroove, shapeFill, snareBuild } from "./drum-phrases";
 import { withMeasuredPatterns } from "./styles/measured";
 import { VEL } from "./styles/notation";
 import { isChorusName } from "./arrangement";
@@ -357,6 +357,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       hits = pushes.length > 0 ? [...groove.hits, ...pushes.map((step) => ({ step, pitch: KICK, velocity: PUSH_VELOCITY }))] : groove.hits;
       if (original?.groove) hits = learnedHits((role.bar % 2 ? original.alternate : undefined) ?? original.groove, plan.busy, style.meter.stepsPerBeat);
       hits = sectionGroove(hits, plan, groove.steps, style.meter.stepsPerBeat);
+      hits = openHats(hits, plan.hatOpen, groove.steps, style.meter.stepsPerBeat);
       const lastBeat = groove.steps - style.meter.stepsPerBeat;
       const fillMark = markOf(marked, k, "fill");
       const noFill = markOf(marked, k, "no-fill") !== undefined;
@@ -457,6 +458,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       hits =
         played.pushes.length > 0 ? [...groove.hits, ...played.pushes.map((step) => ({ step, pitch: KICK, velocity: PUSH_VELOCITY }))] : groove.hits;
       hits = sectionGroove(hits, plan, groove.steps, style.meter.stepsPerBeat);
+      hits = openHats(hits, plan.hatOpen, groove.steps, style.meter.stepsPerBeat);
       const holdBar = shape?.fill === true && k === ending;
       const endsPlan = planOf[k + 1] !== planIndex;
       // Songs on drum engine 2 or earlier draw from the fills a style had then.
@@ -535,6 +537,8 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
         hits = [...hits, ...percussion.filter((hit) => hit.step < from)];
       }
     }
+    if (plan.hatOpen === 2) hits = hits.map((hit) => hit.pitch === CLOSED_HAT
+      ? { ...hit, pitch: OPEN_HAT, velocity: Math.max(1, hit.velocity - 8) } : hit);
     // A bar the drums rest in is still drawn from the same random numbers, so the bars after it keep their notes.
     const resting = markOf(marked, k, "drums-out") !== undefined;
     if (resting) filled = false;
