@@ -642,3 +642,11 @@ describe("a section's own seed", () => {
     expect(isBandSettings({ ...DEFAULT_BAND_SETTINGS, sections: { a: { seed: "5" } } })).toBe(false);
   });
 });
+
+it("keeps old songs on the style and resolves per-section overrides of original drums", () => {
+  expect(parseBandSettings({})).toMatchObject({ drumPattern: "style" });
+  expect(parseBandSettings({ drumPattern: "invalid" })).toMatchObject({ drumPattern: "style" });
+  const settings = parseBandSettings({ drumPattern: "original", sections: { song: { drumPattern: "style" } } });
+  expect(planSections([], 20, settings)[0]).toMatchObject({ drumPattern: "style" });
+  expect(planSections([], 20, { ...settings, sections: {} })[0]).toMatchObject({ drumPattern: "original" });
+});

@@ -1,3 +1,4 @@
+import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -26,6 +27,7 @@ const HUMANISE_LABELS: Record<HumaniseChoice, string> = {
 
 export interface BandSettingsFormProps {
   settings: BandSettings;
+  hasOriginalDrums?: boolean;
   /** The follow sources the song can read: auto, then the stems that were split, then the mix. */
   followSources: readonly FollowSource[];
   onChange(patch: Partial<BandSettings>): void;
@@ -36,7 +38,7 @@ export interface BandSettingsFormProps {
 }
 
 /** The song-wide band settings, in two columns: drums, then bass. The tone chains are on the Sound tab. Changing one saves it; nothing is generated until Generate. */
-export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar }: BandSettingsFormProps) {
+export function BandSettingsForm({ settings, followSources, onChange, onStyle, beatsPerBar, hasOriginalDrums = false }: BandSettingsFormProps) {
   return (
     <section aria-label="Band settings" className="grid gap-x-8 gap-y-4 md:grid-cols-2">
       <div className="flex min-w-0 flex-col gap-3">
@@ -60,6 +62,13 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
             </SelectContent>
           </Select>
         </label>
+        <DrumPatternPicker
+          label="Drum pattern"
+          value={settings.drumPattern}
+          disabled={!hasOriginalDrums}
+          onChange={(pattern) => onChange({ drumPattern: pattern ?? "style" })}
+        />
+        {!hasOriginalDrums && <p className="text-xs text-silkscreen-3">A drums stem is needed to learn the original pattern.</p>}
         <label className="flex items-center gap-3">
           Kit
           <Select value={settings.kit ?? AUTO_KIT} onValueChange={(value) => onChange({ kit: value === AUTO_KIT ? undefined : (value as DrumKit) })}>

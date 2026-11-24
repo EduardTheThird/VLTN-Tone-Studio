@@ -432,3 +432,10 @@ describe("runBandJob with an ending that rings on", () => {
     expect(length(result)).toBeLessThanOrEqual(SONG_SECONDS * RATE + 2 * BAR);
   });
 });
+
+it("reports the style fallback when original drums are requested and the source has no drum stem", () => {
+  const style = runBandJob(request(), stubSamples());
+  const original = runBandJob(request({ settings: { ...DEFAULT_BAND_SETTINGS, drumPattern: "original" } }), stubSamples());
+  expect(original.learnedDrums).toEqual([{ start: 0, confidence: 0, learned: false }]);
+  expect(original.notes).toEqual(style.notes);
+});

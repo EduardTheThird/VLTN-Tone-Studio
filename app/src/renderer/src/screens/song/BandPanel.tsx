@@ -179,6 +179,7 @@ function BandBody({
   // On by default when the tempo was set by hand: the beat is then found near it, not from the tracker's own pick.
   const [useMyTempo, setUseMyTempo] = useState(true);
   const [stored] = useState(() => readStoredBand(songKey));
+  const defaultDrumPattern = useRef(!useSong.getState().source?.libraryId && readOptions<Record<string, unknown>>(songKey, {}).band === undefined);
   const [settings, setSettings] = useState<BandSettings>(stored.settings);
   // The latest settings for the steps that finish later (a render, a rendered file), which would otherwise write the settings they started with.
   const settingsRef = useRef<BandSettings>(stored.settings);
@@ -257,6 +258,15 @@ function BandBody({
   const stems = useSong(selectWholeSongStems);
   const tracks = useSong((s) => s.tracks);
   const missing = useSong((s) => s.missingParts);
+  const hasOriginalDrums = !!stems?.drums && missing?.drums !== "absent";
+  useEffect(() => {
+    if (!defaultDrumPattern.current || !hasOriginalDrums || missing?.drums !== "present") return;
+    defaultDrumPattern.current = false;
+    const next: BandSettings = { ...settingsRef.current, drumPattern: "original" };
+    settingsRef.current = next;
+    setSettings(next);
+    writeStoredBand(songKey, { band: next });
+  }, [hasOriginalDrums, missing?.drums, songKey]);
   const cues = useMemo<Cue[]>(() => {
     try {
       return parseChart(chart, useMidiConfiguration.getState().macros);
@@ -315,7 +325,10 @@ function BandBody({
     setSettings(next);
     writeStoredBand(songKey, { band: next });
   };
-  const change = (patch: Partial<BandSettings>) => save({ ...settings, ...patch });
+  const change = (patch: Partial<BandSettings>) => {
+    if (patch.drumPattern !== undefined) defaultDrumPattern.current = false;
+    save({ ...settings, ...patch });
+  };
   const changeStyle = (id: StyleId) => {
     const next = findStyle(id);
     // A walking bass is only offered for a style that walks, so a walking choice falls back to roots when the style changes away from it.
@@ -511,7 +524,7 @@ function BandBody({
       const latest = settingsRef.current;
       commitBand(regeneratedSettings(latest, using, prepared, turnedOff, applied.length === 0));
       if (applied.length === 0) {
-        const bandNotes = updatedBandNotes(savedNotes, result.notes, using.parts, latest.parts, using.engine, using.seed);
+        const bandNotes = updatedBandNotes(savedNotes, result.notes, using.parts, latest.parts, using.engine, using.seed, result.learnedDrums);
         setSavedNotes(bandNotes);
         writeStoredBand(songKey, { bandNotes });
         setOutOfDate(false);
@@ -908,11 +921,13 @@ function BandBody({
               onReset={resetRow}
               beatsPerBar={grid?.beatsPerBar}
               drumPhrases={settings.engine >= 3}
+              hasOriginalDrums={hasOriginalDrums}
             />
           </TabsContent>
           <TabsContent forceMount value="feel" className="min-w-0 data-[state=inactive]:hidden">
             <BandTabFeel
               settings={settings}
+              hasOriginalDrums={hasOriginalDrums}
               followSources={followSources}
               onChange={change}
               onStyle={changeStyle}

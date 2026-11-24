@@ -1135,3 +1135,32 @@ describe("generateDrums with drum phrases (engine 3)", () => {
     });
   });
 });
+
+describe("the original drummer’s pattern", () => {
+  const grid = steady(16);
+  const config = settingsFor({ drumPattern: "original", engine: 3, crashOnSections: false, ending: { kind: "none" } });
+  const learned = [{
+    confidence: 0.9,
+    groove: [{ step: 3, pitch: KICK, velocity: 115 }],
+    fills: [[{ step: 15, pitch: SNARE, velocity: 110 }]],
+    turnarounds: [],
+  }];
+
+  it("uses the recorded groove and last-bar fill, keeping an automatic build steady", () => {
+    const notes = generateDrums(grid, [plan(0, 16, { shape: "build", fill: true })], config, 1, undefined, undefined, learned);
+    expect(notes.map(({ time, pitch }) => [time, pitch])).toEqual([[0.375, KICK], [2.375, KICK], [4.375, KICK], [7.875, SNARE]]);
+  });
+
+  it("keeps the learned groove in a vamp’s final bar and obeys a bar mark", () => {
+    const vamp = plan(0, 16, { vamp: true, fill: true });
+    const notes = generateDrums(grid, [vamp], config, 1, undefined, undefined, learned);
+    expect(notes.map(({ time }) => time)).toEqual([0.375, 2.375, 4.375, 6.375]);
+    const marked = generateDrums(grid, [vamp], { ...config, marks: [{ time: 2, kind: "drums-out" }] }, 1, undefined, undefined, learned);
+    expect(marked.map(({ time }) => time)).toEqual([0.375, 4.375, 6.375]);
+  });
+
+  it("keeps the style output when the section explicitly overrides the song’s pattern", () => {
+    const style = [plan(0, 16, { drumPattern: "style" })];
+    expect(generateDrums(grid, style, config, 1, undefined, undefined, learned)).toEqual(generateDrums(grid, style, config, 1));
+  });
+});

@@ -6,6 +6,7 @@
 // decides whether it plays, so every bar of a groove is the same at a fixed complexity.
 
 import type { BandSettings, SectionPlan } from "./arrangement";
+import type { LearnedSection } from "./drum-transcribe";
 import type { BeatGrid } from "./beat-grid";
 import { accentPushes, hitSteps, isAccented, rankGrooves, type AccentProfile, type Feel } from "./feel";
 import { CLOSED_HAT, CRASH, DRUM_DURATION, KICK, SNARE, type NoteEvent } from "./note";
@@ -204,6 +205,12 @@ function writeEnding(shape: EndingShape, plan: SectionPlan, silent: boolean, emi
   emit(shape.final, CRASH, hold ? HOLD_VELOCITY : CRASH_VELOCITY * scale);
 }
 
+/** At lower busy levels remove secondary hat strokes first, preserving the recorded kick and snare. */
+function learnedHits(hits: DrumHit[], busy: Energy, perBeat: number): DrumHit[] {
+  if (busy >= 3) return hits;
+  return hits.filter((hit) => hit.pitch !== CLOSED_HAT || hit.step % perBeat === 0 || (busy === 2 && hit.step % 2 === 0));
+}
+
 /**
  * Drum notes for the whole song, sorted by time. A bar belongs to the plan covering its middle. Bars of a plan with drums off, and
  * the pickup, are silent. The song ends the way `settings.ending` says (ending.ts), by default a crash and a kick on the downbeat of
@@ -212,7 +219,7 @@ function writeEnding(shape: EndingShape, plan: SectionPlan, silent: boolean, emi
  * With `feel` (follow my playing), the variation follows the accents, strong off-beat accents get pushes, the beats of a stop are silent,
  * and a hit beat gets a crash and a kick. Without it the notes are the same as before the feel layer existed.
  */
-export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], settings: BandSettings, seed: number, follow?: Feel, endTime?: number): NoteEvent[] {
+export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], settings: BandSettings, seed: number, follow?: Feel, endTime?: number, learned?: readonly LearnedSection[]): NoteEvent[] {
   const beats = grid.beats;
   const notes: NoteEvent[] = [];
   if (beats.length === 0 || plans.length === 0) return notes;
@@ -303,7 +310,10 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     afterFill = false;
 
     const plan = planIndex >= 0 ? plans[planIndex] : undefined;
-    const style = plan && plan.play.drums ? styleOf(plan, phrased) : undefined;
+    const recorded = plan && (plan.drumPattern ?? settings.drumPattern) === "original" ? learned?.[planIndex] : undefined;
+    const original = recorded?.groove ? recorded : undefined;
+    const drumShape = original && !plan?.drumShapeExplicit ? "steady" : plan?.shape;
+    const style = plan && plan.play.drums ? styleOf(drumShape === plan.shape ? plan : { ...plan, shape: drumShape }, phrased) : undefined;
     if (!plan || !style) {
       segment = null;
       continue;
@@ -321,7 +331,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
     let filled = false;
     // The loud level of the bar: a build lifts its last two bars by one.
     let barLoud: Energy = plan.loud;
-    if (phrased) {
+    if (phrased || original) {
       const section = sectionFor(planIndex);
       const role = roles[planIndex][barIndex[k]];
       const next = plans[planIndex + 1];
@@ -338,6 +348,7 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
       groove = style.grooves[plan.energy][section.grooves[lifted]];
       const pushes = section.pushes[lifted];
       hits = pushes.length > 0 ? [...groove.hits, ...pushes.map((step) => ({ step, pitch: KICK, velocity: PUSH_VELOCITY }))] : groove.hits;
+      if (original?.groove) hits = learnedHits((role.bar % 2 ? original.alternate : undefined) ?? original.groove, plan.busy, style.meter.stepsPerBeat);
       const lastBeat = groove.steps - style.meter.stepsPerBeat;
       const fillMark = markOf(marked, k, "fill");
       const noFill = markOf(marked, k, "no-fill") !== undefined;
@@ -365,11 +376,20 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
         }
       } else if (role.sectionEnd && plan.vamp) {
         // A vamp's last bar leads nowhere: at most a turnaround, so the section repeats cleanly. Its fill into the next section is the exit bar's.
-        hits = plan.shape === "drop" ? dropBar(hits, style.meter.stepsPerBeat) : overlay(hits, style.turnarounds[draw.turn].hits, lastBeat);
+        if (drumShape === "drop") hits = dropBar(hits, style.meter.stepsPerBeat);
+        else if (!original) hits = overlay(hits, style.turnarounds[draw.turn].hits, lastBeat);
       } else if (role.sectionEnd) {
         // The last bar of a drop is kick and hats, then a half-bar fill, whatever size the change asks for.
-        if (plan.shape === "drop") hits = dropBar(hits, style.meter.stepsPerBeat);
-        if (fillSize !== 0) asFill(plan.shape === "drop" ? 2 : fillSize);
+        if (drumShape === "drop") hits = dropBar(hits, style.meter.stepsPerBeat);
+        if (original) {
+          const fill = original.fills.at(-1);
+          if (fill && plan.fill !== false && plan.fill !== 0) {
+            const cutoff = plan.fill === 1 ? lastBeat : plan.fill === 2 ? groove.steps / 2 : 0;
+            const played = learnedHits(fill, plan.busy, style.meter.stepsPerBeat);
+            hits = [...hits.filter((hit) => hit.step < cutoff), ...played.filter((hit) => hit.step >= cutoff)];
+            filled = cutoff < lastBeat;
+          } else if (typeof plan.fill === "number" && plan.fill !== 0) asFill(plan.fill);
+        } else if (fillSize !== 0) asFill(drumShape === "drop" ? 2 : fillSize);
         // Before a section with the drums off the last bar ends with a kick and a crash, if the section is loud.
         if (choked(plan, next)) {
           hits = [
@@ -378,15 +398,18 @@ export function generateDrums(grid: BeatGrid, plans: readonly SectionPlan[], set
             { step: lastBeat, pitch: CRASH, velocity: CRASH_VELOCITY },
           ];
         }
-      } else if (plan.shape === "drop") {
+      } else if (drumShape === "drop") {
         // A drop is kick and hats, with none of the small fills and turnarounds of the phrases.
         hits = dropBar(hits, style.meter.stepsPerBeat);
+      } else if (original) {
+        const turnaround = original.turnarounds.find((bar) => bar.bar === role.bar);
+        if (turnaround) hits = learnedHits(turnaround.hits, plan.busy, style.meter.stepsPerBeat);
       } else if (role.pairEnd) {
         asFill(1);
       } else if (role.phraseEnd) {
         hits = overlay(hits, style.turnarounds[draw.turn].hits, lastBeat);
       }
-      if (plan.shape === "build") {
+      if (drumShape === "build") {
         // A build rises over the section's last four bars (or all of it when it is shorter): the hats get louder, the kick fills in the eighths
         // and the loud level lifts in the last two, and the last bar is a snare roll.
         const window = Math.min(4, barsOf[planIndex]);

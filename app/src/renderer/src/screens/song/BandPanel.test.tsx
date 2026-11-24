@@ -1626,3 +1626,22 @@ describe("Band panel: playback guards", () => {
     expect(useSong.getState().applyGeneratedParts).not.toHaveBeenCalled();
   });
 });
+
+it("defaults a new song with a present drum stem to the recorded pattern", () => {
+  useSong.setState({
+    stems: { drums: song().audio },
+    missingParts: { drums: "present", bass: "unknown", absentSections: { drums: [], bass: [] } },
+  });
+  renderPanel();
+  expect(savedOptions().band.drumPattern).toBe("original");
+});
+
+it("keeps the style default for previously saved band settings", () => {
+  stored({ band: { style: "rock" } });
+  useSong.setState({
+    stems: { drums: song().audio },
+    missingParts: { drums: "present", bass: "unknown", absentSections: { drums: [], bass: [] } },
+  });
+  renderPanel();
+  expect(document.querySelector('[aria-label="Drum pattern"]')?.textContent).toContain("From the style");
+});

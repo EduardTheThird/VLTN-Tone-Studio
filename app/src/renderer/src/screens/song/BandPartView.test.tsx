@@ -183,3 +183,9 @@ describe("BandPartView", () => {
     expect((screen.getAllByRole("button", { name: /^Bar/ })[0] as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+it.each([true, false])("shows whether the visible section's original groove was learned (%s)", (learned) => {
+  render(<BandPartView notes={{ ...bandNotesOf({ drums: [], bass: [] }, 3, 1), learnedDrums: [{ start: 0, confidence: learned ? 0.8 : 0.2, learned }] }}
+    grid={fixedBeatGrid(120, 0, 4, 10)} harmony={[]} sections={[{ name: "Verse", start: 0, end: 10 }]} selected={0} onSelect={vi.fn()} marks={[]} />);
+  expect(screen.getByText(learned ? "Learned original drums" : /drums here did not repeat clearly enough/)).toBeTruthy();
+});

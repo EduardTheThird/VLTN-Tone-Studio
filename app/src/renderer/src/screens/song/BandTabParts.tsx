@@ -12,6 +12,7 @@ export function BandTabParts({
   onReset,
   beatsPerBar,
   drumPhrases,
+  hasOriginalDrums,
 }: {
   rows: readonly BandSectionRow[];
   disabled: boolean;
@@ -22,6 +23,7 @@ export function BandTabParts({
   onReset(sectionId: string | null): void;
   beatsPerBar?: number;
   drumPhrases?: boolean;
+  hasOriginalDrums?: boolean;
 }) {
   return (
     <section aria-label="Sections" className="flex flex-col gap-2">
@@ -35,6 +37,7 @@ export function BandTabParts({
         onReset={onReset}
         beatsPerBar={beatsPerBar}
         drumPhrases={drumPhrases}
+        hasOriginalDrums={hasOriginalDrums}
       />
     </section>
   );

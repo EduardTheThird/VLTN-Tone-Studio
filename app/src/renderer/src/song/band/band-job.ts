@@ -7,7 +7,8 @@ import { monoSum, onsetStrength, type BeatGrid } from "./beat-grid";
 import { endBeforeNext, generateBass } from "./bass";
 import { countInOf } from "./count-in";
 import type { BandKey } from "./bass-phrases";
-import { drumOnsets, followDrummer } from "./drummer-timing";
+import { drumHits, followDrummer, onsetTimes, type DrumHits } from "./drummer-timing";
+import { transcribeDrums, type LearnedDrumsReport, type LearnedSection } from "./drum-transcribe";
 import { generateDrums } from "./drums";
 import { ENDING_TAIL, HOLD_BARS, SLOW_TEMPO } from "./ending";
 import { beatLevelsDb, followFeel, type Feel } from "./feel";
@@ -81,6 +82,7 @@ export interface BandResult {
   notes: { drums: NoteEvent[]; bass: NoteEvent[] };
   /** Present when follow-my-playing was on for the request. */
   follow?: FollowReport;
+  learnedDrums?: LearnedDrumsReport[];
   /** How far under the song each generated part was set. Present for the parts that were matched. */
   levels?: PartLevels;
   /**
@@ -109,6 +111,7 @@ interface Notes {
 interface Generated {
   notes: Notes;
   follow?: FollowReport;
+  learnedDrums?: LearnedDrumsReport[];
   /** The notes of the song as if its vamps were ordinary sections, when it has vamps: their exit bars are cut from these. */
   exitNotes?: Notes;
 }
@@ -129,14 +132,17 @@ function feelFor(request: BandRequest): { feel?: Feel; follow?: FollowReport } {
   return { feel: feel ?? undefined, follow: { source: follow.source, following: feel !== null } };
 }
 
-/**
- * Moves the drum notes onto the original drummer's hits, and the bass notes locked to a kick with it (drummer-timing.ts), when the setting
- * is on and the song has a drums stem that is not silent. Otherwise the notes are returned as they are.
- */
-function snapToDrummer(request: BandRequest, drums: NoteEvent[], bass: NoteEvent[]): Notes {
+interface OriginalDrummer {
+  hits?: DrumHits;
+  sections?: LearnedSection[];
+}
+
+function originalDrummer(request: BandRequest): OriginalDrummer {
+  const learning = request.plans.some((plan) => plan.play.drums && (plan.drumPattern ?? request.settings.drumPattern) === "original");
   const stem = request.originals?.drums;
-  if (!request.settings.followDrummer || !stem || !(loudnessOf(stem) > STEM_SILENT_LUFS)) return { drums, bass };
-  return followDrummer(drums, bass, drumOnsets(stem));
+  if (!stem || (!learning && !request.settings.followDrummer) || !(loudnessOf(stem) > STEM_SILENT_LUFS)) return {};
+  const hits = drumHits(stem);
+  return { hits, ...(learning ? { sections: transcribeDrums(hits, request.grid, request.plans) } : {}) };
 }
 
 /**
@@ -144,19 +150,28 @@ function snapToDrummer(request: BandRequest, drums: NoteEvent[], bass: NoteEvent
  * because the bass locks to the kick; the bass locks to the drums as generated, before humanising. Drums that were not asked for are not
  * returned.
  */
-function generate(request: BandRequest): Generated {
+function generate(request: BandRequest, original = originalDrummer(request)): Generated {
   const { feel, follow } = feelFor(request);
   const { grid, plans, settings, seed } = request;
-  const drums = generateDrums(grid, plans, settings, seed, feel, request.trimEnd);
+  const drums = generateDrums(grid, plans, settings, seed, feel, request.trimEnd, original.sections);
+  const report: LearnedDrumsReport[] = [];
+  const learned = new Set<number>();
+  plans.forEach((plan, i) => {
+    if (!plan.play.drums || (plan.drumPattern ?? settings.drumPattern) !== "original") return;
+    const section = original.sections?.[i];
+    if (section?.groove) learned.add(i);
+    report.push({ start: plan.start, confidence: section?.confidence ?? 0, learned: learned.has(i) });
+  });
   const bass = request.parts.bass ? generateBass(grid, request.harmony, plans, settings, drums, seed, feel, request.trimEnd, request.keys) : [];
-  const humanDrums = humanise(drums, "drums", grid, plans, settings.humanise, seed);
+  const humanDrums = humanise(drums, "drums", grid, plans, settings.humanise, seed, learned.size ? learned : undefined);
   const humanBass = humanise(bass, "bass", grid, plans, settings.humanise, seed);
-  const snapped = snapToDrummer(request, humanDrums, humanBass);
+  const snapped = settings.followDrummer && original.hits ? followDrummer(humanDrums, humanBass, onsetTimes(original.hits)) : { drums: humanDrums, bass: humanBass };
   const drumNotes = snapped.drums;
   const bassNotes = endBeforeNext(snapped.bass);
   const result: Generated = { notes: { drums: request.parts.drums ? drumNotes : [], bass: bassNotes }, follow };
+  if (request.parts.drums && report.length) result.learnedDrums = report;
   // A song with vamps is generated a second time with them as ordinary sections, which gives each vamp's exit bar its fill and lead-in.
-  if (vampBars(grid, plans).length > 0) result.exitNotes = generate({ ...request, plans: withoutVamps(plans) }).notes;
+  if (vampBars(grid, plans).length > 0) result.exitNotes = generate({ ...request, plans: withoutVamps(plans) }, original).notes;
   return result;
 }
 
@@ -201,6 +216,7 @@ function render(request: BandRequest, generated: Generated, samples: SampleSet, 
   const lengthFrames = Math.max(songFrames, renderLength(request, generated.notes));
   const { notes } = generated;
   const result: BandResult = generated.follow ? { notes, follow: generated.follow } : { notes };
+  if (generated.learnedDrums) result.learnedDrums = generated.learnedDrums;
   const songLufs = request.mix ? loudnessOf(request.mix) : -Infinity;
   const levels: PartLevels = {};
   const vamps = vampBars(request.grid, request.plans);

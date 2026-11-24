@@ -53,6 +53,7 @@ export function BandSections({
   onReset,
   beatsPerBar,
   drumPhrases = true,
+  hasOriginalDrums = false,
 }: {
   rows: readonly BandSectionRow[];
   disabled: boolean;
@@ -68,6 +69,7 @@ export function BandSections({
   beatsPerBar?: number;
   /** False for a song on the earlier drums, whose fill is on or off: the column is a checkbox then, not a menu of sizes. */
   drumPhrases?: boolean;
+  hasOriginalDrums?: boolean;
 }) {
   const head = "sticky top-0 z-10 bg-popover py-1 pr-2 font-normal";
   return (
@@ -217,6 +219,8 @@ export function BandSections({
                         disabled={disabled}
                         beatsPerBar={beatsPerBar}
                         drumPhrases={drumPhrases}
+                        hasOriginalDrums={hasOriginalDrums}
+                        drumPattern={override.drumPattern}
                         onChange={(patch) => onChange(plan.sectionId, patch)}
                       />
                       <DropdownMenu>

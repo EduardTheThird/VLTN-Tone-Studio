@@ -1,6 +1,7 @@
 // The notes of the last Generate, kept in the song's options so the Band dialog can draw them again when the song is reopened. A note is
 // stored as a tuple to keep a five-minute song near 60 KB of JSON. Reads are defensive: anything malformed gives no notes.
 
+import type { LearnedDrumsReport } from "./drum-transcribe";
 import type { NoteEvent } from "./note";
 
 /** [time in ms, pitch, velocity, duration in ms, flags]. Flags: bit 0 is a dead note, bit 1 is a slide. */
@@ -17,6 +18,7 @@ export interface BandNotes {
   seed: number;
   drums: StoredNote[];
   bass: StoredNote[];
+  learnedDrums?: LearnedDrumsReport[];
 }
 
 /** A slide's distance is not kept: the part view only draws that a note slides. */
@@ -75,7 +77,11 @@ export function parseBandNotes(value: unknown): BandNotes | null {
   const drums = parseList(value.drums);
   const bass = parseList(value.bass);
   if (!drums || !bass) return null;
-  return { engine: value.engine, seed: value.seed, drums, bass };
+  const learnedDrums = Array.isArray(value.learnedDrums)
+    ? value.learnedDrums.filter((item): item is LearnedDrumsReport => isRecord(item) && isNumber(item.start) && item.start >= 0 &&
+        isNumber(item.confidence) && item.confidence >= 0 && item.confidence <= 1 && typeof item.learned === "boolean")
+    : [];
+  return { engine: value.engine, seed: value.seed, drums, bass, ...(learnedDrums.length ? { learnedDrums } : {}) };
 }
 
 /** The entry to save for a Generate's notes. */
@@ -94,7 +100,9 @@ export function updatedBandNotes(
   parts: { drums: boolean; bass: boolean },
   engine: number,
   seed: number,
+  learnedDrums?: LearnedDrumsReport[],
 ): BandNotes {
   const part = (kind: "drums" | "bass"): StoredNote[] => (generated[kind] ? toStoredNotes(made[kind]) : parts[kind] ? (previous?.[kind] ?? []) : []);
-  return { engine, seed, drums: part("drums"), bass: part("bass") };
+  const report = generated.drums ? learnedDrums : parts.drums ? previous?.learnedDrums : undefined;
+  return { engine, seed, drums: part("drums"), bass: part("bass"), ...(report?.length ? { learnedDrums: report } : {}) };
 }

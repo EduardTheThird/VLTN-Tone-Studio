@@ -11,6 +11,15 @@ export type DrumBand = "kick" | "mid" | "high";
 /** The time of each hit of the original drums, in seconds and in order, by band. */
 export type DrumOnsets = Record<DrumBand, number[]>;
 
+export interface DrumOnset {
+  time: number;
+  peak: number;
+  /** Time the attack takes to decay to a quarter of the peak. */
+  decay: number;
+}
+
+export type DrumHits = Record<DrumBand, DrumOnset[]>;
+
 /** The band edges, in Hz: the kick is below KICK_BELOW, the snare and toms between MID_FROM and MID_TO, the hats, ride and crash above HIGH_ABOVE. */
 const KICK_BELOW = 120;
 const MID_FROM = 1000;
@@ -130,7 +139,7 @@ function attackIn(signal: Float32Array, from: number, to: number, length: number
 }
 
 /** The hits of one band, in seconds. */
-function bandOnsets(mono: Float32Array, band: DrumBand, sampleRate: number): number[] {
+function bandOnsets(mono: Float32Array, band: DrumBand, sampleRate: number): DrumOnset[] {
   const { signal, rate } = bandSignal(mono, band, sampleRate);
   const frame = Math.max(1, Math.round(rate / 1000));
   const energy = frameEnergy(signal, frame);
@@ -138,7 +147,7 @@ function bandOnsets(mono: Float32Array, band: DrumBand, sampleRate: number): num
   const loud = Float32Array.from(energy).sort()[Math.floor(energy.length * 0.99)];
   const floor = FLOOR_SHARE * loud;
   const refractory = Math.round(REFRACTORY_SECONDS * 1000);
-  const onsets: number[] = [];
+  const onsets: DrumOnset[] = [];
   let before = 0;
   for (let i = 0; i < BEFORE_FRAMES; i++) before += energy[i];
   let allowedFrom = BEFORE_FRAMES;
@@ -148,26 +157,38 @@ function bandOnsets(mono: Float32Array, band: DrumBand, sampleRate: number): num
       let peakFrame = i;
       for (let f = i; f <= Math.min(energy.length - 1, i + PEAK_FRAMES); f++) if (energy[f] > energy[peakFrame]) peakFrame = f;
       const attack = attackIn(signal, (i - LOOK_BACK_FRAMES) * frame, (peakFrame + 1) * frame, Math.max(2, Math.round(ENVELOPE_SECONDS * rate)));
-      onsets.push((attack ?? i * frame) / rate);
+      let tail = peakFrame;
+      const peak = energy[peakFrame];
+      const end = Math.min(energy.length - 1, peakFrame + 60);
+      while (tail < end && energy[tail] > peak / 4) tail++;
+      onsets.push({ time: (attack ?? i * frame) / rate, peak, decay: ((tail - peakFrame) * frame) / rate });
       allowedFrom = peakFrame + refractory;
     }
     before += energy[i] - energy[i - BEFORE_FRAMES];
   }
   // Two hits that read the same attack are one hit.
-  return onsets.filter((time, index) => index === 0 || time > onsets[index - 1]);
+  return onsets.filter((hit, index) => index === 0 || hit.time > onsets[index - 1].time);
 }
 
 /**
  * The hits of an original drums stem, by band: kicks from the low band, snare and toms from the middle one and hats, ride and crash from the
  * high one. Each is placed on the sample where its attack starts. A stem of several channels is averaged first.
  */
-export function drumOnsets(drums: PcmAudio): DrumOnsets {
+export function drumHits(drums: PcmAudio): DrumHits {
   const mono = average(drums);
   return {
     kick: bandOnsets(mono, "kick", drums.sampleRate),
     mid: bandOnsets(mono, "mid", drums.sampleRate),
     high: bandOnsets(mono, "high", drums.sampleRate),
   };
+}
+
+export function onsetTimes(hits: DrumHits): DrumOnsets {
+  return { kick: hits.kick.map(({ time }) => time), mid: hits.mid.map(({ time }) => time), high: hits.high.map(({ time }) => time) };
+}
+
+export function drumOnsets(drums: PcmAudio): DrumOnsets {
+  return onsetTimes(drumHits(drums));
 }
 
 /** The index of the first value in a sorted list that is at least `value`. */

@@ -88,6 +88,7 @@ export function BandPartView({
   sectionSeed,
 }: BandPartViewProps) {
   const section = sections[selected] ?? sections[0];
+  const learning = notes?.learnedDrums?.find((entry) => entry.start === section?.start);
   const layout = useMemo(() => {
     if (!notes || !grid || !section) return null;
     return layoutSection({ drums: fromStoredNotes(notes.drums), bass: fromStoredNotes(notes.bass) }, grid, section, harmony);
@@ -150,6 +151,11 @@ export function BandPartView({
   const beatsPerBar = grid?.beatsPerBar ?? 4;
   return (
     <section aria-label="Parts view" className="flex min-w-0 flex-col gap-2">
+      {learning && (
+        <p className="text-xs text-silkscreen-3">
+          {learning.learned ? "Learned original drums" : "Style groove: the drums here did not repeat clearly enough."}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="icon-sm" variant="outline" aria-label="Previous section" disabled={selected <= 0} onClick={() => onSelect(selected - 1)}>
           <ChevronLeft />

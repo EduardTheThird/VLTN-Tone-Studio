@@ -9,6 +9,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 - Name your TimeLine, SY-200 and IR-200 presets. Names show in cues, pickers and stage mode.
 - My rig gives each of your pedals a setup card, test buttons and a printable setup sheet.
+- Generated drums can play the original drummer’s pattern, learned from the drums stem.
 
 ### Changed
 - Pedal settings are now saved with the song library and its backups.

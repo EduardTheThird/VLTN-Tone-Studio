@@ -54,3 +54,14 @@ describe("stored band notes", () => {
     expect(drumsOff.seed).toBe(6);
   });
 });
+
+it("keeps learned-drum results across a bass-only render and clears them when drums are removed", () => {
+  const notes = { drums: NOTES.slice(0, 1), bass: NOTES.slice(1) };
+  const learnedDrums = [{ start: 0, confidence: 0.78, learned: true }];
+  const saved = updatedBandNotes(null, notes, { drums: true, bass: true }, { drums: true, bass: true }, 3, 19, learnedDrums);
+  expect(parseBandNotes(JSON.parse(JSON.stringify(saved)))?.learnedDrums).toEqual(learnedDrums);
+  const bassOnly = updatedBandNotes(saved, notes, { drums: false, bass: true }, { drums: true, bass: true }, 3, 20);
+  expect(bassOnly.learnedDrums).toEqual(learnedDrums);
+  const removed = updatedBandNotes(saved, notes, { drums: false, bass: true }, { drums: false, bass: true }, 3, 20);
+  expect(removed.learnedDrums).toBeUndefined();
+});

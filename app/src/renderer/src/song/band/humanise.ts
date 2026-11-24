@@ -221,6 +221,7 @@ export function humanise(
   plans: readonly SectionPlan[],
   settings: HumaniseSettings,
   seed: number,
+  learnedSections?: ReadonlySet<number>,
 ): NoteEvent[] {
   const amount = clamp(settings.amount, 0, 1);
   if (amount <= 0) return [...notes];
@@ -241,7 +242,8 @@ export function humanise(
     // A dead note keeps its own velocity and length: only its timing moves, so it stays just before the note it belongs to.
     if (note.dead) return { ...note, time: Math.max(0, note.time + offsetMs / 1000) };
 
-    let velocity = note.velocity + amount * (accent + spread * jitter);
+    const learned = part === "drums" && learnedSections?.has(planIndexAt(plans, note.time));
+    let velocity = note.velocity + amount * (learned ? spread * jitter * 0.5 : accent + spread * jitter);
     // A ghost stays a ghost: its humanised velocity stays under GHOST_BELOW.
     if (note.velocity < GHOST_BELOW) velocity = Math.min(velocity, GHOST_BELOW - 1);
 

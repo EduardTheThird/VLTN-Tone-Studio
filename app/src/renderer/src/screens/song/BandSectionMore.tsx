@@ -1,3 +1,4 @@
+import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,6 +21,8 @@ export function BandSectionMore({
   onChange,
   beatsPerBar,
   drumPhrases = true,
+  hasOriginalDrums = false,
+  drumPattern,
 }: {
   name: string;
   plan: SectionPlan;
@@ -29,6 +32,8 @@ export function BandSectionMore({
   beatsPerBar?: number;
   /** False for a song on the earlier drums, which have no shapes. */
   drumPhrases?: boolean;
+  hasOriginalDrums?: boolean;
+  drumPattern?: SectionOverride["drumPattern"];
 }) {
   const technique = findStyle(plan.style)?.bass.techniques;
   const styleDefault = (on: boolean | undefined) => (on === undefined ? "" : `Style: ${on ? "on" : "off"}`);
@@ -86,6 +91,13 @@ export function BandSectionMore({
             </SelectContent>
           </Select>
         </label>
+        <DrumPatternPicker
+          label={`Drum pattern of ${name}`}
+          value={drumPattern}
+          inherited
+          disabled={disabled || !hasOriginalDrums}
+          onChange={(pattern) => onChange({ drumPattern: pattern })}
+        />
         {drumPhrases && (
           <label className="flex items-center justify-between gap-2 text-sm">
             <span>

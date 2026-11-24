@@ -213,3 +213,12 @@ describe("humanise bass techniques", () => {
   });
 });
 
+
+it("keeps learned drum dynamics with half the velocity spread and the same timing shifts", () => {
+  const input = spaced(KICK, 32);
+  const style = humanise(input, "drums", grid, rockPlans, settingsOf(1), 21);
+  const learned = humanise(input, "drums", grid, rockPlans, settingsOf(1), 21, new Set([0]));
+  expect(learned.map(({ time }) => time)).toEqual(style.map(({ time }) => time));
+  expect(Math.max(...learned.map(({ velocity }) => Math.abs(velocity - 90)))).toBeLessThanOrEqual(3);
+  expect(style.some(({ velocity }) => Math.abs(velocity - 90) > 3)).toBe(true);
+});

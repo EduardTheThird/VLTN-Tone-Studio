@@ -8,6 +8,7 @@ import { EndingControls } from "./EndingControls";
 /** The Feel tab: how the drums and the bass play, in two columns. */
 export function BandTabFeel({
   settings,
+  hasOriginalDrums,
   followSources,
   onChange,
   onStyle,
@@ -16,6 +17,7 @@ export function BandTabFeel({
   keptAudio,
 }: {
   settings: BandSettings;
+  hasOriginalDrums?: boolean;
   followSources: readonly FollowSource[];
   onChange(patch: Partial<BandSettings>): void;
   onStyle(id: StyleId): void;
@@ -27,7 +29,7 @@ export function BandTabFeel({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <BandSettingsForm settings={settings} followSources={followSources} onChange={onChange} onStyle={onStyle} beatsPerBar={beatsPerBar} />
+      <BandSettingsForm hasOriginalDrums={hasOriginalDrums} settings={settings} followSources={followSources} onChange={onChange} onStyle={onStyle} beatsPerBar={beatsPerBar} />
       <CountInControls settings={settings} onChange={onChange} />
       <EndingControls settings={settings} sections={sections} keptAudio={keptAudio} onChange={onChange} />
     </div>

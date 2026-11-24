@@ -152,6 +152,9 @@ export const WHOLE_SONG_ID = "song";
 /** The top of the swing range. Full swing (1) would put the off-beat at the very end of its step. */
 export const SWING_MAX = 0.75;
 
+export type DrumPattern = "style" | "original";
+const isDrumPattern = (value: unknown): value is DrumPattern => value === "style" || value === "original";
+
 export interface PartToggles {
   drums: boolean;
   bass: boolean;
@@ -199,6 +202,9 @@ export interface SectionPlan {
    * the half-time style's groove. Left out it is steady. From the section's name unless the performer or the song's own band sets it. A build also lifts the bass.
    */
   shape?: SectionShape;
+  drumPattern?: DrumPattern;
+  /** The drummer keeps the recorded shape unless the performer picked one. */
+  drumShapeExplicit?: true;
   play: PartToggles;
   /**
    * True for a section that loops or repeats (its mode is Loop until released or Repeat once) in a song on drum engine 3: a vamp (spec 136).
@@ -214,7 +220,7 @@ export interface SectionPlan {
 }
 
 /** What a section can change. Anything not set falls back to the song's settings or to the section's own name and position. */
-export type SectionOverride = Partial<Omit<SectionPlan, "name" | "bassPart" | "bassLead" | "bassRamp">> & { bassPart?: BassPartChoice };
+export type SectionOverride = Partial<Omit<SectionPlan, "name" | "bassPart" | "bassLead" | "bassRamp" | "drumShapeExplicit">> & { bassPart?: BassPartChoice };
 
 /** The shapes a section's drums can take. */
 export const SECTION_SHAPES = ["steady", "build", "drop", "half"] as const;
@@ -276,6 +282,7 @@ export interface BandSettings {
   followSource: FollowSource;
   /** Generated drum hits move onto the original drummer's hits when the song has a drums stem (drummer-timing.ts, spec 107). */
   followDrummer: boolean;
+  drumPattern: DrumPattern;
   /** Humanising of the generated drums and bass (humanise.ts). */
   humanise: HumaniseSettings;
   /** How long each bass note rings, from 0 (tight) to 1 (ring). Scales the lengths the bass part gives (bass.ts). */
@@ -335,6 +342,7 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   followPlaying: true,
   followSource: "auto",
   followDrummer: true,
+  drumPattern: "style",
   humanise: { amount: 0.5, feel: "style" },
   bassTone: { kind: "clean" },
   drumTone: { kind: "clean" },
@@ -399,6 +407,8 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
     // The shape drives the lift: a section the performer gave a shape lifts when it is a build, and otherwise a build lifts like a pre-chorus.
     bassRamp: settings.engine >= 3 && override.shape !== undefined ? override.shape === "build" : bass.rampLoud || (settings.engine >= 3 && shape === "build"),
     shape,
+    ...(override.drumPattern ? { drumPattern: override.drumPattern } : settings.drumPattern === "original" ? { drumPattern: settings.drumPattern } : {}),
+    ...(override.shape && (override.drumPattern ?? settings.drumPattern) === "original" ? { drumShapeExplicit: true as const } : {}),
     octave: override.octave ?? bass.octave,
     fills: override.fills ?? defaultFills(name),
     slides: override.slides ?? technique.slides,
@@ -539,6 +549,7 @@ function isSectionOverride(value: unknown): value is SectionOverride {
     optional(value.bassPart, isBassPartChoice) &&
     optional(value.fill, isFillChoice) &&
     optional(value.shape, isShape) &&
+    optional(value.drumPattern, isDrumPattern) &&
     optional(value.play, isPartToggles) &&
     optional(value.seed, isSeed)
   );
@@ -718,6 +729,7 @@ export function isBandSettings(value: unknown): value is BandSettings {
     isBool(value.followPlaying) &&
     isFollowSource(value.followSource) &&
     isBool(value.followDrummer) &&
+    isDrumPattern(value.drumPattern) &&
     isHumanise(value.humanise) &&
     isUnit(value.bassFeel) &&
     isUnit(value.drumRoom) &&
@@ -758,6 +770,7 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   if (isBassPartChoice(value.bassPart)) override.bassPart = value.bassPart;
   if (isFillChoice(value.fill)) override.fill = value.fill;
   if (isShape(value.shape)) override.shape = value.shape;
+  if (isDrumPattern(value.drumPattern)) override.drumPattern = value.drumPattern;
   if (isPartToggles(value.play)) override.play = { drums: value.play.drums, bass: value.play.bass };
   if (isSeed(value.seed)) override.seed = value.seed;
   return override;
@@ -809,6 +822,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     followPlaying: isBool(source.followPlaying) ? source.followPlaying : defaults.followPlaying,
     followSource: isFollowSource(source.followSource) ? source.followSource : defaults.followSource,
     followDrummer: isBool(source.followDrummer) ? source.followDrummer : defaults.followDrummer,
+    drumPattern: isDrumPattern(source.drumPattern) ? source.drumPattern : defaults.drumPattern,
     humanise: parseHumanise(source.humanise),
     bassTone: parseBassTone(source.bassTone),
     drumTone: parseDrumTone(source.drumTone),
