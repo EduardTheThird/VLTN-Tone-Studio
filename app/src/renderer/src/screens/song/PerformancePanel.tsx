@@ -1055,6 +1055,8 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
               duration={pcmMemoryShape(source.audio).frames / source.audio.sampleRate}
               memory={(cueOptions.rhythmAutomation as { memory?: number } | undefined)?.memory}
               locked={playing || !!library.playlistPlaying}
+              soloValue={cueOptions.rigSolo}
+              onSaveSolo={(rigSolo) => setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), rigSolo }))}
               onSave={(rig, nextChart) => {
                 setSetting(key, ":options", JSON.stringify({ ...readOptions(key, {}), rig }));
                 if (nextChart !== chart) saveChart(nextChart);

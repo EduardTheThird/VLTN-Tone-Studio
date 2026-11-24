@@ -19,6 +19,7 @@ import type { ChartMetadata } from "@/song/performance/import/import-result";
 import { PracticeMuteBanner } from "./PracticeMute";
 import { SessionTimeline } from "./SessionTimeline";
 import { SongPreparationStatus } from "./SongPreparationStatus";
+import { RigStageControls } from "./RigStageControls";
 import { BandLiveControls } from "./BandLiveControls";
 import { StageActions } from "./StageActions";
 import { StageSetCard } from "./StageSetCard";
@@ -197,6 +198,7 @@ export function StageView({
             </div>
             <StageActions session={session} />
             <BandLiveControls session={session} />
+            <RigStageControls session={session} />
             <div className="empty:hidden flex flex-wrap gap-x-6 text-sm">
               {stage && host.song.stagePower && (playing || library.playlistPlaying) && !powerError && (
                 <p>Desktop sleep prevention requested during playback.</p>

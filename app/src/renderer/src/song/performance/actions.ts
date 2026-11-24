@@ -1,3 +1,4 @@
+import type { SoloMode } from "./rig-state";
 /*
  * The live actions a performer can trigger from a MIDI message, a key or a Bluetooth page-turner (pure).
  *
@@ -31,6 +32,8 @@ export interface ActionHost {
   exitSectionLoop(): Hint;
   cancelSectionJump(): Hint;
   bandVariant(variant: BandVariant | "toggle"): Hint;
+  resetRig(start: boolean): Hint;
+  solo(mode: SoloMode): Hint;
   arm(): Hint;
   disarm(): Hint;
   /** Scrolls the lyrics, or turns the page of a PDF chart on screen (a page action turns a page). */
@@ -106,6 +109,11 @@ const DEFINITIONS = {
   "band.drums": { label: "Drums only", group: "Band", run: (h) => h.bandVariant("drums") },
   "band.out": { label: "Band out", group: "Band", run: (h) => h.bandVariant("out") },
   "band.toggleLift": { label: "Band lift/normal toggle", group: "Band", run: (h) => h.bandVariant("toggle") },
+  "rig.resetHere": { label: "Reset rig to here", group: "Rig", run: (h) => h.resetRig(false) },
+  "rig.resetStart": { label: "Reset rig to song start", group: "Rig", run: (h) => h.resetRig(true) },
+  "rig.soloOn": { label: "Solo on", group: "Rig", run: (h) => h.solo("on") },
+  "rig.soloOff": { label: "Solo off", group: "Rig", run: (h) => h.solo("off") },
+  "rig.soloToggle": { label: "Solo toggle", group: "Rig", run: (h) => h.solo("toggle") },
   "view.scrollUp": { label: "Scroll lyrics up", group: "View", run: (h) => h.scrollLyrics(-1, false) },
   "view.scrollDown": { label: "Scroll lyrics down", group: "View", run: (h) => h.scrollLyrics(1, false) },
   "view.pageUp": { label: "Page up", group: "View", run: (h) => h.scrollLyrics(-1, true) },

@@ -94,6 +94,8 @@ export class SessionRemote {
       this.core.cancelSectionJump();
     },
     bandVariant: (variant) => this.core.changeBandVariant(variant),
+    resetRig: (start) => this.core.resetRig(start),
+    solo: (mode) => this.core.solo(mode),
     arm: () => {
       const output = this.core.output;
       if (!output || output.state !== "connected") return "Choose a connected MIDI output first.";
@@ -149,6 +151,7 @@ export class SessionRemote {
 
   /** One message from the selected input: learned while Learn is open, otherwise it runs the bindings or selects a song. */
   receiveMidi = (data: Uint8Array): void => {
+    this.core.observeRig([...data], true);
     const learn = useRemoteLearn.getState().target;
     if (learn?.source === "song") this.learnSong(data, learn.songId);
     else if (learn?.source === "midi") this.learnFromMidi(data, learn);

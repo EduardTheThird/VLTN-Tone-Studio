@@ -3350,3 +3350,22 @@ it("uses assigned RC-10R controls for live lift, soft, and repeated breaks on th
     usePedalLibrary.setState({ assignments });
   }
 });
+
+
+it("updates the rig display after output succeeds and from GP input, but leaves a rejected send out", () => {
+  const pedals = usePedalLibrary.getState();
+  usePedalLibrary.setState({ owned: ["valeton-gp180"], channels: { "valeton-gp180": 16 } });
+  const { session, out, unload } = armedSession(output(), { tempoChannel: 16 });
+  try {
+    session.sendPerformance([0xcf, 7]);
+    expect(session.state.rigState["valeton-gp180"]).toMatchObject({ slot: 7, source: "sent" });
+    session.receiveMidi(Uint8Array.of(0xcf, 8));
+    expect(session.state.rigState["valeton-gp180"]).toMatchObject({ slot: 8, source: "pedal" });
+    out.send.mockImplementationOnce(() => { throw new Error("connection lost"); });
+    session.sendPerformance([0xcf, 9]);
+    expect(session.state.rigState["valeton-gp180"].slot).toBe(8);
+  } finally {
+    unload();
+    usePedalLibrary.setState({ owned: pedals.owned, channels: pedals.channels });
+  }
+});

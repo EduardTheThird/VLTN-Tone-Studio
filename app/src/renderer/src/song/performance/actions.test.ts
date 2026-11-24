@@ -23,6 +23,8 @@ function recordingHost(pdf = false): ActionHost & { calls: [string, ...unknown[]
     "exitSectionLoop",
     "cancelSectionJump",
     "bandVariant",
+    "resetRig",
+    "solo",
     "arm",
     "disarm",
     "scrollLyrics",
@@ -229,4 +231,13 @@ it("routes the live band shortcuts through the bindable action registry", () => 
     runAction({ action }, host);
   }
   expect(host.calls).toEqual(["lift", "soft", "normal", "drums", "out", "toggle"].map((mode) => ["bandVariant", mode]));
+});
+
+it("makes both rig resets and all three Solo commands bindable", () => {
+  const host = recordingHost();
+  for (const id of ["rig.resetHere", "rig.resetStart", "rig.soloOn", "rig.soloOff", "rig.soloToggle"] as const) {
+    expect(isActionId(id)).toBe(true);
+    runAction({ action: id }, host);
+  }
+  expect(host.calls).toEqual([["resetRig", false], ["resetRig", true], ["solo", "on"], ["solo", "off"], ["solo", "toggle"]]);
 });

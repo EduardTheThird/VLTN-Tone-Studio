@@ -143,6 +143,7 @@ export class SessionOutput {
     // Pause handlers and lifecycle cleanup can both run for one stop.
     // A second clear would cancel the BLE note releases queued by the first.
     this.clearedOutput = output;
+    this.core.clearQueuedRig();
     try {
       (output as { clear?: () => void }).clear?.();
       if (!armed || output.state !== "connected") {
@@ -210,6 +211,7 @@ export class SessionOutput {
       this.deadOutput(`MIDI send failed: ${e instanceof Error ? e.message : String(e)}. Cues disarmed.`);
       return;
     }
+    if (this.core.output) this.core.observeRig(bytes, false, timestamp);
     this.recordQueued(bytes, timestamp, label);
     if ((bytes[0] & 240) === 144 || (bytes[0] & 240) === 128) this.noteChannels.add(bytes[0] & 15);
   };
@@ -227,6 +229,7 @@ export class SessionOutput {
   /** Disarms because the output can no longer take messages. Armed cues are never dropped without a visible fault. */
   deadOutput(message: string): void {
     useMidiDiagnostics.getState().fault(message);
+    this.core.clearQueuedRig();
     this.core.batch(() => {
       this.setArmed(false);
       if (hasPedalRhythm(this.core.state.cues)) {

@@ -1,3 +1,4 @@
+import { readRigSolo, type RigSolo } from "@/song/performance/rig-state";
 import { TIMELINE_DIVISIONS, TIMELINE_ID } from "@/song/performance/rig-tempo";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -131,7 +132,7 @@ function RigCellEditor({
 }
 
 export function RigTable({
-  value, chart, sections, bpm, beats, duration, memory, locked, onSave,
+  value, chart, sections, bpm, beats, duration, memory, locked, onSave, soloValue, onSaveSolo,
 }: {
   value: unknown;
   chart: string;
@@ -142,11 +143,14 @@ export function RigTable({
   memory?: number;
   locked: boolean;
   onSave: (rig: SongRig, chart: string) => void;
+  soloValue?: unknown;
+  onSaveSolo?: (value: RigSolo) => void;
 }) {
   const library = usePedalLibrary();
   const names = useRigNames();
   const macros = useMidiConfiguration((state) => state.macros);
   const rig = useMemo(() => parseSongRig(value), [value]);
+  const solo = useMemo(() => readRigSolo(soloValue), [soloValue]);
   const profiles = useMemo(() => rigProfiles(library), [library]);
   const rows = useMemo(() => rigRows(rig, sections), [rig, sections]);
   const [time, setTime] = useState("");
@@ -248,6 +252,36 @@ export function RigTable({
               setTime("");
             }}>Add a row at a time</Button>
         </div>
+        {onSaveSolo && profiles.length > 0 && (
+          <details className="rounded border border-seam p-3">
+            <summary className="cursor-pointer font-medium">When I take a solo</summary>
+            <div className="space-y-3 pt-2 text-sm">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={solo.cells === undefined} disabled={locked} onChange={(event) =>
+                  onSaveSolo({ ...solo, cells: event.target.checked ? undefined : {} })} />
+                Use the default Solo changes
+              </label>
+              {solo.cells === undefined && <p>TimeLine mix rises by 25 MIDI steps and IR-200 receives its assigned Solo switch.</p>}
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={solo.softenBand === true} disabled={locked} onChange={(event) =>
+                  onSaveSolo({ ...solo, softenBand: event.target.checked ? true : undefined })} />
+                Soften the band on the next bar
+              </label>
+              {solo.cells !== undefined && (
+                <div className="flex flex-wrap gap-4">
+                  {profiles.filter((profile) => profile.id !== RHYTHM_PEDAL_ID).map((profile) => (
+                    <div key={profile.id} className="space-y-1">
+                      <span>{short(profile)}</span>
+                      <RigCellEditor profile={profile} library={library} names={names} disabled={locked}
+                        row={{ id: "solo", label: "Solo", at: null, cells: solo.cells ?? {} }}
+                        onChange={(cell) => onSaveSolo({ ...solo, cells: { ...solo.cells, [profile.id]: cell } })} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
         {notice && <p role="status" className="text-sm">{notice}</p>}
       </div>
     </SettingsCard>

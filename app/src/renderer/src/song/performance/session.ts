@@ -1,3 +1,5 @@
+import { SessionRig } from "./session-rig";
+import type { SoloMode } from "./rig-state";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { type ExitBar, type RenderedBuffers, StemPlayer } from "@/song/stems/player";
@@ -111,6 +113,7 @@ export function leftPerformance(): boolean {
 
 export class PerformanceSession {
   readonly store: StoreApi<SessionState>;
+  private readonly rigPart = new SessionRig(this);
   private readonly outputPart = new SessionOutput(this);
   private readonly remotePart = new SessionRemote(this);
   private readonly sectionsPart = new SessionSections(this);
@@ -222,6 +225,8 @@ export class PerformanceSession {
       player: null,
       playing: false,
       bandVariant: "normal",
+      rigState: {},
+      soloActive: false,
       pendingBandVariant: null,
       bandVariantLog: [],
       access,
@@ -303,6 +308,7 @@ export class PerformanceSession {
     this.bandReturnAtSection = band.variantReturn === "section";
     this.bandAutoReturn = false;
     this.bandLastPosition = 0;
+    this.rigPart.newSong();
     this.liveRhythmChangeAt = null;
     this.liveRhythmBreakAt = null;
     this.liveRhythmLevelAt = null;
@@ -358,6 +364,7 @@ export class PerformanceSession {
         this.pendingRender = null;
         this.renderSwap = null;
         this.speedPreparation = null;
+        this.rigPart.newSong();
         this.set({ player: null, playing: false, rendering: null });
       }
       // Leaving Performance pauses the set. Checked later, so that a remount on the same screen (StrictMode's re-run, an advance) is not
@@ -1001,6 +1008,11 @@ export class PerformanceSession {
   cancelSectionJump = () => this.sectionsPart.cancelSectionJump();
 
   // ---- remote control ------------------------------------------------------------------------------------------
+
+  observeRig = (bytes: readonly number[], incoming: boolean, timestamp?: number) => this.rigPart.observe(bytes, incoming, timestamp);
+  clearQueuedRig = () => this.rigPart.clearQueued();
+  resetRig = (start = false) => this.rigPart.reset(start);
+  solo = (mode: SoloMode) => this.rigPart.solo(mode);
 
   /** Supplies the performance screen's view actions (stage, click, mixer, tap, lyrics). Called again whenever they change. */
   setView(view: ViewHost) {

@@ -1,3 +1,4 @@
+import type { RigState } from "./rig-state";
 import type { BandChange, BandVariant } from "../band/live-variants";
 import type { ClockGrid } from "./beat-clock";
 import type { PreparationSequence } from "./preparation-sequence";
@@ -59,6 +60,8 @@ export interface SessionState {
   player: StemPlayer | null;
   playing: boolean;
   bandVariant: BandVariant;
+  rigState: RigState;
+  soloActive: boolean;
   pendingBandVariant: BandChange | null;
   bandVariantLog: BandChange[];
   access: MIDIAccess | null;
@@ -223,6 +226,10 @@ export type SessionCore = Pick<
   | "dropChained"
   | "dropSectionPlan"
   | "changeBandVariant"
+  | "observeRig"
+  | "clearQueuedRig"
+  | "resetRig"
+  | "solo"
   | "drummerCounts"
   | "endingIntoSet"
   | "exitBars"
