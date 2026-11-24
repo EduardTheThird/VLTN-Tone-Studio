@@ -69,6 +69,25 @@ export function readRc10rMemoryPair(first: Uint8Array, second: Uint8Array): stri
   return one;
 }
 
+export const RC10R_RHYTHM_FIELDS = ["Kit", "Level", "ReverbLevel", "Intro", "StopMode", "PlayMode", "FadeOutTime", "TransitionFill"] as const;
+export type Rc10rRhythmField = (typeof RC10R_RHYTHM_FIELDS)[number];
+export type Rc10rRhythmMemory = Partial<Record<Rc10rRhythmField, number>>;
+
+/** Inspects one phrase in a validated backup pair. Values are the literal numbers in RHYTHM. */
+export function inspectRc10rRhythmMemory(first: Uint8Array, second: Uint8Array, memory: number): Rc10rRhythmMemory {
+  if (!Number.isInteger(memory) || memory < 1 || memory > 99) throw new Error("Choose a pedal memory from 1–99.");
+  const xml = readRc10rMemoryPair(first, second);
+  const phrase = new RegExp(`<mem id="${memory - 1}">([\\s\\S]*?)</mem>`).exec(xml)?.[1];
+  const rhythm = phrase?.match(/<RHYTHM>([\s\S]*?)<\/RHYTHM>/)?.[1];
+  if (rhythm === undefined) throw damaged();
+  const values: Rc10rRhythmMemory = {};
+  for (const field of RC10R_RHYTHM_FIELDS) {
+    const raw = new RegExp(`<${field}>([0-9]{1,4})</${field}>`).exec(rhythm)?.[1];
+    if (raw !== undefined) values[field] = Number(raw);
+  }
+  return values;
+}
+
 /** Changes only the chosen memory's per-user-rhythm kit and tempo; current selection and looper data stay byte-identical. */
 export function patchRc10rMemory(xml: string, memory: number, slot: number, kit: number, bpm: number): [Uint8Array, Uint8Array] {
   if (

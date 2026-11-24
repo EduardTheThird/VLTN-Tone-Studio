@@ -255,3 +255,16 @@ it("adds a detected full-bar stop from the saved generated notes", () => {
   const plan = buildRhythmAutomation(input, setup(input), controls);
   expect(plan.events.some((cue) => cue.time === 5.85 && cue.label.endsWith("Rhythm break"))).toBe(true);
 });
+
+it("persists song memory choices and warns when the drafted stop mode skips the ending", () => {
+  const input = song({ band: { style: "rock" } });
+  const draft = { ...setup(input, 5), memorySetup: {
+    kit: "Rock" as const, level: 85, reverb: 35, intro: true, stopMode: "immediate" as const, playMode: "first-second" as const,
+  } };
+  const plan = buildRhythmAutomation(input, draft, controls);
+  expect(plan.warnings.some((warning) => warning.includes("expect an ending"))).toBe(true);
+  const opts = JSON.parse(input.settings[":options"]);
+  const loaded = currentRhythmAutomation(song({ ...opts, rhythmAutomation: automaticRhythmSettings(input, draft, controls) }));
+  expect(loaded?.draft.memorySetup).toEqual(draft.memorySetup);
+  expect(buildRhythmAutomation(input, setup(input, 5), controls).warnings.some((warning) => warning.includes("expect an ending"))).toBe(false);
+});

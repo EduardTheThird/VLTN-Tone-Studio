@@ -1,3 +1,4 @@
+import { newRc10rMemorySetup, parseRc10rMemorySetup, type Rc10rMemorySetup } from "./rc10r-memory-setup";
 import { replaceManagedChart } from "./managed-chart";
 import { RHYTHM_BREAK_CC, RHYTHM_BREAK_LEAD_S, RHYTHM_LEVEL_CC, rhythmBreaks, rhythmLevels, type RhythmBreak } from "./rhythm-dynamics";
 import { rhythmTempo } from "./rhythm-tempo";
@@ -46,6 +47,7 @@ export type RhythmPattern = 1 | 2;
 export interface RhythmAutomationDraft {
   version: 1;
   memory: number;
+  memorySetup?: Rc10rMemorySetup;
   /** Integer quarter-note BPM on the pedal; it can differ from a source recording's measured tempo. */
   bpm: number;
   start: number;
@@ -115,6 +117,7 @@ export function suggestRhythmAutomation(song: RhythmAutomationSong, memory: numb
   const ending = sections.at(-1);
   const saved = object(options.rhythmAutomation);
   const storedPatterns = object(saved.patterns);
+  const introBars = integer(saved.introBars, 0, 32) ? saved.introBars : integer(object(parts.intro).bars, 1, 32) ? Number(object(parts.intro).bars) : 1;
   const patterns = Object.fromEntries(
     sections.map((section): [string, RhythmPattern] => [
       section.id,
@@ -139,7 +142,9 @@ export function suggestRhythmAutomation(song: RhythmAutomationSong, memory: numb
       : ending && /outro|ending/i.test(ending.name)
         ? Math.max(start, Math.min(end, ending.start))
         : Math.max(start, end - (Number.isFinite(barSeconds) ? barSeconds : 0)),
-    introBars: integer(saved.introBars, 0, 32) ? saved.introBars : integer(object(parts.intro).bars, 1, 32) ? Number(object(parts.intro).bars) : 1,
+    introBars,
+    ...(saved.memorySetup && typeof saved.memorySetup === "object"
+      ? { memorySetup: parseRc10rMemorySetup(saved.memorySetup, newRc10rMemorySetup(object(options.band).style, introBars)) } : {}),
     changeLeadBars: finite(saved.changeLeadBars) && saved.changeLeadBars >= 0 && saved.changeLeadBars <= 2 ? saved.changeLeadBars : 1,
     fills: saved.fills !== false,
     ...(saved.breaks === true || saved.version !== 1 ? { breaks: true } : {}),
@@ -276,6 +281,10 @@ export function buildRhythmAutomation(song: RhythmAutomationSong, draft: RhythmA
   if (controllers.some((cc) => !integer(cc, 1, 95) || (cc > 31 && cc < 64))) throw new Error("Control numbers must be 1–31 or 64–95.");
   if (new Set(controllers).size !== controllers.length) throw new Error(controllers.length === RHYTHM_CONTROLS.length ? "Give Start, Change pattern, Fill and Stop different control numbers." : "Give each rhythm action a different control number.");
   const warnings: string[] = [];
+  const mode = draft.memorySetup?.stopMode;
+  if (mode && mode !== "measure-ending" && mode !== "loop-ending") {
+    warnings.push("These cues expect an ending after the stop pulse. Choose an ending stop mode on the RC-10R.");
+  }
   if (exported.version !== 1)
     warnings.push("No export choices are saved for this song. Check its tempo, intro length and Pattern 1/2 against the rhythm on the pedal.");
   const endingBars = object(object(exported.parts).ending).bars;

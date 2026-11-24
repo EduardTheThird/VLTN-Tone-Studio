@@ -1,3 +1,6 @@
+import { Rc10rMemoryReview } from "./Rc10rMemoryReview";
+import { newRc10rMemorySetup } from "@/song/performance/rc10r-memory-setup";
+import { rhythmSongOptions } from "@/song/performance/rhythm-automation";
 import { lrcTime } from "@/song/performance/chart";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,6 +18,9 @@ export interface RhythmAutomationEntry {
 /** Per-song choices next to the MIDI that will be saved. Nothing here sends to the pedal. */
 export function RhythmAutomationSong({ entry, onChange }: { entry: RhythmAutomationEntry; onChange(draft: RhythmAutomationDraft): void }) {
   const { song, draft, plan, error } = entry;
+  const band = rhythmSongOptions(song).band;
+  const style = band && typeof band === "object" && "style" in band ? band.style : undefined;
+  const memorySetup = draft.memorySetup ?? newRc10rMemorySetup(style, draft.introBars);
   return (
     <details className="rounded border border-seam p-3" open>
       <summary className="cursor-pointer font-medium">
@@ -47,6 +53,7 @@ export function RhythmAutomationSong({ entry, onChange }: { entry: RhythmAutomat
             </label>
           ))}
         </div>
+        <Rc10rMemoryReview memory={draft.memory} value={memorySetup} onChange={(setup) => onChange({ ...draft, memorySetup: setup })} />
         <label className="flex items-center gap-2">
           <Checkbox checked={draft.fills} onCheckedChange={(checked) => onChange({ ...draft, fills: checked === true })} />
           Add a fill before sections that keep the same pattern

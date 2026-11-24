@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { patchRc10rMemory, rc10rMemoryXml, readRc10rMemoryPair } from "./rc10r-memory";
+import { inspectRc10rRhythmMemory, patchRc10rMemory, rc10rMemoryXml, readRc10rMemoryPair } from "./rc10r-memory";
 import { testRc10rMemory, testRc10rXml } from "./rc10r-test-data";
 const xml = testRc10rXml();
 
@@ -45,4 +45,20 @@ describe("native RC-10R memory preservation", () => {
       expect(() => patchRc10rMemory(xml, args[0], args[1], args[2], args[3])).toThrow();
     expect(() => patchRc10rMemory(xml.replace(/<CONTENT350>[\s\S]*?<\/CONTENT350>/g, ""), 1, 1, 0, 120)).toThrow();
   });
+});
+
+it("reads literal rhythm settings from one phrase in a matching pair", () => {
+  const source = xml.replace(
+    /(<mem id="4">[\s\S]*?<RHYTHM>)/,
+    "$1<Kit>4</Kit><Level>95</Level><ReverbLevel>50</ReverbLevel><Intro>1</Intro><StopMode>3</StopMode><PlayMode>0</PlayMode><FadeOutTime>43</FadeOutTime><TransitionFill>1</TransitionFill>",
+  );
+  const one = testRc10rMemory(source, 0);
+  const two = testRc10rMemory(source, 1);
+  expect(inspectRc10rRhythmMemory(one, two, 5)).toEqual({
+    Kit: 4, Level: 95, ReverbLevel: 50, Intro: 1, StopMode: 3, PlayMode: 0, FadeOutTime: 43, TransitionFill: 1,
+  });
+  expect(inspectRc10rRhythmMemory(one, two, 6)).toEqual({});
+  expect(new TextDecoder().decode(one.subarray(0, -4))).toBe(source);
+  expect(() => inspectRc10rRhythmMemory(one, testRc10rMemory(xml), 5)).toThrow(/disagree/);
+  expect(() => inspectRc10rRhythmMemory(one, two, 100)).toThrow(/1–99/);
 });

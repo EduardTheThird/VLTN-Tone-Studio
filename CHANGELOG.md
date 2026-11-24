@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- Save RC-10R memory settings with a song and compare them with a pedal backup.
 - Shape a section’s busyness and loudness with one drag, copy and lock settings, control bass octave jumps and hat openness, and choose band presets.
 - Add tambourine, shaker, claps or cowbell to individual sections.
 - Synth pads and rhythmic chords follow the song’s harmony, and bass can use Sub, Pumping or Sequenced synth voices.
