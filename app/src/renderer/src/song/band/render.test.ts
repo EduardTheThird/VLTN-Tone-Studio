@@ -187,9 +187,10 @@ describe("renderPart: drums", () => {
 });
 
 describe("renderPart: bass", () => {
-  it.each(["fingers", "pick"] as const)("sustains a two-second %s note using the shipped samples", async (sound) => {
+  it.each(["fingers", "pick", "legacy"] as const)("sustains a two-second %s note using the shipped samples", async (sound) => {
     const folder = join(dirname(fileURLToPath(import.meta.url)), "samples");
-    const files = SAMPLE_MAP.bassSounds![sound].notes.flatMap(({ layers }) => layers.find(({ velocity }) => velocity === 90)!.files);
+    const files = sound === "legacy" ? SAMPLE_MAP.bass.filter(({ layer }) => layer === "f").map(({ file }) => file)
+      : SAMPLE_MAP.bassSounds![sound].notes.flatMap(({ layers }) => layers.find(({ velocity }) => velocity === 90)!.files);
     const decoded = new Map(await Promise.all(files.map(async (file) => [file, await decodeFlac(readFileSync(join(folder, file)))] as const)));
     const set = sampleSetFrom(SAMPLE_MAP, "standard", (file) => decoded.get(file) ?? impulse(), sound);
     const energy = (audio: Float32Array, seconds: number): number =>
@@ -198,7 +199,7 @@ describe("renderPart: bass", () => {
       expect(pickBassLayers(set, pitch, 90)[0].pick.loop).toBeDefined();
       const [left] = renderPart([hit(0, pitch, 90, 2)], "bass", set, RATE * 3).audio.channels;
       expect(energy(left, 0.5)).toBeGreaterThan(0);
-      expect(10 * Math.log10(energy(left, 1.5) / energy(left, 0.5))).toBeGreaterThan(-4);
+      expect(Math.abs(10 * Math.log10(energy(left, 1.5) / energy(left, 0.5)))).toBeLessThan(4);
       expect(energy(left, 2.4)).toBe(0);
     }
   });

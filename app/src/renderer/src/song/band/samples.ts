@@ -34,6 +34,7 @@ export interface BassSample {
   layer: "p" | "f";
   velocity: VelocityRange;
   audio: PcmAudio;
+  loop?: BassLoop;
 }
 
 export interface SampleSet {
@@ -300,7 +301,7 @@ export function pickBassSample(set: SampleSet, midi: number, velocity: number): 
     clampVelocity(velocity),
   );
   if (!sample) throw new Error(`No bass layer for root ${root}.`);
-  return { audio: sample.audio, playbackRate: 2 ** ((midi - root) / 12) };
+  return { audio: sample.audio, playbackRate: 2 ** ((midi - root) / 12), loop: sample.loop };
 }
 
 /** Below this velocity a bass note is the soft layer alone. */
@@ -350,8 +351,8 @@ export function pickBassLayers(set: SampleSet, midi: number, velocity: number, t
   }
   const t = (v - BASS_CROSSFADE_FROM) / (BASS_CROSSFADE_TO - BASS_CROSSFADE_FROM);
   return [
-    { pick: { audio: soft.audio, playbackRate }, weight: 1 - t },
-    { pick: { audio: hard.audio, playbackRate }, weight: t },
+    { pick: { audio: soft.audio, playbackRate, loop: soft.loop }, weight: 1 - t },
+    { pick: { audio: hard.audio, playbackRate, loop: hard.loop }, weight: t },
   ];
 }
 
@@ -383,7 +384,11 @@ export function sampleSetFrom(map: SampleMap, kit: string, audioFor: (file: stri
   }
 
   const instrument = bank === "pick" || bank === "fingers" ? map.bassSounds?.[bank] : undefined;
-  const bass = bank === "none" || instrument ? [] : map.bass.map((sample) => ({ ...sample, audio: audioFor(sample.file) }));
+  const useLegacy = bank !== "none" && !instrument;
+  // Older settings keep their original root and velocity mapping, even though their recordings come from the Pick bank.
+  const legacyLoops = new Map(useLegacy ? map.bassSounds?.pick.notes.flatMap(({ layers }) =>
+    layers.flatMap(({ files, loops }) => loops?.map((loop, i) => [files[i], loop] as const) ?? [])) : []);
+  const bass = useLegacy ? map.bass.map((sample) => ({ ...sample, audio: audioFor(sample.file), loop: legacyLoops.get(sample.file) })) : [];
   const bassInstrument: SampleSet["bassInstrument"] = instrument && {};
   if (bassInstrument) {
     for (const articulation of BASS_ARTICULATIONS) {
