@@ -1164,3 +1164,30 @@ describe("the original drummer’s pattern", () => {
     expect(generateDrums(grid, style, config, 1, undefined, undefined, learned)).toEqual(generateDrums(grid, style, config, 1));
   });
 });
+
+describe("section drum choices", () => {
+  const grid = steady(16);
+  const play = (overrides: Partial<SectionPlan>) =>
+    generateDrums(grid, [plan(0, 16, overrides)], settingsFor({ engine: 4, ending: { kind: "none" } }), 7)
+      .filter((note) => note.time < 2);
+
+  it("maps hats to a ride on the same steps and leaves Auto unchanged", () => {
+    const normal = play({});
+    const timekeepers = normal.filter(({ pitch }) => [CLOSED_HAT, OPEN_HAT, RIDE].includes(pitch));
+    const ride = play({ cymbal: "ride" });
+    expect(ride.filter(({ pitch }) => pitch === RIDE).map(({ time }) => time))
+      .toEqual([...new Set(timekeepers.map(({ time }) => time))]);
+    expect(ride.some(({ pitch }) => pitch === CLOSED_HAT || pitch === OPEN_HAT)).toBe(false);
+    expect(play({ cymbal: "auto", kick: "auto", snare: "auto" })).toEqual(normal);
+  });
+
+  it("places kicks on the requested beat grid and moves the half-time backbeat", () => {
+    expect(play({ kick: "four" }).filter(({ pitch }) => pitch === KICK).map(({ time }) => time)).toEqual([0, 0.5, 1, 1.5]);
+    const half = play({ kick: "half" });
+    expect(half.filter(({ pitch }) => pitch === KICK).map(({ time }) => time)).toEqual([0, 0.75]);
+    expect(half.filter(({ pitch }) => pitch === SNARE).map(({ time }) => time)).toEqual([1]);
+    expect(play({ kick: "half", snare: "stick" }).filter(({ pitch }) => pitch === SIDE_STICK).map(({ time }) => time)).toEqual([1]);
+    expect(play({ snare: "stick" }).some(({ pitch }) => pitch === SNARE)).toBe(false);
+    expect(play({ snare: "rim" }).some(({ pitch, rim }) => pitch === SNARE && rim)).toBe(true);
+  });
+});

@@ -5,6 +5,7 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 ## [Unreleased]
 
 ### Added
+- Set each section’s cymbal, kick, snare and bass articulation, and give later choruses a lift.
 - New drum grooves and fills learned from recordings of real drummers, and a drummer feel measured from them.
 - The MIDI clock can follow the song’s real beats, so pedals that sync to it stay with songs that speed up or slow down.
 

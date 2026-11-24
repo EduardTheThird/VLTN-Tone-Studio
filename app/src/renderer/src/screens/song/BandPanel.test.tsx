@@ -836,9 +836,37 @@ describe("Band panel", () => {
 
   it("sets a section's shape from the More popover", async () => {
     renderPanel({ sections: SECTIONS });
-    fireEvent.click(screen.getByRole("button", { name: "More bass options for Verse" }));
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Verse" }));
     pick(await screen.findByRole("combobox", { name: "Shape of Verse" }), "Build");
     expect(savedOptions().band.sections.verse.shape).toBe("build");
+  });
+
+  it("saves section playing choices and sends them to Preview", async () => {
+    stored({ beatGrid: grid });
+    mocks.renderPreview.mockReturnValue({ done: new Promise(() => undefined), cancel: vi.fn() });
+    renderPanel({ sections: SECTIONS });
+
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Verse" }));
+    const verseSnare = within(await screen.findByRole("group", { name: "Snare of Verse" }));
+    fireEvent.click(verseSnare.getByRole("button", { name: "Side stick" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Cymbal of Verse" })).getByRole("button", { name: "Hats" }));
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Verse" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Snare of Verse" })).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Chorus" }));
+    fireEvent.click(within(await screen.findByRole("group", { name: "Cymbal of Chorus" })).getByRole("button", { name: "Ride" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Kick of Chorus" })).getByRole("button", { name: "Four on the floor" }));
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Chorus" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Kick of Chorus" })).toBeNull());
+
+    expect(savedOptions().band.sections.verse).toMatchObject({ cymbal: "hats", snare: "stick" });
+    expect(savedOptions().band.sections.chorus).toMatchObject({ cymbal: "ride", kick: "four" });
+    fireEvent.click(screen.getByRole("button", { name: "Chorus" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(mocks.renderPreview).toHaveBeenCalledTimes(1));
+    const [request] = mocks.renderPreview.mock.calls[0];
+    expect(request.plans[0]).toMatchObject({ cymbal: "hats", snare: "stick" });
+    expect(request.plans[1]).toMatchObject({ cymbal: "ride", kick: "four" });
   });
 
   it("keeps the fill a checkbox for a song on the earlier drums", () => {
@@ -884,7 +912,7 @@ describe("Band panel", () => {
 
   it("saves each More option: octave, fills, hit the one, slides, dead notes and pickups", () => {
     renderPanel({ sections: SECTIONS });
-    fireEvent.click(screen.getByRole("button", { name: "More bass options for Verse" }));
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Verse" }));
     pick(screen.getByRole("combobox", { name: "Octave of Verse" }), "+1 octave");
     expect(savedOptions().band.sections.verse.octave).toBe(1);
     pick(screen.getByRole("combobox", { name: "Fills of Verse" }), "3");
@@ -901,7 +929,7 @@ describe("Band panel", () => {
 
   it("shows the style default beside the three techniques in More", () => {
     renderPanel({ sections: SECTIONS });
-    fireEvent.click(screen.getByRole("button", { name: "More bass options for Verse" }));
+    fireEvent.click(screen.getByRole("button", { name: "More band options for Verse" }));
     // The rock style plays pickups by default and no slides or dead notes.
     expect(screen.getByText("Style: on")).toBeTruthy();
     expect(screen.getAllByText("Style: off").length).toBeGreaterThanOrEqual(2);

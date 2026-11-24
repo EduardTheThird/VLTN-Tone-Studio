@@ -15,6 +15,10 @@ export interface NoteEvent {
   dead?: true;
   /** Use a recorded short note, if the bass instrument has one. */
   staccato?: true;
+  /** Emphasise the snare's high frequencies for this hit. */
+  rim?: true;
+  /** An explicit bass articulation selected for a section. */
+  articulation?: "legato" | "staccato";
 }
 
 // General MIDI drum map. These are the voices the style patterns use, so any GM kit plays them.

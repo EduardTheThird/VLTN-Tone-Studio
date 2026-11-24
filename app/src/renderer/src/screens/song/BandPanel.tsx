@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { host } from "@/host";
 import { selectWholeSongStems, useSong } from "@/song/store";
-import {
+import { sectionKind,
   CURRENT_ENGINE,
   planSections,
   RENDERED_KINDS,
@@ -88,7 +88,7 @@ import {
   type PendingRendered,
 } from "./band-panel-helpers";
 import { BAND_TAB_LABELS, BAND_TABS, isBandTab, useBandPanel } from "./band-panel-state";
-import { sectionKind, type BandSectionRow } from "./BandSections";
+import type { BandSectionRow } from "./BandSections";
 import { BandFooter, type PreviewChoice } from "./BandFooter";
 import { keptOriginals } from "@/song/band/fade-check";
 import { BandTabFeel } from "./BandTabFeel";
@@ -966,7 +966,7 @@ function BandBody({
                 notes: savedNotes,
                 grid,
                 harmony,
-                sections: rows.map(({ plan, name }) => ({ name, start: plan.start, end: plan.end })),
+                sections: rows.map(({ plan, name }) => ({ name, start: plan.start, end: plan.end, lifted: plan.lifted })),
                 selected: Math.min(selected ?? 0, Math.max(0, rows.length - 1)),
                 onSelect: (index) => {
                   setSelected(index);

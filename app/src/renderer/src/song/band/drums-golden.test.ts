@@ -48,6 +48,7 @@ function notesFor(style: StyleId, engine: number, extra: Partial<BandSettings> =
   const settings: BandSettings = {
     ...DEFAULT_BAND_SETTINGS,
     engine,
+    lift: 0,
     style,
     complexity: 1,
     swing: 0,

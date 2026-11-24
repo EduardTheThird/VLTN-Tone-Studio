@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { defaultFills, FILLS, type Fills, type SectionOverride, type SectionPlan, type SectionShape } from "@/song/band/arrangement";
 import { OCTAVE_SHIFTS, type OctaveShift } from "@/song/band/bass-parts";
 import { ENERGIES, findStyle, type StyleId } from "@/song/band/styles";
-import { SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
+import { SECTION_PLAY_CHOICES, SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
 
 const OCTAVE_LABELS: Record<string, string> = { "-1": "−1 octave", "0": "Same", "1": "+1 octave" };
 
@@ -40,11 +40,11 @@ export function BandSectionMore({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={disabled} aria-label={`More bass options for ${name}`}>
+        <Button type="button" variant="outline" size="sm" disabled={disabled} aria-label={`More band options for ${name}`}>
           More
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-72 flex-col gap-3">
+      <PopoverContent align="end" className="flex max-h-[var(--radix-popover-content-available-height)] w-80 flex-col gap-3 overflow-y-auto">
         {/* The table drops these two columns in a narrow window (under 1000 px), so they are offered here instead. */}
         <label className="flex items-center justify-between gap-2 text-sm min-[1000px]:hidden">
           Style
@@ -99,6 +99,25 @@ export function BandSectionMore({
           disabled={disabled || !hasOriginalDrums}
           onChange={(pattern) => onChange({ drumPattern: pattern })}
         />
+        {(Object.keys(SECTION_PLAY_CHOICES) as (keyof typeof SECTION_PLAY_CHOICES)[]).map((field) => {
+          const { label, choices, labels } = SECTION_PLAY_CHOICES[field];
+          return (
+            <div key={field} className="space-y-1">
+              <span className="text-sm">{label}</span>
+              <div role="group" aria-label={`${label} of ${name}`} className="flex flex-wrap gap-1">
+                {choices.map((choice) => {
+                  const active = (plan[field] ?? "auto") === choice;
+                  return (
+                    <Button key={choice} type="button" size="xs" variant={active ? "secondary" : "outline"}
+                      aria-pressed={active} disabled={disabled} onClick={() => onChange({ [field]: choice })}>
+                      {(labels as Record<string, string>)[choice]}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
         {drumPhrases && (
           <label className="flex items-center justify-between gap-2 text-sm">
             <span>

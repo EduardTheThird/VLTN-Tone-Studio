@@ -18,6 +18,7 @@ export interface PartSection {
   name: string;
   start: number;
   end: number;
+  lifted?: true;
 }
 
 export interface BandPartViewProps {
@@ -201,6 +202,7 @@ export function BandPartView({
           </>
         )}
         {edge && <span aria-hidden="true" className="size-2.5 rounded-full" style={{ background: edge.edge }} />}
+        {section?.lifted && <span className="text-xs text-silkscreen-3">Lift</span>}
         {layout && <span className="text-silkscreen-3">{layout.bars.length === 1 ? "1 bar" : `${layout.bars.length} bars`}</span>}
       </div>
       {!notes ? (

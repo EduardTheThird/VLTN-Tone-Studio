@@ -30,14 +30,6 @@ const MUTED = "text-silkscreen-3";
 const NARROW = "min-[1000px]:table-cell";
 const WIDE_ONLY = `hidden ${NARROW}`;
 
-/** The same section's name with a trailing number taken off, so "Verse 2" and "Verse" are one kind of section. */
-export function sectionKind(name: string): string {
-  return name
-    .replace(/\s*\d+$/, "")
-    .trim()
-    .toLowerCase();
-}
-
 /**
  * One row per section plan: name and length, style, energy, the fill at its end, whether drums and bass play in it, then the bass part,
  * busy and loud, and a More popover for the rest. A value the performer has not changed is muted. A song without sections has one row,

@@ -558,7 +558,7 @@ function buildSlots(
       octave: plan.octave,
       busy: plan.busy,
       slides: plan.slides,
-      deadNotes: plan.deadNotes,
+      deadNotes: plan.deadNotes && plan.bassArticulation !== "legato",
       index,
       last: true,
       strong: true,
@@ -776,7 +776,7 @@ function buildSlots(
         octave: plan.octave,
         busy: plan.busy,
         slides: plan.slides,
-        deadNotes: plan.deadNotes,
+        deadNotes: plan.deadNotes && plan.bassArticulation !== "legato",
         index,
         last: index === stepList.length - 1,
         strong,
@@ -893,7 +893,7 @@ export function generateBass(
     }
     return source.int(2 * VELOCITY_JITTER + 1) - VELOCITY_JITTER;
   };
-  const picked: { slot: Slot; pitch: number; velocity: number; duration: number; time: number }[] = [];
+  const picked: { slot: Slot; pitch: number; velocity: number; duration: number; time: number; articulation?: NoteEvent["articulation"] }[] = [];
 
   slots.forEach((slot, i) => {
     if (!slot.chord) return;
@@ -904,11 +904,17 @@ export function generateBass(
     const pitch = approach || slot.variant ? chosen.pitch : nudgedPitch(chosen.pitch, slot.chord.bassOctave, range);
     const accent = (slot.downbeat ? DOWNBEAT_ACCENT : 0) + (slot.locked ? KICK_ACCENT : 0) + (approach ? APPROACH_DIP : 0) + (slot.hitOne ? HIT_ONE_ACCENT : 0) + (slot.figure?.accent ? FIGURE_ACCENT : 0);
     const nextTime = next ? next.time : slot.barEnd;
+    const choice = plans[slot.plan]?.bassArticulation;
+    const articulation = !slot.ending && (choice === "staccato" || choice === "legato") ? choice : undefined;
+    let duration = noteLength(slot, nextTime, settings.bassFeel);
+    if (articulation === "staccato") duration = Math.min(duration, beatSpan(grid.beats, slot.beat) / 4);
+    if (articulation === "legato") duration = Math.max(MIN_DURATION, Math.min(nextTime, slot.barEnd) - slot.time);
     picked.push({
       slot,
       pitch,
       velocity: clampVelocity(LOUD_VELOCITY[slot.loud] + accent + jitter(slot)),
-      duration: noteLength(slot, nextTime, settings.bassFeel),
+      duration,
+      articulation,
       time: slot.time,
     });
     // A variant note does not move the voice leading, so the bars after it play as they would without it.
@@ -931,7 +937,8 @@ export function generateBass(
     .map((entry) => ({
       slot: entry.slot,
       note: { time: entry.time, pitch: entry.pitch + (shifts.get(entry.slot.plan) ?? 0), velocity: entry.velocity, duration: entry.duration,
-        ...(settings.bassSampleVersion === 2 && settings.bassFeel <= 0.1 && !entry.slot.ending && !entry.slot.hitOne ? { staccato: true } : {}),
+        ...(entry.articulation ? { articulation: entry.articulation } : {}),
+        ...(entry.articulation === "staccato" || (!entry.articulation && settings.bassSampleVersion === 2 && settings.bassFeel <= 0.1 && !entry.slot.ending && !entry.slot.hitOne) ? { staccato: true } : {}),
       } as NoteEvent,
     }))
     .sort((a, b) => a.note.time - b.note.time || a.note.pitch - b.note.pitch);
@@ -952,6 +959,11 @@ export function endBeforeNext(notes: readonly NoteEvent[]): NoteEvent[] {
   return sorted.map((note, i) => {
     const next = sorted[i + 1];
     if (!next) return note;
+    if (note.articulation === "legato") {
+      const gap = next.time - note.time;
+      // Follow and humanise can move the next attack. Close a short timing gap while respecting rests.
+      return { ...note, duration: Math.max(CLAMP_FLOOR, gap - note.duration <= 0.04 ? gap : note.duration) };
+    }
     const room = next.time - BASS_GAP - note.time;
     if (note.duration <= room) return note;
     return { ...note, duration: Math.max(CLAMP_FLOOR, room) };

@@ -2,10 +2,10 @@
 // the last bar of a phrase turns around, the last bar of every second phrase has a small fill, and the section's last bar leads into the
 // next section. Pure.
 
-import { CLOSED_HAT, CRASH, KICK, OPEN_HAT, PEDAL_HAT, RIDE, SNARE } from "./note";
+import { CLOSED_HAT, CRASH, KICK, OPEN_HAT, PEDAL_HAT, RIDE, SIDE_STICK, SNARE } from "./note";
 import { isPhraseEnd, phraseBars } from "./phrases";
 import { isChorusName, type FillSize, type SectionPlan } from "./arrangement";
-import { ramp } from "./styles/notation";
+import { ramp, VEL } from "./styles/notation";
 import type { DrumHit } from "./styles/types";
 
 /** Where a bar sits in its section's phrases. Phrases are 4 bars, or 2 in a section shorter than 4 bars (the same rule as the bass). */
@@ -40,6 +40,58 @@ export function barRoles(sectionBars: number): BarRole[] {
 
 /** The hat and the ride: voices that keep time, so a hit of one on a step takes the place of another on the same step. */
 const TIME_KEEPERS: readonly number[] = [CLOSED_HAT, OPEN_HAT, PEDAL_HAT, RIDE];
+
+/** Apply section choices to groove hits before adding phrase fills and bar marks. */
+export function sectionGroove(hits: DrumHit[], plan: SectionPlan, steps: number, division: number): DrumHit[] {
+  const { cymbal, kick, snare } = plan;
+  const changeCymbal = cymbal && cymbal !== "auto";
+  const changeKick = kick && kick !== "auto";
+  const changeSnare = snare && snare !== "auto";
+  if (!changeCymbal && !changeKick && !changeSnare) return hits;
+
+  const thirdBeat = 2 * division;
+  const kickSteps = kick === "four" ? Array.from({ length: steps / division }, (_, beat) => beat * division)
+    : [0, division + Math.ceil(division / 2)].filter((step) => step < steps);
+  const kicks = new Map<number, DrumHit>();
+  const cymbals = new Map<number, DrumHit>();
+  const mapped: DrumHit[] = [];
+  let backbeat: DrumHit | undefined;
+  for (const hit of hits) {
+    if (hit.pitch === KICK && changeKick) {
+      if (kick === "four" && hit.step === steps - 1 && plan.busy >= 4) mapped.push(hit);
+      if (hit.velocity > (kicks.get(hit.step)?.velocity ?? 0)) kicks.set(hit.step, hit);
+    } else if (hit.pitch === SNARE || hit.pitch === SIDE_STICK) {
+      if (hit.ghost && (snare === "stick" || kick === "half")) continue;
+      const played = hit.ghost ? hit : snare === "stick" ? { ...hit, pitch: SIDE_STICK } : snare === "rim"
+        ? { ...hit, pitch: SNARE, velocity: Math.min(127, hit.velocity + 12), rim: true as const } : hit;
+      if (kick === "half") {
+        if (!backbeat || played.velocity > backbeat.velocity) backbeat = played;
+      } else mapped.push(played);
+    } else if (changeCymbal && hit.pitch !== PEDAL_HAT && TIME_KEEPERS.includes(hit.pitch)) {
+      const pitch = cymbal === "ride" ? RIDE : cymbal === "hats" ? CLOSED_HAT : hit.step % division === 0 ? OPEN_HAT : CLOSED_HAT;
+      const velocity = pitch === RIDE && hit.pitch !== RIDE ? Math.max(1, hit.velocity - 6) : hit.velocity;
+      if (velocity > (cymbals.get(hit.step)?.velocity ?? 0)) cymbals.set(hit.step, { ...hit, pitch, velocity });
+    } else if (hit.pitch !== PEDAL_HAT || cymbal !== "ride") {
+      mapped.push(hit);
+    }
+  }
+  mapped.push(...cymbals.values());
+  if (changeKick) {
+    for (const step of kickSteps) mapped.push({ step, pitch: KICK, velocity: kicks.get(step)?.velocity ?? VEL.accent });
+  }
+  if (kick === "half" && thirdBeat < steps) {
+    mapped.push({
+      step: thirdBeat,
+      pitch: backbeat?.pitch ?? (snare === "stick" ? SIDE_STICK : SNARE),
+      velocity: backbeat?.velocity ?? (snare === "rim" ? 116 : 104),
+      ...(snare === "rim" ? { rim: true } : {}),
+    });
+  }
+  if (cymbal === "ride" && cymbals.size > 0) {
+    for (let step = division; step < steps; step += 2 * division) mapped.push({ step, pitch: PEDAL_HAT, velocity: 64 });
+  }
+  return mapped;
+}
 
 /**
  * A groove's hits with a patch laid over its steps from `from` on: groove hits there on a voice the patch plays are dropped, and so is a

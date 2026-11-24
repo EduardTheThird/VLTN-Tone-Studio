@@ -155,6 +155,13 @@ export const SWING_MAX = 0.75;
 export type DrumPattern = "style" | "original";
 const isDrumPattern = (value: unknown): value is DrumPattern => value === "style" || value === "original";
 
+export const CYMBAL_CHOICES = ["auto", "hats", "ride", "open"] as const;
+export const KICK_CHOICES = ["auto", "four", "half"] as const;
+export const SNARE_CHOICES = ["auto", "stick", "rim"] as const;
+export const BASS_ARTICULATIONS = ["auto", "legato", "staccato"] as const;
+export const SONG_LIFTS = [0, 1, 2] as const;
+export type SongLift = (typeof SONG_LIFTS)[number];
+
 export interface PartToggles {
   drums: boolean;
   bass: boolean;
@@ -203,6 +210,12 @@ export interface SectionPlan {
    */
   shape?: SectionShape;
   drumPattern?: DrumPattern;
+  cymbal?: (typeof CYMBAL_CHOICES)[number];
+  kick?: (typeof KICK_CHOICES)[number];
+  snare?: (typeof SNARE_CHOICES)[number];
+  bassArticulation?: (typeof BASS_ARTICULATIONS)[number];
+  /** Automatic lift changed at least one of this section's levels. */
+  lifted?: true;
   /** The drummer keeps the recorded shape unless the performer picked one. */
   drumShapeExplicit?: true;
   play: PartToggles;
@@ -220,7 +233,7 @@ export interface SectionPlan {
 }
 
 /** What a section can change. Anything not set falls back to the song's settings or to the section's own name and position. */
-export type SectionOverride = Partial<Omit<SectionPlan, "name" | "bassPart" | "bassLead" | "bassRamp" | "drumShapeExplicit">> & { bassPart?: BassPartChoice };
+export type SectionOverride = Partial<Omit<SectionPlan, "name" | "bassPart" | "bassLead" | "bassRamp" | "drumShapeExplicit" | "lifted">> & { bassPart?: BassPartChoice };
 
 /** The shapes a section's drums can take. */
 export const SECTION_SHAPES = ["steady", "build", "drop", "half"] as const;
@@ -255,6 +268,7 @@ export interface BandSettings {
   style: StyleId;
   /** 0 sparse to 1 busy. */
   complexity: number;
+  lift: SongLift;
   /** 0 straight to 0.75 heavy. Applies to straight grids only. */
   swing: number;
   ghostNotes: boolean;
@@ -327,6 +341,7 @@ export const CURRENT_ENGINE = 4;
 
 export const DEFAULT_BAND_SETTINGS: BandSettings = {
   parts: { drums: true, bass: true },
+  lift: 1,
   style: "rock",
   complexity: 0.5,
   swing: 0,
@@ -415,6 +430,10 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
     // The shape drives the lift: a section the performer gave a shape lifts when it is a build, and otherwise a build lifts like a pre-chorus.
     bassRamp: settings.engine >= 3 && override.shape !== undefined ? override.shape === "build" : bass.rampLoud || (settings.engine >= 3 && shape === "build"),
     shape,
+    ...(override.cymbal ? { cymbal: override.cymbal } : {}),
+    ...(override.kick ? { kick: override.kick } : {}),
+    ...(override.snare ? { snare: override.snare } : {}),
+    ...(override.bassArticulation ? { bassArticulation: override.bassArticulation } : {}),
     ...(override.drumPattern ? { drumPattern: override.drumPattern } : settings.drumPattern === "original" ? { drumPattern: settings.drumPattern } : {}),
     ...(override.shape && (override.drumPattern ?? settings.drumPattern) === "original" ? { drumShapeExplicit: true as const } : {}),
     octave: override.octave ?? bass.octave,
@@ -467,6 +486,11 @@ function withHint(override: SectionOverride, hint: SectionBandHint | undefined, 
   return { ...fromHint, ...override };
 }
 
+/** Section names with a trailing number removed share a kind. */
+export function sectionKind(name: string): string {
+  return name.replace(/\s*\d+$/, "").trim().toLowerCase();
+}
+
 /**
  * Splits the song into one plan per section, in time order. The first plan starts at 0 and the last one runs to the song's end, and
  * each gap between sections goes to the section before it. A song without sections gets one plan for the whole song.
@@ -489,6 +513,8 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
   }
 
   const ordered = sortedSections(sections);
+  const seen = new Set<string>();
+  const lastChorus = ordered.findLastIndex((section) => isChorusName(section.name));
   return ordered.map((section, i) => {
     const next = ordered[i + 1];
     const previous = ordered[i - 1];
@@ -496,6 +522,16 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
     const override = withHint(settings.sections[section.id] ?? {}, hintAt(hints, i === 0 ? 0 : section.start, end), settings, section.name);
     // A chorus after a section that is not a chorus hits the one by default.
     const followsOther = previous !== undefined && !isChorusName(previous.name);
+    const fields = playFields(section.name, override, settings, chorusGroove);
+    const kind = sectionKind(section.name);
+    const repeated = kind !== "" && seen.has(kind);
+    seen.add(kind);
+    const finalLift = settings.lift === 2 && i === lastChorus;
+    const manual = settings.sections[section.id];
+    const adjustable = manual?.energy === undefined && manual?.loud === undefined && manual?.busy === undefined;
+    const loud = settings.lift && adjustable && (repeated || finalLift)
+      ? Math.min(5, fields.loud + 1) as Energy : fields.loud;
+    const busy = finalLift && adjustable ? Math.min(5, fields.busy + 1) as Energy : fields.busy;
     return {
       sectionId: section.id,
       start: i === 0 ? 0 : section.start,
@@ -504,7 +540,10 @@ export function planSections(sections: readonly Section[], songEnd: number, sett
       fill: override.fill ?? (settings.engine >= 3 ? true : next ? isChorusName(next.name) : true),
       hitTheOne: override.hitTheOne ?? (isChorusName(section.name) && followsOther),
       ...(settings.engine >= 3 && (section.mode === "loop" || section.mode === "repeat-once") ? { vamp: true as const } : {}),
-      ...playFields(section.name, override, settings, chorusGroove),
+      ...fields,
+      loud,
+      busy,
+      ...(loud !== fields.loud || busy !== fields.busy ? { lifted: true as const } : {}),
     };
   });
 }
@@ -781,6 +820,14 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   if (isBassPartChoice(value.bassPart)) override.bassPart = value.bassPart;
   if (isFillChoice(value.fill)) override.fill = value.fill;
   if (isShape(value.shape)) override.shape = value.shape;
+  const cymbal = CYMBAL_CHOICES.find((choice) => choice === value.cymbal);
+  const kick = KICK_CHOICES.find((choice) => choice === value.kick);
+  const snare = SNARE_CHOICES.find((choice) => choice === value.snare);
+  const bassArticulation = BASS_ARTICULATIONS.find((choice) => choice === value.bassArticulation);
+  if (cymbal) override.cymbal = cymbal;
+  if (kick) override.kick = kick;
+  if (snare) override.snare = snare;
+  if (bassArticulation) override.bassArticulation = bassArticulation;
   if (isDrumPattern(value.drumPattern)) override.drumPattern = value.drumPattern;
   if (isPartToggles(value.play)) override.play = { drums: value.play.drums, bass: value.play.bass };
   if (isSeed(value.seed)) override.seed = value.seed;
@@ -809,6 +856,7 @@ export function parseBandSettings(value: unknown): BandSettings {
     parts: isPartToggles(source.parts) ? { drums: source.parts.drums, bass: source.parts.bass } : { ...defaults.parts },
     style: isStyleId(source.style) ? source.style : defaults.style,
     complexity: isUnit(source.complexity) ? source.complexity : defaults.complexity,
+    lift: SONG_LIFTS.find((lift) => lift === source.lift) ?? (isRecord(value) ? 0 : defaults.lift),
     swing: isSwing(source.swing) ? source.swing : defaults.swing,
     ghostNotes: isBool(source.ghostNotes) ? source.ghostNotes : defaults.ghostNotes,
     crashOnSections: isBool(source.crashOnSections) ? source.crashOnSections : defaults.crashOnSections,

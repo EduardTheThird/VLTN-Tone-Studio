@@ -19,6 +19,9 @@ export const PEAK_LIMIT = 10 ** (-1 / 20);
 const CUT_SECONDS = 0.01;
 /** A bass note fades out over this long after its duration. */
 const BASS_RELEASE_SECONDS = 0.03;
+const STACCATO_RELEASE_SECONDS = 0.015;
+const RIM_SHELF_HZ = 3000;
+const RIM_HIGH_GAIN = 10 ** (4 / 20) - 1;
 const BASS_RELEASE_GAIN = 10 ** (-18 / 20);
 /** A slide rises into its note over this long. */
 export const SLIDE_SECONDS = 0.04;
@@ -121,12 +124,13 @@ interface Voice {
   glide?: { semitones: number; frames: number };
   /** A one-pole low-pass coefficient (0 to 1) applied to the voice before it is shaped. Unset for no filter. */
   smoothing?: number;
+  rimShelf?: number;
   atNoteOff?: true;
 }
 
 /** Adds one voice into the output. Reads by linear interpolation, and folds a stereo sample to mono. */
 function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
-  const { sample, rate, gain, shape, glide, smoothing } = voice;
+  const { sample, rate, gain, shape, glide, smoothing, rimShelf } = voice;
   const first = sample.channels[0];
   const second = sample.channels.length > 1 ? sample.channels[1] : first;
   const last = first.length - 1;
@@ -153,6 +157,10 @@ function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
     if (smoothing !== undefined) {
       filtered += smoothing * (raw - filtered);
       raw = filtered;
+    }
+    if (rimShelf !== undefined) {
+      filtered += rimShelf * (raw - filtered);
+      raw += RIM_HIGH_GAIN * (raw - filtered);
     }
     let envelope = 1;
     if (frame >= shape.holdEnd) envelope *= 1 - (frame - shape.holdEnd) / shape.release;
@@ -203,6 +211,7 @@ function drumVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
       left,
       right,
       shape: { start, holdEnd: Infinity, release: 0, cutAt, cutFade },
+      rimShelf: note.rim ? 1 - Math.exp(-2 * Math.PI * RIM_SHELF_HZ / sampleRate) : undefined,
     }));
   });
 }
@@ -238,7 +247,7 @@ function bassVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
       shape: {
         start,
         holdEnd,
-        release: note.dead ? deadRelease : release,
+        release: note.dead ? deadRelease : note.articulation === "staccato" && !recorded ? Math.round(STACCATO_RELEASE_SECONDS * sampleRate) : release,
         cutAt: next,
         cutFade,
       },
@@ -246,7 +255,7 @@ function bassVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
       smoothing: note.dead && !recorded ? smoothing : undefined,
     }));
     const off = Math.min(holdEnd, next);
-    if (!recorded && !note.dead) {
+    if (!recorded && !note.dead && note.articulation !== "staccato") {
       for (const { pick, weight } of pickBassLayers(samples, note.pitch, note.velocity, take, "release")) {
         voices.push({
           sample: pick.audio,

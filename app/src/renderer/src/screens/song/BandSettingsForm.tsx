@@ -2,11 +2,11 @@ import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice } from "@/song/band/arrangement";
+import { BASS_FROM, BASS_RANGES, BASS_SOUNDS, DRUM_KITS, HUMANISE_CHOICES, SONG_LIFTS, type BandSettings, type BassFrom, type DrumKit, type FollowSource, type HumaniseChoice, type SongLift } from "@/song/band/arrangement";
 import { DEFAULT_BASS_PARTS, type BassPart } from "@/song/band/bass-parts";
 import type { StyleId } from "@/song/band/styles";
 import { variantExtraBytes } from "@/song/band/live-variants";
-import { BASS_PART_LABELS, groupedStyleChoices } from "./band-labels";
+import { BASS_PART_LABELS, SONG_LIFT_LABELS, groupedStyleChoices } from "./band-labels";
 /**
  * The track of a band slider. The theme's muted track is nearly the colour of the glass dialog, so at a value of 0 only the thumb showed.
  * A lighter track keeps the full length visible at any value.
@@ -65,6 +65,17 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
                   {choices.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
                 </SelectGroup>
               ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="flex items-center gap-3">
+          Lift later choruses
+          <Select value={String(settings.lift)} onValueChange={(value) => onChange({ lift: Number(value) as SongLift })}>
+            <SelectTrigger aria-label="Lift later choruses" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SONG_LIFTS.map((level) => <SelectItem key={level} value={String(level)}>{SONG_LIFT_LABELS[level]}</SelectItem>)}
             </SelectContent>
           </Select>
         </label>

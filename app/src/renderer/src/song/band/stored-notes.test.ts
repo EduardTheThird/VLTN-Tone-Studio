@@ -39,7 +39,7 @@ describe("stored band notes", () => {
     expect(parseBandNotes({ ...good, seed: "x" })).toBeNull();
     expect(parseBandNotes({ ...good, drums: [[1, 2, 3]] })).toBeNull();
     expect(parseBandNotes({ ...good, drums: [[0, 200, 100, 100, 0]] })).toBeNull();
-    expect(parseBandNotes({ ...good, bass: [[0, 36, 100, 100, 9]] })).toBeNull();
+    expect(parseBandNotes({ ...good, bass: [[0, 36, 100, 100, 64]] })).toBeNull();
     expect(parseBandNotes({ ...good, bass: "none" })).toBeNull();
     expect(parseBandNotes({ ...good, drums: Array.from({ length: 20001 }, () => [0, 36, 100, 100, 0]) })).toBeNull();
   });
@@ -79,4 +79,16 @@ it("preserves detected stop times and filters damaged entries", () => {
   const saved = parseBandNotes({ engine: 3, seed: 1, drums: [], bass: [], detectedStops: [2, "3", -1, 2.5] })!;
   expect(saved.detectedStops).toEqual([2, 2.5]);
   expect(updatedBandNotes(saved, { drums: [], bass: [] }, { drums: true, bass: true }, { drums: true, bass: true }, 3, 1, undefined, [5]).detectedStops).toEqual([5]);
+});
+
+
+it("round trips rim and explicit bass articulation flags", () => {
+  const drums: NoteEvent[] = [{ time: 0, pitch: 38, velocity: 100, duration: 0.1, rim: true }];
+  const bass: NoteEvent[] = [
+    { time: 0, pitch: 36, velocity: 85, duration: 0.5, articulation: "legato" },
+    { time: 0.5, pitch: 36, velocity: 85, duration: 0.125, articulation: "staccato", staccato: true },
+  ];
+  const saved = parseBandNotes(bandNotesOf({ drums, bass }, 4, 1))!;
+  expect(fromStoredNotes(saved.drums)).toEqual(drums);
+  expect(fromStoredNotes(saved.bass)).toEqual(bass);
 });

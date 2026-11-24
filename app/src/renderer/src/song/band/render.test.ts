@@ -282,3 +282,13 @@ it("uses both recorded bass takes deterministically, with separate short notes a
   expect(valueNear(0.25)).toBeCloseTo(0.3);
   expect(valueNear(0.4)).toBeCloseTo(0.4);
 });
+
+it("boosts a rim hit above the shelf frequency without changing the rest of the kit", () => {
+  const audio = sine(7500, 0.02);
+  audio.channels[0] = audio.channels[0].map((value) => value * 0.12);
+  const samples = kit({ [SNARE]: [layer(audio)] });
+  const ordinary = renderPart([hit(0.01, SNARE)], "drums", samples, RATE / 10).audio.channels[0];
+  const rim = renderPart([{ ...hit(0.01, SNARE), rim: true }], "drums", samples, RATE / 10).audio.channels[0];
+  const energy = (channel: Float32Array) => channel.reduce((sum, value) => sum + value * value, 0);
+  expect(energy(rim)).toBeGreaterThan(1.5 * energy(ordinary));
+});

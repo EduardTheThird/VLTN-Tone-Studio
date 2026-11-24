@@ -865,3 +865,19 @@ it("places a low Fingers line in D below open E only after the sample update", (
   const updated = generateBass(...args, { ...settings, bassSampleVersion: 2, bassFeel: 0 }, [], 42);
   expect(updated[0]).toMatchObject({ pitch: 26, staccato: true });
 });
+
+it("plays explicit short and legato bass while keeping rests and removing legato dead notes", () => {
+  const grid = gridOf(16);
+  const harmony = harmonyFor(barsOf("C", "Am", null, "F"));
+  const run = (bassArticulation: NonNullable<SectionPlan["bassArticulation"]>) =>
+    generateBass(grid, harmony, [planFor(16, { bassPart: "pulse", bassArticulation, deadNotes: true })],
+      settingsFor({ ending: { kind: "none" } }), [], 9);
+  const short = run("staccato").filter((note) => !note.dead);
+  expect(short.length).toBeGreaterThan(4);
+  expect(short.every((note) => note.staccato && note.duration <= 0.125)).toBe(true);
+  const legato = run("legato");
+  expect(legato.some((note) => note.dead)).toBe(false);
+  expect(legato[0].time + legato[0].duration).toBeCloseTo(legato[1].time);
+  const beforeRest = legato.findLast((note) => note.time < 4)!;
+  expect(beforeRest.time + beforeRest.duration).toBeLessThanOrEqual(4);
+});

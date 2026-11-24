@@ -4,12 +4,16 @@
 import type { LearnedDrumsReport } from "./drum-transcribe";
 import type { NoteEvent } from "./note";
 
-/** [time in ms, pitch, velocity, duration in ms, flags]. Flags: bit 0 is a dead note, bit 1 is a slide, bit 2 is staccato. */
+/** [time in ms, pitch, velocity, duration in ms, flags]. Flags encode the playing techniques below. */
 export type StoredNote = [number, number, number, number, number];
 
 export const FLAG_DEAD = 1;
 export const FLAG_SLIDE = 2;
 const FLAG_STACCATO = 4;
+const FLAG_RIM = 8;
+const FLAG_LEGATO = 16;
+const FLAG_SHORT_RELEASE = 32;
+const MAX_FLAGS = FLAG_DEAD | FLAG_SLIDE | FLAG_STACCATO | FLAG_RIM | FLAG_LEGATO | FLAG_SHORT_RELEASE;
 /** The most notes of one part that are kept, so a damaged entry cannot grow without limit. */
 export const MAX_STORED_NOTES = 20000;
 
@@ -33,7 +37,9 @@ export function toStoredNotes(notes: readonly NoteEvent[]): StoredNote[] {
     note.pitch,
     Math.round(note.velocity),
     Math.round(note.duration * 1000),
-    (note.dead ? FLAG_DEAD : 0) | (note.slideFrom !== undefined ? FLAG_SLIDE : 0) | (note.staccato ? FLAG_STACCATO : 0),
+    (note.dead ? FLAG_DEAD : 0) | (note.slideFrom !== undefined ? FLAG_SLIDE : 0) | (note.staccato ? FLAG_STACCATO : 0) |
+      (note.rim ? FLAG_RIM : 0) | (note.articulation === "legato" ? FLAG_LEGATO : 0) |
+      (note.articulation === "staccato" ? FLAG_SHORT_RELEASE : 0),
   ]);
 }
 
@@ -44,6 +50,9 @@ export function fromStoredNotes(stored: readonly StoredNote[]): NoteEvent[] {
     if (flags & FLAG_SLIDE) note.slideFrom = SLIDE_SEMITONES;
     if (flags & FLAG_DEAD) note.dead = true;
     if (flags & FLAG_STACCATO) note.staccato = true;
+    if (flags & FLAG_RIM) note.rim = true;
+    if (flags & FLAG_LEGATO) note.articulation = "legato";
+    if (flags & FLAG_SHORT_RELEASE) note.articulation = "staccato";
     return note;
   });
 }
@@ -65,7 +74,7 @@ function isStoredNote(value: unknown): value is StoredNote {
     value[3] >= 0 &&
     Number.isInteger(value[4]) &&
     value[4] >= 0 &&
-    value[4] <= FLAG_DEAD + FLAG_SLIDE + FLAG_STACCATO
+    value[4] <= MAX_FLAGS
   );
 }
 

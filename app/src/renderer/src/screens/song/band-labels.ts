@@ -1,6 +1,15 @@
-import { SECTION_SHAPES, type FillSize, type SectionShape } from "@/song/band/arrangement";
+import { BASS_ARTICULATIONS, CYMBAL_CHOICES, KICK_CHOICES, SECTION_SHAPES, SNARE_CHOICES, type FillSize, type SectionShape, type SongLift } from "@/song/band/arrangement";
 import type { BassPartChoice } from "@/song/band/bass-parts";
 import { STYLE_IDS, STYLES, type StyleId } from "@/song/band/styles";
+
+export const SECTION_PLAY_CHOICES = {
+  cymbal: { label: "Cymbal", choices: CYMBAL_CHOICES, labels: { auto: "Auto", hats: "Hats", ride: "Ride", open: "Open hats" } },
+  kick: { label: "Kick", choices: KICK_CHOICES, labels: { auto: "Auto", four: "Four on the floor", half: "Half-time" } },
+  snare: { label: "Snare", choices: SNARE_CHOICES, labels: { auto: "Auto", stick: "Side stick", rim: "Rimshot" } },
+  bassArticulation: { label: "Bass notes", choices: BASS_ARTICULATIONS, labels: { auto: "Auto", legato: "Legato", staccato: "Staccato" } },
+} as const;
+
+export const SONG_LIFT_LABELS: Record<SongLift, string> = { 0: "Off", 1: "A little", 2: "More" };
 
 /** The names the Band panel shows for each bass part, and for Auto. */
 export const BASS_PART_LABELS: Record<BassPartChoice, string> = {

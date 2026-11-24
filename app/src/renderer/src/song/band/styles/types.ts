@@ -42,6 +42,7 @@ export interface DrumHit {
   tier?: Tier;
   /** A ghost note: dropped when ghost notes are off. */
   ghost?: boolean;
+  rim?: true;
 }
 
 /** One bar of drums. `steps` is `meter.beatsPerBar × meter.stepsPerBeat` for the style it belongs to. */

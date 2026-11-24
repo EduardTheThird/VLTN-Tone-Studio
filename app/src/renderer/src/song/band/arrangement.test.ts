@@ -658,3 +658,31 @@ it("reads the former finger setting and retains the old range until the sample u
   expect(parseBandSettings({ bassSound: "finger" }).bassSampleVersion).toBeUndefined();
   expect(parseBandSettings({ bassSound: "pick", bassSampleVersion: 2 })).toMatchObject({ bassSound: "pick", bassSampleVersion: 2 });
 });
+
+describe("section choices and song lift", () => {
+  it("reads valid choices and starts old songs with lift off", () => {
+    const options = {
+      a: { cymbal: "ride", kick: "four", snare: "stick", bassArticulation: "staccato" },
+      b: { cymbal: "bad", kick: 3, snare: false, bassArticulation: "invalid" },
+    };
+    expect(parseBandSettings({ sections: options }).sections).toEqual({ a: options.a });
+    expect(parseBandSettings({}).lift).toBe(0);
+    expect(parseBandSettings(undefined).lift).toBe(1);
+    expect(parseBandSettings({ lift: 2 }).lift).toBe(2);
+  });
+
+  it("lifts repeats and the final chorus, respecting hand-set levels", () => {
+    const sections = [
+      section("a", "Chorus 1", 0, 2), section("b", "Verse", 2, 4),
+      section("c", "Chorus 2", 4, 6), section("d", "Chorus 3", 6, 8),
+    ];
+    const manual = { d: { loud: 3 as const } };
+    const little = planSections(sections, 8, settings({ lift: 1, sections: manual }));
+    expect(little.map(({ loud }) => loud)).toEqual([4, 2, 5, 3]);
+    expect(little.map(({ lifted }) => lifted)).toEqual([undefined, undefined, true, undefined]);
+    const more = planSections(sections, 8, settings({ lift: 2, sections: { d: { busy: 5 } } }));
+    expect(more.map(({ busy, loud }) => [busy, loud])).toEqual([[4, 4], [2, 2], [4, 5], [5, 4]]);
+    expect(planSections(sections, 8, settings({ lift: 2 }))[3].busy).toBe(5);
+    expect(planSections(sections, 8, settings({ lift: 1, sections: { c: { energy: 2 } } }))[2].lifted).toBeUndefined();
+  });
+});
