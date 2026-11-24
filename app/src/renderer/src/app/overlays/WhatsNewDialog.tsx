@@ -23,6 +23,36 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Drums that follow the original",
+    text: "In Band, let generated drums learn the song’s rhythm from the original drum stem. Engine 4 also adds grooves, fills and feel measured from recordings of drummers. Preview each section’s busyness and loudness on the pad, copy its settings or lock its notes.",
+    image: band,
+  },
+  {
+    title: "Fingers and pick bass",
+    text: "Choose Fingers or Pick for a different recorded bass. Both reach low B and play short and ghost notes from samples. Set each section’s bass articulation and whether the line can jump octaves.",
+    image: band,
+  },
+  {
+    title: "Change the band live",
+    text: "Enable live band changes for a song and update its parts. In Stage mode or from an assigned key or footswitch, call Lift, Soft, Drums only or Band out. The change lands at the next bar.",
+    image: stageMode,
+  },
+  {
+    title: "Keys, synth and percussion",
+    text: "Add piano, electric piano or organ that follows the chord chart. Set synth pads, stabs or pulses and try a synth bass voice. Add tambourine, shaker, claps or cowbell to individual sections.",
+    image: stemMixer,
+  },
+  {
+    title: "Name presets and plan your rig",
+    text: "Name TimeLine, SY-200 and IR-200 presets, then choose them by section in a song’s Rig table. In My rig, test recall and tempo, check channels and print a setup sheet. Stage shows the last known pedal state and offers Reset rig and Solo.",
+    image: rigTools,
+  },
+  {
+    title: "RC-10R clock, breaks and memory review",
+    text: "Send MIDI clock from the song’s recorded beats so synced pedals can follow tempo changes. Add RC-10R breaks and section levels to a cue draft. Save rhythm memory choices with a song and compare them against a pedal backup.",
+    image: midiCues,
+  },
+  {
     title: "Rename SnapTones and IRs on the GP-200",
     text: "In Tones, under On your GP-200, right-click a filled SnapTone or User IR slot and pick Rename. Names can be up to 15 characters. The app reads the name back from the pedal to check it, and a linked TONE3000 tone keeps its link. GP-150 users: preset numbers now stay right after you overwrite presets, so the Rig arrows step through them in order.",
     image: rigTools,

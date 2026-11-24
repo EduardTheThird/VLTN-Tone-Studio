@@ -2,31 +2,19 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
-## [Unreleased]
+## [0.9.53] — 2026-11-24
 
 ### Added
-- Save RC-10R memory settings with a song and compare them with a pedal backup.
-- Shape a section’s busyness and loudness with one drag, copy and lock settings, control bass octave jumps and hat openness, and choose band presets.
-- Add tambourine, shaker, claps or cowbell to individual sections.
-- Synth pads and rhythmic chords follow the song’s harmony, and bass can use Sub, Pumping or Sequenced synth voices.
-- A keys player with piano, electric piano and organ that follows the song’s chords, with left- and right-hand choices.
-- Set each section’s cymbal, kick, snare and bass articulation, and give later choruses a lift.
-- New drum grooves and fills learned from recordings of real drummers, and a drummer feel measured from them.
-- The MIDI clock can follow the song’s real beats, so pedals that sync to it stay with songs that speed up or slow down.
-
-- Name your TimeLine, SY-200 and IR-200 presets. Names show in cues, pickers and stage mode.
-- My rig gives each of your pedals a setup card, test buttons and a printable setup sheet.
-- Choose which pedals follow each song’s tempo, and set the TimeLine’s tap division per song.
-- See the last preset sent to each pedal, reset the rig, and send your Solo changes in one step.
-- Use a Rig table per song to pick each pedal’s preset by name for every section and send the changes at the right time.
-- Generated drums can play the original drummer’s pattern, learned from the drums stem.
-
-- Choose a fingers or pick bass sound.
-- RC-10R drums can break for the song’s stops and follow each section’s loudness.
-- Change the generated band live from a footswitch, key or stage mode. Lift, soften, switch to drums only or take the band out on the next bar.
+- Let generated drums learn a pattern from the song’s original drum stem, or choose new grooves, fills and drummer feel from Engine 4.
+- Give later choruses a lift. Choose each section’s cymbals, kick, snare, bass articulation, octave jumps and hi-hat openness. Preview busyness and loudness on a pad, copy settings, lock a part’s notes or start with a band preset.
+- Add piano, electric piano or organ, synth pads and rhythmic chords, synth bass, and per-section tambourine, shaker, claps or cowbell.
+- Lift, soften, switch to drums only or take the band out at the next bar from Stage mode, a key or a footswitch.
+- Name TimeLine, SY-200 and IR-200 presets and schedule them by section in the song’s Rig table. My rig has pedal setup cards, recall and clock tests, channel checks and a printable setup sheet.
+- Follow recorded beats with MIDI clock and choose tempo settings and TimeLine divisions per song. Stage shows the last known pedal state and offers Reset rig and a one-step Solo change.
+- Add breaks and section levels to RC-10R cues. Save memory settings with a song and compare them with a pedal backup.
 
 ### Changed
-- The generated bass uses more recordings and loudness levels, real ghost and short notes, and reaches low B.
+- Fingers and pick bass tones use more recordings and velocity layers, add real ghost and short notes, and reach low B.
 - Pedal settings are now saved with the song library and its backups.
 
 ## [0.9.52] — 2026-11-23
