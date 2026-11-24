@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { host } from "@/host";
 import { lrcTime, midiCommand } from "@/song/performance/chart";
-import { PEDAL_PROFILES, CUSTOM_PEDAL_TEMPLATE, actionCommands } from "@/song/performance/pedal-profiles";
+import { CUSTOM_PEDAL_TEMPLATE, actionCommands } from "@/song/performance/pedal-profiles";
 import { OpenMidiBrowser } from "./OpenMidiBrowser";
 import { DEFAULT_PEDAL_CHANNELS, usePedalLibrary } from "@/song/performance/pedal-library";
 import { saveMacro, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { macroCodeFor } from "@/song/performance/midi-macros";
 import { HelpNote } from "@/components/ui/help-note";
 import { manualMemorySlot, manualPresetCueLabel, manualPresetNumber, nameSource, presetCueLabel, presetLabel, presetModelOf } from "@/song/performance/pedal-preset-names";
+import { pedalGroups } from "@/song/performance/my-rig";
 import { usePresetNames } from "./use-preset-names";
 
 export function PedalMidiPicker({
@@ -24,7 +25,8 @@ export function PedalMidiPicker({
 }) {
   const library = usePedalLibrary();
   const config = useMidiConfiguration();
-  const profiles = [...PEDAL_PROFILES, ...library.profiles];
+  const groups = pedalGroups(library);
+  const profiles = [...groups.owned, ...groups.other];
   const [pedal, setPedal] = useState(config.pedal),
     [actionId, setActionId] = useState(config.commands[config.pedal]?.action ?? ""),
     [query, setQuery] = useState(""),
@@ -173,10 +175,13 @@ export function PedalMidiPicker({
             }}
           >
             <option value="">Choose a pedal…</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+            {[
+              { label: "My pedals", profiles: groups.owned },
+              { label: "Other pedals", profiles: groups.other },
+            ].filter((group) => group.profiles.length > 0).map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+              </optgroup>
             ))}
           </select>
         </label>

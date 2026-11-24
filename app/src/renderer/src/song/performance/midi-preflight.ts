@@ -1,3 +1,4 @@
+import type { RigChannelIssue } from "./my-rig";
 import { PREFLIGHT_TIME_TOLERANCE_S } from "./preflight-timing";
 import { isPresetMessage, startPreparation, type PreparationSettings } from "./start-preparation";
 import { expandSectionCues, timedCues, unmatchedSectionCues, type Cue } from "./chart";
@@ -33,6 +34,7 @@ export interface PreflightOptions {
   /** The GP-150 / GP-180 preset names as last known (index = slot). Unset while they are unknown, which skips the preset-name check. */
   presetNames?: PresetNames;
   manualPresets?: readonly ManualPresetProfile[];
+  rigChannelWarnings?: readonly RigChannelIssue[];
   /** The song chose RC-10R pedal drums, and whether the cues are armed. A chosen pedal with cues off plays the fallback drums, which is warned about. */
   pedalDrums?: { chosen: boolean; armed: boolean };
 }
@@ -109,8 +111,10 @@ export function midiPreflight(chartCues: Cue[], options: PreflightOptions) {
     names.push(pedal.name);
     labels.set(pedal.channel, names);
   }
+  const rigWarnings = options.rigChannelWarnings ?? [];
+  for (const issue of rigWarnings) add(issue.code, issue.text);
   for (const [channel, names] of labels)
-    if (names.length > 1) add("channel-collision", `Configured channel ${channel} is shared by ${names.join(", ")}. Verify physical receive settings.`);
+    if (names.length > 1 && !rigWarnings.some((issue) => issue.channel === channel)) add("channel-collision", `Configured channel ${channel} is shared by ${names.join(", ")}. Verify physical receive settings.`);
   if (options.tempoChannel && referenced.some((p) => p.channel === options.tempoChannel && !/GP-?(150|180)/i.test(p.name)))
     add("tempo-channel", "Automatic GP-150 / GP-180 tempo shares a configured downstream pedal channel. Its CC73/74 may affect that pedal.");
   if (options.timecode) {

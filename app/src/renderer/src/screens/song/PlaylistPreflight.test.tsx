@@ -99,6 +99,8 @@ it("puts all errors before performance warnings and keeps arrangement advice sep
   render(<PlaylistPreflight ids={["one", "missing"]} disabled={false} revision={1} songs={[]} />);
   fireEvent.click(screen.getByText("Check playlist"));
   await waitFor(() => expect(screen.getByText(/2 entries checked · 1 errors · 2 performance warnings · 1 arrangement notes/)).toBeTruthy());
+  const rig = screen.getByRole("region", { name: "Rig channel warnings" });
+  expect(within(rig).getByText(/MIDI channel 1 is shared by Valeton GP-180, Strymon TimeLine/)).toBeTruthy();
   const issues = screen.getByRole("region", { name: "Playback and MIDI issues" });
   const messages = within(issues).getAllByRole("listitem");
   expect(messages[0].textContent).toContain("Error · 2. Missing song");

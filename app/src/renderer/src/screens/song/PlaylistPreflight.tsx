@@ -1,3 +1,4 @@
+import { gpReceiveChannel, ownedPedalChannels, rigChannelIssues, type RigChannelIssue } from "@/song/performance/my-rig";
 import { manualPresetProfiles } from "@/song/performance/pedal-preset-names";
 import { withToneWarnings } from "@/song/performance/tone-preflight";
 import { knownPresetNames } from "./use-preset-names";
@@ -41,6 +42,7 @@ export function PlaylistPreflight({
     [error, setError] = useState("");
   const generation = useRef(0);
   const checked = useRef(autoStart);
+  const [rigWarnings, setRigWarnings] = useState<RigChannelIssue[]>([]);
   const [fullReport, setFullReport] = useState(!compact);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const order = JSON.stringify(ids);
@@ -73,6 +75,8 @@ export function PlaylistPreflight({
     pedals.channels,
     pedals.assignments,
     pedals.profiles,
+    pedals.owned,
+    pedals.presets,
   ]);
   const check = async () => {
     checked.current = true;
@@ -84,6 +88,7 @@ export function PlaylistPreflight({
       await flushSettings();
       const snapshot = await host.song.library!.preflight(ids);
       if (request !== generation.current) return;
+      const rig = currentRigFacts(false);
       const checks = playlistPreflight(ids, snapshot, {
         preparationDefaults,
         leadInDefaults: readLeadInDefaults(),
@@ -97,13 +102,14 @@ export function PlaylistPreflight({
         pedals: configuredPedals(pedals),
         presetNames: knownPresetNames(),
         manualPresets: manualPresetProfiles(pedals),
-        rig: currentRigFacts(false),
+        rig,
         rhythmControls: rhythmControlOverrides(pedals),
         cuesArmed: useSongLibrary.getState().midiSession?.armed,
       });
       // Reading the tone files is asynchronous, so the song's own checks are done first and the tone warnings are added to them.
       const withTones = await withToneWarnings(checks, ids, snapshot, host.tones);
       if (request !== generation.current) return;
+      setRigWarnings(rigChannelIssues(ownedPedalChannels(pedals), gpReceiveChannel(rig)));
       setReport(withTones);
     } catch (e) {
       if (request === generation.current) setError(e instanceof Error ? e.message : String(e));
@@ -122,6 +128,14 @@ export function PlaylistPreflight({
       </p>
       {busy && <p role="status">Checking saved files without loading audio into memory…</p>}
       {error && <p role="alert">{error}</p>}
+      {report && rigWarnings.length > 0 && (
+        <section aria-label="Rig channel warnings" className="space-y-1 text-amber-400">
+          <h3 className="font-medium">Rig channel warnings</h3>
+          <ul className="list-disc pl-5">
+            {rigWarnings.map((issue) => <li key={issue.code + issue.text}>{issue.text}</li>)}
+          </ul>
+        </section>
+      )}
       {report && (
         <>
           <p role="status">

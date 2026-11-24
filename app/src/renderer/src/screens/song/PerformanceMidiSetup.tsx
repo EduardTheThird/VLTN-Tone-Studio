@@ -1,3 +1,8 @@
+import { MyRig } from "./MyRig";
+import { useDevice } from "@/state/device";
+import { usePedalLibrary } from "@/song/performance/pedal-library";
+import { gpReceiveChannel, ownedPedalChannels, rigChannelIssues } from "@/song/performance/my-rig";
+import { rigFacts } from "@/song/performance/rig-facts";
 import { preRollStart } from "@/song/performance/rhythm";
 import { PreparationSequencePreview } from "./PreparationSequencePreview";
 import { SongPreparationSettings } from "./SongPreparationSettings";
@@ -53,6 +58,14 @@ export function SessionMidiHealth({
   const portId = useSession(session, (s) => s.portId);
   const output = useSession(session, selectOutput);
   const midiConfig = useMidiConfiguration();
+  const device = useDevice((state) => state.device);
+  const status = useDevice((state) => state.status);
+  const globals = useDevice((state) => state.globals);
+  const pedals = usePedalLibrary();
+  const rigWarnings = useMemo(() => {
+    const facts = rigFacts({ device, status, globals }, pedals, midiConfig, clock);
+    return rigChannelIssues(ownedPedalChannels(pedals), gpReceiveChannel(facts));
+  }, [device, status, globals, pedals.owned, pedals.channels, pedals.profiles, midiConfig.output, midiConfig.tempoOnStart, clock]);
   const timecodeOn = useSession(session, (s) => s.timecode.enabled);
   const timecodeFps = useSession(session, (s) => s.timecode.fps);
   const timecodeOffset = useSession(session, (s) => s.timecode.offset);
@@ -69,6 +82,8 @@ export function SessionMidiHealth({
   return (
     <MidiHealth
       songKey={session.songSettingsKey}
+      myRig={<MyRig session={session} />}
+      rigChannelWarnings={rigWarnings}
       cues={cues}
       sections={sections}
       duration={player?.length ?? 0}

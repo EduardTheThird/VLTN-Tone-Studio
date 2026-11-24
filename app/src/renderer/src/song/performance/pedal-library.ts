@@ -54,8 +54,8 @@ function readLegacy(storage: LegacyStorage): PedalSettingsFile | null {
   }
 }
 
-function libraryData({ profiles, channels, assignments, presets }: LibraryData): LibraryData {
-  return { profiles: profiles.filter((profile) => !PEDAL_PROFILES.some((builtIn) => builtIn.id === profile.id)), channels, assignments, presets };
+function libraryData({ profiles, channels, assignments, presets, owned }: LibraryData): LibraryData {
+  return { profiles: profiles.filter((profile) => !PEDAL_PROFILES.some((builtIn) => builtIn.id === profile.id)), channels, assignments, presets, owned };
 }
 
 export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalSettingsApi | undefined) {
@@ -68,6 +68,7 @@ export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalS
       setChannel: (id: string, channel: number) => void;
       setAssignment: (id: string, action: string, cc: number) => void;
       savePresets: (id: string, entries: PresetEntry[]) => void;
+      setOwned: (id: string, enabled: boolean) => void;
     }
   >((set, get) => {
     const legacy = readLegacy(storage);
@@ -135,6 +136,9 @@ export function createPedalLibrary(storage: LegacyStorage, backing: () => PedalS
       setAssignment(id, action, cc) {
         if (!Number.isInteger(cc) || !((cc >= 1 && cc <= 31) || (cc >= 64 && cc <= 95))) throw new Error("Assigned CC numbers are 1–31 or 64–95.");
         save(({ assignments }) => ({ assignments: { ...assignments, [id + ":" + action]: cc } }));
+      },
+      setOwned(id, enabled) {
+        save(({ owned }) => ({ owned: enabled ? [...new Set([...owned, id])] : owned.filter((other) => other !== id) }));
       },
       savePresets(id, entries) {
         if (entries.some(({ slot, name, note }) => !Number.isInteger(slot) || slot < 0 || slot > 16_383 || name.length > 32 || (note?.length ?? 0) > 1000))

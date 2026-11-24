@@ -192,3 +192,18 @@ it("labels a named TimeLine bank using its existing recall bytes", () => {
     label: "Strymon TimeLine: 12B Dotted 8th", messages: [[0xb0, 0, 0], [0xc0, 25]],
   });
 });
+
+it("puts the owned pedals before other profiles without hiding the remaining pedals", () => {
+  const original = usePedalLibrary.getState().owned;
+  usePedalLibrary.setState({ owned: ["boss-sy200", "strymon-timeline"] });
+  try {
+    render(<PedalMidiPicker time={0} onAdd={vi.fn()} onTest={vi.fn()} canTest={false} />);
+    const select = screen.getByLabelText("MIDI pedal");
+    const groups = [...select.querySelectorAll("optgroup")];
+    expect(groups.map((group) => group.label)).toEqual(["My pedals", "Other pedals"]);
+    expect([...groups[0].querySelectorAll("option")].map((option) => option.value)).toEqual(["boss-sy200", "strymon-timeline"]);
+    expect(groups[1].querySelector('[value="valeton-gp180"]')).toBeTruthy();
+  } finally {
+    usePedalLibrary.setState({ owned: original });
+  }
+});

@@ -967,38 +967,40 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         <div style={{ display: shownView("midi") }}>
           <ScreenBoundary name="Performance MIDI">
             <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} />
-            <Rc10rSetupCard
-              state={{
-                hasCues: hasRhythmCues,
-                transfer: rhythmTransferStatus(readSettings(key), (cueOptions.rhythmAutomation as { memory?: number } | undefined)?.memory ?? 1),
-                outputName: outputConnected ? outputName : "",
-                armed,
-                choice: partChoice.drums,
-                drums,
-                fallbackWhy: fallbackReason(drums, outputConnected),
-              }}
-              onChoosePedalDrums={() => choosePart({ drums: "pedal" })}
-              onEnableMidi={() => void session.connectMidi()}
-              onChooseOutput={() => document.querySelector<HTMLElement>('[aria-label="MIDI output"]')?.focus()}
-              onSendCues={() => setSendCues(session, true)}
-            >
-              {source && (
-                <RhythmAutomationSetup
-                  key={key}
-                  current={{
-                    key,
-                    title: source.name.replace(/\.[^.]+$/, ""),
-                    duration: pcmMemoryShape(source.audio).frames / source.audio.sampleRate,
-                    settings: { ...readSettings(key), "": chart },
-                  }}
-                  locked={playing || library.playlistPlaying}
-                  onSaveChart={saveChart}
-                />
-              )}
-              {source && !!(cueOptions.rhythmAutomation || cueOptions.rhythmExport || cueOptions.rhythmTransfer) && (
-                <RhythmTransferStatus songKey={key} locked={playing || !!library.playlistPlaying} />
-              )}
-            </Rc10rSetupCard>
+            <div id="rc10r-rig-settings">
+              <Rc10rSetupCard
+                state={{
+                  hasCues: hasRhythmCues,
+                  transfer: rhythmTransferStatus(readSettings(key), (cueOptions.rhythmAutomation as { memory?: number } | undefined)?.memory ?? 1),
+                  outputName: outputConnected ? outputName : "",
+                  armed,
+                  choice: partChoice.drums,
+                  drums,
+                  fallbackWhy: fallbackReason(drums, outputConnected),
+                }}
+                onChoosePedalDrums={() => choosePart({ drums: "pedal" })}
+                onEnableMidi={() => void session.connectMidi()}
+                onChooseOutput={() => document.querySelector<HTMLElement>('[aria-label="MIDI output"]')?.focus()}
+                onSendCues={() => setSendCues(session, true)}
+              >
+                {source && (
+                  <RhythmAutomationSetup
+                    key={key}
+                    current={{
+                      key,
+                      title: source.name.replace(/\.[^.]+$/, ""),
+                      duration: pcmMemoryShape(source.audio).frames / source.audio.sampleRate,
+                      settings: { ...readSettings(key), "": chart },
+                    }}
+                    locked={playing || library.playlistPlaying}
+                    onSaveChart={saveChart}
+                  />
+                )}
+                {source && !!(cueOptions.rhythmAutomation || cueOptions.rhythmExport || cueOptions.rhythmTransfer) && (
+                  <RhythmTransferStatus songKey={key} locked={playing || !!library.playlistPlaying} />
+                )}
+              </Rc10rSetupCard>
+            </div>
             <PerformanceMidiSetup
               session={session}
               songKey={key}

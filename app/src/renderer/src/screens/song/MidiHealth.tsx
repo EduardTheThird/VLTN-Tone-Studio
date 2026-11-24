@@ -1,6 +1,7 @@
+import type { RigChannelIssue } from "@/song/performance/my-rig";
 import { ArrangementAdvice } from "./ArrangementAdvice";
 import type { PreparationSettings } from "@/song/performance/start-preparation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Cue } from "@/song/performance/chart";
 import { midiPreflight } from "@/song/performance/midi-preflight";
 import type { Section } from "@/song/performance/sections";
@@ -33,9 +34,13 @@ export function MidiHealth({
   timecode,
   pedalDrums,
   songKey,
+  myRig,
+  rigChannelWarnings,
 }: {
   cues: Cue[];
   songKey?: string;
+  myRig?: ReactNode;
+  rigChannelWarnings?: readonly RigChannelIssue[];
   /** The song's sections, which the cues on a section are placed on */
   sections?: Section[];
   duration: number;
@@ -75,6 +80,7 @@ export function MidiHealth({
         timecode,
         presetNames,
         manualPresets,
+        rigChannelWarnings,
         pedalDrums,
         pedals: configuredPedals(library),
       }),
@@ -94,6 +100,7 @@ export function MidiHealth({
       timecode,
       presetNames,
       manualPresets,
+      rigChannelWarnings,
       pedalDrums?.chosen,
       pedalDrums?.armed,
       library.channels,
@@ -140,7 +147,8 @@ export function MidiHealth({
             routing and receive channels before the set.
           </p>
         </HelpNote>
-        <PedalSettings clock={clock} />
+        <div id="gp-rig-settings"><PedalSettings clock={clock} /></div>
+        {open && myRig}
         {open && <MemoryUse />}
         {parseError ? (
           <p className="text-red-400">{parseError}</p>

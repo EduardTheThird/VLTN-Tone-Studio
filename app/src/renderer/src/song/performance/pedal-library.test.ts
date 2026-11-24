@@ -29,6 +29,7 @@ it("migrates the legacy key only when the song library has no file and preserves
       channels: { "boss-sy200": 6 },
       assignments: { "boss-sy200:ctl1": 82 },
       presets: {},
+      owned: emptyPedalSettings().owned,
     },
     true,
   );
@@ -92,4 +93,15 @@ describe("configuredPedals", () => {
     expect(timeline.unassigned).toBe(0);
     expect(timeline.triggers).toEqual(expect.arrayContaining([[1, 93]]));
   });
+});
+
+it("persists owned-pedal changes and keeps an explicitly empty rig after reload", async () => {
+  const api = backing(emptyPedalSettings());
+  const library = createPedalLibrary(localStorage, () => api);
+  await library.getState().load();
+  for (const id of library.getState().owned) library.getState().setOwned(id, false);
+  await library.getState().flush();
+  const fresh = createPedalLibrary(localStorage, () => api);
+  await fresh.getState().load();
+  expect(fresh.getState().owned).toEqual([]);
 });

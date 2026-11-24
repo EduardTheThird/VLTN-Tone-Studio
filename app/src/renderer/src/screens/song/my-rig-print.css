@@ -1,0 +1,60 @@
+@media print {
+  body:has([data-rig-sheet]) > :not([data-rig-sheet], :has([data-rig-sheet])) {
+    display: none;
+  }
+
+  body:has([data-rig-sheet]) * {
+    visibility: hidden;
+  }
+
+  body [data-rig-sheet],
+  body [data-rig-sheet] * {
+    visibility: visible;
+    color: black;
+  }
+
+  body [data-rig-sheet] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: block;
+    padding: 0;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    transform: none;
+    translate: none;
+    animation: none;
+    overflow: visible;
+    border: 0;
+    box-shadow: none;
+    background: white;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+
+  body [data-rig-sheet] [data-slot="dialog-header"] {
+    margin-bottom: 0.65rem;
+    text-align: left;
+  }
+
+  body [data-rig-sheet] > ul {
+    margin-bottom: 0.85rem;
+  }
+
+  body [data-rig-sheet] .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  body [data-rig-sheet] section {
+    break-inside: avoid;
+    border: 1px solid #d5d7db;
+  }
+
+  body [data-rig-sheet] h3 {
+    font-size: 11pt;
+  }
+
+  body [data-rig-sheet] button {
+    display: none;
+  }
+}

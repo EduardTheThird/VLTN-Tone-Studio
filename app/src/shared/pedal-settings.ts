@@ -1,6 +1,7 @@
 import { parsePedalProfile, type PedalProfile } from "./pedal-profile";
 
 export const PEDAL_SETTINGS_FILE = "pedals.json";
+export const DEFAULT_OWNED_PEDALS = ["valeton-gp180", "strymon-timeline", "boss-rc10r", "boss-ir200", "boss-sy200"] as const;
 export const PEDAL_SETTINGS_MAX_BYTES = 8 * 1024 * 1024;
 
 export interface PresetEntry {
@@ -15,9 +16,17 @@ export interface PedalSettingsFile {
   channels: Record<string, number>;
   assignments: Record<string, number>;
   presets: Record<string, PresetEntry[]>;
+  owned: string[];
 }
 
-export const emptyPedalSettings = (): PedalSettingsFile => ({ version: 1, profiles: [], channels: {}, assignments: {}, presets: {} });
+export const emptyPedalSettings = (): PedalSettingsFile => ({
+  version: 1,
+  profiles: [],
+  channels: {},
+  assignments: {},
+  presets: {},
+  owned: [...DEFAULT_OWNED_PEDALS],
+});
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const profileId = (id: string) => /^[a-z0-9-]{1,80}$/.test(id) && !["constructor", "prototype"].includes(id);
@@ -77,7 +86,9 @@ export function parsePedalSettings(text: string): PedalSettingsFile {
       }),
     ];
   });
-  return { version: 1, profiles, channels, assignments, presets: Object.fromEntries(presets) };
+  const owned = data.owned ?? DEFAULT_OWNED_PEDALS;
+  if (!Array.isArray(owned) || owned.some((id) => typeof id !== "string" || !profileId(id))) return fail();
+  return { version: 1, profiles, channels, assignments, presets: Object.fromEntries(presets), owned: [...new Set<string>(owned)] };
 }
 
 export interface PedalSettingsApi {
