@@ -473,3 +473,16 @@ it("renders, levels and previews keys without changing the drum or bass samples"
   expect(preview.keys?.channels[0]).toHaveLength(RATE * 2);
   expect(transferables(preview)).toContain(preview.keys?.channels[0].buffer);
 });
+
+it("adding synth leaves the keys, bass and drum tracks bit-identical", () => {
+  const base = request({ settings: { ...DEFAULT_BAND_SETTINGS, ending: { kind: "none" } } });
+  const sections = [{ id: "c", name: "Chorus", start: 0, end: SONG_SECONDS, mode: "continue" as const }];
+  const settings: BandSettings = { ...base.settings, parts: { ...base.parts, keys: true }, keys: { ...base.settings.keys!, sound: "organ" } };
+  const synth = { ...settings, parts: { ...settings.parts, synth: true } };
+  const samples = stubSamples();
+  const regular = runBandJob({ ...base, settings, plans: planSections(sections, SONG_SECONDS, settings), parts: settings.parts }, samples);
+  const withSynth = runBandJob({ ...base, settings: synth, plans: planSections(sections, SONG_SECONDS, synth), parts: synth.parts }, samples);
+  expect(withSynth.notes.synth?.length).toBeGreaterThan(0);
+  expect(withSynth.synth?.channels[0].some((sample) => sample !== 0)).toBe(true);
+  for (const part of ["drums", "bass", "keys"] as const) expect(sameSamples(regular[part]?.channels[0], withSynth[part]?.channels[0])).toBe(true);
+});

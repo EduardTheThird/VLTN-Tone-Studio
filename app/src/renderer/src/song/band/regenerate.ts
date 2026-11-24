@@ -1,4 +1,4 @@
-import { BAND_PARTS, partToneOf, type BandPart } from "./arrangement";
+import { BAND_PARTS, partToneOf, type BandPart, type TonePart } from "./arrangement";
 import { host } from "@/host";
 import { stageActivityBlocks, type StagePreparation } from "@/state/stage-activity";
 import type { BandSettings } from "./arrangement";
@@ -41,13 +41,14 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
           drums: requested.parts.drums && !requested.rendered.drums,
           bass: requested.parts.bass && !requested.rendered.bass,
           ...(requested.parts.keys ? { keys: !requested.rendered.keys } : {}),
+          ...(requested.parts.synth ? { synth: !requested.rendered.synth } : {}),
         },
       };
   if (!options.explicit) {
     const blocked = await automaticUpdateBlock(using, host.tones);
     if (blocked) throw new Error(blocked);
   }
-  const tonePart = async (audio: PcmAudio, tone: BandSettings["bassTone"], part: BandPart) => {
+  const tonePart = async (audio: PcmAudio, tone: BandSettings["bassTone"], part: TonePart) => {
     const toned = await applyPartTone(audio, tone, host.tones, renderPartChain, part);
     if (!options.explicit && toned.notice) throw new Error(toned.notice);
     return toned;
@@ -57,7 +58,7 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
   if (playsThreeFourDefault(request)) notes.push(info(THREE_FOUR_NOTE));
   const lowKeyNote = using.parts.bass ? extendedRangeNote(request) : null;
   if (lowKeyNote) notes.push(info(lowKeyNote));
-  if ((using.parts.bass || using.parts.keys) && !request.harmony.some((entry) => entry.chord)) {
+  if ((using.parts.bass || using.parts.keys || using.parts.synth) && !request.harmony.some((entry) => entry.chord)) {
     // Neither the chart nor the screen's analysis has chords, so the bass would rest all song. Detect them from the audio first.
     let found: Chord[] | null = [];
     try {
@@ -72,7 +73,7 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
     }
     if (found.length) request = bandRequest({ ...input, settings: using, chords: found });
     if (!request.harmony.some((entry) => entry.chord)) {
-      const parts = using.parts.bass && using.parts.keys ? "bass and keys" : using.parts.keys ? "keys" : "bass";
+      const parts = (["bass", "keys", "synth"] as const).filter((part) => using.parts[part]).join(" and ");
       notes.push(`No chords were found in the chart or the audio, so the ${parts} will rest. Add chords to the chart, then generate again.`);
     }
   }
@@ -86,6 +87,7 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
   // leaves the clean bass and a notice.
   let bass = result.bass;
   let keys = result.keys;
+  const synth = result.synth;
   let drums = result.drums;
   let countIn = result.countIn;
   const renderedTone: BandSettings["renderedTone"] = {};
@@ -114,13 +116,13 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
     if (toned.notice) notes.push(toned.notice);
   }
   // A vamp's exit bar goes through the same tone as its part, so the swap on the last pass has no change of sound.
-  const exits: Record<BandPart, Record<string, ExitAudio>> = { drums: {}, bass: {}, keys: {} };
+  const exits: Record<BandPart, Record<string, ExitAudio>> = { drums: {}, bass: {}, keys: {}, synth: {} };
   for (const [id, exit] of Object.entries(result.exits ?? {})) {
     for (const kind of BAND_PARTS) {
       let audio = exit[kind];
       if (!audio) continue;
-      const tone = partToneOf(using, kind);
-      if (tone.kind !== "clean" && renderedTone[kind] === "chain") audio = (await tonePart(audio, tone, kind)).audio;
+      const tone = kind === "synth" ? undefined : partToneOf(using, kind);
+      if (kind !== "synth" && tone && tone.kind !== "clean" && renderedTone[kind] === "chain") audio = (await tonePart(audio, tone, kind)).audio;
       exits[kind][id] = { audio, from: exit.from, to: exit.to };
     }
   }
@@ -128,15 +130,15 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
   const levels = levelStatus(result.levels);
   if (levels) notes.push(info(levels));
 
-  const partExtras: Record<BandPart, PartExtras> = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass }, keys: { exits: exits.keys } };
+  const partExtras: Record<BandPart, PartExtras> = { drums: { countIn, exits: exits.drums }, bass: { exits: exits.bass }, keys: { exits: exits.keys }, synth: { exits: exits.synth } };
   for (const variant of RENDERED_VARIANTS) {
     const resultVariant = result.variants?.[variant];
     if (!resultVariant) continue;
     for (const kind of BAND_PARTS) {
       const source = resultVariant[kind];
       if (!source) continue;
-      const tone = partToneOf(using, kind);
-      const applyTone = (audio: PcmAudio) => tone.kind !== "clean" && renderedTone[kind] === "chain"
+      const tone = kind === "synth" ? undefined : partToneOf(using, kind);
+      const applyTone = (audio: PcmAudio) => kind !== "synth" && tone && tone.kind !== "clean" && renderedTone[kind] === "chain"
         ? tonePart(audio, tone, kind).then((value) => value.audio)
         : Promise.resolve(audio);
       const audio = await applyTone(source);
@@ -153,8 +155,9 @@ export async function regenerateSong(_songKey: string, options: RegenerateOption
     ...(drums && hasExtras(partExtras.drums) ? { drums: partExtras.drums } : {}),
     ...(bass && hasExtras(partExtras.bass) ? { bass: partExtras.bass } : {}),
     ...(keys && hasExtras(partExtras.keys) ? { keys: partExtras.keys } : {}),
+    ...(synth && hasExtras(partExtras.synth) ? { synth: partExtras.synth } : {}),
   };
-  return { request, result, drums, bass, ...(keys ? { keys } : {}), renderedTone, notes, extras };
+  return { request, result, drums, bass, ...(keys ? { keys } : {}), ...(synth ? { synth } : {}), renderedTone, notes, extras };
 }
 
 /** Bookkeeping shared by Generate and a set upgrade. Rendered parts outside this render retain all their metadata. */
@@ -170,7 +173,7 @@ export function regeneratedSettings(
   const renderedTone = { ...latest.renderedTone };
   for (const kind of BAND_PARTS) {
     if (using.parts[kind]) {
-      renderedTone[kind] = prepared.renderedTone[kind] ?? "clean";
+      if (kind !== "synth") renderedTone[kind] = prepared.renderedTone[kind] ?? "clean";
       const times = (prepared.result.notes[kind] ?? []).map((note) => note.time);
       if (times.length) firstNote[kind] = Math.min(...times);
       else delete firstNote[kind];

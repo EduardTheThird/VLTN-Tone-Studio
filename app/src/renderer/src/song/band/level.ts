@@ -22,7 +22,7 @@ export const STEM_SILENT_LUFS = -60;
 export type LevelKind = BandPart;
 
 /** How far under the song each generated part sits, when there is no original stem to match. */
-export const BELOW_SONG_LU: Readonly<Record<LevelKind, number>> = { drums: DRUMS_BELOW_SONG_LU, bass: BASS_BELOW_SONG_LU, keys: 8 };
+export const BELOW_SONG_LU: Readonly<Record<LevelKind, number>> = { drums: DRUMS_BELOW_SONG_LU, bass: BASS_BELOW_SONG_LU, keys: 8, synth: 12 };
 
 /** The loudness a part is matched to, in LUFS. */
 export interface LevelTarget {
@@ -53,6 +53,7 @@ export interface PartLevels {
   drums?: LevelReport;
   bass?: LevelReport;
   keys?: LevelReport;
+  synth?: LevelReport;
 }
 
 /** The mono average of a signal: its channels added and divided by their count, with the level kept (no scaling to a peak). */
@@ -75,7 +76,7 @@ export function loudnessOf(audio: PcmAudio): number {
 export function targetLoudness(kind: LevelKind, song: PcmAudio, originalStem?: PcmAudio, songLufs: number = loudnessOf(song)): LevelTarget {
   if (originalStem) {
     const stemLufs = loudnessOf(originalStem);
-    if (stemLufs > STEM_SILENT_LUFS) return { lufs: stemLufs };
+    if (stemLufs > STEM_SILENT_LUFS) return { lufs: kind === "synth" ? Math.min(stemLufs, songLufs - BELOW_SONG_LU.synth) : stemLufs };
   }
   return { lufs: songLufs - BELOW_SONG_LU[kind] };
 }

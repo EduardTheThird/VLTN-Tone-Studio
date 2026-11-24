@@ -56,6 +56,7 @@ export function variantNotes(variant: RenderedVariant, grid: BeatGrid, plans: re
     drums: drums.sort((a, b) => a.time - b.time || a.pitch - b.pitch),
     bass: normal.bass.map(scale),
     ...(normal.keys ? { keys: (alternative.keys ?? normal.keys).map(scale) } : {}),
+    ...(normal.synth ? { synth: (alternative.synth ?? normal.synth).map(scale) } : {}),
   };
 }
 

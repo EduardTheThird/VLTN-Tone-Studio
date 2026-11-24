@@ -61,7 +61,7 @@ export async function upgradeSavedSong(
     const { source, stems } = await loadSongAudio(song.id, true);
     idle();
     const analysis = parseAnalysis(saved.analysis);
-    const using = { ...plan.settings, parts: { drums: plan.generated.includes("drums"), bass: plan.generated.includes("bass"), ...(plan.generated.includes("keys") ? { keys: true } : {}) } };
+    const using = { ...plan.settings, parts: { drums: plan.generated.includes("drums"), bass: plan.generated.includes("bass"), ...(plan.generated.includes("keys") ? { keys: true } : {}), ...(plan.generated.includes("synth") ? { synth: true } : {}) } };
     const prepared = await regenerateSong(song.id, {
       input: {
         grid,

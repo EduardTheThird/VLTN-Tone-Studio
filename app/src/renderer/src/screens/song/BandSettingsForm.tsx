@@ -1,3 +1,4 @@
+import { SYNTH_BASS_IDS, SYNTH_PRESET_IDS, type SynthBass, type SynthPreset } from "@/song/band/synth-presets";
 import { DEFAULT_KEYS, KEYS_LEFT, KEYS_REGISTERS, KEYS_SOUNDS, type KeysSettings } from "@/song/band/keys-types";
 import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -214,7 +215,7 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
         <label className="flex items-center gap-3">
           Sound
           <Select
-            value={settings.bassSampleVersion === 2 ? settings.bassSound : "saved"}
+            value={settings.bassSampleVersion === 2 || settings.bassSound === "synth" ? settings.bassSound : "saved"}
             onValueChange={(value) => onChange({ bassSound: value as BandSettings["bassSound"], bassSampleVersion: 2 })}
           >
             <SelectTrigger aria-label="Bass sound" className="w-64">
@@ -223,11 +224,21 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
             <SelectContent>
               {settings.bassSampleVersion !== 2 && <SelectItem value="saved" disabled>Saved sound</SelectItem>}
               {BASS_SOUNDS.map((sound) => (
-                <SelectItem key={sound} value={sound}>{sound === "fingers" ? "Fingers" : "Pick"}</SelectItem>
+                <SelectItem key={sound} value={sound}>{sound === "fingers" ? "Fingers" : sound === "pick" ? "Pick" : "Synth"}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </label>
+        {settings.bassSound === "synth" && <label className="flex items-center gap-3">
+          Synth bass voice
+          <Select value={settings.synthBass ?? "sub"} onValueChange={(value) => onChange({ synthBass: value as SynthBass })}>
+            <SelectTrigger aria-label="Synth bass voice" className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SYNTH_BASS_IDS.map((id) => <SelectItem key={id} value={id}>{SYNTH_BASS_NAMES[id]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>}
+
         <label className="flex items-center gap-3">
           Bass range
           <Select value={settings.bassRange} onValueChange={(value) => onChange({ bassRange: value as BandSettings["bassRange"] })}>
@@ -319,9 +330,29 @@ export function BandSettingsForm({ settings, followSources, onChange, onStyle, b
         </label>
         {settings.parts.keys && <KeysControls value={settings.keys ?? DEFAULT_KEYS} onChange={(keys) => onChange({ keys })} />}
       </div>
+      <div className="flex min-w-0 flex-col gap-3">
+        <h3 className="font-semibold">Synth</h3>
+        <label className="flex items-center gap-2">
+          <Switch aria-label="Generate synth" checked={!!settings.parts.synth}
+            onCheckedChange={(on) => onChange({ parts: { ...settings.parts, synth: on } })} />
+          Synth
+        </label>
+        {settings.parts.synth && <label className="flex items-center justify-between gap-3">
+          Sound
+          <Select value={settings.synthPreset ?? "warm"} onValueChange={(value) => onChange({ synthPreset: value as SynthPreset })}>
+            <SelectTrigger aria-label="Synth sound" className="w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SYNTH_PRESET_IDS.map((id) => <SelectItem key={id} value={id}>{SYNTH_NAMES[id]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>}
+      </div>
     </section>
   );
 }
+
+const SYNTH_NAMES: Record<SynthPreset, string> = { warm: "Warm pad", bright: "Bright pad", strings: "Soft strings", stab: "Stab" };
+const SYNTH_BASS_NAMES: Record<SynthBass, string> = { sub: "Sub", pumping: "Pumping", sequenced: "Sequenced" };
 
 const KEYS_LABELS = {
   auto: "Automatic", piano: "Piano", grand: "Electric grand", pianet: "Pianet", wurlitzer: "Wurlitzer", organ: "Organ",

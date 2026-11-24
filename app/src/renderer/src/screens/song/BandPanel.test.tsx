@@ -1153,7 +1153,7 @@ describe("Band panel", () => {
     stored({ beatGrid: grid, band: { parts: { drums: false, bass: false } } });
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
-    expect(screen.getByText("Turn on drums, bass or keys first.")).toBeTruthy();
+    expect(screen.getByText("Turn on a band part first.")).toBeTruthy();
     expect(mocks.startBandRender).not.toHaveBeenCalled();
   });
 });

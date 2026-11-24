@@ -21,7 +21,9 @@ const BASS_TOP = DRUMS_TOP + DRUMS_HEIGHT + 6;
 /** The height of one line of four bars, with the gap under it. */
 export const LINE_HEIGHT = BASS_TOP + BASS_HEIGHT + NUMBER_HEIGHT + LINE_GAP;
 
-export const lineHeightOf = (layout: SectionLayout): number => LINE_HEIGHT + (layout.bars.some((bar) => bar.keys?.length) ? KEYS_HEIGHT : 0);
+const PITCHED_LANES = ["keys", "synth"] as const;
+const pitchedLanes = (layout: SectionLayout) => PITCHED_LANES.filter((part) => layout.bars.some((bar) => bar[part]?.length));
+export const lineHeightOf = (layout: SectionLayout): number => LINE_HEIGHT + pitchedLanes(layout).length * KEYS_HEIGHT;
 
 const LANE_NAMES: Record<DrumLane, string> = { crash: "Crash", ride: "Ride", "open-hat": "Open", hat: "Hat", toms: "Toms", snare: "Snare", kick: "Kick" };
 
@@ -129,16 +131,16 @@ function drawBar(
   ctx.fillStyle = text;
   ctx.fillText(String(bar.number), left + 4, top + BASS_TOP + BASS_HEIGHT + keysHeight + NUMBER_HEIGHT / 2);
 
-  if (bar.keys) {
-    ctx.fillStyle = strong;
+  pitchedLanes(layout).forEach((part, lane) => {
+    ctx.fillStyle = part === "keys" ? strong : drums;
     ctx.globalAlpha = 0.8;
-    for (const note of bar.keys) {
+    for (const note of bar[part] ?? []) {
       const y = Math.max(0, Math.min(1, (96 - note.pitch) / 72));
-      ctx.fillRect(left + 4 + note.x * (width - 8), top + BASS_TOP + BASS_HEIGHT + 2 + y * (KEYS_HEIGHT - 5),
+      ctx.fillRect(left + 4 + note.x * (width - 8), top + BASS_TOP + BASS_HEIGHT + lane * KEYS_HEIGHT + 2 + y * (KEYS_HEIGHT - 5),
         Math.max(2, note.width * (width - 8)), 3);
     }
     ctx.globalAlpha = 1;
-  }
+  });
   const scale = layout.bassScale;
   if (!scale) return;
   const span = Math.max(1, scale.high - scale.low);
@@ -217,7 +219,8 @@ export function drawSection(
         lastY = y;
       }
     } else ctx.fillText("Bass", GUTTER - 5, top + BASS_TOP + BASS_HEIGHT / 2);
-    if (lineHeight > LINE_HEIGHT) ctx.fillText("Keys", GUTTER - 5, top + BASS_TOP + BASS_HEIGHT + KEYS_HEIGHT / 2);
+    pitchedLanes(layout).forEach((part, lane) => ctx.fillText(part === "keys" ? "Keys" : "Synth", GUTTER - 5,
+      top + BASS_TOP + BASS_HEIGHT + (lane + 0.5) * KEYS_HEIGHT));
     line.forEach((bar, column) => drawBar(ctx, bar, GUTTER + column * w, top, w, layout, colours, marked(bar)));
   });
 }

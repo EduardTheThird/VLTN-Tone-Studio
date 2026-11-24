@@ -1,3 +1,4 @@
+import type { SynthMode } from "./synth-presets";
 import type { KeysInstrument } from "./keys-types";
 
 // Notes as the generators produce them: song time, not bar and step, so a part follows the beat grid wherever the beats fall.
@@ -20,6 +21,7 @@ export interface NoteEvent {
   /** Emphasise the snare's high frequencies for this hit. */
   rim?: true;
   instrument?: KeysInstrument;
+  synthMode?: SynthMode;
   /** An explicit bass articulation selected for a section. */
   articulation?: "legato" | "staccato";
 }

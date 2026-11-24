@@ -9,7 +9,7 @@ import type { KeysInstrument } from "./keys-types";
 
 import { decodeTrack } from "../codec/flac-client";
 import type { PcmAudio } from "../types";
-import { BASS_SOUNDS, type BassSound } from "./arrangement";
+import { SAMPLED_BASS_SOUNDS } from "./arrangement";
 import { brightSnare, thumpKick } from "./kit-voicing";
 import { KICK, SNARE } from "./note";
 import sampleMapJson from "./samples/map.json";
@@ -87,13 +87,13 @@ export interface SampleMap {
   room?: string;
   kits: Record<string, KitEntry>;
   bass: { file: string; root: number; layer: "p" | "f"; velocity: VelocityRange }[];
-  bassSounds?: Record<BassSound, BassInstrumentEntry>;
+  bassSounds?: Record<(typeof SAMPLED_BASS_SOUNDS)[number], BassInstrumentEntry>;
   keysInstruments?: Record<SampledKeys, KeysRoot<{ file: string }>[]>;
 }
 
 const BASS_ARTICULATIONS = ["notes", "ghost", "staccato", "release"] as const;
 export type BassArticulation = (typeof BASS_ARTICULATIONS)[number];
-export type BassBank = BassSound | "legacy" | "none";
+export type BassBank = (typeof SAMPLED_BASS_SOUNDS)[number] | "legacy" | "none";
 
 interface BassNoteEntry {
   root: number;
@@ -150,7 +150,7 @@ export function readSampleMap(value: unknown): SampleMap {
   }
   const bassSounds = Array.isArray(map.bass) ? undefined : map.bass.sounds;
   if (!Array.isArray(map.bass)) {
-    for (const sound of BASS_SOUNDS) {
+    for (const sound of SAMPLED_BASS_SOUNDS) {
       const instrument = bassSounds?.[sound];
       if (!instrument || !Array.isArray(instrument.notes) || !instrument.notes.length) fail(`bass ${sound} notes`);
       for (const articulation of BASS_ARTICULATIONS) {

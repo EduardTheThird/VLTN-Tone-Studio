@@ -96,8 +96,8 @@ function withMono(request: BandRequest): { request: BandRequest; transfer: Array
   if (request.mix) next.mix = mono(request.mix);
   if (request.follow) next.follow = { source: request.follow.source, audio: mono(request.follow.audio) };
   if (request.originals) {
-    const { drums, bass, keys } = request.originals;
-    next.originals = { drums: drums && mono(drums), bass: bass && mono(bass), ...(keys ? { keys: mono(keys) } : {}) };
+    const { drums, bass, keys, synth } = request.originals;
+    next.originals = { drums: drums && mono(drums), bass: bass && mono(bass), ...(keys ? { keys: mono(keys) } : {}), ...(synth && request.parts.synth ? { synth: mono(synth) } : {}) };
   }
   return { request: next, transfer: [...buffers] };
 }

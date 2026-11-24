@@ -15,7 +15,7 @@ export type PartKind = BandPart;
 export type PartChoice = "original" | "generated" | "both" | "pedal";
 /** What plays when the song chose pedal drums and the pedal cannot be reached. */
 export type DrumFallback = "generated" | "original";
-export type PartChoices = Record<"drums" | "bass", PartChoice> & { keys?: PartChoice; pedalFallback?: DrumFallback };
+export type PartChoices = Record<"drums" | "bass", PartChoice> & { keys?: PartChoice; synth?: PartChoice; pedalFallback?: DrumFallback };
 
 const CHOICES: readonly PartChoice[] = ["original", "generated", "both"];
 const FALLBACKS: readonly DrumFallback[] = ["generated", "original"];
@@ -57,6 +57,7 @@ export function defaultPartChoices(missing: Partial<Record<PartKind, PartPresenc
     drums: defaultPartChoice(missing?.drums ?? "unknown", keys.drums?.generated !== undefined),
     bass: defaultPartChoice(missing?.bass ?? "unknown", keys.bass?.generated !== undefined),
     ...(keys.keys ? { keys: defaultPartChoice(missing?.keys ?? "unknown", keys.keys.generated !== undefined) } : {}),
+    ...(keys.synth ? { synth: "generated" as const } : {}),
   };
 }
 
@@ -72,7 +73,7 @@ export function readPartChoices(saved: unknown, fallback: PartChoices): PartChoi
     return CHOICES.includes(value as PartChoice) ? (value as PartChoice) : fallback[kind] ?? "original";
   };
   const pedalFallback = FALLBACKS.includes(record.pedalFallback as DrumFallback) ? (record.pedalFallback as DrumFallback) : fallback.pedalFallback;
-  return { drums: read("drums"), bass: read("bass"), ...(record.keys !== undefined || fallback.keys !== undefined ? { keys: read("keys") } : {}), ...(pedalFallback ? { pedalFallback } : {}) };
+  return { drums: read("drums"), bass: read("bass"), ...(record.keys !== undefined || fallback.keys !== undefined ? { keys: read("keys") } : {}), ...(record.synth !== undefined || fallback.synth !== undefined ? { synth: read("synth") } : {}), ...(pedalFallback ? { pedalFallback } : {}) };
 }
 
 /** The track keys each part's choice applies to: the stems the song has, and the user tracks that carry the generated part's name. */
@@ -80,7 +81,7 @@ export function partKeysOf(tracks: Readonly<Record<string, TrackInfo>>, stems: R
   const keys: PartKeys = {};
   for (const kind of PART_KINDS) {
     const stem = kind === "keys" ? "piano" : kind;
-    const original = stems?.[stem] ? stem : undefined;
+    const original = kind !== "synth" && stems?.[stem] ? stem : undefined;
     const generated = Object.entries(tracks).find(([, info]) => info.kind === "user" && info.name === GENERATED_PART_NAMES[kind])?.[0];
     if (original === undefined && generated === undefined) continue;
     keys[kind] = { original, generated };

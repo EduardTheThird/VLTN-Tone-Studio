@@ -12,7 +12,7 @@ const FALLBACKS: { choice: DrumFallback; label: string }[] = [
   { choice: "generated", label: "Generated" },
   { choice: "original", label: "Original" },
 ];
-const LABEL: Record<PartKind, string> = { drums: "Drums", bass: "Bass", keys: "Keys" };
+const LABEL: Record<PartKind, string> = { drums: "Drums", bass: "Bass", keys: "Keys", synth: "Synth" };
 
 /**
  * The Band panel's "What plays" choice, one row per part. The button that is pressed is the choice that actually plays (see
@@ -44,7 +44,7 @@ export function PartChoiceRows({
   return (
     <section aria-label="What plays" className="flex flex-col gap-2">
       <h3 className="font-semibold">What plays</h3>
-      {PART_KINDS.filter((kind) => kind !== "keys" || keys.keys || choices.keys).map((kind) => {
+      {PART_KINDS.filter((kind) => kind === "drums" || kind === "bass" || keys[kind] || choices[kind]).map((kind) => {
         const part = keys[kind] ?? {};
         const shown = effectiveChoice(choices[kind] ?? "original", part);
         const hasGenerated = part.generated !== undefined;

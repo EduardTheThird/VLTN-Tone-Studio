@@ -92,7 +92,7 @@ export function BandPartView({
   const learning = notes?.learnedDrums?.find((entry) => entry.start === section?.start);
   const layout = useMemo(() => {
     if (!notes || !grid || !section) return null;
-    return layoutSection({ drums: fromStoredNotes(notes.drums), bass: fromStoredNotes(notes.bass), keys: fromStoredNotes(notes.keys ?? []) }, grid, section, harmony);
+    return layoutSection({ drums: fromStoredNotes(notes.drums), bass: fromStoredNotes(notes.bass), keys: fromStoredNotes(notes.keys ?? []), synth: fromStoredNotes(notes.synth ?? []) }, grid, section, harmony);
   }, [notes, grid, section, harmony]);
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -298,6 +298,7 @@ export function BandPartView({
                   <td>
                     {bar.bass.length > 0 ? bar.bass.map((note) => `${noteName(note.pitch)} on beat ${beatOf(note.x, beatsPerBar)}`).join(", ") : "no bass"}
                   </td>
+                  {bar.synth?.length ? <td>{`Synth: ${bar.synth.map((note) => noteName(note.pitch)).join(", ")}`}</td> : null}
                   {bar.keys?.length ? <td>{`Keys: ${bar.keys.map((note) => `${noteName(note.pitch)} on beat ${beatOf(note.x, beatsPerBar)}`).join(", ")}`}</td> : null}
                 </tr>
               ))}

@@ -8,11 +8,11 @@ import type { PcmAudio, Stems } from "../types";
 import { RENDERED_VARIANTS, type RenderedVariant } from "./live-variants";
 
 /** The names of the extras tracks. The song store writes them. */
-export const EXTRAS_NAMES = { drums: "Drums extras (generated)", bass: "Bass extras (generated)", keys: "Keys extras (generated)" } as const;
+export const EXTRAS_NAMES = { drums: "Drums extras (generated)", bass: "Bass extras (generated)", keys: "Keys extras (generated)", synth: "Synth extras (generated)" } as const;
 export type ExtrasPart = keyof typeof EXTRAS_NAMES;
 
 /** The key the song's `generatedParts` record keeps a part's extras track under. */
-export const EXTRAS_RECORD_KEY = { drums: "drumsExtras", bass: "bassExtras", keys: "keysExtras" } as const satisfies Record<ExtrasPart, string>;
+export const EXTRAS_RECORD_KEY = { drums: "drumsExtras", bass: "bassExtras", keys: "keysExtras", synth: "synthExtras" } as const satisfies Record<ExtrasPart, string>;
 
 /** The drummer's count: its audio, and the song time its first frame plays at (negative: ahead of the song). */
 export interface CountInAudio {

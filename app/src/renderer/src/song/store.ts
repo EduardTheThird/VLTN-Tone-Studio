@@ -63,6 +63,7 @@ export interface GeneratedAudio {
   drums?: PcmAudio;
   bass?: PcmAudio;
   keys?: PcmAudio;
+  synth?: PcmAudio;
   /**
    * The short buffers that go with a part: the drummer's count-in, and a vamp's exit bar (band/extras.ts). They are saved beside the part
    * as one track and replace the part's earlier ones, so a part given without extras loses them. Ignored for a part not given.
@@ -82,6 +83,7 @@ const PART_TRACK: Record<PartKind, { name: string; transpose: boolean }> = {
   drums: { name: GENERATED_PART_NAMES.drums, transpose: false },
   bass: { name: GENERATED_PART_NAMES.bass, transpose: true },
   keys: { name: GENERATED_PART_NAMES.keys, transpose: true },
+  synth: { name: GENERATED_PART_NAMES.synth, transpose: true },
 };
 
 /**
@@ -413,7 +415,7 @@ export function createSongStore(deps: SongDeps): UseBoundStore<StoreApi<SongStor
         delete nextTracks[track];
       }
       saveGeneratedKeys(key, generated, nextTracks, {});
-      saveExtrasManifests(key, { drums: null, bass: null, keys: null });
+      saveExtrasManifests(key, { drums: null, bass: null, keys: null, synth: null });
       // A song whose only track left is its source goes back to the unsplit state it had before the parts were added.
       const remaining = Object.keys(nextStems);
       if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === "source")) set({ stems: null, tracks: {} });

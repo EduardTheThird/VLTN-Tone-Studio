@@ -1,4 +1,4 @@
-import { BAND_PARTS, partToneOf, type ToneSettings } from "./arrangement";
+import { TONE_PARTS, partToneOf, type ToneSettings } from "./arrangement";
 // Whether a song's tone files are really there (spec 136). A bass or drum tone chain names captures and IRs that are downloaded files. When
 // one is missing, Generate falls back to a clean part. That is fine when the performer asks for it, but an automatic update must never swap a
 // good rendered part for a clean one, and a playlist should say before the show which songs would sound different.
@@ -16,7 +16,7 @@ export interface MissingToneFile {
 }
 
 const PART_LABEL: Record<TonePart, string> = { bass: "bass", drums: "drum", keys: "keys" };
-const PARTS: readonly TonePart[] = ["bass", ...BAND_PARTS.filter((part) => part !== "bass")];
+const PARTS: readonly TonePart[] = ["bass", ...TONE_PARTS.filter((part) => part !== "bass")];
 
 /** "amp capture" or "cab IR": what a block's file is called in a sentence. */
 export const fileLabel = (missing: Pick<MissingToneFile, "role" | "type">): string => `${missing.role} ${missing.type === "capture" ? "capture" : "IR"}`;

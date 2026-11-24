@@ -49,7 +49,7 @@ export function bandEntryStatus(keys: PartKeys, choices: PartChoices, missing: M
     const presence = missing?.[kind];
     if (presence === "absent" || presence === "partial") lines.push(presenceLine(kind, presence, missing?.absentSections[kind] ?? [], sections));
   }
-  const kinds = keys.keys ? ([...PART_KINDS, "keys"] as const) : PART_KINDS;
+  const kinds = [...PART_KINDS, ...(["keys", "synth"] as const).filter((kind) => keys[kind])];
   const generated = kinds.filter((kind) => keys[kind]?.generated !== undefined);
   if (generated.length) {
     lines.push(`Generated: ${generated.join(", ")}`);

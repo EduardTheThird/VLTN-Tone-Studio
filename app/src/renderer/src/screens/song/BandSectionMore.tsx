@@ -1,3 +1,4 @@
+import { SYNTH_PARTS, type SynthPart } from "@/song/band/synth-presets";
 import { KEYS_PARTS, type KeysPart } from "@/song/band/keys-types";
 import { DrumPatternPicker } from "./DrumPatternPicker";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,8 @@ import { defaultFills, FILLS, type Fills, type SectionOverride, type SectionPlan
 import { OCTAVE_SHIFTS, type OctaveShift } from "@/song/band/bass-parts";
 import { ENERGIES, findStyle, type StyleId } from "@/song/band/styles";
 import { SECTION_PLAY_CHOICES, SHAPE_CHOICES, SHAPE_LABELS, groupedStyleChoices } from "./band-labels";
+
+const SYNTH_PART_LABELS: Record<SynthPart, string> = { auto: "Auto", pad: "Pad", moving: "Moving pad", stabs: "Stabs", pulse: "Pulse", rest: "Rest" };
 
 const OCTAVE_LABELS: Record<string, string> = { "-1": "−1 octave", "0": "Same", "1": "+1 octave" };
 
@@ -115,6 +118,15 @@ export function BandSectionMore({
             </label>
           </>
         )}
+        {plan.play.synth && <label className="flex items-center justify-between gap-2 text-sm">
+          Synth part
+          <Select value={plan.synthPart ?? "auto"} disabled={disabled} onValueChange={(value) => onChange({ synthPart: value as SynthPart })}>
+            <SelectTrigger aria-label={`Synth part of ${name}`} className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SYNTH_PARTS.map((id) => <SelectItem key={id} value={id}>{SYNTH_PART_LABELS[id]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>}
         <DrumPatternPicker
           label={`Drum pattern of ${name}`}
           value={drumPattern}

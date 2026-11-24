@@ -1,3 +1,4 @@
+import { SYNTH_BASS_IDS, SYNTH_PARTS, SYNTH_PRESET_IDS, type SynthBass, type SynthPart, type SynthPreset } from "./synth-presets";
 import { DEFAULT_KEYS, KEYS_PARTS, parseKeysSettings, type KeysPart, type KeysSettings } from "./keys-types";
 // The arrangement: which style, energy, fill and parts play in each section of a song, and the song-wide settings the user tunes.
 // Pure data and rules. The settings travel in the song's options, so anything read back from a saved song goes through
@@ -26,7 +27,8 @@ import { ENERGIES, HUMANISE_FEELS, STYLE_IDS, type Energy, type StyleId } from "
 export const DRUM_KITS = ["standard", "rock"] as const;
 /** The styles whose generated drums use the heavier kit when the song has not chosen a kit. */
 export const HEAVY_KIT_STYLES: readonly StyleId[] = ["metal", "rock", "half-time"];
-export const BASS_SOUNDS = ["fingers", "pick"] as const;
+export const SAMPLED_BASS_SOUNDS = ["fingers", "pick"] as const;
+export const BASS_SOUNDS = [...SAMPLED_BASS_SOUNDS, "synth"] as const;
 export const BASS_RANGES = ["low", "normal", "high", "extended"] as const;
 export const BASS_MODES = ["roots", "fifths", "octaves", "melodic", "walking"] as const;
 /** Where the generated bass's notes come from: the bass the song's own bassist played (when the song has a bass stem), or the chords. */
@@ -81,7 +83,7 @@ export interface PartToneFile {
 export type BassToneFile = PartToneFile;
 
 /** The parts a performer can bring back rendered audio for. */
-export const BAND_PARTS = ["drums", "bass", "keys"] as const;
+export const BAND_PARTS = ["drums", "bass", "keys", "synth"] as const;
 export type BandPart = (typeof BAND_PARTS)[number];
 export type RenderedKind = BandPart;
 export const RENDERED_KINDS = BAND_PARTS;
@@ -109,7 +111,8 @@ export const TONE_BLOCK_TYPE: Record<ToneRole, ToneBlockType> = {
   outboard: "capture",
 };
 /** The generated parts that can have a tone chain. */
-export type TonePart = BandPart;
+export const TONE_PARTS = ["drums", "bass", "keys"] as const;
+export type TonePart = (typeof TONE_PARTS)[number];
 /** The roles each part's chain offers, in the order the panel lists them. */
 export const PART_ROLES: Record<TonePart, readonly ToneRole[]> = {
   bass: ["pedal", "preamp", "amp", "cab", "space"],
@@ -170,6 +173,7 @@ export interface PartToggles {
   drums: boolean;
   bass: boolean;
   keys?: boolean;
+  synth?: boolean;
 }
 
 /** What one section plays. Times are song seconds, and the plans cover the whole song with no gaps. */
@@ -216,6 +220,7 @@ export interface SectionPlan {
   shape?: SectionShape;
   drumPattern?: DrumPattern;
   keysPart?: KeysPart;
+  synthPart?: SynthPart;
   keysOctave?: OctaveShift;
   cymbal?: (typeof CYMBAL_CHOICES)[number];
   kick?: (typeof KICK_CHOICES)[number];
@@ -277,6 +282,8 @@ export interface BandSettings {
   complexity: number;
   lift: SongLift;
   keys?: KeysSettings;
+  synthPreset?: SynthPreset;
+  synthBass?: SynthBass;
   /** 0 straight to 0.75 heavy. Applies to straight grids only. */
   swing: number;
   ghostNotes: boolean;
@@ -360,6 +367,8 @@ export const DEFAULT_BAND_SETTINGS: BandSettings = {
   parts: { drums: true, bass: true },
   lift: 1,
   keys: DEFAULT_KEYS,
+  synthPreset: "warm",
+  synthBass: "sub",
   style: "rock",
   complexity: 0.5,
   swing: 0,
@@ -449,6 +458,7 @@ function playFields(name: string, override: SectionOverride, settings: BandSetti
     bassRamp: settings.engine >= 3 && override.shape !== undefined ? override.shape === "build" : bass.rampLoud || (settings.engine >= 3 && shape === "build"),
     shape,
     ...(override.keysPart ? { keysPart: override.keysPart } : {}),
+    ...(override.synthPart ? { synthPart: override.synthPart } : {}),
     ...(override.keysOctave !== undefined ? { keysOctave: override.keysOctave } : {}),
     ...(override.cymbal ? { cymbal: override.cymbal } : {}),
     ...(override.kick ? { kick: override.kick } : {}),
@@ -596,7 +606,7 @@ const isBassFrom = isOneOf(BASS_FROM);
 const isFollowSource = isOneOf(FOLLOW_SOURCES);
 const isHumaniseChoice = isOneOf(HUMANISE_CHOICES);
 const isHumanise = (value: unknown): value is HumaniseSettings => isRecord(value) && isUnit(value.amount) && isHumaniseChoice(value.feel);
-const isPartToggles = (value: unknown): value is PartToggles => isRecord(value) && isBool(value.drums) && isBool(value.bass) && (value.keys === undefined || isBool(value.keys));
+const isPartToggles = (value: unknown): value is PartToggles => isRecord(value) && isBool(value.drums) && isBool(value.bass) && (value.keys === undefined || isBool(value.keys)) && (value.synth === undefined || isBool(value.synth));
 const optional = <T>(value: unknown, check: (candidate: unknown) => candidate is T): boolean => value === undefined || check(value);
 
 /** A section override where every field present is valid. */
@@ -657,11 +667,11 @@ function parseFirstNote(value: unknown): Partial<Record<RenderedKind, number>> {
 function parseRenderedTone(value: unknown): Partial<Record<TonePart, "clean" | "chain">> {
   const out: Partial<Record<TonePart, "clean" | "chain">> = {};
   if (!isRecord(value)) return out;
-  for (const part of BAND_PARTS) if (value[part] === "clean" || value[part] === "chain") out[part] = value[part];
+  for (const part of TONE_PARTS) if (value[part] === "clean" || value[part] === "chain") out[part] = value[part];
   return out;
 }
 const isRenderedTone = (value: unknown): boolean =>
-  isRecord(value) && Object.entries(value).every(([key, tone]) => BAND_PARTS.includes(key as BandPart) && (tone === "clean" || tone === "chain"));
+  isRecord(value) && Object.entries(value).every(([key, tone]) => (key === "bass" || key === "drums" || key === "keys") && (tone === "clean" || tone === "chain"));
 
 /** True when every entry of the rendered and first-note records is valid. */
 const isRendered = (value: unknown): boolean =>
@@ -816,7 +826,7 @@ export function isBandSettings(value: unknown): value is BandSettings {
 }
 
 function parsedParts(value: PartToggles): PartToggles {
-  return { drums: value.drums, bass: value.bass, ...(isBool(value.keys) ? { keys: value.keys } : {}) };
+  return { drums: value.drums, bass: value.bass, ...(isBool(value.keys) ? { keys: value.keys } : {}), ...(isBool(value.synth) ? { synth: value.synth } : {}) };
 }
 
 /** Keeps each valid field of the humanise settings and falls back to the default for the rest. */
@@ -846,6 +856,8 @@ function parseSectionOverride(value: Record<string, unknown>): SectionOverride {
   if (isShape(value.shape)) override.shape = value.shape;
   const keys = KEYS_PARTS.find((choice) => choice === value.keysPart);
   if (keys) override.keysPart = keys;
+  const synth = SYNTH_PARTS.find((choice) => choice === value.synthPart);
+  if (synth) override.synthPart = synth;
   if (isOctave(value.keysOctave)) override.keysOctave = value.keysOctave;
   const cymbal = CYMBAL_CHOICES.find((choice) => choice === value.cymbal);
   const kick = KICK_CHOICES.find((choice) => choice === value.kick);
@@ -885,6 +897,8 @@ export function parseBandSettings(value: unknown): BandSettings {
     complexity: isUnit(source.complexity) ? source.complexity : defaults.complexity,
     lift: SONG_LIFTS.find((lift) => lift === source.lift) ?? (isRecord(value) ? 0 : defaults.lift),
     keys: parseKeysSettings(source.keys),
+    synthPreset: SYNTH_PRESET_IDS.find((id) => id === source.synthPreset) ?? defaults.synthPreset,
+    synthBass: SYNTH_BASS_IDS.find((id) => id === source.synthBass) ?? defaults.synthBass,
     swing: isSwing(source.swing) ? source.swing : defaults.swing,
     ghostNotes: isBool(source.ghostNotes) ? source.ghostNotes : defaults.ghostNotes,
     crashOnSections: isBool(source.crashOnSections) ? source.crashOnSections : defaults.crashOnSections,

@@ -84,7 +84,7 @@ export type LevelStems = NonNullable<BandRequest["originals"]>;
 
 /** The original drums and bass of the split, when there is one. The other stems are not used for levels. */
 export function levelStems(stems: Stems | null): LevelStems {
-  return { drums: stems?.drums, bass: stems?.bass, ...(stems?.piano ? { keys: stems.piano } : {}) };
+  return { drums: stems?.drums, bass: stems?.bass, ...(stems?.piano ? { keys: stems.piano } : {}), ...(stems?.other ? { synth: stems.other } : {}) };
 }
 
 /** The follow sources the song has: the stems among FOLLOW_STEMS that were split, then the mix, which is always there. */

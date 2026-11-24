@@ -46,7 +46,7 @@ export function BandTabSound({
       {hasSong && <PartChoiceRows choices={partChoices} keys={partKeys} notes={generatedNotes} disabled={busy} onChange={onPartChoice} pedalCues={pedalCues} onOpenMidi={onOpenMidi} />}
       {hasSong && (
         <section aria-label="Rendered parts" className="flex flex-col gap-3">
-          {RENDERED_KINDS.filter((kind) => kind !== "keys" || settings.parts.keys || settings.rendered.keys).map((kind) => (
+          {RENDERED_KINDS.filter((kind) => kind === "drums" || kind === "bass" || settings.parts[kind] || settings.rendered[kind]).map((kind) => (
             <RenderedPartRow
               key={kind}
               kind={kind}

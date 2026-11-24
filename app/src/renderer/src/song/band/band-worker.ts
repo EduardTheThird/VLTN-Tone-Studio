@@ -40,7 +40,7 @@ async function run({ id, request, preview }: BandWorkerMessage): Promise<void> {
   try {
     stage("loading");
     const { settings } = request;
-    const bass = !settings.parts.bass ? "none" : settings.bassSampleVersion === 2 ? settings.bassSound : "legacy";
+    const bass = !settings.parts.bass || settings.bassSound === "synth" ? "none" : settings.bassSampleVersion === 2 ? settings.bassSound : "legacy";
     const keys = request.parts.keys ? [...new Set(request.plans
       .filter((plan) => plan.play.keys)
       .map((plan) => keysInstrument(plan, settings.keys))
