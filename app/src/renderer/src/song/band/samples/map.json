@@ -1276,28 +1276,32 @@
                 "files": [
                   "bass/fingers-notes-23-40-1.flac",
                   "bass/fingers-notes-23-40-2.flac"
-                ]
+                ],
+                "loops": [[21243, 27208, 1676], [21248, 27212, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-23-65-1.flac",
                   "bass/fingers-notes-23-65-2.flac"
-                ]
+                ],
+                "loops": [[21169, 27130, 1676], [21300, 27262, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-23-90-1.flac",
                   "bass/fingers-notes-23-90-2.flac"
-                ]
+                ],
+                "loops": [[21192, 27154, 1676], [19797, 27182, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-23-115-1.flac",
                   "bass/fingers-notes-23-115-2.flac"
-                ]
+                ],
+                "loops": [[21141, 27095, 1676], [21120, 27070, 1676]]
               }
             ]
           },
@@ -1309,28 +1313,32 @@
                 "files": [
                   "bass/fingers-notes-25-40-1.flac",
                   "bass/fingers-notes-25-40-2.flac"
-                ]
+                ],
+                "loops": [[21403, 26901, 1676], [21413, 26904, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-25-65-1.flac",
                   "bass/fingers-notes-25-65-2.flac"
-                ]
+                ],
+                "loops": [[21469, 26966, 1676], [21638, 27130, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-25-90-1.flac",
                   "bass/fingers-notes-25-90-2.flac"
-                ]
+                ],
+                "loops": [[21515, 27005, 1676], [21404, 26901, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-25-115-1.flac",
                   "bass/fingers-notes-25-115-2.flac"
-                ]
+                ],
+                "loops": [[21455, 26938, 1676], [21417, 26902, 1676]]
               }
             ]
           },
@@ -1342,28 +1350,32 @@
                 "files": [
                   "bass/fingers-notes-27-40-1.flac",
                   "bass/fingers-notes-27-40-2.flac"
-                ]
+                ],
+                "loops": [[21821, 26901, 1676], [21357, 27574, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-27-65-1.flac",
                   "bass/fingers-notes-27-65-2.flac"
-                ]
+                ],
+                "loops": [[21397, 27613, 1676], [21821, 26901, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-27-90-1.flac",
                   "bass/fingers-notes-27-90-2.flac"
-                ]
+                ],
+                "loops": [[21376, 27592, 1676], [21828, 26905, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-27-115-1.flac",
                   "bass/fingers-notes-27-115-2.flac"
-                ]
+                ],
+                "loops": [[21232, 27420, 1676], [21194, 27384, 1676]]
               }
             ]
           },
@@ -1375,21 +1387,24 @@
                 "files": [
                   "bass/fingers-notes-29-40-1.flac",
                   "bass/fingers-notes-29-40-2.flac"
-                ]
+                ],
+                "loops": [[21260, 26977, 1676], [20170, 26901, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-29-65-1.flac",
                   "bass/fingers-notes-29-65-2.flac"
-                ]
+                ],
+                "loops": [[21225, 26942, 1676], [21261, 26979, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-29-90-1.flac",
                   "bass/fingers-notes-29-90-2.flac"
-                ]
+                ],
+                "loops": [[21393, 27098, 1676], [21273, 26976, 1676]]
               },
               {
                 "velocity": 115,
@@ -1400,7 +1415,8 @@
                 "cents": [
                   11.3,
                   13.8
-                ]
+                ],
+                "loops": [[21744, 27444, 1676], [21816, 28516, 1676]]
               }
             ]
           },
@@ -1412,21 +1428,24 @@
                 "files": [
                   "bass/fingers-notes-31-40-1.flac",
                   "bass/fingers-notes-31-40-2.flac"
-                ]
+                ],
+                "loops": [[21755, 27036, 1676], [21662, 26944, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-31-65-1.flac",
                   "bass/fingers-notes-31-65-2.flac"
-                ]
+                ],
+                "loops": [[21660, 26938, 1676], [21623, 26901, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-31-90-1.flac",
                   "bass/fingers-notes-31-90-2.flac"
-                ]
+                ],
+                "loops": [[21630, 26901, 1676], [21802, 27073, 1676]]
               },
               {
                 "velocity": 115,
@@ -1437,7 +1456,8 @@
                 "cents": [
                   13.3,
                   11.7
-                ]
+                ],
+                "loops": [[21438, 28485, 1676], [21764, 27021, 1676]]
               }
             ]
           },
@@ -1449,28 +1469,32 @@
                 "files": [
                   "bass/fingers-notes-33-40-1.flac",
                   "bass/fingers-notes-33-40-2.flac"
-                ]
+                ],
+                "loops": [[21415, 27112, 1676], [21340, 27036, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-33-65-1.flac",
                   "bass/fingers-notes-33-65-2.flac"
-                ]
+                ],
+                "loops": [[21314, 27010, 1676], [21307, 27003, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-33-90-1.flac",
                   "bass/fingers-notes-33-90-2.flac"
-                ]
+                ],
+                "loops": [[21313, 27006, 1676], [21334, 27026, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-33-115-1.flac",
                   "bass/fingers-notes-33-115-2.flac"
-                ]
+                ],
+                "loops": [[21821, 29105, 1676], [21828, 28318, 1676]]
               }
             ]
           },
@@ -1482,21 +1506,24 @@
                 "files": [
                   "bass/fingers-notes-35-40-1.flac",
                   "bass/fingers-notes-35-40-2.flac"
-                ]
+                ],
+                "loops": [[21532, 27497, 1676], [21788, 27035, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-35-65-1.flac",
                   "bass/fingers-notes-35-65-2.flac"
-                ]
+                ],
+                "loops": [[21728, 26974, 1676], [21724, 26971, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-35-90-1.flac",
                   "bass/fingers-notes-35-90-2.flac"
-                ]
+                ],
+                "loops": [[21622, 27573, 1676], [21689, 26932, 1676]]
               },
               {
                 "velocity": 115,
@@ -1507,7 +1534,8 @@
                 "cents": [
                   10.9,
                   12.9
-                ]
+                ],
+                "loops": [[21830, 27062, 1676], [20822, 27473, 1676]]
               }
             ]
           },
@@ -1519,28 +1547,32 @@
                 "files": [
                   "bass/fingers-notes-37-40-1.flac",
                   "bass/fingers-notes-37-40-2.flac"
-                ]
+                ],
+                "loops": [[21790, 27288, 1676], [21457, 26956, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-37-65-1.flac",
                   "bass/fingers-notes-37-65-2.flac"
-                ]
+                ],
+                "loops": [[21609, 27108, 1676], [21588, 27086, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-37-90-1.flac",
                   "bass/fingers-notes-37-90-2.flac"
-                ]
+                ],
+                "loops": [[21786, 27281, 1676], [21765, 27260, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-37-115-1.flac",
                   "bass/fingers-notes-37-115-2.flac"
-                ]
+                ],
+                "loops": [[21532, 27019, 1676], [21430, 26917, 1676]]
               }
             ]
           },
@@ -1552,28 +1584,32 @@
                 "files": [
                   "bass/fingers-notes-39-40-1.flac",
                   "bass/fingers-notes-39-40-2.flac"
-                ]
+                ],
+                "loops": [[21595, 27813, 1676], [21654, 27871, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-39-65-1.flac",
                   "bass/fingers-notes-39-65-2.flac"
-                ]
+                ],
+                "loops": [[21509, 27725, 1676], [21535, 27751, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-39-90-1.flac",
                   "bass/fingers-notes-39-90-2.flac"
-                ]
+                ],
+                "loops": [[21824, 26901, 1676], [21830, 26908, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-39-115-1.flac",
                   "bass/fingers-notes-39-115-2.flac"
-                ]
+                ],
+                "loops": [[21809, 27449, 1676], [21408, 27049, 1676]]
               }
             ]
           },
@@ -1585,28 +1621,32 @@
                 "files": [
                   "bass/fingers-notes-41-40-1.flac",
                   "bass/fingers-notes-41-40-2.flac"
-                ]
+                ],
+                "loops": [[21681, 26901, 1676], [21681, 26901, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-41-65-1.flac",
                   "bass/fingers-notes-41-65-2.flac"
-                ]
+                ],
+                "loops": [[21680, 26901, 1676], [21778, 26998, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-41-90-1.flac",
                   "bass/fingers-notes-41-90-2.flac"
-                ]
+                ],
+                "loops": [[21811, 27535, 1676], [21380, 27105, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-41-115-1.flac",
                   "bass/fingers-notes-41-115-2.flac"
-                ]
+                ],
+                "loops": [[21765, 27994, 1676], [21823, 27547, 1676]]
               }
             ]
           },
@@ -1618,28 +1658,32 @@
                 "files": [
                   "bass/fingers-notes-43-40-1.flac",
                   "bass/fingers-notes-43-40-2.flac"
-                ]
+                ],
+                "loops": [[21692, 26983, 1676], [21638, 26929, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-43-65-1.flac",
                   "bass/fingers-notes-43-65-2.flac"
-                ]
+                ],
+                "loops": [[21799, 27090, 1676], [21822, 27113, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-43-90-1.flac",
                   "bass/fingers-notes-43-90-2.flac"
-                ]
+                ],
+                "loops": [[21629, 26921, 1676], [21793, 27085, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-43-115-1.flac",
                   "bass/fingers-notes-43-115-2.flac"
-                ]
+                ],
+                "loops": [[21767, 27058, 1676], [21772, 27063, 1676]]
               }
             ]
           },
@@ -1651,28 +1695,32 @@
                 "files": [
                   "bass/fingers-notes-45-40-1.flac",
                   "bass/fingers-notes-45-40-2.flac"
-                ]
+                ],
+                "loops": [[21570, 27260, 1676], [21476, 27165, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-45-65-1.flac",
                   "bass/fingers-notes-45-65-2.flac"
-                ]
+                ],
+                "loops": [[21477, 27166, 1676], [21683, 27372, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-45-90-1.flac",
                   "bass/fingers-notes-45-90-2.flac"
-                ]
+                ],
+                "loops": [[21551, 28441, 1676], [21531, 27219, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-45-115-1.flac",
                   "bass/fingers-notes-45-115-2.flac"
-                ]
+                ],
+                "loops": [[21165, 27251, 1676], [21592, 27678, 1676]]
               }
             ]
           },
@@ -1684,28 +1732,32 @@
                 "files": [
                   "bass/fingers-notes-47-40-1.flac",
                   "bass/fingers-notes-47-40-2.flac"
-                ]
+                ],
+                "loops": [[21715, 28400, 1676], [21647, 26901, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-47-65-1.flac",
                   "bass/fingers-notes-47-65-2.flac"
-                ]
+                ],
+                "loops": [[21665, 28350, 1676], [21635, 28319, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-47-90-1.flac",
                   "bass/fingers-notes-47-90-2.flac"
-                ]
+                ],
+                "loops": [[21693, 27658, 1676], [21702, 27668, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-47-115-1.flac",
                   "bass/fingers-notes-47-115-2.flac"
-                ]
+                ],
+                "loops": [[21655, 27979, 1676], [21667, 27632, 1676]]
               }
             ]
           },
@@ -1716,25 +1768,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/fingers-notes-49-40-1.flac"
-                ]
+                ],
+                "loops": [[21614, 27759, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-49-65-1.flac"
-                ]
+                ],
+                "loops": [[21765, 26951, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-49-90-1.flac"
-                ]
+                ],
+                "loops": [[21727, 26912, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-49-115-1.flac"
-                ]
+                ],
+                "loops": [[21732, 26918, 1676]]
               }
             ]
           },
@@ -1745,25 +1801,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/fingers-notes-52-40-1.flac"
-                ]
+                ],
+                "loops": [[21695, 27132, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-52-65-1.flac"
-                ]
+                ],
+                "loops": [[21771, 27748, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-52-90-1.flac"
-                ]
+                ],
+                "loops": [[21595, 27033, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-52-115-1.flac"
-                ]
+                ],
+                "loops": [[21791, 27228, 1676]]
               }
             ]
           },
@@ -1774,25 +1834,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/fingers-notes-55-40-1.flac"
-                ]
+                ],
+                "loops": [[21551, 27300, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/fingers-notes-55-65-1.flac"
-                ]
+                ],
+                "loops": [[21483, 27004, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/fingers-notes-55-90-1.flac"
-                ]
+                ],
+                "loops": [[21379, 27128, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/fingers-notes-55-115-1.flac"
-                ]
+                ],
+                "loops": [[21534, 27055, 1676]]
               }
             ]
           },
@@ -1806,7 +1870,8 @@
                 ],
                 "cents": [
                   -15.1
-                ]
+                ],
+                "loops": [[21830, 26942, 1676]]
               },
               {
                 "velocity": 65,
@@ -1815,7 +1880,8 @@
                 ],
                 "cents": [
                   -15.1
-                ]
+                ],
+                "loops": [[21823, 26935, 1676]]
               },
               {
                 "velocity": 90,
@@ -1824,7 +1890,8 @@
                 ],
                 "cents": [
                   -13.7
-                ]
+                ],
+                "loops": [[21828, 28082, 1676]]
               },
               {
                 "velocity": 115,
@@ -1833,7 +1900,8 @@
                 ],
                 "cents": [
                   -14.4
-                ]
+                ],
+                "loops": [[21800, 26911, 1676]]
               }
             ]
           },
@@ -1847,7 +1915,8 @@
                 ],
                 "cents": [
                   -16.5
-                ]
+                ],
+                "loops": [[21741, 26951, 1676]]
               },
               {
                 "velocity": 65,
@@ -1856,7 +1925,8 @@
                 ],
                 "cents": [
                   -16.9
-                ]
+                ],
+                "loops": [[21480, 27012, 1676]]
               },
               {
                 "velocity": 90,
@@ -1865,7 +1935,8 @@
                 ],
                 "cents": [
                   -17.3
-                ]
+                ],
+                "loops": [[21742, 27275, 1676]]
               },
               {
                 "velocity": 115,
@@ -1874,7 +1945,8 @@
                 ],
                 "cents": [
                   -17
-                ]
+                ],
+                "loops": [[21492, 27025, 1676]]
               }
             ]
           }
@@ -2503,7 +2575,8 @@
                 "cents": [
                   38.7,
                   47
-                ]
+                ],
+                "loops": [[21550, 26964, 1676], [21792, 27189, 1676]]
               },
               {
                 "velocity": 65,
@@ -2514,7 +2587,8 @@
                 "cents": [
                   83.7,
                   75.7
-                ]
+                ],
+                "loops": [[21614, 26930, 1676], [21773, 27108, 1676]]
               },
               {
                 "velocity": 90,
@@ -2525,7 +2599,8 @@
                 "cents": [
                   122,
                   123.6
-                ]
+                ],
+                "loops": [[21801, 27045, 1676], [21815, 27058, 1676]]
               },
               {
                 "velocity": 115,
@@ -2536,7 +2611,8 @@
                 "cents": [
                   123.7,
                   136.4
-                ]
+                ],
+                "loops": [[21660, 26901, 1676], [21830, 27060, 1676]]
               }
             ]
           },
@@ -2552,7 +2628,8 @@
                 "cents": [
                   30.6,
                   12.6
-                ]
+                ],
+                "loops": [[20732, 27139, 1676], [20842, 27302, 1676]]
               },
               {
                 "velocity": 65,
@@ -2563,7 +2640,8 @@
                 "cents": [
                   56.2,
                   40.3
-                ]
+                ],
+                "loops": [[20561, 26901, 1676], [20882, 27262, 1676]]
               },
               {
                 "velocity": 90,
@@ -2574,7 +2652,8 @@
                 "cents": [
                   83.4,
                   80.8
-                ]
+                ],
+                "loops": [[20936, 27209, 1676], [21295, 27576, 1676]]
               },
               {
                 "velocity": 115,
@@ -2585,7 +2664,8 @@
                 "cents": [
                   86.5,
                   89.1
-                ]
+                ],
+                "loops": [[20793, 27058, 1676], [20645, 26901, 1676]]
               }
             ]
           },
@@ -2597,7 +2677,8 @@
                 "files": [
                   "bass/pick-notes-24-40-1.flac",
                   "bass/pick-notes-24-40-2.flac"
-                ]
+                ],
+                "loops": [[21608, 27319, 1676], [21820, 27529, 1676]]
               },
               {
                 "velocity": 65,
@@ -2608,7 +2689,8 @@
                 "cents": [
                   16.7,
                   16.8
-                ]
+                ],
+                "loops": [[21429, 27117, 1676], [21413, 27101, 1676]]
               },
               {
                 "velocity": 90,
@@ -2619,7 +2701,8 @@
                 "cents": [
                   54.7,
                   46.2
-                ]
+                ],
+                "loops": [[21830, 27435, 1676], [21828, 27453, 1676]]
               },
               {
                 "velocity": 115,
@@ -2630,7 +2713,8 @@
                 "cents": [
                   47.3,
                   51.8
-                ]
+                ],
+                "loops": [[21824, 27450, 1676], [21757, 27370, 1676]]
               }
             ]
           },
@@ -2646,7 +2730,8 @@
                 "cents": [
                   20.9,
                   14
-                ]
+                ],
+                "loops": [[21718, 26956, 1676], [21647, 26901, 1676]]
               },
               {
                 "velocity": 65,
@@ -2657,7 +2742,8 @@
                 "cents": [
                   0,
                   15.5
-                ]
+                ],
+                "loops": [[21762, 27030, 1676], [21699, 26951, 1676]]
               },
               {
                 "velocity": 90,
@@ -2668,7 +2754,8 @@
                 "cents": [
                   11.9,
                   13.9
-                ]
+                ],
+                "loops": [[21809, 27074, 1676], [21816, 27074, 1676]]
               },
               {
                 "velocity": 115,
@@ -2679,7 +2766,8 @@
                 "cents": [
                   27.8,
                   18.4
-                ]
+                ],
+                "loops": [[21514, 27946, 1676], [21758, 27014, 1676]]
               }
             ]
           },
@@ -2695,14 +2783,16 @@
                 "cents": [
                   0,
                   -11.7
-                ]
+                ],
+                "loops": [[21526, 27268, 1676], [21686, 27435, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-29-65-1.flac",
                   "bass/pick-notes-29-65-2.flac"
-                ]
+                ],
+                "loops": [[21720, 27443, 1676], [21634, 27349, 1676]]
               },
               {
                 "velocity": 90,
@@ -2713,7 +2803,8 @@
                 "cents": [
                   17.1,
                   25.2
-                ]
+                ],
+                "loops": [[21382, 28078, 1676], [21399, 29091, 1676]]
               },
               {
                 "velocity": 115,
@@ -2724,7 +2815,8 @@
                 "cents": [
                   32.1,
                   33.7
-                ]
+                ],
+                "loops": [[21209, 28889, 1676], [20182, 28860, 1676]]
               }
             ]
           },
@@ -2736,14 +2828,16 @@
                 "files": [
                   "bass/pick-notes-32-40-1.flac",
                   "bass/pick-notes-32-40-2.flac"
-                ]
+                ],
+                "loops": [[21809, 26902, 1676], [21809, 26901, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-32-65-1.flac",
                   "bass/pick-notes-32-65-2.flac"
-                ]
+                ],
+                "loops": [[21820, 26911, 1676], [21829, 26917, 1676]]
               },
               {
                 "velocity": 90,
@@ -2754,7 +2848,8 @@
                 "cents": [
                   22,
                   0
-                ]
+                ],
+                "loops": [[21604, 28376, 1676], [21830, 26901, 1676]]
               },
               {
                 "velocity": 115,
@@ -2765,7 +2860,8 @@
                 "cents": [
                   21.9,
                   21
-                ]
+                ],
+                "loops": [[21549, 29171, 1676], [21325, 28938, 1676]]
               }
             ]
           },
@@ -2777,14 +2873,16 @@
                 "files": [
                   "bass/pick-notes-35-40-1.flac",
                   "bass/pick-notes-35-40-2.flac"
-                ]
+                ],
+                "loops": [[21829, 27067, 1676], [21828, 27073, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-35-65-1.flac",
                   "bass/pick-notes-35-65-2.flac"
-                ]
+                ],
+                "loops": [[21673, 26909, 1676], [21801, 27035, 1676]]
               },
               {
                 "velocity": 90,
@@ -2795,7 +2893,8 @@
                 "cents": [
                   0,
                   10.8
-                ]
+                ],
+                "loops": [[21736, 26971, 1676], [21709, 27649, 1676]]
               },
               {
                 "velocity": 115,
@@ -2806,7 +2905,8 @@
                 "cents": [
                   12.2,
                   0
-                ]
+                ],
+                "loops": [[21830, 27769, 1676], [21797, 27032, 1676]]
               }
             ]
           },
@@ -2818,14 +2918,16 @@
                 "files": [
                   "bass/pick-notes-38-40-1.flac",
                   "bass/pick-notes-38-40-2.flac"
-                ]
+                ],
+                "loops": [[21747, 27023, 1676], [21787, 27060, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-38-65-1.flac",
                   "bass/pick-notes-38-65-2.flac"
-                ]
+                ],
+                "loops": [[21642, 26911, 1676], [21707, 26975, 1676]]
               },
               {
                 "velocity": 90,
@@ -2836,7 +2938,8 @@
                 "cents": [
                   15.8,
                   11.4
-                ]
+                ],
+                "loops": [[20944, 29201, 1676], [21809, 27069, 1676]]
               },
               {
                 "velocity": 115,
@@ -2847,7 +2950,8 @@
                 "cents": [
                   13.5,
                   14.7
-                ]
+                ],
+                "loops": [[21747, 27004, 1676], [21761, 27021, 1676]]
               }
             ]
           },
@@ -2859,14 +2963,16 @@
                 "files": [
                   "bass/pick-notes-41-40-1.flac",
                   "bass/pick-notes-41-40-2.flac"
-                ]
+                ],
+                "loops": [[21807, 27013, 1676], [21830, 27037, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-41-65-1.flac",
                   "bass/pick-notes-41-65-2.flac"
-                ]
+                ],
+                "loops": [[20498, 29233, 1676], [21700, 26901, 1676]]
               },
               {
                 "velocity": 90,
@@ -2877,7 +2983,8 @@
                 "cents": [
                   17.4,
                   16.2
-                ]
+                ],
+                "loops": [[20181, 28917, 1676], [19184, 28915, 1676]]
               },
               {
                 "velocity": 115,
@@ -2888,7 +2995,8 @@
                 "cents": [
                   0,
                   13.7
-                ]
+                ],
+                "loops": [[21763, 26960, 1676], [21729, 26920, 1676]]
               }
             ]
           },
@@ -2900,28 +3008,32 @@
                 "files": [
                   "bass/pick-notes-44-40-1.flac",
                   "bass/pick-notes-44-40-2.flac"
-                ]
+                ],
+                "loops": [[21749, 27246, 1676], [21608, 27103, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-44-65-1.flac",
                   "bass/pick-notes-44-65-2.flac"
-                ]
+                ],
+                "loops": [[21787, 27706, 1676], [21808, 27303, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-44-90-1.flac",
                   "bass/pick-notes-44-90-2.flac"
-                ]
+                ],
+                "loops": [[21769, 27683, 1676], [21794, 27279, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-44-115-1.flac",
                   "bass/pick-notes-44-115-2.flac"
-                ]
+                ],
+                "loops": [[21725, 27220, 1676], [21800, 27297, 1676]]
               }
             ]
           },
@@ -2933,28 +3045,32 @@
                 "files": [
                   "bass/pick-notes-47-40-1.flac",
                   "bass/pick-notes-47-40-2.flac"
-                ]
+                ],
+                "loops": [[21793, 27759, 1676], [21475, 27081, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-47-65-1.flac",
                   "bass/pick-notes-47-65-2.flac"
-                ]
+                ],
+                "loops": [[21689, 27295, 1676], [21679, 26923, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-47-90-1.flac",
                   "bass/pick-notes-47-90-2.flac"
-                ]
+                ],
+                "loops": [[21602, 27555, 1676], [21813, 27407, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-47-115-1.flac",
                   "bass/pick-notes-47-115-2.flac"
-                ]
+                ],
+                "loops": [[21795, 27389, 1676], [21798, 27031, 1676]]
               }
             ]
           },
@@ -2965,25 +3081,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/pick-notes-50-40-1.flac"
-                ]
+                ],
+                "loops": [[21790, 27071, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-50-65-1.flac"
-                ]
+                ],
+                "loops": [[21722, 27007, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-50-90-1.flac"
-                ]
+                ],
+                "loops": [[20032, 29236, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-50-115-1.flac"
-                ]
+                ],
+                "loops": [[21745, 27037, 1676]]
               }
             ]
           },
@@ -2994,25 +3114,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/pick-notes-53-40-1.flac"
-                ]
+                ],
+                "loops": [[21714, 27678, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-53-65-1.flac"
-                ]
+                ],
+                "loops": [[21793, 29015, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-53-90-1.flac"
-                ]
+                ],
+                "loops": [[20946, 26902, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-53-115-1.flac"
-                ]
+                ],
+                "loops": [[20451, 26911, 1676]]
               }
             ]
           },
@@ -3023,25 +3147,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/pick-notes-56-40-1.flac"
-                ]
+                ],
+                "loops": [[21449, 26958, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-56-65-1.flac"
-                ]
+                ],
+                "loops": [[21827, 26903, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-56-90-1.flac"
-                ]
+                ],
+                "loops": [[21825, 26903, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-56-115-1.flac"
-                ]
+                ],
+                "loops": [[21680, 26973, 1676]]
               }
             ]
           },
@@ -3052,25 +3180,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/pick-notes-59-40-1.flac"
-                ]
+                ],
+                "loops": [[21713, 27859, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-59-65-1.flac"
-                ]
+                ],
+                "loops": [[21749, 26995, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-59-90-1.flac"
-                ]
+                ],
+                "loops": [[21744, 27517, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-59-115-1.flac"
-                ]
+                ],
+                "loops": [[21670, 26914, 1676]]
               }
             ]
           },
@@ -3081,25 +3213,29 @@
                 "velocity": 40,
                 "files": [
                   "bass/pick-notes-62-40-1.flac"
-                ]
+                ],
+                "loops": [[21766, 27048, 1676]]
               },
               {
                 "velocity": 65,
                 "files": [
                   "bass/pick-notes-62-65-1.flac"
-                ]
+                ],
+                "loops": [[21772, 27053, 1676]]
               },
               {
                 "velocity": 90,
                 "files": [
                   "bass/pick-notes-62-90-1.flac"
-                ]
+                ],
+                "loops": [[21687, 26968, 1676]]
               },
               {
                 "velocity": 115,
                 "files": [
                   "bass/pick-notes-62-115-1.flac"
-                ]
+                ],
+                "loops": [[21730, 27311, 1676]]
               }
             ]
           }

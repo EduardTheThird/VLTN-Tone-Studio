@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { decodeFlac } from "@shared/flac";
 import { describe, expect, it } from "vitest";
 import { DRUM_PAN, PEAK_LIMIT, panGains, renderPart, sampleAttack } from "./render";
 import { CLOSED_HAT, KICK, OPEN_HAT, SNARE, type NoteEvent } from "./note";
-import { pickDrumLayers, pickDrumSample, type BassSample, type DrumLayer, type SampleSet } from "./samples";
+import { SAMPLE_MAP, pickBassLayers, pickDrumLayers, pickDrumSample, sampleSetFrom, type BassSample, type DrumLayer, type SampleSet } from "./samples";
 import type { PcmAudio } from "../types";
 
 const RATE = 44100;
@@ -183,6 +187,22 @@ describe("renderPart: drums", () => {
 });
 
 describe("renderPart: bass", () => {
+  it.each(["fingers", "pick"] as const)("sustains a two-second %s note using the shipped samples", async (sound) => {
+    const folder = join(dirname(fileURLToPath(import.meta.url)), "samples");
+    const files = SAMPLE_MAP.bassSounds![sound].notes.flatMap(({ layers }) => layers.find(({ velocity }) => velocity === 90)!.files);
+    const decoded = new Map(await Promise.all(files.map(async (file) => [file, await decodeFlac(readFileSync(join(folder, file)))] as const)));
+    const set = sampleSetFrom(SAMPLE_MAP, "standard", (file) => decoded.get(file) ?? impulse(), sound);
+    const energy = (audio: Float32Array, seconds: number): number =>
+      audio.subarray(Math.round((seconds - 0.05) * RATE), Math.round((seconds + 0.05) * RATE)).reduce((sum, value) => sum + value ** 2, 0);
+    for (const pitch of [26, 28]) {
+      expect(pickBassLayers(set, pitch, 90)[0].pick.loop).toBeDefined();
+      const [left] = renderPart([hit(0, pitch, 90, 2)], "bass", set, RATE * 3).audio.channels;
+      expect(energy(left, 0.5)).toBeGreaterThan(0);
+      expect(10 * Math.log10(energy(left, 1.5) / energy(left, 0.5))).toBeGreaterThan(-4);
+      expect(energy(left, 2.4)).toBe(0);
+    }
+  });
+
   it("holds a monophonic line: a new note fades out the one before it", () => {
     const bassKit = kit({}, [bass(45, constant(0.5, RATE * 2)), bass(47, constant(0.25, RATE * 2))]);
     const notes: NoteEvent[] = [hit(0, 45, 100, 1), hit(0.2, 47, 100, 0.5)];

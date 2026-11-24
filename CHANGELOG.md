@@ -2,6 +2,11 @@
 
 All notable changes to VLTN Tone Studio. Versions match `app/package.json` and the GitHub Releases. The release workflow copies the section of the version it publishes into the release notes.
 
+## [Unreleased]
+
+### Fixed
+- Held notes in the generated Fingers and Pick bass parts ring for their written duration.
+
 ## [0.9.53] — 2026-11-24
 
 ### Added

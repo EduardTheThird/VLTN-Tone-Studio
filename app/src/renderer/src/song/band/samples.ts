@@ -100,14 +100,17 @@ export type BassBank = (typeof SAMPLED_BASS_SOUNDS)[number] | "legacy" | "none";
 
 interface BassNoteEntry {
   root: number;
-  layers: { velocity: number; files: string[]; cents?: number[] }[];
+  layers: { velocity: number; files: string[]; cents?: number[]; loops?: BassLoop[] }[];
 }
 
 type BassInstrumentEntry = { notes: BassNoteEntry[] } & Partial<Record<BassArticulation, BassNoteEntry[]>>;
 
+/** Start, exclusive end and crossfade length in source frames. */
+export type BassLoop = [start: number, end: number, fade: number];
+
 interface BassRoot {
   root: number;
-  layers: { velocity: number; takes: PcmAudio[]; cents?: number[] }[];
+  layers: { velocity: number; takes: PcmAudio[]; cents?: number[]; loops?: BassLoop[] }[];
 }
 
 export interface DrumPick {
@@ -119,10 +122,17 @@ export interface DrumPick {
 export interface BassPick {
   audio: PcmAudio;
   playbackRate: number;
+  loop?: BassLoop;
 }
 
 function fail(message: string): never {
   throw new Error(`Invalid sample map: ${message}`);
+}
+
+function isBassLoop(loop: BassLoop): boolean {
+  if (!Array.isArray(loop) || loop.length !== 3 || !loop.every(Number.isSafeInteger)) return false;
+  const [start, end, fade] = loop;
+  return start >= 0 && fade > 0 && end - start > 2 * fade;
 }
 
 /** Checks the parsed map.json and returns it typed. Throws with the first problem it finds. */
@@ -179,6 +189,8 @@ export function readSampleMap(value: unknown): SampleMap {
               (layer.cents !== undefined && (!Array.isArray(layer.cents) || layer.cents.length !== layer.files.length || !layer.cents.every(Number.isFinite)))) {
               fail(`bass ${sound} ${articulation} layer`);
             }
+            if (layer.loops !== undefined && (articulation !== "notes" || !Array.isArray(layer.loops) ||
+              layer.loops.length !== layer.files.length || !layer.loops.every(isBassLoop))) fail(`bass ${sound} sustain loop`);
             previous = layer.velocity;
           }
         }
@@ -317,7 +329,7 @@ export function pickBassLayers(set: SampleSet, midi: number, velocity: number, t
       const index = take % layer.takes.length;
       const cents = layer.cents?.[index] ?? 0;
       const playbackRate = 2 ** ((midi - root - cents / 100) / 12);
-      return { pick: { audio: layer.takes[index], playbackRate }, weight: Math.sqrt(power) };
+      return { pick: { audio: layer.takes[index], playbackRate, loop: layer.loops?.[index] }, weight: Math.sqrt(power) };
     };
     const upper = layers.findIndex((layer) => layer.velocity >= v);
     if (upper <= 0) return [pick(upper === 0 ? layers[0] : layers[layers.length - 1], 1)];
@@ -377,7 +389,7 @@ export function sampleSetFrom(map: SampleMap, kit: string, audioFor: (file: stri
     for (const articulation of BASS_ARTICULATIONS) {
       bassInstrument[articulation] = instrument?.[articulation]?.map(({ root, layers }) => ({
         root,
-        layers: layers.map(({ velocity, files, cents }) => ({ velocity, takes: files.map(audioFor), cents })),
+        layers: layers.map(({ velocity, files, cents, loops }) => ({ velocity, takes: files.map(audioFor), cents, loops })),
       }));
     }
   }

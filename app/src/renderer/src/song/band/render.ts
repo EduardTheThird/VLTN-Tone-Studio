@@ -10,7 +10,7 @@ import { CLAP, CLAVES, COWBELL, SHAKER, TAMBOURINE, CLOSED_HAT, CRASH, HIGH_TOM,
 import { ATTACK_ENVELOPE_SAMPLES } from "./beat-grid";
 import { STICK_SECONDS, STICK_TRANSPOSE, STICK_CLICK } from "./count-in";
 import { organSample } from "./keys-organ";
-import { pickBassLayers, pickDrumLayers, pickKeysLayers, type SampleSet } from "./samples";
+import { pickBassLayers, pickDrumLayers, pickKeysLayers, type BassLoop, type SampleSet } from "./samples";
 
 /** The sample rate of a rendered part: the song's rate. */
 export const RENDER_RATE = 44100;
@@ -128,6 +128,17 @@ interface Voice {
   smoothing?: number;
   rimShelf?: number;
   atNoteOff?: true;
+  loop?: BassLoop;
+}
+
+/** Reads a sample with linear interpolation and folds stereo to mono. */
+function voiceFrame(first: Float32Array, second: Float32Array, position: number, last: number): number {
+  const index = Math.floor(position);
+  const fraction = position - index;
+  const next = Math.min(index + 1, last);
+  const a = first[index] + (first[next] - first[index]) * fraction;
+  const b = second[index] + (second[next] - second[index]) * fraction;
+  return (a + b) * 0.5;
 }
 
 /** Adds one voice into the output. Reads by linear interpolation, and folds a stereo sample to mono. */
@@ -136,26 +147,34 @@ function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
   const first = sample.channels[0];
   const second = sample.channels.length > 1 ? sample.channels[1] : first;
   const last = first.length - 1;
-  // The voice stops at the end of its sample, at the end of its release, or once a cut has finished fading, whichever comes first.
-  const sampleEnd = glide ? Infinity : shape.start + Math.floor(last / rate) + 1;
-  const stop = Math.min(left.length, sampleEnd, shape.holdEnd + shape.release, shape.cutAt + shape.cutFade);
+  const end = Math.min(left.length, shape.holdEnd + shape.release, shape.cutAt + shape.cutFade);
+  // Keep the recorded waveform for short notes. Only notes that reach the loop end need the sustain crossfade.
+  const loop = voice.loop && voice.loop[1] <= last && (end - shape.start) * rate >= voice.loop[1] ? voice.loop : undefined;
+  const sampleEnd = glide || loop ? Infinity : shape.start + Math.floor(last / rate) + 1;
+  const stop = Math.min(end, sampleEnd);
   // A glide reads the sample at a position that adds up the rate frame by frame, so the pitch can rise. A steady voice multiplies.
   let glided = 0;
   let filtered = 0;
   for (let frame = Math.max(0, shape.start); frame < stop; frame++) {
     const elapsed = frame - shape.start;
-    const position = glide ? glided : elapsed * rate;
+    let position = glide ? glided : elapsed * rate;
+    if (loop && position >= loop[1]) {
+      const [start, end, fade] = loop;
+      position = start + fade + (position - end) % (end - start - fade);
+    }
     if (position > last) break;
-    const index = Math.floor(position);
-    const fraction = position - index;
-    const next = index < last ? index + 1 : last;
-    const a = first[index] + (first[next] - first[index]) * fraction;
-    const b = second[index] + (second[next] - second[index]) * fraction;
+    let valueAtPosition = voiceFrame(first, second, position, last);
+    if (loop && position >= loop[1] - loop[2]) {
+      const [start, end, fade] = loop;
+      const overlap = position - end + fade;
+      const next = voiceFrame(first, second, start + overlap, last);
+      valueAtPosition += (next - valueAtPosition) * overlap / fade;
+    }
     if (glide) {
       const progress = Math.min(1, elapsed / glide.frames);
       glided += rate * 2 ** ((-glide.semitones * (1 - progress)) / 12);
     }
-    let raw = (a + b) * 0.5 * gain;
+    let raw = valueAtPosition * gain;
     if (smoothing !== undefined) {
       filtered += smoothing * (raw - filtered);
       raw = filtered;
@@ -254,6 +273,7 @@ function bassVoices(notes: readonly NoteEvent[], samples: SampleSet, sampleRate:
         cutFade,
       },
       glide,
+      loop: short === "notes" && note.articulation !== "staccato" ? pick.loop : undefined,
       smoothing: note.dead && !recorded ? smoothing : undefined,
     }));
     const off = Math.min(holdEnd, next);
