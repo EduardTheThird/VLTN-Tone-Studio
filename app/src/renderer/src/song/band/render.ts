@@ -142,7 +142,7 @@ function voiceFrame(first: Float32Array, second: Float32Array, position: number,
 }
 
 /** Adds one voice into the output. Reads by linear interpolation, and folds a stereo sample to mono. */
-function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
+function mixVoice(left: Float32Array, right: Float32Array, voice: Voice, outputRate: number): void {
   const { sample, rate, gain, shape, glide, smoothing, rimShelf } = voice;
   const first = sample.channels[0];
   const second = sample.channels.length > 1 ? sample.channels[1] : first;
@@ -152,14 +152,17 @@ function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
   const loop = voice.loop && voice.loop[1] <= last && (end - shape.start) * rate >= voice.loop[1] ? voice.loop : undefined;
   const sampleEnd = glide || loop ? Infinity : shape.start + Math.floor(last / rate) + 1;
   const stop = Math.min(end, sampleEnd);
+  const sustainDecay = loop ? 10 ** (-(loop[3] ?? 0) / (20 * outputRate)) : 1;
+  let sustainGain = 1;
   // A glide reads the sample at a position that adds up the rate frame by frame, so the pitch can rise. A steady voice multiplies.
   let glided = 0;
   let filtered = 0;
   for (let frame = Math.max(0, shape.start); frame < stop; frame++) {
     const elapsed = frame - shape.start;
     let position = glide ? glided : elapsed * rate;
-    if (loop && position >= loop[1]) {
-      const [start, end, fade] = loop;
+    const repeating = loop && position >= loop[1] ? loop : undefined;
+    if (repeating) {
+      const [start, end, fade] = repeating;
       position = start + fade + (position - end) % (end - start - fade);
     }
     if (position > last) break;
@@ -173,6 +176,11 @@ function mixVoice(left: Float32Array, right: Float32Array, voice: Voice): void {
     if (glide) {
       const progress = Math.min(1, elapsed / glide.frames);
       glided += rate * 2 ** ((-glide.semitones * (1 - progress)) / 12);
+    }
+    if (repeating) {
+      // Begin at unity on the first wrap. Keep the decay running across later crossfades.
+      valueAtPosition *= sustainGain;
+      sustainGain *= sustainDecay;
     }
     let raw = valueAtPosition * gain;
     if (smoothing !== undefined) {
@@ -338,7 +346,7 @@ export function renderPart(
   const voices = (kind === "drums" ? drumVoices(sorted, samples, sampleRate) : kind === "bass" ? bassVoices(sorted, samples, sampleRate) : keysVoices(sorted, samples, sampleRate)).map(onAttack);
   const left = new Float32Array(lengthFrames);
   const right = new Float32Array(lengthFrames);
-  for (const voice of voices) mixVoice(left, right, voice);
+  for (const voice of voices) mixVoice(left, right, voice, sampleRate);
   const peak = Math.max(peakOf(left), peakOf(right));
   const gain = peak > PEAK_LIMIT ? PEAK_LIMIT / peak : 1;
   if (gain < 1) {

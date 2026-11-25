@@ -187,20 +187,44 @@ describe("renderPart: drums", () => {
 });
 
 describe("renderPart: bass", () => {
-  it.each(["fingers", "pick", "legacy"] as const)("sustains a two-second %s note using the shipped samples", async (sound) => {
+  it.each(["fingers", "pick", "legacy"] as const)("keeps a two-second %s note audible and decaying", async (sound) => {
     const folder = join(dirname(fileURLToPath(import.meta.url)), "samples");
     const files = sound === "legacy" ? SAMPLE_MAP.bass.filter(({ layer }) => layer === "f").map(({ file }) => file)
       : SAMPLE_MAP.bassSounds![sound].notes.flatMap(({ layers }) => layers.find(({ velocity }) => velocity === 90)!.files);
     const decoded = new Map(await Promise.all(files.map(async (file) => [file, await decodeFlac(readFileSync(join(folder, file)))] as const)));
     const set = sampleSetFrom(SAMPLE_MAP, "standard", (file) => decoded.get(file) ?? impulse(), sound);
-    const energy = (audio: Float32Array, seconds: number): number =>
-      audio.subarray(Math.round((seconds - 0.05) * RATE), Math.round((seconds + 0.05) * RATE)).reduce((sum, value) => sum + value ** 2, 0);
+    const power = (audio: Float32Array, from: number, to: number): number => {
+      const window = audio.subarray(Math.round(from * RATE), Math.round(to * RATE));
+      return window.reduce((sum, value) => sum + value ** 2, 0) / window.length;
+    };
     for (const pitch of [26, 28]) {
-      expect(pickBassLayers(set, pitch, 90)[0].pick.loop).toBeDefined();
+      const { loop, playbackRate } = pickBassLayers(set, pitch, 90)[0].pick;
+      expect(loop?.[3]).toBeGreaterThan(0);
+      const seam = loop![1] / (playbackRate * RATE);
       const [left] = renderPart([hit(0, pitch, 90, 2)], "bass", set, RATE * 3).audio.channels;
-      expect(energy(left, 0.5)).toBeGreaterThan(0);
-      expect(Math.abs(10 * Math.log10(energy(left, 1.5) / energy(left, 0.5)))).toBeLessThan(4);
-      expect(energy(left, 2.4)).toBe(0);
+      const held = power(left, 1.45, 1.55);
+      expect(10 * Math.log10(held / power(left, 0, 0.1))).toBeGreaterThan(-40);
+      expect(held).toBeLessThan(power(left, 0.45, 0.55));
+      expect(Math.abs(10 * Math.log10(power(left, seam, seam + 0.04) / power(left, seam - 0.04, seam)))).toBeLessThan(2);
+      expect(power(left, 2.35, 2.45)).toBe(0);
+    }
+  });
+
+  it("continues the measured decay across loop seams and leaves short notes and staccato alone", () => {
+    const audio = constant(0.5, RATE);
+    const withLoop = (decay: number): SampleSet => ({
+      drums: new Map(), bass: [], bassInstrument: {
+        notes: [{ root: 40, layers: [{ velocity: 90, takes: [audio], loops: [[RATE * 0.4, RATE * 0.6, RATE * 0.04, decay]] }] }],
+      },
+    });
+    const render = (note: NoteEvent, decay: number) => renderPart([note], "bass", withLoop(decay), RATE * 2).audio.channels[0];
+    const held = render(hit(0, 40, 90, 1.8), 12);
+    const seam = RATE * 0.6;
+    expect(held[seam]).toBe(held[seam - 1]);
+    expect(held[seam + RATE]).toBeCloseTo(held[seam] * 10 ** (-12 / 20), 6);
+    const shortNotes: NoteEvent[] = [hit(0, 40, 90, 0.4), { ...hit(0, 40, 90, 0.8), staccato: true, articulation: "staccato" }];
+    for (const note of shortNotes) {
+      expect(render(note, 12)).toEqual(render(note, 0));
     }
   });
 

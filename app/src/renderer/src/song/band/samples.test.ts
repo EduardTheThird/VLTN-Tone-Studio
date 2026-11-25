@@ -114,7 +114,16 @@ describe("map.json", () => {
     for (let midi = Math.min(...roots); midi <= Math.max(...roots); midi++) {
       expect(roots.some((root) => Math.abs(root - midi) <= 1), String(midi)).toBe(true);
     }
-    for (const { layers } of notes) expect(layers.map((layer) => layer.velocity)).toEqual([40, 65, 90, 115]);
+    for (const { layers } of notes) {
+      expect(layers.map((layer) => layer.velocity)).toEqual([40, 65, 90, 115]);
+      for (const { files, loops } of layers) {
+        expect(loops).toHaveLength(files.length);
+        for (const loop of loops ?? []) {
+          expect(loop[3]).toBeGreaterThan(0);
+          expect(loop[3]).toBeLessThanOrEqual(12);
+        }
+      }
+    }
   });
 
   it("keeps the bass files under 15 MB and maps the same recordings for legacy songs", () => {

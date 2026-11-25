@@ -106,8 +106,8 @@ interface BassNoteEntry {
 
 type BassInstrumentEntry = { notes: BassNoteEntry[] } & Partial<Record<BassArticulation, BassNoteEntry[]>>;
 
-/** Start, exclusive end and crossfade length in source frames. */
-export type BassLoop = [start: number, end: number, fade: number];
+/** Start, exclusive end and crossfade length in source frames, followed by the measured decay in dB per second. */
+export type BassLoop = [start: number, end: number, fade: number, decayDbPerSecond?: number];
 
 interface BassRoot {
   root: number;
@@ -131,9 +131,9 @@ function fail(message: string): never {
 }
 
 function isBassLoop(loop: BassLoop): boolean {
-  if (!Array.isArray(loop) || loop.length !== 3 || !loop.every(Number.isSafeInteger)) return false;
-  const [start, end, fade] = loop;
-  return start >= 0 && fade > 0 && end - start > 2 * fade;
+  if (!Array.isArray(loop) || (loop.length !== 3 && loop.length !== 4) || !loop.slice(0, 3).every(Number.isSafeInteger)) return false;
+  const [start, end, fade, decay = 0] = loop;
+  return start >= 0 && fade > 0 && end - start > 2 * fade && Number.isFinite(decay) && decay >= 0 && decay <= 12;
 }
 
 /** Checks the parsed map.json and returns it typed. Throws with the first problem it finds. */
