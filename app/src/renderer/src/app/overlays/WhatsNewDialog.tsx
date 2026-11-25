@@ -23,6 +23,16 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Held bass notes ring and decay",
+    text: "Update the generated bass to hear Fingers and Pick notes ring for their written duration and fade like the original recordings. Ghost notes and releases stay short.",
+    image: band,
+  },
+  {
+    title: "Style drums for basic beats",
+    text: "If a new song’s drum stem is a basic beat, Band defaults to From the style so you still get fills and variation. Choose From the original drummer to copy the beat.",
+    image: band,
+  },
+  {
     title: "Drums that follow the original",
     text: "In Band, let generated drums learn the song’s rhythm from the original drum stem. Engine 4 also adds grooves, fills and feel measured from recordings of drummers. Preview each section’s busyness and loudness on the pad, copy its settings or lock its notes.",
     image: band,
