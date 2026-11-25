@@ -9,7 +9,7 @@ import { missingToneFiles, missingToneWarning } from "../band/tone-check";
 import type { PlaylistCheck } from "./playlist-preflight";
 
 /** The band settings a saved song carries in its options, or null when it has none or its options cannot be read. */
-function savedBand(song: NonNullable<LibraryPreflightSong["song"]>): unknown {
+export function savedBand(song: NonNullable<LibraryPreflightSong["song"]>): unknown {
   try {
     const options: unknown = JSON.parse(song.settings[":options"] || "{}");
     return typeof options === "object" && options !== null ? (options as Record<string, unknown>).band : null;

@@ -176,6 +176,9 @@ export function PlaylistsPanel() {
                 <DropdownMenuItem disabled={library.busy || dirty || stageBusy || library.playlistPlaying} onSelect={() => setUpgrade(true)}>
                   Bring this set up to date…
                 </DropdownMenuItem>
+                <DropdownMenuItem disabled={library.busy || dirty || stageBusy || library.playlistPlaying} onSelect={() => void library.exportBackup(playlist.id)}>
+                  Export this set…
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="outline" disabled={library.busy} onClick={() => setConfirm("playlist:" + playlist.id)}>

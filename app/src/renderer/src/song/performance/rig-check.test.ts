@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rigCheck, type RigFacts } from "./rig-check";
+import { rigAudioCheck, rigCheck, type RigFacts } from "./rig-check";
 
 /** A pedal set up the way the app drives it: USB, channel 16, nothing else to protect. */
 const good = (over: Partial<RigFacts> = {}): RigFacts => ({
@@ -98,4 +98,12 @@ describe("rigCheck", () => {
     expect(issue.text).toContain("GP-150");
     expect(issue.code).toBe("in-channel-omni");
   });
+});
+
+it("reports a missing main route, a selectable GP output, and a shared click only when enabled", () => {
+  const facts = { device: "gp180" as const, pedalAvailable: true, pedalSelected: false, main: "System default · 1/2", clickShared: true };
+  expect(rigAudioCheck(facts).map(({ code }) => code)).toEqual(["audio-not-pedal", "click-shared"]);
+  expect(rigAudioCheck({ ...facts, mainFallback: true })[0]).toMatchObject({ code: "audio-fallback", level: "error" });
+  expect(rigAudioCheck({ ...facts, pedalSelected: true, clickShared: false })).toEqual([]);
+  expect(rigAudioCheck({ ...facts, device: null, clickShared: false })).toEqual([]);
 });

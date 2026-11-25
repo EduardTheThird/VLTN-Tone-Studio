@@ -40,12 +40,13 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
     setTitle(saved?.title ?? source?.name.replace(/\.[^.]+$/, "") ?? "");
     setArtist(saved?.artist ?? "");
   }, [source, saved?.title, saved?.artist]);
-  if (!host.song.library) return <p>Use the desktop app to save songs and audio for offline performances.</p>;
+  if (!host.song.library)
+    return <div className="space-y-2 p-2"><Button onClick={onPick}>Open a song…</Button><p>Use the desktop app to save songs and audio for offline performances.</p></div>;
   return (
     <section aria-label="Saved songs and playlists" className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-2">
       {unsaved && (
         <div aria-label="Save the current song" className="flex flex-wrap items-center gap-3 rounded border border-seam px-3 py-2">
-          <input aria-label="Song title" placeholder="Song title" className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input id="save-current-song-title" aria-label="Song title" placeholder="Song title" className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
           <input aria-label="Song artist" placeholder="Artist" className={field} value={artist} onChange={(e) => setArtist(e.target.value)} />
           <Button
             disabled={!source || !title.trim() || library.busy || ["splitting", "model", "decoding"].includes(status.kind)}

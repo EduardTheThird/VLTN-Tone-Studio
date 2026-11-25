@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notifyError } from "@/app/notify";
 import { useFileHandler, type OpenFile } from "@/state/ui";
-import { usePedalNameOrBoth } from "@/state/device";
+import { host } from "@/host";
 import { AUDIO_ACCEPT } from "@/song/decode";
 import { confirmLeave, useSongLibrary } from "@/song/library";
 import { useNav } from "@/state/nav";
@@ -19,12 +19,14 @@ import { SaveBeforeLeaving, SaveIndicator } from "./SaveIndicator";
 import { useSongTab, type SongTab } from "./tab";
 import { ScreenBoundary } from "@/components/ScreenBoundary";
 
-/** Decode `file`; the Stems tab then offers the model and quality choice before the split. */
+/** Decode a song and let the performer choose what to do with it. */
 export async function openSong(file: File): Promise<void> {
   if (useSongLibrary.getState().busy) return;
   if (!(await confirmLeave())) return;
   useSongLibrary.getState().pausePlaylist();
-  useNav.getState().go("song", "stems");
+  const nav = useNav.getState();
+  const explicitlySplitting = nav.screen === "song" && nav.param === "stems";
+  nav.go("song", explicitlySplitting ? "stems" : "songs");
   await useSong.getState().load(file);
 }
 
@@ -53,8 +55,9 @@ export function SongScreen() {
   const libraryId = source?.libraryId;
   const saved = useSongLibrary((s) => (libraryId ? s.index.songs.find((song) => song.id === libraryId) : undefined));
   const fileInput = useRef<HTMLInputElement>(null);
-  // Before any pedal was connected the tone can be for any supported model.
-  const pedal = usePedalNameOrBoth();
+  const param = useNav((state) => state.param);
+  const status = useSong((s) => s.status);
+  const requestedView = param === "performance-setup" ? "setup" : param === "performance-midi" ? "midi" : param === "performance-play" ? "play" : undefined;
   useFileHandler("audio", openSongFiles);
   useFileHandler("wav", openSongFiles);
   const pick = () => fileInput.current?.click();
@@ -75,16 +78,16 @@ export function SongScreen() {
       <SaveBeforeLeaving />
       <Tabs value={tab} onValueChange={(v) => setTab(v as SongTab)} className="flex min-h-0 flex-1 flex-col gap-3.5">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-6 pt-5 pb-1">
-          <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Song</h1>
+          <h1 className="col-start-1 row-start-1 text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-balance">Songs &amp; sets</h1>
           <div className="col-start-1 row-start-2 mt-1.5 flex min-w-0 items-center gap-3">
             <p className="truncate text-[12px] text-silkscreen-3">
-              {songHeadline(source, saved, `Split a song into stems on this computer, then find a ${pedal} tone for its guitar.`)}
+              {songHeadline(source, saved, "Play backing tracks, prepare sets or split songs into stems.")}
             </p>
             <SaveIndicator />
           </div>
           <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3">
             <TabsList aria-label="Song">
-              <TabsTrigger value="songs">Songs & playlists</TabsTrigger>
+              <TabsTrigger value="songs">Songs & sets</TabsTrigger>
               <TabsTrigger value="stems">Stems</TabsTrigger>
               <TabsTrigger value="tone">Tone match</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
@@ -99,6 +102,17 @@ export function SongScreen() {
         </div>
         <TabsContent value="songs" className="flex min-h-0 flex-col">
           <ScreenBoundary name="Songs and playlists" title="This tab hit a problem.">
+            {status.kind === "decoding" && <p role="status" className="p-2">Opening audio…</p>}
+            {status.kind === "error" && !source && <p role="alert" className="p-2">{status.message}</p>}
+            {source && !source.libraryId && (
+              <div className="flex flex-wrap items-center gap-2 rounded border border-seam p-3" aria-label="Imported song actions">
+                <Button onClick={() => useNav.getState().go("song", "performance-play")}>Open player</Button>
+                {host.song.library && (
+                  <Button variant="outline" onClick={() => document.getElementById("save-current-song-title")?.focus()}>Prepare for a set</Button>
+                )}
+                <Button variant="outline" onClick={() => setTab("stems")}>Split stems</Button>
+              </div>
+            )}
             <SongLibraryPanel onPick={pick} />
           </ScreenBoundary>
         </TabsContent>
@@ -115,7 +129,7 @@ export function SongScreen() {
         {/* Kept mounted on the other tabs: a set or song playing on Performance keeps playing (and can be edited) while hidden. */}
         <TabsContent value="performance" forceMount hidden={tab !== "performance"} className="flex min-h-0 flex-col">
           <ScreenBoundary name="Performance" title="This tab hit a problem.">
-            <PerformancePanel shown={tab === "performance"} />
+            <PerformancePanel shown={tab === "performance"} requestedView={requestedView} />
           </ScreenBoundary>
         </TabsContent>
       </Tabs>

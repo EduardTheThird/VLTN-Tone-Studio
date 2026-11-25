@@ -143,3 +143,22 @@ export function rigCheck(facts: RigFacts): RigIssue[] {
   }
   return issues;
 }
+
+/** Audio facts come from the app's active audio graph and OS device list. */
+export function rigAudioCheck({
+  device, pedalAvailable, pedalSelected, main, mainFallback, clickShared,
+}: {
+  device: RigFacts["device"] | null;
+  pedalAvailable: boolean;
+  pedalSelected: boolean;
+  main: string;
+  mainFallback?: boolean;
+  clickShared: boolean;
+}): RigIssue[] {
+  const issues: RigIssue[] = [];
+  if (mainFallback) issues.push({ code: "audio-fallback", level: "error", text: `The saved Main output is unavailable. Backing uses ${main}.` });
+  else if (device && pedalAvailable && !pedalSelected)
+    issues.push({ code: "audio-not-pedal", level: "advice", text: `Backing is routed to ${main}. Select the ${pedalName(device)} USB output for a one-cable rig.` });
+  if (clickShared) issues.push({ code: "click-shared", level: "warning", text: "Click or count-in shares the Main pair. It will be heard wherever Main is connected, including the PA." });
+  return issues;
+}

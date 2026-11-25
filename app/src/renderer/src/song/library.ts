@@ -1,3 +1,7 @@
+import { evaluateSmart } from "@shared/library-filter";
+import { toneFiles } from "./band/tone-check";
+import { savedBand } from "./performance/tone-preflight";
+import { useMidiConfiguration } from "./performance/midi-configuration";
 import { usePedalLibrary } from "./performance/pedal-library";
 import { clockSource, usableClockGrid } from "./performance/beat-clock";
 import { parseBeatGrid } from "./band/beat-grid";
@@ -23,6 +27,7 @@ import {
   type Playlist,
   type RestoreMode,
   type SongLibrary,
+  type SetBackupOptions,
   type SongMetaPatch,
 } from "@shared/song-library";
 import { songsFromHistory } from "@shared/library-history";
@@ -121,7 +126,7 @@ interface LibraryState {
   /** The playlist the Playlists panel should open next, set when a playlist is created. Null once the panel has opened it. */
   focusPlaylistId: string | null;
   transfer: string;
-  exportBackup(): Promise<void>;
+  exportBackup(playlistId?: string): Promise<void>;
   /** The backup waiting for the user to choose how to restore it, when some of its songs are already in the library. */
   backupPreview: LibraryBackupPreview | null;
   /** Picks a backup. Restores it at once when nothing in it is already saved; otherwise sets `backupPreview` for the dialog. */
@@ -468,6 +473,27 @@ const api = () => {
   if (!host.song.library) throw new Error("Saved songs are available in the desktop app.");
   return host.song.library;
 };
+/** Files and shared commands needed to rebuild the selected songs on a second machine. */
+function setBackupOptions(index: SongLibrary, playlistId: string): SetBackupOptions {
+  const playlist = index.playlists.find(({ id }) => id === playlistId);
+  if (!playlist) throw new Error("The playlist is no longer saved.");
+  const ids = new Set(playlist.smart
+    ? evaluateSmart(index.songs, index.folders, playlist.smart).songs.map(({ id }) => id)
+    : playlist.songs);
+  const available = new Map(useMidiConfiguration.getState().macros.map((macro) => [macro.code, macro]));
+  const references = (text: string) => [...text.matchAll(/\$([A-Z][A-Z0-9_]{0,31})\b/g)].map((match) => match[1]);
+  const dependencies = Object.fromEntries(index.songs.filter(({ id }) => ids.has(id)).map((song) => {
+    const codes = new Set(Object.values(song.settings).flatMap(references));
+    for (const code of codes) for (const command of available.get(code)?.commands ?? []) for (const ref of references(command)) codes.add(ref);
+    const macros = [...codes].map((code) => available.get(code) ?? { code });
+    const tones = toneFiles(parseBandSettings(savedBand(song))).map(({ part, role, type, file }) => ({
+      part, role, type, source: file.source, name: file.name, toneId: file.toneId, modelId: file.modelId,
+    }));
+    return [song.id, { tones, macros }];
+  }));
+  return { playlistId, dependencies };
+}
+
 export const useSongLibrary = create<LibraryState>((set, get) => {
   let loadGeneration = 0;
   let prefetchGeneration = 0;
@@ -918,15 +944,15 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       prefetchNext();
       return true;
     },
-    exportBackup: () =>
+    exportBackup: (playlistId) =>
       run(async () => {
         const service = api();
-        set({ transfer: "Preparing library backup…" });
+        set({ transfer: playlistId ? "Preparing portable set…" : "Preparing library backup…" });
         const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
         try {
           await flushSettings();
           await usePedalLibrary.getState().flush();
-          const result = await service.exportBackup();
+          const result = await (playlistId ? service.exportBackup(setBackupOptions(await service.index(), playlistId)) : service.exportBackup());
           set({ notice: result ? `Exported ${result.songs} songs and ${result.playlists} playlists to ${result.fileName}.` : "Backup export cancelled." });
         } finally {
           unsubscribe();

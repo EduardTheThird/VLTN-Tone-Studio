@@ -122,10 +122,12 @@ it("shows the section now and the one next, and the bars left in it", () => {
   expect(screen.getByLabelText("Left in the section").textContent).toBe("2 bars");
 });
 
-it("shows the memory the pedal is on and the next one with the time to it", () => {
-  mount(fakeSession());
+it("identifies chart recalls as scheduled even when cues are disarmed", () => {
+  mount(fakeSession({ armedOutput: null }));
+  expect(screen.getByLabelText("Scheduled pedal cues").textContent).toContain("Next:");
   act(() => setClockPosition(78));
-  expect(screen.getByLabelText("Pedal").textContent).toBe("GP-180: 011 Crunch→ 014 Lead in 0:22");
+  expect(screen.getByLabelText("Scheduled pedal cues").textContent).toBe("Scheduled here: GP-180 011 CrunchNext: GP-180 014 Lead in 0:22");
+  expect(screen.getByRole("button", { name: "Exit Stage" })).toBeTruthy();
 });
 
 it("shows one health word, and says why when something is wrong", () => {
@@ -263,4 +265,13 @@ it("shows the current manual preset name in the stage cue chip after the preset 
     cleanup();
     usePedalLibrary.setState({ presets: {} });
   }
+});
+
+it("shows degraded MIDI after drops and reports a clean resync", () => {
+  const session = fakeSession();
+  mount(session);
+  act(() => session.store.setState({ lateNotice: { at: 0, position: 0, dropped: 2, resynced: true } }));
+  expect(screen.getByLabelText("Performance status").textContent).toContain("MIDI degraded");
+  act(() => session.store.setState({ lateNotice: { at: 0, position: 0, dropped: 0, resynced: true } }));
+  expect(screen.getByLabelText("Performance status").textContent).toBe("MIDI resynced");
 });

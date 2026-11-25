@@ -21,7 +21,7 @@ const PARTS: readonly TonePart[] = ["bass", ...TONE_PARTS.filter((part) => part 
 /** "amp capture" or "cab IR": what a block's file is called in a sentence. */
 export const fileLabel = (missing: Pick<MissingToneFile, "role" | "type">): string => `${missing.role} ${missing.type === "capture" ? "capture" : "IR"}`;
 
-async function exists(block: ToneBlock & { file: PartToneFile }, files: PartToneFiles): Promise<boolean> {
+async function exists(block: MissingToneFile, files: PartToneFiles): Promise<boolean> {
   const { file } = block;
   try {
     if (file.source === "tone3000") {
@@ -43,16 +43,23 @@ async function exists(block: ToneBlock & { file: PartToneFile }, files: PartTone
  * The chain files of the bass and drum tones that cannot be read. Only blocks that are on and have a file count, as in loadPartTone: an
  * empty slot or an off block plays nothing, so it cannot be missing.
  */
-export async function missingToneFiles(settings: ToneSettings, files: PartToneFiles): Promise<MissingToneFile[]> {
-  const missing: MissingToneFile[] = [];
+export function toneFiles(settings: ToneSettings): MissingToneFile[] {
+  const dependencies: MissingToneFile[] = [];
   for (const part of PARTS) {
     const tone = partToneOf(settings, part);
     if (tone.kind !== "chain") continue;
     for (const block of tone.blocks) {
       if (!block.on || !block.file) continue;
-      if (!(await exists({ ...block, file: block.file }, files))) missing.push({ part, role: block.role, type: block.type, file: block.file });
+      dependencies.push({ part, role: block.role, type: block.type, file: block.file });
     }
   }
+  return dependencies;
+}
+
+export async function missingToneFiles(settings: ToneSettings, files: PartToneFiles): Promise<MissingToneFile[]> {
+  const missing: MissingToneFile[] = [];
+  for (const dependency of toneFiles(settings))
+    if (!(await exists(dependency, files))) missing.push(dependency);
   return missing;
 }
 

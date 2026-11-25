@@ -28,9 +28,9 @@ export function RigStageControls({ session }: { session: PerformanceSession }) {
     }
     const label = profile.name.replace(/^Valeton |^BOSS |^Strymon /, "");
     const effect = wire?.enabled === false ? "Bypassed" : wire?.enabled === true ? "Engaged" : undefined;
-    return { id, label, name, effect, source: wire?.source };
+    return { id, label, name, effect, slotSource: wire?.slotSource, enabledSource: wire?.enabledSource };
   }), [library, channel, state, gp180, gp150]);
-  const summary = pedals.filter((pedal) => pedal.name).map(({ label, name }) => `${label} ${name}`).join(" · ");
+  const summary = pedals.filter((pedal) => pedal.name).map(({ label, name, slotSource }) => `${slotSource === "pedal" ? "Reported" : "Sent"}: ${label} ${name}`).join(" · ");
   if (!pedals.length) return null;
   const run = (action: () => string | void) => {
     const hint = action();
@@ -41,8 +41,8 @@ export function RigStageControls({ session }: { session: PerformanceSession }) {
       <details className="rounded border border-seam px-2 py-1">
         <summary className="cursor-pointer text-sm" aria-label="Last known rig state">{summary || "Rig state"}</summary>
         <ul className="space-y-1 py-2 text-sm">
-          {pedals.map(({ id, label, name, effect, source }) => (
-            <li key={id}>{[label, name || "Preset unknown", effect, source === "pedal" ? "From pedal" : source === "sent" ? "Sent by app" : undefined].filter(Boolean).join(" · ")}</li>
+          {pedals.map(({ id, label, name, effect, slotSource, enabledSource }) => (
+            <li key={id}>{[label, name || "Preset unknown", slotSource === "pedal" ? "Preset reported by pedal" : slotSource === "sent" ? "Preset sent · confirmation unavailable" : undefined, effect && `${effect} (${enabledSource === "pedal" ? "reported" : "sent"})`].filter(Boolean).join(" · ")}</li>
           ))}
         </ul>
         <Button variant="outline" size="sm" disabled={!armed} onClick={() => run(() => session.resetRig(true))}>Reset rig to song start</Button>

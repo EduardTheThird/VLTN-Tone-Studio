@@ -362,3 +362,39 @@ it("rejects invalid preset data even when the backup's digest matches it", async
   await expect(restored.restoreBackup(archive)).rejects.toThrow(/pedal settings/i);
   expect(await restored.readPedalSettings()).toBeNull();
 });
+
+it("exports one set with working audio, chart, repeated entries and dependency inventory", async () => {
+  const first = await flacSong(1);
+  const unrelated = await flacSong(2);
+  await save(store, first);
+  await save(store, unrelated);
+  const chart = Buffer.from("%PDF-1.7\n%%EOF");
+  await store.attachChart(first.song.id, chart);
+  await store.savePedalSettings({ ...emptyPedalSettings(), owned: ["valeton-gp180"] });
+  const playlistId = randomUUID();
+  const sections = [{ id: randomUUID(), name: "First set", start: 0 }];
+  await store.playlists([
+    { id: playlistId, name: "Tour set", songs: [first.song.id, first.song.id], sets: sections },
+    { id: randomUUID(), name: "Another set", songs: [unrelated.song.id] },
+  ]);
+  const before = await readFile(join(root, "library.json"));
+  const tone = { part: "bass", role: "amp", type: "capture" as const, source: "tone3000" as const, name: "Tour amp", toneId: 12, modelId: 23 };
+  const macro = { code: "LEAD", label: "Lead", commands: ["pc 1 5"] };
+  expect(await store.exportBackup(archive, undefined, {
+    playlistId, dependencies: { [first.song.id]: { tones: [tone], macros: [macro] } },
+  })).toEqual({ songs: 1, playlists: 1 });
+  expect(await readFile(join(root, "library.json"))).toEqual(before);
+  expect(await readdir(root)).not.toEqual(expect.arrayContaining([expect.stringMatching(/^\.export-/)]));
+  const manifest = JSON.parse(await readFile(join(await unpack(), "backup-manifest.json"), "utf8"));
+  expect(manifest.portableSet).toMatchObject({ name: "Tour set", dependencies: [{ tones: [tone], macros: [macro] }] });
+  const restoredRoot = join(temp, "restored");
+  const restored = new SongLibraryStore(restoredRoot);
+  expect(await restored.restoreBackup(archive)).toEqual({ songs: 1, playlists: 1 });
+  const index = await restored.index();
+  const id = index.songs[0].id;
+  expect(index.playlists[0]).toMatchObject({ name: "Tour set", songs: [id, id], sets: sections });
+  expect(index.songs[0].settings).toEqual(first.song.settings);
+  expect(Buffer.from(await readSaved(restoredRoot, id, "chart.pdf"))).toEqual(chart);
+  expect(await restored.readPedalSettings()).toMatchObject({ owned: ["valeton-gp180"] });
+  await expectAudio(restoredRoot, id, first);
+});

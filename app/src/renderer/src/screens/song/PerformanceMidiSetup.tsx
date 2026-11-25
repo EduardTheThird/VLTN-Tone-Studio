@@ -1,3 +1,4 @@
+import { PedalAudioCheck } from "./PerformanceOutputs";
 import type { RigTempoPlan } from "@/song/performance/rig-tempo";
 import { MyRig } from "./MyRig";
 import { useDevice } from "@/state/device";
@@ -41,12 +42,14 @@ export function SessionMidiHealth({
   firstBeat = 0,
   pedalDrumsChosen = false,
   rigTempo,
+  clickEnabled = false,
 }: {
   session: PerformanceSession;
   firstBeat?: number;
   /** The song chose RC-10R pedal drums, so the check warns when the cues are off. */
   pedalDrumsChosen?: boolean;
   rigTempo?: RigTempoPlan | null;
+  clickEnabled?: boolean;
 }) {
   const armed = useSession(session, selectArmed);
   const cues = useSession(session, (s) => s.cues);
@@ -85,6 +88,7 @@ export function SessionMidiHealth({
   return (
     <MidiHealth
       songKey={session.songSettingsKey}
+      rigAudio={<PedalAudioCheck player={player} clickEnabled={clickEnabled} />}
       myRig={<MyRig session={session} />}
       rigChannelWarnings={rigWarnings}
       cues={cues}

@@ -1,3 +1,4 @@
+import { useOutputSettings } from "@/song/audio/output-settings";
 import { useManualPresetProfiles } from "./use-preset-names";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Ellipsis } from "lucide-react";
@@ -92,22 +93,20 @@ function BarBeat({ grid, beat }: { grid: AnalysedGrid | null; beat: BeatGrid }) 
   );
 }
 
-/** The memory the pedal is on and the one that comes next with the time to it. */
-function PedalNow({ patches }: { patches: readonly PatchCue[] }) {
+/** The chart plan at this position and the next scheduled change. */
+function ScheduledCue({ patches }: { patches: readonly PatchCue[] }) {
   const now = usePlaybackClock((s) => patchNow(patches, s.position));
   const next = usePlaybackClock((s) => patchNext(patches, s.position));
   const seconds = usePlaybackClock((s) => (next ? Math.ceil(next.time - s.position) : 0));
-  const first = patches[0];
-  const shown = now ?? first;
-  if (!shown) return null;
+  if (!now && !next) return null;
   return (
-    <p className="min-w-0 text-lg leading-tight" aria-label="Pedal">
+    <p className="min-w-0 text-lg leading-tight" aria-label="Scheduled pedal cues">
       <span className="font-semibold">
-        {patchPedal(shown)}: {patchText(shown)}
+        {now ? `Scheduled here: ${patchPedal(now)} ${patchText(now)}` : "Scheduled cues"}
       </span>
       {next && (
         <span className="block truncate text-sm text-silkscreen-3">
-          → {patchText(next)} in {clock(seconds)}
+          Next: {patchPedal(next)} {patchText(next)} in {clock(seconds)}
         </span>
       )}
     </p>
@@ -122,7 +121,7 @@ function Health({ session, reason }: { session: PerformanceSession; reason: stri
   const lateNotice = useSession(session, (s) => s.lateNotice);
   const connected = output?.state === "connected";
   const late =
-    lateNotice && lateNotice.dropped + (lateNotice.resynced ? 1 : 0) > 0
+    lateNotice && lateNotice.dropped > 0
       ? `${lateNotice.dropped} late MIDI command${lateNotice.dropped === 1 ? "" : "s"} dropped`
       : "";
   const state = error
@@ -132,8 +131,8 @@ function Health({ session, reason }: { session: PerformanceSession; reason: stri
       : !armed
         ? { dot: "bg-amber-400", word: "Cues off", why: "Cues disarmed" }
         : late
-          ? { dot: "bg-amber-400", word: "Ready", why: late }
-          : { dot: "bg-emerald-500", word: "Ready", why: "" };
+          ? { dot: "bg-amber-400", word: "MIDI degraded", why: late }
+          : { dot: "bg-emerald-500", word: lateNotice?.resynced ? "MIDI resynced" : "Ready", why: "" };
   const why = [state.why, reason].filter(Boolean).join(" · ");
   return (
     <div role={error ? "alert" : "status"} aria-label="Performance status" className="flex min-w-0 items-center gap-2 text-lg font-semibold">
@@ -195,6 +194,7 @@ export function StageStatusStrip({
   const ordered = useMemo(() => sortedSections(sections), [sections]);
   const manualPresets = useManualPresetProfiles();
   const patches = useMemo(() => patchCues(cues, manualPresets), [cues, manualPresets]);
+  const activeRoute = useOutputSettings((s) => s.activeRoute);
   const size = useReaderText((s) => s.size);
   const autoscroll = useAutoscroll((s) => s.mode);
   const lastBar = usePlaybackClock((s) => {
@@ -226,7 +226,12 @@ export function StageStatusStrip({
         </span>
       )}
       <BarBeat grid={grid} beat={beat} />
-      <PedalNow patches={patches} />
+      <ScheduledCue patches={patches} />
+      {!!activeRoute?.warnings.length && (
+        <p role="alert" className="max-w-full text-sm font-semibold text-amber-300">
+          {activeRoute.warnings.join(" ")} Main: {activeRoute.main} · Click: {activeRoute.click}
+        </p>
+      )}
       <Health session={session} reason={notices} />
       <div className="ml-auto flex items-center gap-2">
         {speedNote && <span className="rounded-md border border-seam px-2 py-1 text-sm tabular-nums">{speedNote}</span>}
@@ -238,6 +243,7 @@ export function StageStatusStrip({
         <Button variant="outline" aria-label="Larger performance text" disabled={size >= READER_TEXT.max} onClick={() => useReaderText.getState().step(1)}>
           A+
         </Button>
+        <Button variant="outline" onClick={controls.onExit}>Exit Stage</Button>
         <StageMenu controls={controls} line={autoscroll === "line"} />
       </div>
     </div>

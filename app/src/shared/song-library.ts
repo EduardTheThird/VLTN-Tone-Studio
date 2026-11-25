@@ -122,6 +122,24 @@ export interface PlaylistSet {
   name: string;
   start: number;
 }
+export interface PortableToneDependency {
+  part: string;
+  role: string;
+  type: "capture" | "ir";
+  source: "tone3000" | "file";
+  name: string;
+  toneId?: number;
+  modelId?: number;
+}
+
+export interface SetBackupOptions {
+  playlistId: string;
+  dependencies: Record<string, {
+    tones: PortableToneDependency[];
+    macros: { code: string; label?: string; commands?: string[] }[];
+  }>;
+}
+
 export interface Playlist {
   id: string;
   name: string;
@@ -195,8 +213,8 @@ export interface LibraryPreflightSong {
   errors: string[];
 }
 export interface SongLibraryApi extends PedalSettingsApi {
-  preflight(ids: string[]): Promise<LibraryPreflightSong[]>;
-  exportBackup(): Promise<LibraryTransferResult | null>;
+  preflight(ids: string[], verify?: boolean): Promise<LibraryPreflightSong[]>;
+  exportBackup(set?: SetBackupOptions): Promise<LibraryTransferResult | null>;
   /** Opens the file picker and reads the chosen backup's index. Null when cancelled. The path stays in the main process. */
   inspectBackup(): Promise<LibraryBackupPreview | null>;
   /** Restores the backup chosen by `inspectBackup`. */

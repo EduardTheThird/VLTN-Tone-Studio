@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { DEFAULT_OUTPUTS, OutputRouter, type OutputConfig } from "./outputs";
+import { DEFAULT_OUTPUTS, OutputRouter, pinkNoise, type OutputConfig } from "./outputs";
 
 /** A node that records its connections. `connect` returns the node so chains like `a.connect(b).connect(c)` work. */
 function node() {
@@ -157,19 +157,22 @@ it("sends the click to its own device, with its own clock, and leaves it off the
   expect(ctx.gains[0].connect).toHaveBeenCalledWith(ctx.destination);
 });
 
-it("keeps the click on Main with a warning when its own device cannot be selected", async () => {
+it("mutes a private click when its device cannot be selected and keeps the backing route", async () => {
   FakeContext.rejectSinks.add("hp");
   const { ctx, router, warn } = setup([
     { deviceId: "usb-4", label: "Interface" },
     { deviceId: "hp", label: "Headphones" },
   ]);
+  ctx.gains[1].connect.mockClear();
   await router.apply(outputs({ clickDevice: { deviceId: "hp", label: "Headphones" } }));
   expect(warn).toHaveBeenCalledWith(expect.stringContaining("Headphones"));
   expect(router.clickTarget().ctx).toBe(ctx);
-  expect(ctx.gains[1].connect).toHaveBeenCalledWith(ctx.destination);
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
+  expect(ctx.sinkIds).toEqual(["usb-4"]);
+  expect(router.activeRoute).toMatchObject({ main: "Interface · 1/2", clickMuted: true });
 });
 
-it("moves the click back to Main when its device disappears, and closes its context", async () => {
+it("mutes a disconnected click device and restores it when it is reconnected", async () => {
   const { stub, ctx, router, warn } = setup([
     { deviceId: "usb-4", label: "Interface" },
     { deviceId: "hp", label: "Headphones" },
@@ -181,6 +184,12 @@ it("moves the click back to Main when its device disappears, and closes its cont
   await vi.waitFor(() => expect(click.closed).toBe(true));
   expect(router.clickTarget().ctx).toBe(ctx);
   expect(warn).toHaveBeenCalledWith(expect.stringContaining("Headphones"));
+  await vi.waitFor(() => expect(router.activeRoute?.clickMuted).toBe(true));
+  expect(ctx.sinkIds).toEqual(["usb-4"]);
+  stub.devices.push({ deviceId: "reconnected-hp", label: "Headphones" });
+  stub.listeners[0]();
+  await vi.waitFor(() => expect(router.activeRoute).toMatchObject({ click: "Headphones · 1/2", clickMuted: false, warnings: [] }));
+  expect(router.clickTarget().ctx).not.toBe(ctx);
   router.dispose();
 });
 
@@ -192,4 +201,44 @@ it("plays a test tone on the one bus it is asked for", async () => {
   const osc = ctx.oscillators.at(-1)!;
   expect(osc.connect).toHaveBeenCalledWith(router.buses.aux2);
   expect(osc.connect).not.toHaveBeenCalledWith(router.buses.main);
+});
+
+it("keeps backing on its valid pair when a private click pair cannot be used", async () => {
+  const { ctx, router } = setup(undefined, 4);
+  ctx.gains[1].connect.mockClear();
+  await router.apply(outputs({ buses: {
+    ...DEFAULT_OUTPUTS.buses,
+    main: { channels: [2, 3], gain: 1 },
+    click: { channels: [4, 5], gain: 1 },
+  } }));
+  expect(router.activeRoute).toMatchObject({ main: "Interface · 3/4", clickMuted: true });
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
+  expect(ctx.gains[0].connect).toHaveBeenCalledWith(ctx.merger, 0, 2);
+});
+
+it("falls back to the system output without moving a private pair onto it", async () => {
+  const { ctx, router } = setup([]);
+  ctx.gains[1].connect.mockClear();
+  await router.apply(outputs({ buses: { ...DEFAULT_OUTPUTS.buses, click: { channels: [2, 3], gain: 1 } } }));
+  expect(router.activeRoute).toMatchObject({ main: "System default · 1/2", mainFallback: true, clickMuted: true });
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
+  expect(ctx.gains[0].connect).toHaveBeenCalledWith(ctx.destination);
+});
+
+it("does not treat the system default alias as a separate click device", async () => {
+  const { router } = setup([
+    { deviceId: "default", label: "Default - Speakers" },
+    { deviceId: "speaker", label: "Speakers" },
+  ]);
+  await router.apply(outputs({ deviceId: "", clickDevice: { deviceId: "speaker", label: "Speakers" } }));
+  expect(router.activeRoute).toMatchObject({ clickMuted: true });
+});
+
+it("generates two seconds of faded pink noise at −18 dBFS RMS", () => {
+  const noise = pinkNoise(44100);
+  const rms = Math.sqrt(noise.reduce((sum, value) => sum + value * value, 0) / noise.length);
+  expect(noise).toHaveLength(88200);
+  expect(20 * Math.log10(rms)).toBeCloseTo(-18, 3);
+  expect(Math.abs(noise[0])).toBe(0);
+  expect(Math.abs(noise.at(-1)!)).toBe(0);
 });

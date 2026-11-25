@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { useNav } from "@/state/nav";
+import { useSong } from "@/song/store";
+import { describe, expect, it, vi } from "vitest";
 import type { PcmAudio } from "@/song/types";
-import { songHeadline } from "./SongScreen";
+import { openSong, songHeadline } from "./SongScreen";
 
 const HINT = "Split a song into stems on this computer, then find a GP-5 tone for its guitar.";
 const audio: PcmAudio = { sampleRate: 44100, channels: [new Float32Array(4)] };
@@ -26,4 +28,21 @@ describe("songHeadline", () => {
   it("falls back to the file name while the library does not list the saved song yet", () => {
     expect(songHeadline({ name: "5. Burn.wav", libraryId: "song-1", audio }, undefined, HINT)).toBe("5. Burn.wav");
   });
+});
+
+it("opens a first import in Songs & sets and preserves explicit Stems imports", async () => {
+  const load = vi.spyOn(useSong.getState(), "load").mockResolvedValue(undefined);
+  const track = new File([], "Backing.wav");
+  try {
+    useNav.getState().go("song", "songs");
+    await openSong(track);
+    expect(load).toHaveBeenCalledWith(track);
+    expect(useNav.getState().param).toBe("songs");
+    useNav.getState().go("song", "stems");
+    await openSong(track);
+    expect(useNav.getState().param).toBe("stems");
+  } finally {
+    load.mockRestore();
+    useNav.getState().go("rig");
+  }
 });

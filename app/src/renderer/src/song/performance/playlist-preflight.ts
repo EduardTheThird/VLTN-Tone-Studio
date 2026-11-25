@@ -92,7 +92,7 @@ export function playlistPreflight(
   const byId = new Map(songs.map((s) => [s.id, s]));
   let anyClock = false;
   const PCM_BUDGET = 1.5 * 1024 ** 3;
-  const memory: { total: number; variants: number }[] = [];
+  const memory: { total: number }[] = [];
   const checks = ids.map((id, entry) => {
     const saved = byId.get(id),
       song = saved?.song;
@@ -168,7 +168,7 @@ export function playlistPreflight(
       const variants = band.liveVariants ? variantExtraBytes(duration, parts) : 0;
       const originalBytes = song.audio.filter((audio) => !extras.has(trackKey(audio)))
         .reduce((total, audio) => total + audio.frames * audio.channels * Float32Array.BYTES_PER_ELEMENT, 0);
-      memory[entry] = { total: originalBytes + variants, variants };
+      memory[entry] = { total: originalBytes + variants };
       if (variants) notes.push(`Live band changes add about ${Math.round(variants / 1_000_000)} MB of decoded audio.`);
       if (Math.max(...tracks.map((a) => a.frames / a.sampleRate)) - Math.min(...tracks.map((a) => a.frames / a.sampleRate)) > 0.05)
         warnings.push("Playback tracks have different lengths; check the end of this song.");
@@ -247,9 +247,11 @@ export function playlistPreflight(
   for (let i = 0; i < memory.length; i++) {
     const current = memory[i];
     const next = memory[i + 1];
-    if (!current || !(current.variants || next?.variants)) continue;
+    if (!current) continue;
     const peak = current.total + (next?.total ?? 0);
-    if (peak > PCM_BUDGET) checks[i].warnings.push(`Live band changes can put this song and its preload over the 1.5 GiB audio memory budget (about ${(peak / 1024 ** 3).toFixed(2)} GiB).`);
+    const estimate = `${next ? "This song and the next preload" : "This song"}: about ${(peak / 1024 ** 3).toFixed(2)} GiB estimated decoded audio`;
+    if (peak > PCM_BUDGET) checks[i].warnings.push(`${estimate}, over the 1.5 GiB audio memory budget.`);
+    else checks[i].notes.push(`${estimate}.`);
   }
   // Songs that chose RC-10R drums play their fallback when the cues are off. One warning counts them, on the first entry.
   if (config.cuesArmed === false && checks.length > 0) {

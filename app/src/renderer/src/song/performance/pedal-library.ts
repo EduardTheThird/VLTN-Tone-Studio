@@ -48,7 +48,9 @@ type LegacyStorage = Pick<Storage, "getItem" | "setItem"> | undefined;
 function readLegacy(storage: LegacyStorage): PedalSettingsFile | null {
   try {
     const text = storage?.getItem(PEDAL_LEGACY_KEY);
-    return text ? parsePedalSettings(JSON.stringify({ ...emptyPedalSettings(), ...JSON.parse(text), version: 1 })) : null;
+    if (!text) return null;
+    const { owned: _owned, ...defaults } = emptyPedalSettings();
+    return parsePedalSettings(JSON.stringify({ ...defaults, ...JSON.parse(text), version: 1 }));
   } catch {
     return null;
   }

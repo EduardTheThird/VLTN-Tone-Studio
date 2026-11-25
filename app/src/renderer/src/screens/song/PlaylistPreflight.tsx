@@ -6,12 +6,18 @@ import { ArrangementAdvice } from "./ArrangementAdvice";
 import { PlaylistPreflightIssues } from "./PlaylistPreflightIssues";
 import { PreparationSequenceDetails, preparationSeconds } from "./PreparationSequenceDetails";
 import { usePreparationDefaults } from "@/song/performance/start-preparation";
-import { readLeadInDefaults } from "@/song/performance/lead-in";
+import { readLeadInDefaults, songCountIn } from "@/song/performance/lead-in";
 import { useEffect, useRef, useState } from "react";
 import { isRenderedAhead, useSongLibrary } from "@/song/library";
 import { host } from "@/host";
 import { Button } from "@/components/ui/button";
-import { useMidiConfiguration } from "@/song/performance/midi-configuration";
+import { useNav } from "@/state/nav";
+import { useBluetooth } from "@/bluetooth/connection";
+import { useOutputSettings } from "@/song/audio/output-settings";
+import { separateClickPair } from "@/song/audio/outputs";
+import { sharedPlaybackEngine } from "@/song/audio/playback-engine";
+import { isMetronomeMode, readGlobalMetronome } from "@/song/performance/rhythm";
+import { rememberedPort, useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { configuredPedals, usePedalLibrary } from "@/song/performance/pedal-library";
 import { currentRigFacts } from "@/song/performance/rig-facts";
 import { playlistPreflight, type PlaylistCheck } from "@/song/performance/playlist-preflight";
@@ -19,6 +25,62 @@ import { songEntries } from "@/song/performance/song-triggers";
 import type { LibrarySong } from "@shared/song-library";
 import { rhythmControlOverrides } from "@/song/performance/rhythm-automation";
 import { flushSettings, onSettingsChange, LIBRARY_PREFIX } from "@/song/performance/settings";
+interface VerifiedRoutes {
+  audio: string;
+  midi: string;
+  warnings: string[];
+  errors: string[];
+}
+
+async function verifyRoutes(snapshot: Awaited<ReturnType<NonNullable<typeof host.song.library>["preflight"]>>): Promise<VerifiedRoutes> {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const outputs = useOutputSettings.getState().config;
+  let audio = "Audio route is unverified.";
+  try {
+    const { router } = sharedPlaybackEngine();
+    await router.apply(outputs);
+    const route = router.activeRoute;
+    if (!route) throw new Error("No active audio route.");
+    audio = `Main: ${route.main} · Click: ${route.click}`;
+    if (route.mainFallback || route.main === "Unverified") {
+      const [mainProblem, ...otherWarnings] = route.warnings;
+      if (mainProblem) errors.push(mainProblem);
+      warnings.push(...otherWarnings);
+    } else warnings.push(...route.warnings);
+    const globalClick = readGlobalMetronome();
+    const defaults = readLeadInDefaults();
+    const usesClick = snapshot.some(({ song }) => {
+      if (!song) return false;
+      let mode: unknown;
+      try {
+        mode = JSON.parse(song.settings[":options"] || "{}")?.metronomeMode;
+      } catch {
+        // Preflight also checks the saved settings separately.
+      }
+      return (isMetronomeMode(mode) ? mode : globalClick) !== "off" || songCountIn(song.settings, defaults).countInBars > 0;
+    });
+    if (usesClick && !outputs.clickDevice && !separateClickPair(outputs)) warnings.push("Click or count-in shares Main and will reach the PA if Main feeds it.");
+  } catch {
+    warnings.push("Audio outputs could not be checked. Open Audio outputs and test the main and click routes.");
+  }
+  let midi = "No MIDI output configured.";
+  const selected = useMidiConfiguration.getState().output;
+  if (selected) {
+    try {
+      const port = selected.transport === "bluetooth"
+        ? useBluetooth.getState().connection
+        : rememberedPort([...(await navigator.requestMIDIAccess()).outputs.values()], selected);
+      if (port?.state !== "connected") throw new Error("Port disconnected.");
+      midi = `MIDI: ${selected.name} is connected. Check cue arming and pedal response at rehearsal.`;
+    } catch {
+      midi = `MIDI: ${selected.name} could not be verified.`;
+      warnings.push("Connect the selected MIDI output or choose an available port in the MIDI setup.");
+    }
+  }
+  return { audio, midi, warnings, errors };
+}
+
 export function PlaylistPreflight({
   ids,
   disabled,
@@ -42,6 +104,8 @@ export function PlaylistPreflight({
     [error, setError] = useState("");
   const generation = useRef(0);
   const checked = useRef(autoStart);
+  const [verified, setVerified] = useState<VerifiedRoutes | null>(null);
+  const outputConfig = useOutputSettings((state) => state.config);
   const [rigWarnings, setRigWarnings] = useState<RigChannelIssue[]>([]);
   const [fullReport, setFullReport] = useState(!compact);
   const [settingsVersion, setSettingsVersion] = useState(0);
@@ -56,6 +120,7 @@ export function PlaylistPreflight({
   useEffect(() => {
     generation.current++;
     setReport(null);
+    setVerified(null);
     setError("");
     setBusy(false);
     if (checked.current) void check();
@@ -66,6 +131,7 @@ export function PlaylistPreflight({
     order,
     revision,
     settingsVersion,
+    outputConfig,
     preparationDefaults,
     config.tempoOnStart,
     config.tempoChannel,
@@ -78,15 +144,17 @@ export function PlaylistPreflight({
     pedals.owned,
     pedals.presets,
   ]);
-  const check = async () => {
+  const check = async (verify = false) => {
     checked.current = true;
     const request = ++generation.current;
     setBusy(true);
     setReport(null);
+    setVerified(null);
     setError("");
     try {
       await flushSettings();
-      const snapshot = await host.song.library!.preflight(ids);
+      const service = host.song.library!;
+      const snapshot = await (verify ? service.preflight(ids, true) : service.preflight(ids));
       if (request !== generation.current) return;
       const rig = currentRigFacts(false);
       const checks = playlistPreflight(ids, snapshot, {
@@ -108,9 +176,14 @@ export function PlaylistPreflight({
         cuesArmed: useSongLibrary.getState().midiSession?.armed,
       });
       // Reading the tone files is asynchronous, so the song's own checks are done first and the tone warnings are added to them.
-      const withTones = await withToneWarnings(checks, ids, snapshot, host.tones);
+      const [withTones, routes] = await Promise.all([
+        withToneWarnings(checks, ids, snapshot, host.tones),
+        verify ? verifyRoutes(snapshot) : null,
+      ]);
       if (request !== generation.current) return;
       setRigWarnings(rigChannelIssues(ownedPedalChannels(pedals), gpReceiveChannel(rig)));
+      setVerified(routes);
+      if (verify) setFullReport(true);
       setReport(withTones);
     } catch (e) {
       if (request === generation.current) setError(e instanceof Error ? e.message : String(e));
@@ -120,12 +193,17 @@ export function PlaylistPreflight({
   };
   return (
     <section aria-label="Playlist preflight" className="my-3 space-y-2 rounded border border-seam p-3">
-      <Button variant="outline" disabled={disabled || busy || !ids.length} onClick={() => void check()}>
-        {busy ? "Checking playlist…" : "Check playlist"}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" disabled={disabled || busy || !ids.length} onClick={() => void check()}>
+          {busy ? "Checking playlist…" : "Check playlist"}
+        </Button>
+        <Button variant="outline" disabled={disabled || busy || !ids.length} onClick={() => void check(true)}>
+          Verify for show
+        </Button>
+      </div>
       <p className="text-xs text-silkscreen-3">
-        Checks saved audio files, charts, MIDI channels, tempo and Before song preparation for every entry. Save song changes first. No playback or MIDI is
-        sent. Output preferences do not confirm a connected pedal.
+        Check playlist compares saved audio file sizes and checks charts, MIDI cues, tempo and preparation. Verify for show also compares file checksums
+        and checks the current audio and MIDI routes. Both run without playback or MIDI messages.
       </p>
       {busy && <p role="status">Checking saved files without loading audio into memory…</p>}
       {error && <p role="alert">{error}</p>}
@@ -139,8 +217,20 @@ export function PlaylistPreflight({
       )}
       {report && (
         <>
+          {verified && (
+            <section aria-label="Verified show routes" className="space-y-2 rounded border border-seam p-3">
+              <p>{verified.audio}</p>
+              <p>{verified.midi}</p>
+              {verified.errors.map((error) => <p key={error} className="text-red-400">{error}</p>)}
+              {verified.warnings.map((warning) => <p key={warning} className="text-amber-400">{warning}</p>)}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => useNav.getState().go("song", "performance-setup")}>Open Audio outputs</Button>
+                <Button size="sm" variant="outline" onClick={() => useNav.getState().go("song", "performance-midi")}>Open MIDI and My rig</Button>
+              </div>
+            </section>
+          )}
           <p role="status">
-            {report.length} entries checked · {report.reduce((n, r) => n + r.errors.length, 0)} errors · {report.reduce((n, r) => n + r.warnings.length, 0)}{" "}
+            {report.length} entries checked · {report.reduce((n, r) => n + r.errors.length, verified?.errors.length ?? 0)} errors · {report.reduce((n, r) => n + r.warnings.length, rigWarnings.length + (verified?.warnings.length ?? 0))}{" "}
             performance warnings · {report.reduce((n, r) => n + r.advice.length, 0)} arrangement notes
           </p>
           {!fullReport && (
@@ -151,10 +241,11 @@ export function PlaylistPreflight({
           {fullReport && (
             <>
               <p className="text-xs">
-                Snapshot of saved files and current MIDI preferences. Recheck after external file changes. File presence and size are checked, not audio
-                contents or physical pedal response. Warnings are advisory.
+                {verified
+                  ? "Show verification records saved file checksums and a snapshot of the current routes. Recheck after cable, output or file changes. Confirm PA, headphones and pedal response in rehearsal."
+                  : "Quick check records file presence, size and current MIDI preferences. Use Verify for show to check checksums and live routes."}
               </p>
-              <PlaylistPreflightIssues report={report} onDownloaded={() => void check()} />
+              <PlaylistPreflightIssues report={report} onDownloaded={() => void check(!!verified)} />
               <p aria-label="Playlist preparation total">
                 Configured preparation waits: {preparationSeconds(report.reduce((total, result) => total + (result.preparation?.totalWaitMs ?? 0), 0))} s across{" "}
                 {report.filter((result) => result.preparation).length} entries. Fresh song loads with Send cues enabled are assumed. Audio loading, MIDI

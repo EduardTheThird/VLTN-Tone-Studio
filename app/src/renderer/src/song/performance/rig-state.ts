@@ -8,7 +8,9 @@ import { parseSongRig, rigExtras, type RigCell, type RigLibrary } from "./rig";
 
 export interface PedalWireState {
   slot?: number;
+  slotSource?: "sent" | "pedal";
   enabled?: boolean;
+  enabledSource?: "sent" | "pedal";
   controls: Record<number, number>;
   at: number;
   source: "sent" | "pedal";
@@ -62,12 +64,12 @@ export function updateRigState(state: RigState, id: string, bytes: readonly numb
   const kind = bytes[0] & 0xf0;
   if (kind === 0xc0) {
     const slot = (controls[0] ?? 0) * 128 + bytes[1];
-    return { ...state, [id]: { ...previous, slot, controls, at, source } };
+    return { ...state, [id]: { ...previous, slot, slotSource: source, controls, at, source } };
   }
   const [_, cc, value] = bytes;
   if (controls[cc] === value) return state;
   return { ...state, [id]: { ...previous, controls: { ...controls, [cc]: value },
-    ...(id === TIMELINE && cc === 102 ? { enabled: value >= 64 } : {}), at, source } };
+    ...(id === TIMELINE && cc === 102 ? { enabled: value >= 64, enabledSource: source } : {}), at, source } };
 }
 
 function ownedMessages(messages: number[][], library: RigLibrary, gpChannel: number): number[][] {

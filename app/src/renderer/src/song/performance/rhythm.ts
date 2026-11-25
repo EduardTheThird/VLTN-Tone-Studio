@@ -102,3 +102,14 @@ export function tapBpm(taps: readonly number[]): number | null {
   if (averageMs <= 0) return null;
   return Math.min(300, Math.max(30, Math.round(60000 / averageMs)));
 }
+
+/** The metronome mode a song starts with when it has none of its own. Earlier builds stored the on/off toggle as "true" or "false". */
+export function readGlobalMetronome(): MetronomeMode {
+  try {
+    const stored = localStorage.getItem("vltn.performance.metronome");
+    if (stored === "true") return "playing";
+    return isMetronomeMode(stored) ? stored : "off";
+  } catch {
+    return "off";
+  }
+}

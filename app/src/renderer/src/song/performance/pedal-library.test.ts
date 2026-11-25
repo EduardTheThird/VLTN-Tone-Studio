@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { emptyPedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
+import { DEFAULT_OWNED_PEDALS, emptyPedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
 import { configuredPedals, createPedalLibrary, PEDAL_LEGACY_KEY } from "./pedal-library";
 
 afterEach(() => localStorage.clear());
@@ -29,7 +29,7 @@ it("migrates the legacy key only when the song library has no file and preserves
       channels: { "boss-sy200": 6 },
       assignments: { "boss-sy200:ctl1": 82 },
       presets: {},
-      owned: emptyPedalSettings().owned,
+      owned: [...DEFAULT_OWNED_PEDALS],
     },
     true,
   );
@@ -104,4 +104,11 @@ it("persists owned-pedal changes and keeps an explicitly empty rig after reload"
   const fresh = createPedalLibrary(localStorage, () => api);
   await fresh.getState().load();
   expect(fresh.getState().owned).toEqual([]);
+});
+
+it("starts a fresh rig without preselecting any pedals", async () => {
+  const api = backing(null);
+  const library = createPedalLibrary(localStorage, () => api);
+  await library.getState().load();
+  expect(library.getState().owned).toEqual([]);
 });

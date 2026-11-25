@@ -22,7 +22,7 @@ import {
   type ClickSounds,
   type ClickSoundsOwn,
 } from "@/song/performance/click-sound";
-import { isMetronomeMode, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
+import { isMetronomeMode, readGlobalMetronome, recordTap, tapBpm, type MetronomeMode } from "@/song/performance/rhythm";
 import { parseSections, saveLiveAsDefault, type Section } from "@/song/performance/sections";
 import { ownLeadIn, readLeadInDefaults, resolveLeadIn, saveLeadInDefaults, type LeadIn, type LeadInKey, type LeadInOwn } from "@/song/performance/lead-in";
 import { type StemName } from "@/song/types";
@@ -109,21 +109,10 @@ function speedNote(speed: { rate: number; semitones: number; cents: number }): s
   if (speed.semitones || speed.cents) parts.push(`Pitch ${signed(speed.semitones)} st${speed.cents ? ` ${signed(speed.cents)} ct` : ""}`);
   return parts.join(" · ");
 }
-/** The metronome mode a song starts with when it has none of its own. Earlier builds stored the on/off toggle as "true" or "false". */
-function readGlobalMetronome(): MetronomeMode {
-  try {
-    const stored = localStorage.getItem("vltn.performance.metronome");
-    if (stored === "true") return "playing";
-    return isMetronomeMode(stored) ? stored : "off";
-  } catch {
-    return "off";
-  }
-}
-
 const NO_TRACKS: Record<string, TrackInfo> = {};
 
 /** `shown` is false while another Song tab is up: the session keeps playing, but its view keys do nothing (see `PerformanceSession.shown`). */
-export function PerformancePanel({ shown = true }: { shown?: boolean }) {
+export function PerformancePanel({ shown = true, requestedView }: { shown?: boolean; requestedView?: ViewName }) {
   const source = useSong((s) => s.source);
   const generation = useMemo(() => ++sessionId, [source]);
   const [stage, setStage] = useState(false);
@@ -137,11 +126,11 @@ export function PerformancePanel({ shown = true }: { shown?: boolean }) {
     },
     [],
   );
-  return <PerformanceView key={generation} stage={stage} setStage={setStage} shown={shown} />;
+  return <PerformanceView key={generation} stage={stage} setStage={setStage} shown={shown} requestedView={requestedView} />;
 }
 
 /** Composes the performance screen. The MIDI session, scheduler and transport live in `PerformanceSession`. */
-function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage: (value: boolean) => void; shown: boolean }) {
+function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boolean; setStage: (value: boolean) => void; shown: boolean; requestedView?: ViewName }) {
   const bluetooth = useBluetooth((s) => s.connection);
   const midiConfig = useMidiConfiguration();
   const source = useSong((s) => s.source),
@@ -762,7 +751,10 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
     }
   }, [session, metronome]);
 
-  const [view, setView] = useState<ViewName>(readPerformanceView);
+  const [view, setView] = useState<ViewName>(() => requestedView ?? readPerformanceView());
+  useEffect(() => {
+    if (requestedView) setView(requestedView);
+  }, [requestedView]);
   const chooseView = (next: ViewName) => {
     setView(next);
     savePerformanceView(next);
@@ -985,7 +977,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         </div>
         <div style={{ display: shownView("midi") }}>
           <ScreenBoundary name="Performance MIDI">
-            <SessionMidiHealth session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} rigTempo={rigTempo} />
+            <SessionMidiHealth clickEnabled={metronome !== "off" || leadIn.countInBars > 0} session={session} firstBeat={firstBeat} pedalDrumsChosen={partChoice.drums === "pedal"} rigTempo={rigTempo} />
             <div id="rc10r-rig-settings">
               <Rc10rSetupCard
                 state={{
@@ -1077,7 +1069,7 @@ function PerformanceView({ stage, setStage, shown }: { stage: boolean; setStage:
         <div style={{ display: shownView("setup") }}>
           <ScreenBoundary name="Performance setup">
             <p className="text-xs text-silkscreen-3">These settings apply to every song.</p>
-            <PerformanceOutputs player={player} />
+            <PerformanceOutputs player={player} reveal={requestedView === "setup"} clickEnabled={metronome !== "off" || leadIn.countInBars > 0} />
             <AudienceSettings />
             <BandSyncSettings />
             <RemoteControlSettings inputReady={inputReady} />

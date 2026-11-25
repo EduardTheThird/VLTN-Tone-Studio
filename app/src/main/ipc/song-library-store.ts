@@ -1,8 +1,9 @@
+import { evaluateSmart } from "@shared/library-filter";
 import { PEDAL_SETTINGS_FILE, parsePedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
 import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { exportBackup, readBackup, readBackupIndex, readPedalSettingsFile } from "./song-library-backup";
+import { exportBackup, fileHash, readBackup, readBackupIndex, readPedalSettingsFile } from "./song-library-backup";
 import { createTrash, sweepLibraryTrash, type TrashFn } from "./trash";
 import { decodeFlac, encodeFlac, matchesQuantized, storedBits } from "@shared/flac";
 import {
@@ -26,6 +27,7 @@ import {
   copyTrackSettings,
   isTrackFileName,
   trackFiles,
+  type SetBackupOptions,
   trackKey,
   trackKindOf,
   upgradeIndex,
@@ -301,7 +303,7 @@ export class SongLibraryStore {
       return data;
     });
   }
-  async preflight(ids: string[]): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
+  async preflight(ids: string[], verify = false): Promise<import("@shared/song-library").LibraryPreflightSong[]> {
     if (!Array.isArray(ids) || ids.length > 10000 || ids.some((id) => typeof id !== "string" || !validId(id))) throw new Error("Invalid playlist song IDs.");
     return this.serial(async () => {
       const index = await this.read();
@@ -321,16 +323,21 @@ export class SongLibraryStore {
         }
         const revision = index.revisions[id];
         if (!revision || !validId(revision)) errors.push("Saved audio revision is missing.");
-        else
-          for (const track of song.audio)
-            for (const { file, bytes } of trackFiles(track)) {
-              try {
-                const info = await stat(join(this.root, revision, file));
-                if (!info.isFile() || info.size !== bytes) errors.push(`${file}: audio file has an invalid size or type.`);
-              } catch {
-                errors.push(`${file}: audio file is missing or inaccessible.`);
-              }
+        else {
+          const files = song.audio.flatMap(trackFiles);
+          if (verify) files.push(...chartFiles(song.chart));
+          for (const { file, bytes, sha256 } of files) {
+            const path = join(this.root, revision, file);
+            try {
+              const info = await stat(path);
+              if (!info.isFile() || info.size !== bytes) errors.push(`${file}: saved file has an invalid size or type.`);
+              else if (verify && !sha256) errors.push(`${file}: no saved checksum. Convert or re-save this song before verifying again.`);
+              else if (verify && await fileHash(path) !== sha256) errors.push(`${file}: checksum mismatch. Re-import the source audio or restore a known-good backup.`);
+            } catch {
+              errors.push(`${file}: saved file is missing or inaccessible.`);
             }
+          }
+        }
         results.push({ id, song, errors });
       }
       return results;
@@ -515,13 +522,44 @@ export class SongLibraryStore {
       await this.publish(index);
     });
   }
-  async exportBackup(path: string, progress?: (p: LibraryTransferProgress) => void): Promise<{ songs: number; playlists: number }> {
+  async exportBackup(path: string, progress?: (p: LibraryTransferProgress) => void, set?: SetBackupOptions): Promise<{ songs: number; playlists: number }> {
     return this.serial(async () => {
       const index = await this.read();
-      // Materialize the empty index too, so even an empty backup has a complete format.
-      await this.publish(index);
-      await exportBackup(this.root, index, path, progress);
-      return { songs: index.songs.length, playlists: index.playlists.length };
+      if (!set) {
+        // Materialize the empty index too, so even an empty backup has a complete format.
+        await this.publish(index);
+        await exportBackup(this.root, index, path, progress);
+        return { songs: index.songs.length, playlists: index.playlists.length };
+      }
+      const selected = index.playlists.find(({ id }) => id === set.playlistId);
+      if (!selected) throw new Error("Save or select a playlist before exporting.");
+      const { smart, ...playlist } = selected;
+      if (smart) {
+        const result = evaluateSmart(index.songs, index.folders, smart);
+        if (result.problems.length) throw new Error(result.problems.join(" "));
+        playlist.songs = result.songs.map(({ id }) => id);
+      }
+      const ids = new Set(playlist.songs);
+      const songs = index.songs.filter(({ id }) => ids.has(id));
+      const folders = withAncestors(index.folders, songs.flatMap(({ folderId }) => folderId ? [folderId] : []));
+      const portable: DiskIndex = {
+        version: index.version,
+        songs,
+        playlists: [playlist],
+        revisions: Object.fromEntries(songs.map(({ id }) => [id, index.revisions[id]])),
+        folders: index.folders.filter(({ id }) => folders.has(id)),
+        history: [],
+      };
+      await exportBackup(this.root, portable, path, progress, {
+        name: playlist.name,
+        smartSnapshot: !!smart,
+        dependencies: songs.map(({ id, title }) => ({
+          title,
+          tones: set.dependencies?.[id]?.tones ?? [],
+          macros: set.dependencies?.[id]?.macros ?? [],
+        })),
+      });
+      return { songs: songs.length, playlists: 1 };
     });
   }
   /** Reads just the library index of a backup, so the user can choose how to restore before any audio is extracted. */

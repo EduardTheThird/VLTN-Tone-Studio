@@ -315,32 +315,35 @@ it("sends the click to outputs 3 and 4 and the tracks to 1 and 2 on a four-outpu
   await player.dispose();
 });
 
-it("falls back to the default output and warns when the device cannot be selected", async () => {
+it("falls back to the default for backing and mutes the private click if the device fails", async () => {
   vi.stubGlobal("AudioContext", OutputContext);
   const player = new StemPlayer(oneStem());
   const warnings: string[] = [];
   player.onOutputWarning = (message) => warnings.push(message);
   const ctx = Context.instances[0] as OutputContext;
   ctx.sinkFailures = 1;
+  ctx.gains[1].connect.mockClear();
   await player.setOutputs(interface4([2, 3]));
   expect(ctx.sinkIds).toEqual(["usb-4", ""]);
   expect(ctx.merger).toBeNull();
   expect(ctx.gains[0].connect).toHaveBeenCalledWith(ctx.destination);
-  expect(ctx.gains[1].connect).toHaveBeenCalledWith(ctx.destination);
-  expect(warnings).toHaveLength(1);
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
+  expect(warnings).toHaveLength(2);
+  expect(warnings[1]).toContain("Click muted");
   await player.dispose();
 });
 
-it("keeps both buses on outputs 1 and 2 and warns when the device has no pair for the click", async () => {
+it("keeps backing on outputs 1 and 2 and warns when the private click pair is unavailable", async () => {
   vi.stubGlobal("AudioContext", OutputContext);
   const player = new StemPlayer(oneStem());
   const warnings: string[] = [];
   player.onOutputWarning = (message) => warnings.push(message);
   const ctx = Context.instances[0] as OutputContext;
   ctx.destination.maxChannelCount = 2;
+  ctx.gains[1].connect.mockClear();
   await player.setOutputs(interface4([2, 3]));
   expect(ctx.merger).toBeNull();
-  expect(ctx.gains[1].connect).toHaveBeenCalledWith(ctx.destination);
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
   expect(warnings).toHaveLength(1);
   await player.dispose();
 });
@@ -363,11 +366,13 @@ it("moves to the default output when the device disappears, and back when it ret
   await player.setOutputs(interface4([2, 3]));
   expect(ctx.merger).not.toBeNull();
 
+  ctx.gains[1].connect.mockClear();
   devices = [];
   listeners[0]();
   await vi.waitFor(() => expect(ctx.sinkIds).toEqual(["usb-4", ""]));
-  expect(ctx.gains[1].connect).toHaveBeenLastCalledWith(ctx.destination);
-  expect(warnings).toHaveLength(1);
+  expect(ctx.gains[1].connect).not.toHaveBeenCalled();
+  expect(ctx.gains[0].connect).toHaveBeenLastCalledWith(ctx.destination);
+  expect(warnings).toHaveLength(2);
   expect(player.isPlaying).toBe(false);
 
   devices = [{ deviceId: "usb-4", label: "Interface", kind: "audiooutput" }];

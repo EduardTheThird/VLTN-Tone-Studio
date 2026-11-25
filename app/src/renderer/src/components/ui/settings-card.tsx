@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,7 @@ export function SettingsCard({
   summary,
   storageKey,
   defaultOpen = true,
+  reveal = false,
   actions,
   children,
 }: {
@@ -43,11 +44,13 @@ export function SettingsCard({
   /** Saved per card as `vltn.card.<storageKey>`. */
   storageKey: string;
   defaultOpen?: boolean;
+  reveal?: boolean;
   /** Buttons that stay usable while the card is closed. */
   actions?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(() => readOpen(storageKey, defaultOpen));
+  useEffect(() => { if (reveal) setOpen(true); }, [reveal]);
   const bodyId = useId();
   const toggle = () => {
     const next = !open;

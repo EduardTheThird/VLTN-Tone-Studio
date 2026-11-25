@@ -1,8 +1,7 @@
 import { app, BrowserWindow, nativeImage, net, safeStorage, session, type Session } from "electron";
-import { tokenEncryptionAvailable, type SafeStorageState } from "./token-storage";
+import { safeStorageState, secureTokenStore, tokenEncryptionAvailable } from "./token-storage";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { HostError } from "@shared/ipc";
 import type { AccountState, FlowRequest, FlowResult, SendRequest, SlotLink, SnapToneSource, T3kModel, T3kTone, T3kUser, TonePage, ToneRecord, ToneSearchParams, TonesEvent, ToneListKind, UserIrSource, ViewBounds } from "@shared/host/tones";
@@ -10,7 +9,7 @@ import { assertWav, NamCheckError, prepareNam } from "@shared/nam";
 import { handle, sendTo, showOpenDialog } from "./handle";
 import { normalizeSearch, postToken, T3kClient, withoutForeignAuthorization } from "../tone3000/api";
 import { isImageResponse, readImageBody, throttledTrim } from "../tone3000/image-cache";
-import { TokenManager, type TokenSet, type TokenStore } from "../tone3000/tokens";
+import { TokenManager } from "../tone3000/tokens";
 import { cancelFlow, runFlow, setFlowBounds } from "../tone3000/oauth";
 import { buildRecord, linkRecord, listRecords, readRecord, writeRecord } from "../tone3000/records";
 import { streamToFile, TONE_DOWNLOAD_ERROR } from "../tone3000/files";
@@ -74,39 +73,7 @@ async function config(): Promise<{ clientId: string | null; redirectUri: string 
   };
 }
 
-/** What safeStorage can do here. The Linux backend tells a real keyring from the basic_text fallback (see token-storage.ts). */
-function safeStorageState(): SafeStorageState {
-  return {
-    platform: process.platform,
-    encryptionAvailable: safeStorage.isEncryptionAvailable(),
-    backend: process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : null,
-  };
-}
-
-/** Tokens are encrypted with the OS keychain (safeStorage). Without one they live in memory for this run only. */
-const tokenStore: TokenStore = {
-  async load() {
-    const state = safeStorageState();
-    if (!existsSync(tokenPath())) return null;
-    if (!tokenEncryptionAvailable(state)) {
-      // The basic_text fallback wrote this file with a constant key, so nothing can read it safely: drop it.
-      if (state.backend === "basic_text") await rm(tokenPath(), { force: true });
-      return null;
-    }
-    try {
-      return JSON.parse(safeStorage.decryptString(await readFile(tokenPath()))) as TokenSet;
-    } catch {
-      return null; // unreadable or from another machine: signed out
-    }
-  },
-  async save(tokens) {
-    if (!tokenEncryptionAvailable(safeStorageState())) return;
-    await writeFile(tokenPath(), safeStorage.encryptString(JSON.stringify(tokens)));
-  },
-  async clear() {
-    await rm(tokenPath(), { force: true });
-  },
-};
+const tokenStore = secureTokenStore(tokenPath, safeStorage, process.platform);
 
 let apiSessionCache: Session | null = null;
 
@@ -162,7 +129,7 @@ async function account(): Promise<AccountState> {
     appKey: s.clientId || null,
     splashSeen: Boolean(s.splashSeen),
     // Linux without a real keyring: tokens are kept for this run only, so the settings say so.
-    insecureStorage: process.platform === "linux" && !tokenEncryptionAvailable(safeStorageState()),
+    insecureStorage: process.platform === "linux" && !tokenEncryptionAvailable(safeStorageState(safeStorage, process.platform)),
   };
 }
 

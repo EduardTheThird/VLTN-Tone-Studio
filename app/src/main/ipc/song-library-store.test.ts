@@ -413,3 +413,16 @@ it("adds a song back when its folder is put back from the Trash, and keeps the a
   await expectAudio(s, "source");
   expect(Object.keys(await store.audioUrls(s.song.id)).sort()).toEqual(["guitar", "source"]);
 });
+
+it("detects same-size audio corruption only in show verification", async () => {
+  const fixture = await flacSong();
+  await saveFlacSong(store, fixture);
+  const { revisions } = JSON.parse(await readFile(join(root, "library.json"), "utf8"));
+  const file = join(root, revisions[fixture.song.id], "source.flac");
+  expect((await store.preflight([fixture.song.id], true))[0].errors).toEqual([]);
+  const bytes = await readFile(file);
+  bytes[0] ^= 0xff;
+  await writeFile(file, bytes);
+  expect((await store.preflight([fixture.song.id]))[0].errors).toEqual([]);
+  expect((await store.preflight([fixture.song.id], true))[0].errors).toEqual([expect.stringContaining("checksum mismatch")]);
+});

@@ -1,8 +1,8 @@
 # Saved songs and live playlists
 
-In the desktop app, open **Song → Songs & playlists**.
+In the desktop app, open **Songs & sets**.
 
-1. **Import audio**, then prepare stems and the Performance chart/lyrics as needed.
+1. **Import audio**. Open the player for the original mix, choose **Prepare for a set** to save the song, or choose **Split stems**. Prepare the Performance chart and lyrics as needed.
 2. Enter the song title and artist and choose **Save song to library**. Use **Save song changes** after subsequent edits or a new split.
 3. Create a playlist (press Enter in its name, or choose **Create playlist**) and add songs with **Add songs…**, either to the end or to the end of a set. Entries can repeat. Use the up/down buttons to set the order. Edits to a playlist are kept as a draft until you choose **Save playlist** (or press Cmd/Ctrl+S); **Discard changes** restores the saved list. Play, Load and Queue use the saved playlist, so save first. Switching to another playlist with unsaved edits asks whether to save them. Removing an entry does not remove the song.
 4. Choose **Play playlist** to perform the whole set, or **Play from here** on an entry to start partway through. Performance loads and starts each next song automatically, then stops after the last entry. It shows the current position, next title, **Previous song / Next song**, and **Stop playlist**. Pause/resume controls the set; skipping while paused loads the destination paused. **Load set paused** remains available for preparation. The queue uses a snapshot of the selected playlist order.
@@ -25,7 +25,7 @@ A save writes every audio asset before atomically replacing the index. Incomplet
 
 ## Portable backup and restore
 
-In **Song → Songs & playlists**, use **Export library backup…**. Choose where to save the `.tar.gz` archive. It includes every saved song's copied source audio, available stems, every imported track, any PDF chart with its annotations, chord/MIDI chart, separate lyrics, BPM, key estimate/manual correction, mixer/performance options, and all playlists with their order and repeated entries intact. Original audio/NAS files are not needed to restore it.
+In **Songs & sets**, use **Export library backup…**. Choose where to save the `.tar.gz` archive. It includes every saved song's copied source audio, available stems, every imported track, any PDF chart with its annotations, chord/MIDI chart, separate lyrics, BPM, key estimate/manual correction, mixer/performance options, and all playlists with their order and repeated entries intact. Original audio/NAS files are not needed to restore it.
 
 Save a newly imported song or new stem split before exporting. Current local text/settings edits to an already-saved song are flushed before the backup begins. Audio and metadata are then exported as one consistent snapshot. Later edits and transcription results belong to a subsequent backup. The UI shows file-based progress while the main process streams the audio; the whole library is not copied into renderer memory.
 
@@ -34,6 +34,8 @@ On this or another computer, choose **Restore backup…** and select the archive
 The archive includes `backup-manifest.json`, `library.json`, and referenced UUID audio directories. Backups made by earlier versions (raw float32 files) still restore; the restored songs are then converted to FLAC like any other older song. Archives and library folders with a version 4 index (written by this release, see [Format versions](#format-versions)) are refused by apps built before this release. Archives made by earlier versions still restore into this one. SHA-256 checksums, byte lengths, metadata, playlist references and every file path/type are checked before the restored library index is published. Links, duplicate/undeclared files and paths outside the expected audio layout are rejected. A failed restore does not replace the existing index. Export writes a temporary archive beside the chosen destination and only replaces the destination after compression succeeds, so a failed export preserves an earlier backup.
 
 MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, account credentials, downloaded analysis models and application-wide preferences are not included. Song MIDI cues retain their actual commands, channels and labels and do not require the original pedal profiles for playback. This exports the song library, not a backup of physical pedal presets.
+
+To take a single playlist to a different computer, save its edits, then choose **Playlist menu → Export this set…**. A smart playlist exports its current matches in order. Restore the archive with **Restore song library**. The set carries its saved audio, rendered parts, charts, mixes and cues, plus saved pedal settings when available. The archive’s `backup-manifest.json` lists macros and tone files needed to rebuild the set. Recreate any listed macros in the MIDI commands editor and download or relink the listed tone files before regenerating parts.
 
 ## PDF charts
 
@@ -47,7 +49,7 @@ The first archive format supports up to 50,000 declared files, 512 GiB of uncomp
 
 ## Organising songs
 
-Each saved song has details you set in **Song → Songs & playlists**: its key, year, keywords, notes and a colour. The tempo is the song's saved BPM and follows it. The play count and last-played time are kept by the library.
+Each saved song has details you set in **Songs & sets**: its key, year, keywords, notes and a colour. The tempo is the song's saved BPM and follows it. The play count and last-played time are kept by the library.
 
 - **Search and sort.** Search matches the title, artist, notes and keywords, and every word you type must match. Sort by title, artist, date added, last played, play count, BPM, year or key. A list of more than 20 songs shows an A to Z index.
 - **Folders.** Folders nest to any depth. A song is in one folder or in the library root. Only an empty folder can be deleted.
@@ -93,7 +95,9 @@ This release saves the library as version 4, adding the details, folders, histor
 
 ## Whole-playlist preflight
 
-Select a playlist under **Song → Songs & playlists**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
+**Check playlist** checks saved file sizes, cue preparation and settings. **Verify for show** also streams the saved audio and chart files to compare checksums and checks the current audio and MIDI routes. The report counts rig warnings and shows the estimated decoded audio for each song and its next preload. Recheck when the setup changes, then listen and check pedal response in rehearsal.
+
+Select a playlist under **Songs & sets**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
 
 The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect audio file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
 
@@ -103,6 +107,6 @@ Errors and warnings are advisory and do not block intentional playback. The repo
 
 Prepare the song or playlist, check the output and arm MIDI as needed, then choose **Enter stage mode** in Performance. Stage mode fills the window with larger lyrics and transport buttons. It keeps MIDI status and faults visible, hides setup/mixer/editor controls, and disables seeking, rewind and chord popups. It does not arm MIDI or change the song BPM. The stage view stays active across automatic playlist transitions.
 
-**Play/Pause**, **Stop playback** and **Panic / stop MIDI** remain accessible. Panic pauses playback/the set, clears queued MIDI and disarms cues using the existing cleanup rules. It cannot reverse commands already received by a pedal. Use **Exit stage mode** to seek, edit, change the mix or reconnect/rearm; Escape and outside clicks do not accidentally unlock the stage view. Leaving the Performance screen resets stage mode.
+**Play/Pause**, **Stop playback** and **Panic / stop MIDI** remain accessible. Panic pauses playback/the set, clears queued MIDI and disarms cues using the existing cleanup rules. It cannot reverse commands already received by a pedal. Use **Exit Stage** to seek, edit, change the mix or reconnect/rearm; Escape and outside clicks do not accidentally unlock the stage view. Leaving the Performance screen resets stage mode.
 
 In the desktop app, active stage playback requests system/display sleep prevention. Pausing, finishing the set, exiting stage mode or leaving the Song screen releases it. Switching to another Song tab does not. Requests renew during playback and expire after 15 seconds without renewal; closing the window or a renderer crash also clears them. The browser build reports that sleep prevention is unavailable. This does not override deliberate sleep, lid-close behavior or system power policy.

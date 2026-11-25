@@ -884,6 +884,10 @@ export class StemPlayer {
     return this.router.channels;
   }
 
+  testMainLevel(): void {
+    this.router.testMainLevel();
+  }
+
   /** A short tone on one bus, to check that output. */
   testTone(bus: BusName): void {
     this.router.testTone(bus);

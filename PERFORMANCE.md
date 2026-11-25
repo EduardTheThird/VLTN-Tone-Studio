@@ -50,6 +50,8 @@ Related guides: [song library](SONG-LIBRARY.md) (saving, playlists, backups), [M
 
 Open **Audio outputs** to route four buses: **Main**, **Click**, **Aux 1** and **Aux 2**. Each has an output pair, a gain and a **Test** button. Each track's **Bus** in the mixer decides its route. Changes apply without stopping the song.
 
+The **Rig audio check** in Audio outputs and MIDI health lists the active routes. A missing Main device falls back to the system default when available. A private click mutes if its dedicated device or pair drops out and resumes when the route returns. The panel warns when the metronome or count-in shares Main. Use **Test backing level** with playback stopped and the monitor turned down. It sends two seconds of pink noise at −18 dBFS RMS before applying Main gain.
+
 ### Speed and pitch
 
 - **Speed** runs from 50% to 150%. **Pitch** shifts up to ±6 semitones, with ±50 cents of fine tune.
@@ -230,6 +232,7 @@ Prepare the song or set, arm MIDI, then choose **Enter stage mode**.
 - **Play/Pause** is always there. **Stop playback** and **Panic / stop MIDI** need a 0.6 s hold or a second press.
 - **Panic / stop MIDI** pauses, clears queued MIDI, disarms and turns Send cues off.
 - Stage mode does not arm MIDI or change the BPM. It stays on across playlist songs.
+- Scheduled cues show the chart plan. Rig state distinguishes preset commands sent by the app from incoming pedal reports. The status strip shows audio warnings, MIDI drops and a clean resync. **Exit Stage** returns to the editor.
 - On the desktop, stage playback keeps the screen awake until you pause or exit.
 
 ### Audience display

@@ -3,7 +3,7 @@ import { SeparateClickOutput } from "./click-output";
 // Routes the tracks and the click to output buses. A bus is a stereo channel pair on one device: the tracks might sit on outputs
 // 1/2 and the click on 3/4 of a multichannel interface. The click can also use a second device of its own (a headphone jack for the
 // in-ear click, say), and the aux buses are spare pairs for other tracks. When the device has fewer channels, or cannot be selected,
-// the buses fall back to the default stereo output so audio never goes silent. The caller is told about every fallback.
+// backing audio falls back to a usable route. A click assigned to a private route is muted if that route is lost.
 //
 // The planning and the device lookup are pure functions. OutputRouter is the thin WebAudio adapter around them.
 
@@ -32,6 +32,14 @@ export interface OutputDevice {
   label: string;
 }
 
+export interface ActiveOutputRoute {
+  main: string;
+  mainFallback?: boolean;
+  click: string;
+  clickMuted: boolean;
+  warnings: string[];
+}
+
 export interface OutputConfig {
   /** The main device. "" is the system default. */
   deviceId: string;
@@ -53,6 +61,18 @@ export const DEFAULT_OUTPUTS: OutputConfig = {
   clickDevice: null,
   buses: busRecord((): Bus => ({ channels: [0, 1], gain: 1 })),
 };
+
+export function separateClickPair(config: OutputConfig): boolean {
+  return config.buses.click.channels[0] !== config.buses.main.channels[0];
+}
+
+function hasPair([left, right]: [number, number], available: number): boolean {
+  return Number.isInteger(left) && left >= 0 && right === left + 1 && right < available;
+}
+
+function pairLabel([left, right]: [number, number]): string {
+  return `${left + 1}/${right + 1}`;
+}
 
 const SETTINGS_KEY = "vltn.performance.outputs.v1";
 
@@ -85,7 +105,7 @@ export function planRoutes(config: OutputConfig, maxChannels = 2): RoutePlan {
   const available = Math.max(2, maxChannels);
   const pairs = BUS_NAMES.map((name) => config.buses[name].channels);
   const stereo = busRecord((): [number, number] => [0, 1]);
-  const valid = pairs.every(([left, right]) => Number.isInteger(left) && left >= 0 && right === left + 1 && right < available);
+  const valid = pairs.every((pair) => hasPair(pair, available));
   if (!valid) return { outputs: 2, multichannel: false, buses: stereo, fellBack: true };
   const top = Math.max(...pairs.map(([, right]) => right));
   if (top < 2) return { outputs: 2, multichannel: false, buses: stereo, fellBack: false };
@@ -99,8 +119,8 @@ export function planRoutes(config: OutputConfig, maxChannels = 2): RoutePlan {
 export function resolveDeviceId(config: OutputDevice, devices: OutputDevice[]): string | null {
   if (!config.deviceId) return "";
   if (devices.some((device) => device.deviceId === config.deviceId)) return config.deviceId;
-  const byLabel = config.label ? devices.find((device) => device.label === config.label) : undefined;
-  return byLabel?.deviceId ?? null;
+  const matches = config.label ? devices.filter((device) => device.label === config.label) : [];
+  return matches.length === 1 ? matches[0].deviceId : null;
 }
 
 function readBus(bus: Partial<Bus> | undefined, fallback: Bus): Bus {
@@ -171,17 +191,27 @@ function routeKey(mainId: string | null, clickId: string | null, config: OutputC
  */
 export class OutputRouter {
   readonly buses: Record<BusName, GainNode>;
+  private levelTest: AudioBufferSourceNode | null = null;
   private merger: ChannelMergerNode | null = null;
   private click: SeparateClickOutput | null = null;
   private config = DEFAULT_OUTPUTS;
   /** The route key that is wired now. An empty string means the last attempt failed, so the next attempt tries again. */
   private applied = "";
+  private selectedSink: string | null = null;
+  private active: ActiveOutputRoute | null = null;
   private queue: Promise<void> = Promise.resolve();
-  private readonly onDeviceChange = () => void this.apply(this.config);
+  private readonly onDeviceChange = () => {
+    if (this.config.clickDevice || separateClickPair(this.config)) {
+      const { ctx, bus } = this.clickTarget();
+      bus.gain.setValueAtTime(0, ctx.currentTime);
+    }
+    void this.apply(this.config);
+  };
 
   constructor(
     private readonly ctx: AudioContext,
     private readonly warn: (message: string) => void,
+    private readonly onRoute?: (route: ActiveOutputRoute) => void,
   ) {
     this.buses = busRecord(() => {
       // Always stereo, so a mono click still has a right channel to send to a multichannel output.
@@ -202,8 +232,20 @@ export class OutputRouter {
 
   /** Applies `config`. Calls run one after another, so a device change cannot overlap a selection. */
   apply(config: OutputConfig): Promise<void> {
+    if (config !== this.config && (config.clickDevice || separateClickPair(config))) {
+      this.buses.click.gain.setValueAtTime(0, this.ctx.currentTime);
+    }
     this.config = config;
-    this.queue = this.queue.then(() => this.route(config)).catch((error) => this.warn(`The audio outputs could not be set. ${String(error)}`));
+    this.queue = this.queue.then(() => this.route(config)).catch((error) => {
+      this.buses.click.disconnect();
+      void this.closeClick();
+      this.publish({
+        main: "Unverified",
+        click: "Muted",
+        clickMuted: true,
+        warnings: [`The audio outputs could not be set. ${String(error)}`],
+      });
+    });
     return this.queue;
   }
 
@@ -239,44 +281,115 @@ export class OutputRouter {
     void ctx.resume();
   }
 
+  /** Plays two seconds of calibrated pink noise through the main bus at its configured gain. */
+  testMainLevel(): void {
+    if (this.levelTest || !this.active || this.active.main === "Unverified") return;
+    const { ctx } = this;
+    const noise = pinkNoise(ctx.sampleRate);
+    const buffer = ctx.createBuffer(1, noise.length, ctx.sampleRate);
+    buffer.getChannelData(0).set(noise);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.buses.main);
+    this.levelTest = source;
+    const clear = () => {
+      source.disconnect();
+      if (this.levelTest === source) this.levelTest = null;
+    };
+    source.onended = clear;
+    void ctx.resume().then(() => source.start()).catch(clear);
+  }
+
   dispose(): void {
     globalThis.navigator?.mediaDevices?.removeEventListener?.("devicechange", this.onDeviceChange);
     void this.closeClick();
   }
 
   private async route(config: OutputConfig): Promise<void> {
-    this.setGains(config);
     const devices = await listOutputDevices();
     const resolve = (device: OutputDevice): string | null => (devices ? resolveDeviceId(device, devices) : device.deviceId);
     const mainId = resolve(config);
     const clickId = config.clickDevice ? resolve(config.clickDevice) : null;
     // Changes that only move a gain, or an unrelated device appearing, leave the sinks alone.
-    const key = routeKey(mainId, clickId, config);
-    if (key === this.applied) return;
-    this.applied = "";
-    if (mainId === null || !(await this.selectSink(mainId))) {
-      this.warn(`"${config.label || config.deviceId || "The audio output"}" is not available. Audio is playing on the default output.`);
-      await this.closeClick();
-      await this.selectSink("");
-      this.wire(planRoutes(stereoOnly(config)), false);
-      this.applied = key;
+    const defaultLabel = devices?.find(({ deviceId }) => deviceId === "default")?.label ?? "";
+    const key = routeKey(mainId, clickId, config) + defaultLabel;
+    if (this.applied === `${key}:${this.channels}`) {
+      this.setGains(config);
       return;
     }
-    const plan = planRoutes(config, this.ctx.destination.maxChannelCount);
-    if (plan.fellBack) this.warn("This output does not have the channels set for the buses. Every bus uses outputs 1 and 2.");
-    const separate = await this.openClick(config.clickDevice, clickId);
-    this.wire(plan, separate);
-    this.applied = key;
+    this.applied = "";
+    // Disconnect the old click graph before changing the main sink. A multichannel graph can be folded down when the sink changes.
+    this.buses.click.disconnect();
+    const warnings: string[] = [];
+    const mainSelected = mainId !== null && (await this.selectSink(mainId));
+    const defaultSelected = mainSelected || (await this.selectSink(""));
+    if (!mainSelected) {
+      warnings.push(`"${config.label || config.deviceId || "System default"}" is unavailable. ${defaultSelected ? "Backing uses the system default output." : "The default output could not be selected."}`);
+    }
+
+    const available = this.channels;
+    const effective = mainSelected ? config : stereoOnly(config);
+    const routed = {
+      ...effective,
+      buses: busRecord((name) => {
+        const bus = effective.buses[name];
+        if (name === "click" && config.clickDevice) return DEFAULT_OUTPUTS.buses.click;
+        if (hasPair(bus.channels, available)) return bus;
+        if (name !== "click") warnings.push(`${BUS_LABELS[name]} outputs ${pairLabel(bus.channels)} are unavailable. Using 1/2.`);
+        return { ...bus, channels: [0, 1] as [number, number] };
+      }),
+    };
+    const plan = planRoutes(routed, available);
+    const privatePair = !config.clickDevice && separateClickPair(config);
+    const overlapsBacking = plan.buses.main.some((channel) => plan.buses.click.includes(channel));
+    const failedPair = privatePair && (!mainSelected || !hasPair(config.buses.click.channels, available) || overlapsBacking);
+    const actualMainId = mainSelected ? mainId : "";
+    // Chromium can list the same physical endpoint as both "default" and a named output.
+    const deviceName = (id: string) => devices?.find((device) => device.deviceId === (id || "default"))?.label.replace(/^Default - /i, "");
+    const mainDeviceName = deviceName(actualMainId ?? "");
+    const clickSharesDevice = !!config.clickDevice && clickId !== null && (
+      actualMainId === clickId ||
+      ((!actualMainId || actualMainId === "default" || clickId === "default") && !!mainDeviceName && mainDeviceName === deviceName(clickId))
+    );
+    const separate = await this.openClick(clickSharesDevice ? null : config.clickDevice, clickId);
+    const mute = failedPair || (!!config.clickDevice && !separate) || !defaultSelected;
+    if (failedPair) warnings.push(`Private click outputs ${pairLabel(config.buses.click.channels)} are unavailable or shared with backing. Click muted.`);
+    if (config.clickDevice && !separate) warnings.push(`"${config.clickDevice.label || config.clickDevice.deviceId}" cannot be used as a separate click output. Click muted.`);
+    if (!privatePair && !config.clickDevice) {
+      // An intentional shared click follows Main even if Main's requested pair changed.
+      plan.buses.click = plan.buses.main;
+    }
+    if (mute && separate) await this.closeClick();
+    this.wire(plan, separate || mute);
+    this.setGains(config);
+    const main = defaultSelected
+      ? `${(mainSelected && mainId && (deviceName(mainId) || config.label || mainId)) || "System default"} · ${pairLabel(plan.buses.main)}`
+      : "Unverified";
+    this.publish({
+      main,
+      mainFallback: !mainSelected && defaultSelected,
+      click: mute ? "Muted" : separate ? `${config.clickDevice?.label || clickId} · 1/2` : `${privatePair ? "Separate pair" : "Main"} · ${pairLabel(plan.buses.click)}`,
+      clickMuted: mute,
+      warnings,
+    });
+    // Failed sink selections can be retried. Missing devices change the route key when they come back.
+    if (defaultSelected && (mainSelected || mainId === null) && (separate || clickId === null || clickSharesDevice)) this.applied = `${key}:${available}`;
+  }
+
+  get activeRoute(): ActiveOutputRoute | null {
+    return this.active;
+  }
+
+  private publish(route: ActiveOutputRoute): void {
+    const previous = this.active;
+    this.active = route;
+    this.onRoute?.(route);
+    for (const warning of route.warnings) if (!previous?.warnings.includes(warning)) this.warn(warning);
   }
 
   /** Opens, keeps or closes the click's own device. Returns true when the click is on that device. */
   private async openClick(device: OutputDevice | null, deviceId: string | null): Promise<boolean> {
-    if (!device) {
-      await this.closeClick();
-      return false;
-    }
-    if (deviceId === null) {
-      this.warn(`"${device.label || device.deviceId}" is not available. The click is playing on the main output.`);
+    if (!device || deviceId === null) {
       await this.closeClick();
       return false;
     }
@@ -284,9 +397,9 @@ export class OutputRouter {
     await this.closeClick();
     try {
       this.click = await SeparateClickOutput.open(this.ctx, deviceId);
+      if (this.ctx.state === "running") void this.click.resume().catch(() => {});
       return true;
     } catch {
-      this.warn(`"${device.label || device.deviceId}" could not be used for the click. The click is playing on the main output.`);
       return false;
     }
   }
@@ -298,8 +411,11 @@ export class OutputRouter {
   }
 
   private async selectSink(deviceId: string): Promise<boolean> {
+    if (typeof this.ctx.setSinkId !== "function") return deviceId === "";
+    if (this.selectedSink === deviceId) return true;
     try {
       await this.ctx.setSinkId(deviceId);
+      this.selectedSink = deviceId;
       return true;
     } catch {
       return false;
@@ -337,4 +453,25 @@ export class OutputRouter {
     merger.connect(destination);
     this.merger = merger;
   }
+}
+
+/** Paul Kellet's pinking filter, with short fades and a measured -18 dBFS RMS before Main's gain. */
+export function pinkNoise(sampleRate: number, random = Math.random): Float32Array<ArrayBuffer> {
+  const samples = new Float32Array(sampleRate * 2);
+  let slow = 0, mid = 0, fast = 0, energy = 0;
+  const fade = Math.round(sampleRate * 0.025);
+  for (let i = 0; i < samples.length; i++) {
+    const white = random() * 2 - 1;
+    slow = 0.99765 * slow + white * 0.099046;
+    mid = 0.963 * mid + white * 0.2965164;
+    fast = 0.57 * fast + white * 1.0526913;
+    const amplitude = Math.min(1, i / fade, (samples.length - 1 - i) / fade);
+    samples[i] = (slow + mid + fast + white * 0.1848) * amplitude;
+    energy += samples[i] ** 2;
+  }
+  if (energy > 0) {
+    const scale = 10 ** (-18 / 20) / Math.sqrt(energy / samples.length);
+    for (let i = 0; i < samples.length; i++) samples[i] *= scale;
+  }
+  return samples;
 }

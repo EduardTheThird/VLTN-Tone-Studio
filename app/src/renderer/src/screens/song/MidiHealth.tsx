@@ -38,12 +38,14 @@ export function MidiHealth({
   myRig,
   rigChannelWarnings,
   rigTempo,
+  rigAudio,
 }: {
   cues: Cue[];
   songKey?: string;
   myRig?: ReactNode;
   rigChannelWarnings?: readonly RigChannelIssue[];
   rigTempo?: RigTempoPlan | null;
+  rigAudio?: ReactNode;
   /** The song's sections, which the cues on a section are placed on */
   sections?: Section[];
   duration: number;
@@ -152,7 +154,7 @@ export function MidiHealth({
             routing and receive channels before the set.
           </p>
         </HelpNote>
-        <div id="gp-rig-settings"><PedalSettings clock={clock} /></div>
+        <div id="gp-rig-settings"><PedalSettings clock={clock} />{rigAudio}</div>
         {open && myRig}
         {open && <MemoryUse />}
         {parseError ? (

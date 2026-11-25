@@ -1,21 +1,10 @@
 // Click track for the Rig: schedules clicks ahead on the audio clock (setInterval alone would drift and jitter).
 // Reads the tempo before every click, so editing the preset's BPM while it runs takes effect on the next beat.
 
-import { isPedalInput, listInputs } from "@/song/tonematch/recorder";
+import { pedalOutput } from "@/song/audio/pedal-output";
 
 const LOOKAHEAD_S = 0.12;
 const TICK_MS = 25;
-
-/** The pedal's USB sound card among the audio outputs, when it is plugged in. */
-async function pedalOutput(): Promise<MediaDeviceInfo | null> {
-  try {
-    await listInputs(); // asks for the microphone permission once, which is what unlocks device names
-    const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audiooutput");
-    return outputs.find((d) => isPedalInput(d.label)) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 const VOLUME_KEY = "vltn.metronomeVolume";
 

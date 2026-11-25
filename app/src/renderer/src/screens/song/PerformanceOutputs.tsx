@@ -1,8 +1,12 @@
 import { SettingsCard } from "@/components/ui/settings-card";
+import { useDevice } from "@/state/device";
+import { useStageActivity } from "@/state/stage-activity";
+import { rigAudioCheck } from "@/song/performance/rig-check";
+import { findPedalOutput } from "@/song/audio/pedal-output";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useOutputSettings } from "@/song/audio/output-settings";
-import { BUS_LABELS, BUS_NAMES, listOutputDevices, type BusName, type OutputDevice } from "@/song/audio/outputs";
+import { BUS_LABELS, BUS_NAMES, listOutputDevices, separateClickPair, type BusName, type OutputDevice } from "@/song/audio/outputs";
 
 /** The devices the system lists, refreshed when one is plugged in or removed. */
 function useOutputDevices(): OutputDevice[] {
@@ -59,17 +63,22 @@ function DeviceSelect({
  * Outputs for the Performance session: the main device, an optional device for the click, and each bus's channel pair and gain.
  * The pairs offered come from the main device's channel count. "Test" plays a short tone on that bus alone.
  */
-export function PerformanceOutputs({ player }: { player: { outputChannels: number; testTone: (bus: BusName) => void } | null }) {
+export function PerformanceOutputs({ player, clickEnabled = false, reveal = false }: {
+  player: { outputChannels: number; testTone: (bus: BusName) => void; testMainLevel?: () => void } | null;
+  clickEnabled?: boolean;
+  reveal?: boolean;
+}) {
   const config = useOutputSettings((state) => state.config);
   const update = useOutputSettings((state) => state.update);
   const devices = useOutputDevices();
+  const active = useOutputSettings((state) => state.activeRoute);
   const channels = player?.outputChannels ?? 2;
   const pairs = Array.from({ length: Math.floor(channels / 2) }, (_, i) => i * 2);
   const mainOptions = deviceOptions(devices, config.deviceId ? { deviceId: config.deviceId, label: config.label } : null);
   const clickOptions = deviceOptions(devices, config.clickDevice);
 
   return (
-    <SettingsCard title="Audio outputs" summary="Main, click and aux outputs" storageKey="outputs" defaultOpen={false}>
+    <SettingsCard title="Audio outputs" summary="Main, click and aux outputs" storageKey="outputs" defaultOpen={false} reveal={reveal}>
       <div className="flex flex-wrap gap-3">
         <DeviceSelect
           label="Main device"
@@ -92,6 +101,7 @@ export function PerformanceOutputs({ player }: { player: { outputChannels: numbe
           }}
         />
       </div>
+      <RigAudioCheck player={player} clickEnabled={clickEnabled} devices={devices} />
       <div className="flex flex-col gap-2">
         {BUS_NAMES.map((name) => {
           const bus = config.buses[name];
@@ -112,6 +122,7 @@ export function PerformanceOutputs({ player }: { player: { outputChannels: numbe
                     update({ ...config, buses: { ...config.buses, [name]: { ...bus, channels: [left, left + 1] } } });
                   }}
                 >
+                  {!pairs.includes(Number(pair)) && <option value={pair}>Outputs {bus.channels[0] + 1}–{bus.channels[1] + 1} (unavailable)</option>}
                   {pairs.map((left) => (
                     <option key={left} value={String(left)}>
                       Outputs {left + 1}–{left + 2}
@@ -129,7 +140,7 @@ export function PerformanceOutputs({ player }: { player: { outputChannels: numbe
                 value={bus.gain}
                 onChange={(e) => update({ ...config, buses: { ...config.buses, [name]: { ...bus, gain: Number(e.target.value) } } })}
               />
-              <Button variant="outline" size="sm" aria-label={`Test ${BUS_LABELS[name]}`} disabled={!player} onClick={() => player?.testTone(name)}>
+              <Button variant="outline" size="sm" aria-label={`Test ${BUS_LABELS[name]}`} disabled={!player || (name === "click" && active?.clickMuted)} onClick={() => player?.testTone(name)}>
                 Test
               </Button>
             </div>
@@ -137,5 +148,60 @@ export function PerformanceOutputs({ player }: { player: { outputChannels: numbe
         })}
       </div>
     </SettingsCard>
+  );
+}
+
+
+export function PedalAudioCheck({ player, clickEnabled }: {
+  player: BackingLevelPlayer | null;
+  clickEnabled: boolean;
+}) {
+  const devices = useOutputDevices();
+  return <RigAudioCheck player={player} clickEnabled={clickEnabled} devices={devices} />;
+}
+
+type BackingLevelPlayer = { outputChannels: number; testMainLevel?: () => void };
+
+function RigAudioCheck({ player, clickEnabled, devices }: {
+  player: BackingLevelPlayer | null;
+  clickEnabled: boolean;
+  devices: OutputDevice[];
+}) {
+  const config = useOutputSettings((s) => s.config);
+  const update = useOutputSettings((s) => s.update);
+  const active = useOutputSettings((s) => s.activeRoute);
+  const device = useDevice((s) => s.status === "connected" && (s.device === "gp150" || s.device === "gp180") ? s.device : null);
+  const busy = useStageActivity((s) => s.busy);
+  const gp = device ? findPedalOutput(devices, device) : null;
+  const gpSelected = !!gp && !active?.mainFallback && (gp.deviceId === config.deviceId || gp.label === config.label);
+  const issues = rigAudioCheck({
+    device,
+    pedalAvailable: !!gp,
+    pedalSelected: gpSelected,
+    main: active?.main ?? (config.label || "the system default"),
+    mainFallback: active?.mainFallback,
+    clickShared: clickEnabled && !config.clickDevice && !separateClickPair(config),
+  });
+  return (
+    <div className="space-y-2 rounded border border-seam px-3 py-2" aria-label="Rig audio check">
+      <p>{active ? `Main: ${active.main} · Click: ${active.click}` : "Load a song to check the active audio routes."}</p>
+      {active?.warnings.filter((_, index) => index !== 0 || !active.mainFallback).map((warning) => (
+        <p key={warning} role="alert" className="text-amber-400">{warning}</p>
+      ))}
+      {issues.map((issue) => (
+        <p key={issue.code} role={issue.level === "error" ? "alert" : undefined} className={issue.level === "advice" ? undefined : "text-amber-400"}>
+          {issue.text}
+        </p>
+      ))}
+      {gp && !gpSelected && (
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => update({ ...config, deviceId: gp.deviceId, label: gp.label })}>
+          Use {gp.label} for Main
+        </Button>
+      )}
+      <Button variant="outline" size="sm" disabled={busy || !player?.testMainLevel || !active || active.main === "Unverified"} onClick={() => player?.testMainLevel?.()}>
+        Test backing level
+      </Button>
+      <p className="text-xs text-silkscreen-3">Lower your monitor level first. Plays two seconds of pink noise at −18 dBFS RMS before Main gain. Confirm the backing level and click separation at the PA and in your headphones.</p>
+    </div>
   );
 }

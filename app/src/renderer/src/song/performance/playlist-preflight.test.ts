@@ -337,3 +337,14 @@ it("flags a Rig table that uses an unassigned effect control", () => {
   });
   expect(checked.warnings).toContain("Rig pedal BOSS IR-200 needs SOLO SW CC assigned.");
 });
+
+it("checks the memory estimate for consecutive songs with no live band variants", () => {
+  const duration = 360;
+  const audio = ["source", "vocals", "guitar", "drums", "bass", "piano", "other"].map((name) => ({
+    name, sampleRate: 48000, frames: duration * 48000, channels: 2,
+  }));
+  const song = { ...saved.song!, duration, audio };
+  const [first, last] = playlistPreflight(["one", "one"], [{ ...saved, song }], config);
+  expect(first.warnings.join(" ")).toContain("next preload: about 1.80 GiB estimated decoded audio");
+  expect(last.notes.join(" ")).toContain("0.90 GiB estimated decoded audio");
+});

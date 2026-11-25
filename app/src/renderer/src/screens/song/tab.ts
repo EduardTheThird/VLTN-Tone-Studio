@@ -10,7 +10,7 @@ const isSongTab = (param: string | null): param is SongTab => param === "songs" 
  * The tab last opened by name. AppShell mounts only the active screen, so this lives outside React: a bare
  * `go("song")` (rail, menu, shortcut) comes back to Tone match after a trip to the Rig.
  */
-let lastTab: SongTab = "stems";
+let lastTab: SongTab = "songs";
 
 /**
  * The Song tab follows the nav param (`go("song", "tone")`, `?screen=song&param=tone`); without one it is the
@@ -23,6 +23,6 @@ export function useSongTab(): [SongTab, (tab: SongTab) => void] {
   useEffect(() => {
     if (isSongTab(param)) lastTab = param;
   }, [param]);
-  const tab: SongTab = isSongTab(param) ? param : (lastTab === "performance" || lastTab === "songs") ? lastTab : lastTab === "tone" && hasStems ? "tone" : "stems";
+  const tab: SongTab = param === "performance-setup" || param === "performance-midi" || param === "performance-play" ? "performance" : isSongTab(param) ? param : (lastTab === "performance" || lastTab === "songs") ? lastTab : lastTab === "tone" && hasStems ? "tone" : "stems";
   return [tab, (next) => useNav.getState().go("song", next)];
 }

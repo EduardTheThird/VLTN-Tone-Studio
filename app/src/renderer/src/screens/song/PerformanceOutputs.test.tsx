@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { useOutputSettings } from "@/song/audio/output-settings";
+import { useDevice } from "@/state/device";
 import { DEFAULT_OUTPUTS } from "@/song/audio/outputs";
 
 const devices = [
@@ -71,4 +72,26 @@ it("sends the click to its own device, which takes away its channel pair", async
   expect(screen.queryByLabelText("Click outputs")).toBeNull();
   fireEvent.change(click, { target: { value: "" } });
   expect(useOutputSettings.getState().config.clickDevice).toBeNull();
+});
+
+it("offers the active GP USB route and uses it when selected", async () => {
+  const previous = useDevice.getState();
+  useDevice.setState({ device: "gp180", status: "connected" });
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      enumerateDevices: async () => [...devices, { kind: "audiooutput", deviceId: "gp", label: "GP-180 Audio" }],
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    },
+  });
+  try {
+    render(<PerformanceOutputs player={player()} clickEnabled />);
+    expect(screen.getByText(/Click or count-in shares the Main pair/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Use GP-180 Audio for Main" }));
+    expect(useOutputSettings.getState().config).toMatchObject({ deviceId: "gp", label: "GP-180 Audio" });
+    expect(screen.queryByRole("button", { name: "Use GP-180 Audio for Main" })).toBeNull();
+  } finally {
+    cleanup();
+    useDevice.setState(previous);
+  }
 });

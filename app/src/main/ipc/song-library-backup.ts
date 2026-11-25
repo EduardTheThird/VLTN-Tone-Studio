@@ -1,6 +1,6 @@
 import { PEDAL_SETTINGS_FILE, PEDAL_SETTINGS_MAX_BYTES, parsePedalSettings, type PedalSettingsFile } from "@shared/pedal-settings";
 import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
@@ -18,6 +18,7 @@ import {
   validatePlaylists,
   validateSong,
   type LibraryTransferProgress,
+  type SetBackupOptions,
   type StoredLibrary,
 } from "@shared/song-library";
 import type { DiskIndex } from "./song-library-store";
@@ -32,11 +33,17 @@ interface BackupFile {
   bytes: number;
   sha256: string;
 }
+interface PortableSet {
+  name: string;
+  smartSnapshot: boolean;
+  dependencies: (SetBackupOptions["dependencies"][string] & { title: string })[];
+}
 interface Manifest {
   format: "vltn-song-library";
   /** 1–4 are the historical library formats. Version 5 includes the pedal settings file with a v4 library index. */
   version: 1 | 2 | 3 | 4 | 5;
   files: BackupFile[];
+  portableSet?: PortableSet & { instructions: string[] };
 }
 type Progress = (value: LibraryTransferProgress) => void;
 const invalid = () => new Error("Invalid or damaged song-library backup.");
@@ -97,7 +104,7 @@ function audioHashes(index: DiskIndex): Map<string, string> {
   }
   return result;
 }
-async function fileHash(path: string): Promise<string> {
+export async function fileHash(path: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
@@ -116,7 +123,7 @@ export async function readPedalSettingsFile(root: string): Promise<{ data: Pedal
 }
 
 /** The caller holds the store's serialization lock for a consistent snapshot. */
-export async function exportBackup(root: string, index: DiskIndex, target: string, progress: Progress = () => {}): Promise<void> {
+export async function exportBackup(root: string, index: DiskIndex, target: string, progress: Progress = () => {}, portableSet?: PortableSet): Promise<void> {
   validateDiskIndex(index);
   await mkdir(root, { recursive: true });
   const rootPath = await realpath(root),
@@ -125,33 +132,59 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
   if (!inside || (!inside.startsWith(".." + (process.platform === "win32" ? "\\" : "/")) && inside !== ".." && !isAbsolute(inside)))
     throw new Error("Choose a backup location outside the managed song-library folder.");
   const files = audioFiles(index);
-  const metadata = await readFile(join(root, INDEX));
+  const metadata = portableSet ? Buffer.from(JSON.stringify(index)) : await readFile(join(root, INDEX));
   if (metadata.length > MAX_METADATA) throw new Error("Library metadata exceeds the supported backup size.");
   files.set(INDEX, metadata.length);
   const pedals = await readPedalSettingsFile(root);
   if (pedals) files.set(PEDAL_SETTINGS_FILE, pedals.bytes);
   if (files.size > MAX_FILES) throw new Error("This library exceeds the backup file limit.");
   const manifest: Manifest = { format: "vltn-song-library", version: pedals ? 5 : LIBRARY_VERSION, files: [] };
+  if (portableSet) {
+    manifest.portableSet = {
+      ...portableSet,
+      instructions: [
+        "Restore this archive with Restore song library. Saved audio includes rendered band parts.",
+        "To regenerate with the original tone, download the listed TONE3000 files or relink the listed local captures and IRs on this machine.",
+        "Recreate any listed MIDI macros in the MIDI commands editor, select your MIDI and audio outputs, and verify your rig before arming cues.",
+        pedals ? "pedals.json holds the saved pedal profiles and channel settings." : "No pedal settings were saved for this library.",
+      ],
+    };
+  }
+  const hashes = audioHashes(index);
   let total = 0,
     done = 0;
   for (const [path, bytes] of files) {
-    const info = await lstat(join(root, path));
-    if (!info.isFile() || info.size !== bytes) throw new Error(`Missing or damaged saved audio: ${path}`);
+    if (path !== INDEX) {
+      const info = await lstat(join(root, path));
+      if (!info.isFile() || info.size !== bytes) throw new Error(`Missing or damaged saved file: ${path}`);
+    }
     total += bytes;
     if (total > MAX_BYTES) throw new Error("Library backup exceeds 512 GiB uncompressed.");
     progress({ phase: "Checking saved files", completed: done, total: files.size });
-    manifest.files.push({ path, bytes, sha256: await fileHash(join(root, path)) });
+    const sha256 = path === INDEX ? createHash("sha256").update(metadata).digest("hex") : await fileHash(join(root, path));
+    if (hashes.has(path) && hashes.get(path) !== sha256) throw new Error(`Checksum mismatch in saved file: ${path}`);
+    manifest.files.push({ path, bytes, sha256 });
     done++;
   }
   const manifestBytes = Buffer.from(JSON.stringify(manifest));
   if (manifestBytes.length > MAX_METADATA) throw new Error("Backup manifest exceeds the supported size.");
   const temp = join(parent, `.${basename(target)}.${randomUUID()}.partial`);
+  const stage = portableSet ? await mkdtemp(join(root, ".export-")) : root;
   try {
-    await writeFile(join(root, MANIFEST), manifestBytes);
+    if (portableSet) {
+      await writeFile(join(stage, INDEX), metadata);
+      for (const path of files.keys()) {
+        if (path === INDEX) continue;
+        const destination = join(stage, path);
+        await mkdir(dirname(destination), { recursive: true });
+        await link(join(root, path), destination);
+      }
+    }
+    await writeFile(join(stage, MANIFEST), manifestBytes);
     done = 0;
     await createTar(
       {
-        cwd: root,
+        cwd: stage,
         file: temp,
         gzip: true,
         portable: true,
@@ -168,7 +201,8 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
     progress({ phase: "Backup complete", completed: files.size + 1, total: files.size + 1 });
   } finally {
     await rm(temp, { force: true }).catch(() => {});
-    await rm(join(root, MANIFEST), { force: true }).catch(() => {});
+    if (portableSet) await rm(stage, { recursive: true, force: true }).catch(() => {});
+    else await rm(join(root, MANIFEST), { force: true }).catch(() => {});
   }
 }
 /** Read only regular, declared files. No archive path is passed to an extraction API. */

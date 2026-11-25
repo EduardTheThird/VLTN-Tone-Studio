@@ -47,7 +47,7 @@ export class SeparateClickOutput {
     this.timer = setInterval(() => (this.pairs = this.read()), RECHECK_MS);
   }
 
-  /** Opens the click on `deviceId`. Rejects when the device cannot be selected; the caller then keeps the click on Main. */
+  /** Opens the click on `deviceId`. Rejects when the device cannot be selected; the caller then mutes the click. */
   static async open(mainCtx: AudioContext, deviceId: string): Promise<SeparateClickOutput> {
     const ctx = new AudioContext({ sampleRate: 44100 });
     try {

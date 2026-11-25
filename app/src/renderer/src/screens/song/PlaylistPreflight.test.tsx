@@ -3,11 +3,13 @@ import { useMidiConfiguration, readMidiConfiguration } from "@/song/performance/
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PlaylistPreflight } from "./PlaylistPreflight";
+import { usePedalLibrary } from "@/song/performance/pedal-library";
 const api = vi.hoisted(() => ({ preflight: vi.fn() }));
 vi.mock("@/host", () => ({ host: { song: { library: api } } }));
 beforeEach(() => {
   usePreparationDefaults.setState({ settings: { ...PREPARATION_DEFAULTS } });
   useMidiConfiguration.setState(readMidiConfiguration());
+  usePedalLibrary.setState({ owned: [], channels: {} });
 });
 afterEach(() => {
   cleanup();
@@ -74,7 +76,8 @@ it("shows per-entry sequences and totals, then refreshes automatically when prep
   expect(api.preflight).toHaveBeenCalledTimes(2);
 });
 
-it("puts all errors before performance warnings and keeps arrangement advice separate from the song order", async () => {
+it("puts errors before performance warnings and counts rig channel warnings in the summary", async () => {
+  usePedalLibrary.setState({ owned: ["valeton-gp180", "strymon-timeline"] });
   api.preflight.mockResolvedValue([
     {
       id: "one",
@@ -98,7 +101,7 @@ it("puts all errors before performance warnings and keeps arrangement advice sep
   ]);
   render(<PlaylistPreflight ids={["one", "missing"]} disabled={false} revision={1} songs={[]} />);
   fireEvent.click(screen.getByText("Check playlist"));
-  await waitFor(() => expect(screen.getByText(/2 entries checked · 1 errors · 2 performance warnings · 1 arrangement notes/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/2 entries checked · 1 errors · 3 performance warnings · 1 arrangement notes/)).toBeTruthy());
   const rig = screen.getByRole("region", { name: "Rig channel warnings" });
   expect(within(rig).getByText(/MIDI channel 1 is shared by Valeton GP-180, Strymon TimeLine/)).toBeTruthy();
   const issues = screen.getByRole("region", { name: "Playback and MIDI issues" });
@@ -119,4 +122,14 @@ it("automatically checks after an upgrade and offers the full report", async () 
   expect(screen.queryByText("Song is missing from the library.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open full report" }));
   expect(screen.getByText("Song is missing from the library.")).toBeTruthy();
+});
+
+it("requests full checksum verification and counts warnings from live routes", async () => {
+  api.preflight.mockResolvedValue([{ id: "one", errors: ["source.flac: checksum mismatch"] }]);
+  render(<PlaylistPreflight ids={["one"]} disabled={false} revision={1} songs={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Verify for show" }));
+  expect(await screen.findByRole("region", { name: "Verified show routes" })).toBeTruthy();
+  expect(api.preflight).toHaveBeenCalledWith(["one"], true);
+  expect(screen.getByText(/1 entries checked · 1 errors · 1 performance warnings/)).toBeTruthy();
+  expect(screen.getByText(/source.flac: checksum mismatch/)).toBeTruthy();
 });

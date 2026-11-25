@@ -157,7 +157,8 @@ export function MyRig({ session }: { session: PerformanceSession }) {
           Setup sheet
         </Button>
       </div>
-      <details>
+      {!library.owned.length && <p className="text-sm text-silkscreen-3">Choose the pedals you own to set up your rig and check its MIDI channels.</p>}
+      <details open={!library.owned.length || undefined}>
         <summary className="cursor-pointer">My pedals</summary>
         <div className="flex flex-wrap gap-3 py-2">
           {[...groups.owned, ...groups.other].map((profile) => (
