@@ -23,6 +23,26 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Verify a set before the show",
+    text: "Verify for show checks saved file contents and the current audio and MIDI routes. Every song gets a decoded audio memory estimate that includes the next preload. Pick Export this set to carry the songs, charts, mixes and cues to a second computer.",
+    image: songLibrary,
+  },
+  {
+    title: "Check the backing and private click",
+    text: "In MIDI health or Audio outputs, select a connected GP-150 or GP-180 for Main and test the backing level. Stage reports output changes. A failed private click stays muted until its route returns.",
+    image: rigTools,
+  },
+  {
+    title: "Clearer controls in Stage",
+    text: "See scheduled cues, commands sent by the app and preset reports from the pedal. Exit Stage is visible, and MIDI drops and resyncs have their own status.",
+    image: stageMode,
+  },
+  {
+    title: "Import a backing track from Songs & sets",
+    text: "Open the player, prepare the song for a set, or split stems. The navigation now calls out presets and preset setlists separately.",
+    image: stemMixer,
+  },
+  {
     title: "Held bass notes ring and decay",
     text: "Update the generated bass to hear Fingers and Pick notes ring for their written duration and fade like the original recordings. Ghost notes and releases stay short.",
     image: band,

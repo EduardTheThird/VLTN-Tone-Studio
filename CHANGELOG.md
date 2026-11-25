@@ -4,6 +4,24 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.55] — 2026-11-25
+
+### Added
+
+- **Verify for show** checks saved audio and chart checksums, the active audio routes, and the selected MIDI connection. Playlist checks estimate decoded audio for each song and its next preload.
+- **Export this set** copies the selected playlist, saved audio, charts, mixes and cues to a portable backup with its pedal setup and tone and macro dependency inventory.
+- MIDI health checks backing routing for a connected GP-150 or GP-180. **Test backing level** sends a two-second pink-noise signal through Main.
+
+### Changed
+
+- Stage shows scheduled cues separately from sent and reported pedal state, flags MIDI timing faults, and has a visible **Exit Stage** control.
+- **Songs & sets** opens the song library. Import a backing track and choose whether to play, prepare it for a set or split stems. New installations ask which pedals you own.
+
+### Fixed
+
+- A private click mutes if its output device or channel pair becomes unavailable. Backing keeps a usable route and Stage displays the current fallback.
+- Opening Tones or Settings with a fresh Mac profile skips the Keychain lookup. Stored TONE3000 sessions on Mac and Windows use asynchronous secure storage.
+
 ## [0.9.54] — 2026-11-25
 
 ### Fixed
