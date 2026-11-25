@@ -4,6 +4,10 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.56] — 2026-11-25
+
+This beta republishes the v0.9.55 app with fresh installers and update metadata.
+
 ## [0.9.55] — 2026-11-25
 
 ### Added
