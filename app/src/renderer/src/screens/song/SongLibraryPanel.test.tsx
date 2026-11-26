@@ -44,11 +44,11 @@ it("offers to skip songs that are already in the library", async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Restore backup…" }));
   });
-  expect(screen.getByText(/Restore adds songs and playlists/)).toBeTruthy();
+  expect(screen.getByText("Review backup before restoring")).toBeTruthy();
   await act(async () => {
-    fireEvent.click(screen.getByText("Skip songs already in the library (2)"));
+    fireEvent.click(screen.getByText("Restore and reuse identical songs"));
   });
-  expect(api.restoreBackup).toHaveBeenCalledWith("skip");
+  expect(api.restoreBackup).toHaveBeenCalledWith("skip", false);
 });
 
 it("opens on the song list: no save card or backup card above it, and the save bar only for an unsaved song", async () => {

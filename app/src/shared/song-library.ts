@@ -202,8 +202,12 @@ export interface LibraryBackupPreview {
   fileName: string;
   songs: number;
   playlists: number;
-  /** Songs whose source audio is already in the library. */
+  /** Songs in the backup with an identical arrangement in the library. */
   duplicates: number;
+  variants?: { title: string; differences: string[] }[];
+  pedalSettings?: { current: string[]; incoming: string[] | null };
+  macros?: { code: string; label: string; commands: string[] }[];
+  toneNames?: string[];
 }
 /** "skip" leaves out songs already in the library; "copy" imports everything as new songs. */
 export type RestoreMode = "skip" | "copy";
@@ -218,7 +222,7 @@ export interface SongLibraryApi extends PedalSettingsApi {
   /** Opens the file picker and reads the chosen backup's index. Null when cancelled. The path stays in the main process. */
   inspectBackup(): Promise<LibraryBackupPreview | null>;
   /** Restores the backup chosen by `inspectBackup`. */
-  restoreBackup(mode: RestoreMode): Promise<LibraryTransferResult>;
+  restoreBackup(mode: RestoreMode, importPedals?: boolean): Promise<LibraryTransferResult>;
   onTransferProgress(callback: (progress: LibraryTransferProgress) => void): () => void;
   /** The size in bytes of the kept v1 copy (`v1-backup`), or null when there is none. */
   v1BackupBytes(): Promise<number | null>;

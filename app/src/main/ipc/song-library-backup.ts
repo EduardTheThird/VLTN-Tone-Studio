@@ -17,6 +17,7 @@ import {
   validateOrganisation,
   validatePlaylists,
   validateSong,
+  type LibraryBackupPreview,
   type LibraryTransferProgress,
   type SetBackupOptions,
   type StoredLibrary,
@@ -195,7 +196,7 @@ export async function exportBackup(root: string, index: DiskIndex, target: strin
           return true;
         },
       },
-      [MANIFEST, INDEX, ...[...files.keys()].filter((p) => p !== INDEX)],
+      [MANIFEST, INDEX, ...(pedals ? [PEDAL_SETTINGS_FILE] : []), ...[...files.keys()].filter((p) => p !== INDEX && p !== PEDAL_SETTINGS_FILE)],
     );
     await rename(temp, resolve(target));
     progress({ phase: "Backup complete", completed: files.size + 1, total: files.size + 1 });
@@ -357,37 +358,73 @@ export async function readBackup(file: string, stage: string, progress: Progress
     throw e;
   }
 }
-/**
- * Reads only the library index (the second entry), then stops. It lets the restore dialog count songs and duplicates without extracting audio.
- * The full checks still run in `readBackup` when the restore itself starts.
- */
-export async function readBackupIndex(file: string): Promise<DiskIndex> {
-  const input = createReadStream(file),
-    parser = new Parser({ strict: true, maxMetaEntrySize: MAX_METADATA, maxDecompressionRatio: 2048 });
-  return new Promise<DiskIndex>((resolve, reject) => {
+interface BackupIndexPreview {
+  index: DiskIndex;
+  hasPedals: boolean;
+  pedals?: PedalSettingsFile;
+  macros: NonNullable<LibraryBackupPreview["macros"]>;
+  toneNames: string[];
+}
+
+/** Reads only the manifest, index and any pedal settings before the audio. Older archives list their rig in the manifest. */
+export async function readBackupIndex(file: string): Promise<BackupIndexPreview> {
+  const input = createReadStream(file);
+  const parser = new Parser({ strict: true, maxMetaEntrySize: MAX_METADATA, maxDecompressionRatio: 2048 });
+  return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (error?: Error, index?: DiskIndex) => {
+    let manifest: Manifest | undefined;
+    let index: DiskIndex | undefined;
+    const pedalEntry = () => manifest?.files.find(({ path }) => path === PEDAL_SETTINGS_FILE);
+    const finish = (error?: Error, pedals?: PedalSettingsFile) => {
       if (settled) return;
       settled = true;
       input.destroy();
       parser.abort(error ?? invalid());
-      if (index) resolve(index);
-      else reject(error ?? invalid());
+      if (error || !index) {
+        reject(error ?? invalid());
+        return;
+      }
+      const dependencies = manifest?.portableSet?.dependencies;
+      const macros: BackupIndexPreview["macros"] = [];
+      const toneNames = new Set<string>();
+      for (const entry of Array.isArray(dependencies) ? dependencies : []) {
+        for (const macro of Array.isArray(entry?.macros) ? entry.macros : []) {
+          if (!macro || typeof macro.code !== "string" || !/^[A-Z][A-Z0-9_]{0,31}$/.test(macro.code) ||
+              typeof macro.label !== "string" || macro.label.length > 60 || !Array.isArray(macro.commands) ||
+              macro.commands.length > 64 || macro.commands.some((command) => typeof command !== "string" || command.length > 512)) continue;
+          macros.push({ code: macro.code, label: macro.label, commands: macro.commands });
+        }
+        for (const tone of Array.isArray(entry?.tones) ? entry.tones : []) {
+          if (tone && typeof tone.name === "string" && tone.name.length <= 200) toneNames.add(tone.name);
+        }
+      }
+      resolve({ index, hasPedals: !!pedalEntry(), pedals, macros, toneNames: [...toneNames] });
     };
     parser.on("error", (e) => finish(e instanceof Error ? e : invalid()));
     input.on("error", (e) => finish(e));
     parser.on("end", () => finish());
     parser.on("entry", (entry: ReadEntry) => {
-      if (entry.path !== INDEX) {
-        entry.resume();
-        return;
-      }
-      if (entry.type !== "File" || entry.size > MAX_METADATA) return finish();
+      const expectedPath = !manifest ? MANIFEST : !index ? INDEX : PEDAL_SETTINGS_FILE;
+      if (index && entry.path !== PEDAL_SETTINGS_FILE) return finish();
+      if (entry.path !== expectedPath || entry.type !== "File" || entry.size > MAX_METADATA) return finish(invalid());
       const chunks: Buffer[] = [];
       entry.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
       entry.on("end", () => {
         try {
-          finish(undefined, validateDiskIndex(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
+          const bytes = Buffer.concat(chunks);
+          const raw = bytes.toString("utf8");
+          if (entry.path === MANIFEST) {
+            const data = JSON.parse(raw) as Manifest;
+            if (!data || data.format !== "vltn-song-library" || ![1, 2, 3, 4, 5].includes(data.version) || !Array.isArray(data.files) || data.files.length > MAX_FILES || data.files.some((file) => !file || typeof file.path !== "string")) throw invalid();
+            manifest = data;
+          } else {
+            const expected = manifest?.files.find(({ path }) => path === entry.path);
+            if (!expected || expected.bytes !== bytes.length || createHash("sha256").update(bytes).digest("hex") !== expected.sha256) throw invalid();
+            if (entry.path === INDEX) {
+              index = validateDiskIndex(JSON.parse(raw));
+              if (!pedalEntry()) finish();
+            } else finish(undefined, parsePedalSettings(raw));
+          }
         } catch (e) {
           finish(e instanceof Error ? e : invalid());
         }

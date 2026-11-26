@@ -124,7 +124,7 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     return { ...result, fileName: basename(selection.filePath), filePath: selection.filePath };
   });
   // The renderer never names a path: the backup it inspected is the one it restores.
-  let chosenBackup: string | null = null;
+  let chosenBackup: { path: string; mtimeMs: number; size: number } | null = null;
   handle('song:library:inspectBackup', async () => {
     const selection = await showOpenDialog(getWindow(), {
       title: 'Restore song library',
@@ -134,16 +134,19 @@ export function registerSongIpc(getWindow: () => BrowserWindow | null): void {
     chosenBackup = null;
     if (selection.canceled || !selection.filePaths[0]) return null;
     const path = selection.filePaths[0];
+    const { mtimeMs, size } = await stat(path);
     const preview = await library.inspectBackup(path);
-    chosenBackup = path;
+    chosenBackup = { path, mtimeMs, size };
     return { ...preview, fileName: basename(path) };
   });
-  handle('song:library:restoreBackup', async (_e, mode: RestoreMode) => {
+  handle('song:library:restoreBackup', async (_e, mode: RestoreMode, importPedals?: boolean) => {
     if (!chosenBackup) throw new HostError('invalid', 'Choose a backup to restore first.');
     if (mode !== 'skip' && mode !== 'copy') throw new HostError('invalid', 'Unknown restore mode.');
-    const path = chosenBackup;
+    const { path, mtimeMs, size } = chosenBackup;
     chosenBackup = null;
-    const result = await library.restoreBackup(path, transferProgress, mode);
+    const info = await stat(path);
+    if (info.mtimeMs !== mtimeMs || info.size !== size) throw new HostError("invalid", "The backup changed. Select it again to review it.");
+    const result = await library.restoreBackup(path, transferProgress, mode, importPedals === true);
     return { ...result, fileName: basename(path) };
   });
   library.startSweeping();

@@ -6,10 +6,13 @@ import { saveIndicator } from "./SaveIndicator";
 import { useSongLibrary } from "@/song/library";
 import { isRunning, jobLine, useAnalysisJob, useJobClock } from "@/song/analysis/analysis-job";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { LibraryBackupPreview, RestoreMode } from "@shared/song-library";
 import { host } from "@/host";
 import { LibraryBrowser } from "./LibraryBrowser";
 import { QueuePanel } from "./QueuePanel";
 import { PlayHistory } from "./PlayHistory";
+import { planMacroRestore } from "@/song/performance/restore-macros";
+import { useMidiConfiguration } from "@/song/performance/midi-configuration";
 import { PlaylistsPanel } from "./PlaylistsPanel";
 
 const field = "rounded border border-seam bg-transparent p-2";
@@ -67,24 +70,7 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
           </Button>
         </div>
       )}
-      <Dialog open={!!library.backupPreview} onOpenChange={(open) => !open && void library.finishRestore(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Some songs are already in your library</DialogTitle>
-            <DialogDescription>
-              {library.backupPreview?.fileName} holds {library.backupPreview?.songs} songs and {library.backupPreview?.playlists} playlists.{" "}
-              {library.backupPreview?.duplicates} of the songs match audio you have already saved. Restore adds songs and playlists and keeps your existing
-              library. If some songs are already saved, you can skip them or import copies. MIDI ports, cue arming and account settings are not included.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => void library.finishRestore("copy")}>
-              Import as copies
-            </Button>
-            <Button onClick={() => void library.finishRestore("skip")}>Skip songs already in the library ({library.backupPreview?.duplicates})</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {library.backupPreview && <RestoreSetDialog preview={library.backupPreview} finish={library.finishRestore} />}
       {library.busy && <p role="status">{library.saveStep ? `Saving… ${library.saveStep}` : library.transfer || "Working with saved songs…"}</p>}
       {isRunning(job.phase) && (
         <div className="flex flex-wrap items-center gap-3">
@@ -114,5 +100,53 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function RestoreSetDialog({ preview, finish }: {
+  preview: LibraryBackupPreview;
+  finish: (mode: RestoreMode | null, pedals?: boolean, macros?: boolean) => Promise<void>;
+}) {
+  const [pedals, setPedals] = useState(false);
+  const [macros, setMacros] = useState(false);
+  const localMacros = useMidiConfiguration((state) => state.macros);
+  const plan = planMacroRestore(localMacros, preview.macros ?? []);
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) void finish(null); }}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Review backup before restoring</DialogTitle>
+          <DialogDescription>{preview.fileName} holds {preview.songs} songs and {preview.playlists} playlists. Existing songs are kept.</DialogDescription>
+        </DialogHeader>
+        {!!preview.duplicates && <p>{preview.duplicates} identical arrangements can be reused.</p>}
+        {!!preview.variants?.length && <div>
+          <p>These arrangements will be imported separately.</p>
+          <ul className="list-disc pl-5">
+            {preview.variants.map(({ title, differences }, index) => <li key={index}>{title} · {differences.join(", ")}</li>)}
+          </ul>
+        </div>}
+        {preview.pedalSettings && <fieldset className="space-y-1">
+          <legend>Pedal settings</legend>
+          <p>Current rig: {preview.pedalSettings.current.join(", ") || "No saved pedals"}</p>
+          <p>Backup rig: {preview.pedalSettings.incoming?.join(", ") || (preview.pedalSettings.incoming ? "No named pedals" : "Settings in an older archive")}</p>
+          <label className="flex gap-2"><input type="checkbox" checked={pedals} onChange={(e) => setPedals(e.target.checked)} /> Add missing pedal settings</label>
+          <p className="text-sm text-silkscreen-3">Your current pedal channels, assignments and named presets take precedence.</p>
+        </fieldset>}
+        {!!plan.conflicts.length && <p>Keeping local definitions for {plan.conflicts.map((code) => "$" + code).join(", ")}.</p>}
+        {!!plan.errors.length && <p role="alert">Macro import needs attention. {plan.errors[0]}</p>}
+        {!!plan.added.length && <label className="flex gap-2">
+          <input type="checkbox" checked={macros} disabled={!!plan.errors.length} onChange={(e) => setMacros(e.target.checked)} />
+          Import missing MIDI macros ({plan.added.map(({ code }) => "$" + code).join(", ")})
+        </label>}
+        {!!preview.toneNames?.length && <p>To regenerate parts, check these tone files on this computer: {preview.toneNames.join(", ")}.</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => void finish(null)}>Cancel</Button>
+          {!!preview.duplicates && <Button variant="outline" onClick={() => void finish("copy", pedals, macros)}>Import all as copies</Button>}
+          <Button onClick={() => void finish(preview.duplicates ? "skip" : "copy", pedals, macros)}>
+            {preview.duplicates ? "Restore and reuse identical songs" : "Restore backup"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

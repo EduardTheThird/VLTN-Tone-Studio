@@ -333,7 +333,7 @@ it("backs up the checked pedal file and restores its channels, assignments and p
   expect(manifest.version).toBe(5);
   expect(manifest.files).toEqual(expect.arrayContaining([expect.objectContaining({ path: "pedals.json" })]));
   const restored = new SongLibraryStore(join(temp, "restored"));
-  expect(await restored.restoreBackup(archive)).toEqual({ songs: 0, playlists: 0 });
+  expect(await restored.restoreBackup(archive, undefined, "copy", true)).toEqual({ songs: 0, playlists: 0 });
   expect(await restored.readPedalSettings()).toEqual(data);
 });
 
@@ -389,7 +389,7 @@ it("exports one set with working audio, chart, repeated entries and dependency i
   expect(manifest.portableSet).toMatchObject({ name: "Tour set", dependencies: [{ tones: [tone], macros: [macro] }] });
   const restoredRoot = join(temp, "restored");
   const restored = new SongLibraryStore(restoredRoot);
-  expect(await restored.restoreBackup(archive)).toEqual({ songs: 1, playlists: 1 });
+  expect(await restored.restoreBackup(archive, undefined, "copy", true)).toEqual({ songs: 1, playlists: 1 });
   const index = await restored.index();
   const id = index.songs[0].id;
   expect(index.playlists[0]).toMatchObject({ name: "Tour set", songs: [id, id], sets: sections });
@@ -397,4 +397,26 @@ it("exports one set with working audio, chart, repeated entries and dependency i
   expect(Buffer.from(await readSaved(restoredRoot, id, "chart.pdf"))).toEqual(chart);
   expect(await restored.readPedalSettings()).toMatchObject({ owned: ["valeton-gp180"] });
   await expectAudio(restoredRoot, id, first);
+});
+
+it("previews a different arrangement of the same audio and keeps the destination rig by default", async () => {
+  const fixture = await flacSong();
+  await save(store, fixture);
+  await store.updateSettings(fixture.song.id, { "": "[00:00] [G]", ":options": '{"mix":{"bass":0.5}}' });
+  await store.savePedalSettings({ ...emptyPedalSettings(), owned: ["boss-sy200"], channels: { "boss-sy200": 7, "boss-rc10r": 3 } });
+  await store.exportBackup(archive);
+  const target = new SongLibraryStore(join(temp, "target"));
+  await save(target, fixture);
+  const local = { ...emptyPedalSettings(), owned: ["boss-sy200"], channels: { "boss-sy200": 4 } };
+  await target.savePedalSettings(local);
+  expect(await target.inspectBackup(archive)).toMatchObject({
+    duplicates: 0,
+    variants: [{ title: fixture.song.title, differences: ["Chart", "Mix or performance settings"] }],
+    pedalSettings: { current: ["boss-sy200"], incoming: ["boss-rc10r", "boss-sy200"] },
+  });
+  expect(await target.restoreBackup(archive, undefined, "skip")).toMatchObject({ songs: 1, skipped: 0 });
+  expect(await target.readPedalSettings()).toEqual(local);
+  expect((await target.index()).songs).toHaveLength(2);
+  await target.restoreBackup(archive, undefined, "skip", true);
+  expect(await target.readPedalSettings()).toMatchObject({ channels: { "boss-sy200": 4, "boss-rc10r": 3 } });
 });

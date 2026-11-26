@@ -151,6 +151,49 @@ function keepSavedDetails(saved: LibrarySong | undefined, song: LibrarySong, now
   return next;
 }
 
+function arrangementParts(song: LibrarySong) {
+  const settings = Object.entries(song.settings).sort(([a], [b]) => a.localeCompare(b));
+  const tracks = song.audio.map(({ bus, gain, pan, muteGroups, ...audio }) => ({
+    track: trackKey(audio), sha256: audio.sha256, bytes: audio.bytes, channels: audio.channels, frames: audio.frames, rate: audio.sampleRate,
+    bus, gain, pan, muteGroups,
+  }));
+  return {
+    chart: JSON.stringify([song.chart?.sha256, song.chart?.annotations?.sha256, song.settings[""]]),
+    mix: JSON.stringify(settings.filter(([key]) => key !== "")),
+    tracks: JSON.stringify(tracks),
+  };
+}
+
+function arrangementKey(song: LibrarySong): string | undefined {
+  const original = contentHash(song);
+  return original && JSON.stringify([original, song.title, song.artist, arrangementParts(song)]);
+}
+
+function rigIds(settings?: PedalSettingsFile): string[] {
+  return [...new Set([...(settings?.owned ?? []), ...Object.keys(settings?.channels ?? {}), ...Object.keys(settings?.presets ?? {}),
+    ...(settings?.profiles.map(({ id }) => id) ?? [])])].sort();
+}
+
+/** Import pedal metadata without replacing any locally configured field or preset name. */
+function mergePedals(local: PedalSettingsFile | undefined, incoming: PedalSettingsFile): PedalSettingsFile {
+  if (!local) return incoming;
+  const presets = { ...local.presets };
+  for (const [id, saved] of Object.entries(incoming.presets)) {
+    const existing = presets[id] ?? [];
+    const slots = new Set(existing.map(({ slot }) => slot));
+    presets[id] = [...existing, ...saved.filter(({ slot }) => !slots.has(slot))];
+  }
+  return {
+    version: 1,
+    owned: [...new Set([...local.owned, ...incoming.owned])],
+    profiles: [...local.profiles, ...incoming.profiles.filter(({ id }) => !local.profiles.some((profile) => profile.id === id))],
+    channels: { ...incoming.channels, ...local.channels },
+    assignments: { ...incoming.assignments, ...local.assignments },
+    tempoFollow: { ...incoming.tempoFollow, ...local.tempoFollow },
+    presets,
+  };
+}
+
 /** The folders in `ids` and every folder above them, so a folder kept on its own still has its parents. */
 function withAncestors(folders: readonly LibraryFolder[], ids: readonly string[]): Set<string> {
   const parents = new Map(folders.map((folder) => [folder.id, folder.parentId]));
@@ -562,12 +605,40 @@ export class SongLibraryStore {
       return { songs: songs.length, playlists: 1 };
     });
   }
-  /** Reads just the library index of a backup, so the user can choose how to restore before any audio is extracted. */
   async inspectBackup(path: string): Promise<Omit<LibraryBackupPreview, "fileName">> {
-    const backup = await readBackupIndex(path),
-      known = new Set((await this.serial(() => this.read())).songs.map(contentHash).filter(Boolean));
-    const duplicates = backup.songs.filter((song) => known.has(contentHash(song))).length;
-    return { songs: backup.songs.length, playlists: backup.playlists.length, duplicates };
+    const { index: backup, hasPedals, pedals, macros, toneNames } = await readBackupIndex(path);
+    const { current, localPedals } = await this.serial(async () => ({
+      current: await this.read(),
+      localPedals: hasPedals ? (await readPedalSettingsFile(this.root))?.data : undefined,
+    }));
+    const known = new Set(current.songs.map(arrangementKey).filter(Boolean));
+    const variants: NonNullable<LibraryBackupPreview["variants"]> = [];
+    let duplicates = 0;
+    for (const song of backup.songs) {
+      if (known.has(arrangementKey(song))) {
+        duplicates++;
+        continue;
+      }
+      const original = contentHash(song);
+      const existing = original ? current.songs.find((match) => contentHash(match) === original) : undefined;
+      if (!existing) continue;
+      const ours = arrangementParts(existing);
+      const theirs = arrangementParts(song);
+      const differences = [
+        ...(ours.chart !== theirs.chart ? ["Chart"] : []),
+        ...(ours.mix !== theirs.mix ? ["Mix or performance settings"] : []),
+        ...(ours.tracks !== theirs.tracks ? ["Tracks or routing"] : []),
+        ...(ours.chart === theirs.chart && ours.mix === theirs.mix && ours.tracks === theirs.tracks ? ["Title or artist"] : []),
+      ];
+      variants.push({ title: song.title, differences });
+    }
+    return {
+      songs: backup.songs.length, playlists: backup.playlists.length, duplicates,
+      ...(variants.length ? { variants } : {}),
+      ...(hasPedals ? { pedalSettings: { current: rigIds(localPedals), incoming: pedals ? rigIds(pedals) : null } } : {}),
+      ...(macros.length ? { macros } : {}),
+      ...(toneNames.length ? { toneNames } : {}),
+    };
   }
   /**
    * "copy" gives every song and playlist in the backup a new ID. "skip" leaves out songs whose source audio is already in the library, points
@@ -577,8 +648,9 @@ export class SongLibraryStore {
     path: string,
     progress?: (p: LibraryTransferProgress) => void,
     mode: RestoreMode = "copy",
+    importPedals = false,
   ): Promise<{ songs: number; playlists: number; skipped?: number }> {
-    const result = await this.restoreSongs(path, progress, mode);
+    const result = await this.restoreSongs(path, progress, mode, importPedals);
     // Songs a v1 backup brought back are converted now, with progress, so they open without waiting for a restart. A song that fails
     // stays as it was and is tried again at the next start; the restore itself has succeeded.
     await this.migrate(progress).catch((e) => console.error("Song library conversion failed", e));
@@ -588,6 +660,7 @@ export class SongLibraryStore {
     path: string,
     progress: ((p: LibraryTransferProgress) => void) | undefined,
     mode: RestoreMode,
+    importPedals: boolean,
   ): Promise<{ songs: number; playlists: number; skipped?: number }> {
     return this.serial(async () => {
       const stage = join(this.root, ".restore-" + randomUUID()),
@@ -596,11 +669,14 @@ export class SongLibraryStore {
         const backup = await readBackup(path, stage, progress),
           current = await this.read();
         const existing = new Map<string, string>();
-        if (mode === "skip") for (const song of current.songs) if (contentHash(song)) existing.set(contentHash(song)!, song.id);
+        if (mode === "skip") for (const song of current.songs) {
+          const key = arrangementKey(song);
+          if (key) existing.set(key, song.id);
+        }
         const ids = new Map<string, string>(),
           fresh: LibrarySong[] = [];
         for (const song of backup.songs) {
-          const same = existing.get(contentHash(song) ?? "");
+          const same = existing.get(arrangementKey(song) ?? "");
           if (same) ids.set(song.id, same);
           else {
             ids.set(song.id, randomUUID());
@@ -635,7 +711,7 @@ export class SongLibraryStore {
           ...(playlist.smart ? { smart: remapFolderRules(playlist.smart, folderIds) } : {}),
         }));
         if (mode === "skip") {
-          const key = (p: Playlist) => JSON.stringify([p.name, p.songs]);
+          const key = (p: Playlist) => JSON.stringify([p.name, p.songs, p.sets, p.overrides, p.smart]);
           const have = new Set(current.playlists.map(key));
           playlists = playlists.filter((p) => !have.has(key(p)));
         }
@@ -650,10 +726,10 @@ export class SongLibraryStore {
         };
         validateOrganisation(next);
         validatePlaylists(next.playlists, next.songs);
-        const pedals = await readPedalSettingsFile(stage);
+        const pedals = importPedals ? await readPedalSettingsFile(stage) : null;
         const pedalPath = join(this.root, PEDAL_SETTINGS_FILE);
         const previousPedals = pedals ? await readPedalSettingsFile(this.root) : null;
-        if (pedals) await writeJsonAtomic(pedalPath, pedals.data);
+        if (pedals) await writeJsonAtomic(pedalPath, mergePedals(previousPedals?.data, pedals.data));
         try {
           await this.publish(next);
         } catch (error) {

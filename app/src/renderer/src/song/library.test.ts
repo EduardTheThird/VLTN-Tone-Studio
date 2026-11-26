@@ -400,12 +400,15 @@ it("refreshes restored copies without loading a song or arming MIDI, and reports
   api.inspectBackup.mockResolvedValue({ fileName: "demo.tar.gz", songs: 1, playlists: 1, duplicates: 0 });
   api.restoreBackup.mockResolvedValueOnce({ songs: 1, playlists: 1, fileName: "demo.tar.gz" });
   await useSongLibrary.getState().restoreBackup();
-  expect(api.restoreBackup).toHaveBeenCalledWith("copy");
+  expect(api.restoreBackup).not.toHaveBeenCalled();
+  await useSongLibrary.getState().finishRestore("copy");
+  expect(api.restoreBackup).toHaveBeenCalledWith("copy", false);
   expect(useSongLibrary.getState()).toMatchObject({ index: { songs: [saved] }, queue: [], midiSession: null, playlistPlaying: false });
   expect(useSong.getState().source).toBeNull();
   const index = useSongLibrary.getState().index;
   api.restoreBackup.mockRejectedValueOnce(new Error("Checksum mismatch"));
   await useSongLibrary.getState().restoreBackup();
+  await useSongLibrary.getState().finishRestore("copy");
   expect(useSongLibrary.getState().index).toBe(index);
   expect(useSongLibrary.getState()).toMatchObject({ error: "Checksum mismatch", busy: false, transfer: "" });
 });
@@ -435,8 +438,8 @@ it("asks before restoring when the backup holds songs that are already saved, an
   expect(api.restoreBackup).not.toHaveBeenCalled();
   api.restoreBackup.mockResolvedValueOnce({ songs: 1, playlists: 0, skipped: 2, fileName: "demo.tar.gz" });
   await useSongLibrary.getState().finishRestore("skip");
-  expect(api.restoreBackup).toHaveBeenCalledWith("skip");
-  expect(useSongLibrary.getState()).toMatchObject({ backupPreview: null, notice: expect.stringContaining("Skipped 2 songs") });
+  expect(api.restoreBackup).toHaveBeenCalledWith("skip", false);
+  expect(useSongLibrary.getState()).toMatchObject({ backupPreview: null, notice: expect.stringContaining("Reused 2 identical arrangements") });
 });
 it("cancelling the duplicate prompt restores nothing", async () => {
   api.inspectBackup.mockResolvedValue({ fileName: "demo.tar.gz", songs: 1, playlists: 0, duplicates: 1 });

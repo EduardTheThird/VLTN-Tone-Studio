@@ -1,6 +1,7 @@
 import { evaluateSmart } from "@shared/library-filter";
 import { toneFiles } from "./band/tone-check";
 import { savedBand } from "./performance/tone-preflight";
+import { planMacroRestore } from "./performance/restore-macros";
 import { useMidiConfiguration } from "./performance/midi-configuration";
 import { usePedalLibrary } from "./performance/pedal-library";
 import { clockSource, usableClockGrid } from "./performance/beat-clock";
@@ -132,7 +133,7 @@ interface LibraryState {
   /** Picks a backup. Restores it at once when nothing in it is already saved; otherwise sets `backupPreview` for the dialog. */
   restoreBackup(): Promise<void>;
   /** Answers the dialog: restore with the chosen mode, or null to cancel. */
-  finishRestore(mode: RestoreMode | null): Promise<void>;
+  finishRestore(mode: RestoreMode | null, importPedals?: boolean, importMacros?: boolean): Promise<void>;
   queue: string[];
   /** Per-entry overrides of the queue, aligned with `queue`: the autoplay and end behaviour each entry asks for. */
   queueOverrides: (EntryOverride | null)[];
@@ -538,14 +539,26 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
     playlistWrites = write;
     return write;
   };
-  const restore = async (mode: RestoreMode) => {
+  const restore = async (mode: RestoreMode, importPedals: boolean, archivedMacros: LibraryBackupPreview["macros"]) => {
     const service = api();
     set({ transfer: "Checking library backup…" });
     const unsubscribe = service.onTransferProgress((p) => set({ transfer: `${p.phase} · ${p.completed} / ${p.total} files` }));
     try {
       await usePedalLibrary.getState().flush();
-      const result = await service.restoreBackup(mode);
-      await usePedalLibrary.getState().load(true);
+      const result = await service.restoreBackup(mode, importPedals);
+      if (importPedals) await usePedalLibrary.getState().load(true);
+      const midi = useMidiConfiguration.getState();
+      const macros = planMacroRestore(midi.macros, archivedMacros ?? []);
+      let macroNotice = "";
+      if (macros.errors.length) macroNotice = " Review the macro definitions before importing them.";
+      else if (macros.added.length) {
+        try {
+          midi.update({ macros: macros.macros });
+          macroNotice = ` Imported ${macros.added.length} MIDI macros.`;
+        } catch {
+          macroNotice = " Could not save the MIDI macros.";
+        }
+      }
       set({
         index: await service.index(),
         queue: [],
@@ -553,9 +566,9 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
         playlistPlaying: false,
         midiSession: null,
         notice:
-          mode === "skip"
-            ? `Restored ${result.songs} songs and ${result.playlists} playlists. Skipped ${result.skipped ?? 0} songs already in the library.`
-            : `Restored ${result.songs} songs and ${result.playlists} playlists as new copies. Existing songs were kept.`,
+          (mode === "skip"
+            ? `Restored ${result.songs} songs and ${result.playlists} playlists. Reused ${result.skipped ?? 0} identical arrangements.`
+            : `Restored ${result.songs} songs and ${result.playlists} playlists as new copies.`) + macroNotice,
       });
       prefetchNext();
     } finally {
@@ -970,20 +983,18 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
           set({ notice: "Backup restore cancelled." });
           return;
         }
-        if (preview.duplicates) {
-          set({ backupPreview: preview });
-          return;
-        }
-        await restore("copy");
+        set({ backupPreview: preview });
       }),
-    finishRestore: (mode) =>
+    finishRestore: (mode, importPedals = false, importMacros = false) =>
       run(async () => {
+        const preview = get().backupPreview;
         set({ backupPreview: null });
         if (!mode) {
           set({ notice: "Backup restore cancelled." });
           return;
         }
-        await restore(mode);
+        if (!preview) return;
+        await restore(mode, importPedals, importMacros ? preview.macros : undefined);
       }),
     holdChain: (chainHold) => set({ chainHold }),
     playNextSong: (id) => {

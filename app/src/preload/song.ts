@@ -8,7 +8,7 @@ export const songApi: SongHostApi = {
     preflight: (ids, verify) => invoke('song:library:preflight', ids, verify),
     exportBackup: set => invoke('song:library:exportBackup', set),
     inspectBackup: () => invoke('song:library:inspectBackup'),
-    restoreBackup: mode => invoke('song:library:restoreBackup', mode),
+    restoreBackup: (mode, importPedals) => invoke('song:library:restoreBackup', mode, importPedals),
     onTransferProgress(callback) {
       const listener=(_event:IpcRendererEvent,progress:import('@shared/song-library').LibraryTransferProgress)=>callback(progress);
       ipcRenderer.on('song:library:progress',listener);
