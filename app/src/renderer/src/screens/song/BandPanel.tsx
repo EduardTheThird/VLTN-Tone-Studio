@@ -61,8 +61,9 @@ import { renderPartChain } from "@/song/band/bass-chain";
 import { bassOf, harmonyInput, harmonyOf } from "@/song/analysis/analysis-audio";
 import { startChordDetection } from "@/song/band/chord-detect-client";
 import { barBeats } from "@/song/band/timing";
+import { auditionMix, transitionStart } from "@/song/band/audition";
 import { findStyle, type StyleId } from "@/song/band/styles";
-import { sectionPreviewBars, type PreviewLength } from "@/song/band/band-job";
+import { previewWindow, sectionPreviewBars, type PreviewLength } from "@/song/band/band-job";
 import type { PcmAudio } from "@/song/types";
 import { parseChart, type Cue } from "@/song/performance/chart";
 import type { Chord } from "@/song/performance/chords";
@@ -95,7 +96,7 @@ import {
 } from "./band-panel-helpers";
 import { BAND_TAB_LABELS, BAND_TABS, isBandTab, useBandPanel } from "./band-panel-state";
 import type { BandSectionRow } from "./BandSections";
-import { BandFooter, type PreviewChoice } from "./BandFooter";
+import { BandFooter, PREVIEW_VERSIONS, type PreviewChoice, type PreviewVersion } from "./BandFooter";
 import { keptOriginals } from "@/song/band/fade-check";
 import { BandTabFeel } from "./BandTabFeel";
 import { BandTabNotes } from "./BandTabNotes";
@@ -211,6 +212,8 @@ function BandBody({
   // The section menu's choice: a row index as text, "playhead", or null for the selected row (the first when none is selected).
   const [previewAt, setPreviewAt] = useState<string | null>(null);
   const [previewLength, setPreviewLength] = useState<PreviewChoice>("whole");
+  const [previewVersion, setPreviewVersion] = useState<PreviewVersion>("proposed");
+  const [acrossTransition, setAcrossTransition] = useState(false);
   // True after a Generate that went through, until the next action. The footer then offers Close and Play from.
   const [done, setDone] = useState(false);
   // True while Find the beat runs, so its progress stays in the beat grid section and the footer shows the rest.
@@ -797,7 +800,15 @@ function BandBody({
    * Renders `bars` bars from `from` with the band `using`, which is the saved settings or a choice not saved yet, and plays them. Nothing is
    * saved by a preview.
    */
-  const previewWith = async (from: number, bars: number, using: BandSettings, label: string) => {
+  const playPreview = (audio: PcmAudio, label: string) => {
+    stopPreview.current = playOnce(audio, () => {
+      stopPreview.current = null;
+      setPreviewing(null);
+    });
+    setPreviewing(label);
+  };
+
+  const previewWith = async (from: number, bars: number, using: BandSettings, label: string, end?: number) => {
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before previewing."]);
     if (!grid) return setNotices(["Find the beat first, so the preview has a grid to follow."]);
@@ -823,39 +834,40 @@ function BandBody({
         ...keysFromOptions(readOptions<Record<string, unknown>>(songKey, {}), libraryKey),
       });
       const rendering: BandJob = renderPreview(request, from, bars);
-      job.current = rendering;
+      const controller = new AbortController();
+      job.current = { cancel: () => { controller.abort(); rendering.cancel(); } };
       const result = await rendering.done;
       // The preview hears the bass tone too, so it matches what Generate would save.
       let bass = result.bass;
       let drums = result.drums;
       let keys = result.keys;
       const toneNotices: string[] = [];
-      if (drums && settings.drumTone.kind === "chain") {
+      if (drums && using.drumTone.kind === "chain") {
         setWork(DRUM_TONE_TEXT);
-        const toned = await applyPartTone(drums, settings.drumTone, host.tones, renderPartChain, "drums");
+        const toned = await applyPartTone(drums, using.drumTone, host.tones, renderPartChain, "drums");
         drums = toned.audio;
         if (toned.notice) toneNotices.push(toned.notice);
       }
-      if (bass && settings.bassTone.kind !== "clean") {
+      if (bass && using.bassTone.kind !== "clean") {
         setWork(BASS_TONE_TEXT);
-        const toned = await applyPartTone(bass, settings.bassTone, host.tones, renderPartChain, "bass");
+        const toned = await applyPartTone(bass, using.bassTone, host.tones, renderPartChain, "bass");
         bass = toned.audio;
         if (toned.notice) toneNotices.push(toned.notice);
       }
-      if (toneNotices.length) setNotices(toneNotices);
       if (keys && using.keysTone?.kind === "chain") {
         setWork("Rendering the keys tone…");
         const toned = await applyPartTone(keys, using.keysTone, host.tones, renderPartChain, "keys");
         keys = toned.audio;
         if (toned.notice) toneNotices.push(toned.notice);
       }
-      const mixed = previewMix(current.audio, from, { ...result, drums, bass, keys });
-      setWork(null);
-      stopPreview.current = playOnce(mixed, () => {
-        stopPreview.current = null;
-        setPreviewing(null);
-      });
-      setPreviewing(label);
+      controller.signal.throwIfAborted();
+      if (!active.current || playingNow.current || useSong.getState().source !== current) return;
+      if (toneNotices.length) setNotices(toneNotices);
+      const parts = { ...result, drums, bass, keys };
+      const mixed = end === undefined
+        ? previewMix(current.audio, from, parts)
+        : auditionMix(current.audio, from, end, originalPreviewParts, parts, 0);
+      playPreview(mixed, label);
     });
   };
 
@@ -867,15 +879,39 @@ function BandBody({
     end: plan.end,
     mode: "continue",
   }));
-  const target = previewAt ?? String(selected ?? 0);
+  const target = acrossTransition ? String(selected ?? 0) : previewAt ?? String(selected ?? 0);
   const targetRow = target === PLAYHEAD ? null : (rows[Number(target)] ?? rows[0] ?? null);
-  const preview = () => {
+  const originalPreviewParts = { drums: stems?.drums, bass: stems?.bass, keys: stems?.piano };
+  const savedPreviewParts = {
+    drums: stems?.[partKeys.drums?.generated ?? ""],
+    bass: stems?.[partKeys.bass?.generated ?? ""],
+    keys: stems?.[partKeys.keys?.generated ?? ""],
+    synth: stems?.[partKeys.synth?.generated ?? ""],
+  };
+  const hasSavedPreview = Object.values(savedPreviewParts).some(Boolean);
+  const version = previewVersion === "saved" && !hasSavedPreview ? "proposed" : previewVersion;
+  const preview = async () => {
+    if (!grid || !source) return;
     const index = targetRow ? rows.indexOf(targetRow) : -1;
     const length: PreviewLength = previewLength === "whole" ? "whole" : previewLength === "4" ? 4 : 8;
-    if (!grid) return;
-    const bars = index >= 0 ? sectionPreviewBars(grid, rowSections, index, length, songEnd) : length === "whole" ? PLAYHEAD_BARS : length;
-    const where = index >= 0 ? rows[index].name : "the playhead";
-    return previewWith(index >= 0 ? rows[index].plan.start : getPosition(), bars, settings, `Previewing ${where} (${bars} ${bars === 1 ? "bar" : "bars"})…`);
+    let bars = index >= 0 ? sectionPreviewBars(grid, rowSections, index, length, songEnd) : length === "whole" ? PLAYHEAD_BARS : length;
+    let from = index >= 0 ? rows[index].plan.start : getPosition();
+    let where = index >= 0 ? rows[index].name : "playhead";
+    if (acrossTransition) {
+      const next = rows.find((row) => row.plan.start > from + 1e-6);
+      if (!next) return setNotices(["Choose an earlier section to preview a transition."]);
+      from = transitionStart(grid, next.plan.start);
+      bars = 4;
+      where = `into ${next.name}`;
+    }
+    const end = Math.min(songEnd, previewWindow(grid, from, bars).end);
+    if (end <= from) return setNotices(["Move the playhead earlier to preview this song."]);
+    const label = `${PREVIEW_VERSIONS[version]} · ${where}`;
+    if (version === "proposed") return previewWith(from, bars, settings, label, end);
+    setNotices([]);
+    await attempt("Preview cancelled.", async () => {
+      playPreview(auditionMix(source.audio, from, end, originalPreviewParts, version === "saved" ? savedPreviewParts : undefined), label);
+    });
   };
   /** Plays about two bars around a bass note being edited, with the choice in place. The choice is not saved. */
   const listen = (from: number, overrides: BassOverride[]) => previewWith(from, 2, { ...settings, bassOverrides: overrides }, "Previewing the bass notes…");
@@ -1204,6 +1240,11 @@ function BandBody({
         }}
         previewLength={previewLength}
         fromPlayhead={target === PLAYHEAD}
+        acrossTransition={acrossTransition}
+        previewVersion={version}
+        hasSavedPreview={hasSavedPreview}
+        onAcrossTransition={setAcrossTransition}
+        onPreviewVersion={setPreviewVersion}
         onPreviewLength={setPreviewLength}
         onFromPlayhead={(on) => setPreviewAt(on ? PLAYHEAD : null)}
         onCancel={cancelWork}

@@ -14,6 +14,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { BandNotice } from "./band-status";
 import { NO_SONG_TEXT, PLAYING_TEXT } from "./band-panel-helpers";
 
+export const PREVIEW_VERSIONS = { original: "Original recording", saved: "Saved arrangement", proposed: "Proposed arrangement" } as const;
+export type PreviewVersion = keyof typeof PREVIEW_VERSIONS;
+
 export type PreviewChoice = "whole" | "4" | "8";
 const PREVIEW_LENGTHS: { value: PreviewChoice; label: string }[] = [
   { value: "whole", label: "Whole section" },
@@ -44,6 +47,11 @@ export interface BandFooterProps {
   rhythm: { enabled: boolean; title: string };
   previewLength: PreviewChoice;
   fromPlayhead: boolean;
+  acrossTransition: boolean;
+  previewVersion: PreviewVersion;
+  hasSavedPreview: boolean;
+  onAcrossTransition(on: boolean): void;
+  onPreviewVersion(version: PreviewVersion): void;
   onPreviewLength(length: PreviewChoice): void;
   onFromPlayhead(on: boolean): void;
   onCancel(): void;
@@ -163,16 +171,27 @@ export function BandFooter(props: BandFooterProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuRadioGroup value={props.previewLength} onValueChange={(value) => props.onPreviewLength(value as PreviewChoice)}>
-                {PREVIEW_LENGTHS.map(({ value, label }) => (
-                  <DropdownMenuRadioItem key={value} value={value}>
+              <DropdownMenuRadioGroup value={props.previewVersion} onValueChange={(value) => props.onPreviewVersion(value as PreviewVersion)}>
+                {Object.entries(PREVIEW_VERSIONS).map(([value, label]) => (
+                  <DropdownMenuRadioItem key={value} value={value} disabled={value === "saved" && !props.hasSavedPreview}>
                     {label}
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem checked={props.fromPlayhead} onCheckedChange={props.onFromPlayhead}>
+              <DropdownMenuRadioGroup value={props.previewLength} onValueChange={(value) => props.onPreviewLength(value as PreviewChoice)}>
+                {PREVIEW_LENGTHS.map(({ value, label }) => (
+                  <DropdownMenuRadioItem key={value} value={value} disabled={props.acrossTransition}>
+                    {label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem checked={props.fromPlayhead} disabled={props.acrossTransition} onCheckedChange={props.onFromPlayhead}>
                 From the playhead
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={props.acrossTransition} onCheckedChange={props.onAcrossTransition}>
+                Across next section transition
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>

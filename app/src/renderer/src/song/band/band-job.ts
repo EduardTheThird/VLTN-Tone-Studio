@@ -23,7 +23,7 @@ import type { SampleSet } from "./samples";
 import { keepLockedNotes } from "./section-lock";
 import { generateSynth } from "./synth-notes";
 import { renderSynth } from "./synth";
-import { barBeats, beatSpan } from "./timing";
+import { barBeats, barStarts, beatSpan } from "./timing";
 import { variantPlans, variantNotes, type RenderedVariant } from "./live-variants";
 import { EXIT_TAIL, WRAP_TAIL, vampBars, withoutVamps, type VampBar } from "./vamp";
 import type { PcmAudio } from "../types";
@@ -364,7 +364,12 @@ export function previewWindow(grid: BeatGrid, fromTime: number, bars: number): P
   if (beats.length === 0) return { start: fromTime, end: fromTime };
   let first = beats.findIndex((time) => time >= fromTime);
   if (first < 0) first = beats.length;
-  const endBeat = first + bars * barBeats(grid);
+  const starts = barStarts(grid);
+  const startBar = starts.indexOf(first);
+  const lastBar = starts.length - 1;
+  const endBar = startBar + bars;
+  const endBeat = startBar < 0 ? first + bars * barBeats(grid)
+    : starts[endBar] ?? starts[lastBar] + (endBar - lastBar) * barBeats(grid);
   if (endBeat < beats.length) return { start: fromTime, end: beats[endBeat] };
   const last = beats.length - 1;
   return { start: fromTime, end: beats[last] + (endBeat - last) * beatSpan(beats, last) };

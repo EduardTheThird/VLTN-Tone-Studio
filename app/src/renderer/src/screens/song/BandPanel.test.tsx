@@ -1395,6 +1395,20 @@ describe("Band footer and preview", () => {
     expect(mocks.renderPreview.mock.calls[0].slice(1)).toEqual([1.5, 4]);
   });
 
+  it("offers available takes and previews across the selected transition", async () => {
+    stored({ beatGrid: grid });
+    mocks.renderPreview.mockReturnValue({ done: new Promise(() => undefined), cancel: vi.fn() });
+    renderPanel({ sections: SECTIONS });
+    const options = screen.getByRole("button", { name: "Preview options" });
+    fireEvent.keyDown(options, { key: "Enter" });
+    expect(screen.getByRole("menuitemradio", { name: "Saved arrangement" }).hasAttribute("aria-disabled")).toBe(true);
+    expect(screen.getByRole("menuitemradio", { name: "Original recording" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Across next section transition" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(mocks.renderPreview).toHaveBeenCalledTimes(1));
+    expect(mocks.renderPreview.mock.calls[0].slice(1)).toEqual([0, 4]);
+  });
+
   it("shows a problem as a line in the footer, and information behind a notes button", async () => {
     stored({ beatGrid: grid, bandOutOfDate: true });
     const silent = { sampleRate: 44100, channels: [new Float32Array(44100 * SECONDS)] };
