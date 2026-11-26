@@ -54,7 +54,7 @@ Bugs and ideas are welcome in [Issues](https://github.com/EduardTheThird/VLTN-To
 <br>
 <br>
 
-[Download](#download-v0954) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Library](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
+[Download](#download-v0956) &nbsp;·&nbsp; [Rig](#every-knob-live) &nbsp;·&nbsp; [Presets](#every-preset-one-view) &nbsp;·&nbsp; [Tones](#tones-from-tone3000) &nbsp;·&nbsp; [Song](#from-a-song-to-a-tone) &nbsp;·&nbsp; [GP-200 family](#the-gp-200-family) &nbsp;·&nbsp; [Devices](#devices) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Troubleshooting](#when-the-pedal-doesnt-connect) &nbsp;·&nbsp; [Build](#build-it-yourself) &nbsp;·&nbsp; [License](#license)
 
 <br>
 
@@ -292,7 +292,7 @@ The NAM captures you downloaded from TONE3000 are ranked against the song's guit
 ## Perform a set.
 
 Save a song with its stems, lyrics, chords, sections and MIDI cues, line songs up in a playlist and play the whole set from one screen.<br>
-The next song loads while the current one plays, so songs join without a gap, or with a crossfade you choose. Split a playlist into sets, let a smart playlist pick songs by rules, and check the whole set before the gig.
+The next song loads while the current one plays. When it is ready in time, songs join without a gap or with a crossfade you choose. Split a playlist into sets, let a smart playlist pick songs by rules, and check the whole set before the gig.
 
 <br>
 
@@ -312,8 +312,8 @@ A transport bar stays in view on every Performance tab, and a full-width timelin
 <br>
 <br>
 
-New audio saves itself, and the header always says whether the song is saved.<br>
-Songs are stored as lossless FLAC, a save never touches the old copy until the new one is on disk, and a deleted song goes to the Trash. The library, its playlists and its audio go into one portable backup. See the [song library guide](SONG-LIBRARY.md).
+Open **Songs & sets** to import a backing track and audition it in the player. Save it on its own or add it to a set in the same step.<br>
+Songs are stored as lossless FLAC, a save never touches the old copy until the new one is on disk, and a deleted song goes to the Trash. Use a portable backup to take a song library or a single set offline. [Song library guide](SONG-LIBRARY.md) · [Performance guide](PERFORMANCE.md).
 
 <br>
 <br>

@@ -4,9 +4,9 @@ Play a song or a whole set from one screen. You get stems, a metronome, lyrics a
 
 ## Overview
 
-Open **Song → Performance**. You need audio in **Stems** first. Splitting into stems is optional.
+Open **Songs & sets**, import audio, and choose **Open player**. For a saved song, open it and choose **Performance**. Splitting into stems is optional.
 
-The play controls and tempo stay at the top. Pick a view below them:
+The transport stays at the bottom. Pick a view from the Performance tabs.
 
 - **Play**: sections, the mixer and the lyrics reader. Use this on stage.
 - **This song**: speed and pitch, trim and fades, key, imported tracks, generated drums and bass, sections and cues. Saved with the song.
@@ -20,10 +20,10 @@ Related guides: [song library](SONG-LIBRARY.md) (saving, playlists, backups), [M
 
 ## Prepare a song
 
-1. Load the audio in **Stems** and split it if you want stems.
-2. Set **Song BPM** to the recording's tempo while stopped.
-3. Add lyrics, chords and cues.
-4. Choose **Save song to library**. Use **Save song changes** after later edits.
+1. Import the backing audio in **Songs & sets**. Choose **Open player** to confirm it plays.
+2. Choose **Save song to library** or **Save and add to set**. Use **Save song changes** after later audio edits.
+3. Open the saved song and choose **Check timing and audition band**. Confirm the tempo, first downbeat and sections.
+4. Add lyrics, chords and any MIDI cues. Check the output routes before rehearsal.
 
 ### Tempo and beat
 
@@ -42,7 +42,7 @@ Related guides: [song library](SONG-LIBRARY.md) (saving, playlists, backups), [M
 
 - **Metronome** is **Off**, **While stopped**, **While playing** or **Both**. Each song keeps its choice.
 - Pause on the first downbeat and choose **Set first beat here** to line up the click.
-- A count-in of one or two bars, a pre-roll and a start delay (up to 10 s) are set in **Metronome settings**.
+- A count-in of one or two bars, a pre-roll and a start delay (up to 10 s) are set in **Metronome settings**. With a Band grid, the click follows its pulse times and bar accents. A 6/8 count-in uses two dotted-quarter pulses per bar.
 - **Sound** picks the click, sticks, hi-hat, kick and hat, or ride. **My samples** loads your own WAV, FLAC or MP3 (2 seconds at most).
 - **Send the click as MIDI** sends each beat as a drum note on channel 10, or the channel you choose. The MIDI click does not need **Send cues**.
 
@@ -72,19 +72,15 @@ The **Rig audio check** in Audio outputs and MIDI health lists the active routes
 - **Solo scale** shows where to solo on the neck for the song's key. It starts on the minor pentatonic.
 - Pick another scale, a root, and **Whole neck** or a box position. The diagram follows transpose, pitch and capo.
 
-### Generated drums and bass
+### Prepare a Band arrangement
 
-Open the Band panel with **Generate drums & bass…**. It writes drum and bass tracks that follow the grid, chords and sections.
+1. From **Songs & sets**, open a saved song and choose **Check timing and audition band**. You can also open **Generate drums & bass…** from **Performance → This song**.
+2. In **Timing**, choose **Find the beat**, then check the downbeat. For compound time, select **6/8 (two dotted-quarter pulses)** and check the pulse against the recording. To correct a short or long bar, set **Bar to move** to the number of the following bar and choose **Bar line earlier** or **Bar line later**. Each press moves that line by one pulse.
+3. In the chord chart, write the intended changes, including passing chords and inversions such as `[C/E]`. A written chord holds until the next written instruction. Use `[N.C.]` to leave space with no chord or `[auto]` to resume detected harmony.
+4. Choose a style and the parts to generate. Select the section before a change, open **Preview options**, and turn on **Across next section transition**. Choose **Original recording**, **Saved arrangement** (when available), or **Proposed arrangement**, then press **Preview**. The versions use the same passage and comparable levels, subject to peak headroom. With an unsplit recording, the new parts play over the backing.
+5. Choose **Generate** when the transition sounds right. Use **What plays** to choose Original, Generated or Both. Fix a bass note by selecting its beat in the Band **Notes** strip. Save the song to keep the rendered tracks.
 
-- Check the beat grid first. Fix it with **Half tempo**, **Double tempo**, the downbeat and nudge buttons, or **Use fixed BPM**.
-- Pick a style (Rock, Pop, Ballad, Country, Funk, Half-time, Reggae, Shuffle, Metal or 6/8) and tune the sliders.
-- Each section sets its energy, fill and bass part. Bass parts include **Ring out**, **Root pulse**, **Groove**, **Melodic**, **Walking**, **Pedal** and **Rest**.
-- **Generate** adds **Drums (generated)** and **Bass (generated)**. **Try another** makes a new take. **Remove generated parts** takes them out.
-- **What plays** picks Original, Generated or Both for each part. Fix a wrong bass note by clicking its beat in the strip.
-- **Use my rendered drums…** or **Use my rendered bass…** plays your own WAV, FLAC, MP3, M4A or OGG render instead.
-- **Drum tone** and **Bass tone** run a chain of up to six NAM captures or IRs. The web build cannot use them.
-- **Export MIDI…** saves the parts as a MIDI file. **Export for BOSS RC-10R…** exports six rhythm passages for the pedal.
-- Preview a few sections before a show.
+The **More** menu can export MIDI, export drum passages for the BOSS RC-10R, or remove generated parts. For keys, bass or drums, you can use your own rendered audio. Tone chains for generated parts require the desktop app.
 
 ### Practice mute
 
@@ -204,16 +200,16 @@ A program change or Song Select on the selected input can load a saved song.
 
 ## Playlists
 
-Make playlists under **Song → Songs & playlists**. Sets, smart playlists, the queue and history are in the [song library guide](SONG-LIBRARY.md#playlist-sets-and-smart-playlists).
+Make playlists under **Songs & sets**. Sets, smart playlists, the queue and history are in the [song library guide](SONG-LIBRARY.md#playlist-sets-and-smart-playlists).
 
-- **Check playlist** reviews every entry before a set. Save first.
+- After saving, run **Check playlist** for file sizes and cue preparation, then **Verify for show** for checksums and current routes.
 - **Load set paused** prepares the set. **Play playlist** or **Play from here** starts it.
-- Each next song loads in the background. Most joins are gapless.
-- Switching to another Song tab keeps the set playing. Leaving the Song screen pauses it.
+- Each next song loads in the background. If it is still loading at the join, playback starts when it is ready. Pausing or seeking can trigger a fresh preload.
+- Switching between tabs within **Songs & sets** keeps the set playing. Leaving that screen pauses it.
 
 ### Gapless and crossfade
 
-- **Crossfade (s)** runs from 0 to 10 seconds. At 0 the join is gapless. **Crossfade to next** starts the next song early.
+- **Crossfade (s)** runs from 0 to 10 seconds. A prepared next song joins gaplessly at 0. **Crossfade to next** starts the prepared song early.
 - **Trim start** and **Trim end** cut the ends. **Auto** trims to the audible part.
 - **Fade in** and **Fade out** run from 0 to 10 seconds.
 - **At the end** is **Play the next song**, **Stop the playlist** or **Loop the song**.
@@ -226,13 +222,15 @@ Make playlists under **Song → Songs & playlists**. Sets, smart playlists, the 
 
 ## Stage mode
 
-Prepare the song or set, arm MIDI, then choose **Enter stage mode**.
+Prepare the song or set, arm MIDI if it uses cues, and choose **Enter stage mode**.
 
 - Large lyrics, a status strip (section, bars left, what is next) and a timeline. Setup, the mixer and seeking are locked.
 - **Play/Pause** is always there. **Stop playback** and **Panic / stop MIDI** need a 0.6 s hold or a second press.
 - **Panic / stop MIDI** pauses, clears queued MIDI, disarms and turns Send cues off.
 - Stage mode does not arm MIDI or change the BPM. It stays on across playlist songs.
-- Scheduled cues show the chart plan. Rig state distinguishes preset commands sent by the app from incoming pedal reports. The status strip shows audio warnings, MIDI drops and a clean resync. **Exit Stage** returns to the editor.
+- **Audio ready** means the song can play without cues, MIDI clock, timecode or a tempo send. For songs that use MIDI, **No MIDI** asks for the assigned output and **Cues off** means it is connected but disarmed.
+- **Check audio outputs** shows the actual Main and Click routes when one falls back or disconnects. Scheduled cues show the chart plan. Rig state distinguishes commands the app sent from reports received from the pedal.
+- If the song has no lyrics or chords, choose **Exit Stage** to add a chart.
 - On the desktop, stage playback keeps the screen awake until you pause or exit.
 
 ### Audience display

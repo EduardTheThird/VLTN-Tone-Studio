@@ -4,6 +4,22 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+### Added
+
+- Save an imported backing track and add it to a set in one step, then open Band Timing directly from the saved song.
+- Compare the original, saved and proposed Band arrangements over the same section transition at matched levels.
+- Set a 6/8 grid and adjust individual bar lines. Band, click, count-in, Stage and MIDI export share the timing grid.
+
+### Changed
+
+- Backup restore previews identical arrangements, alternate charts and mixes, and missing rig dependencies. Restores keep the destination rig by default.
+- Stage reports audio-only readiness and calls attention to an unavailable audio route or expected MIDI output.
+- Preset and performance screen names match their navigation labels. The guides walk through the first backing track, Band arrangement, verification and offline restore.
+
+### Fixed
+
+- Generated parts preserve written passing chords, slash bass, altered fifths, and explicit no-chord passages.
+
 ## [0.9.56] — 2026-11-25
 
 This beta republishes the v0.9.55 app with fresh installers and update metadata.

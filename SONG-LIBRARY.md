@@ -2,12 +2,14 @@
 
 In the desktop app, open **Songs & sets**.
 
-1. **Import audio**. Open the player for the original mix, choose **Prepare for a set** to save the song, or choose **Split stems**. Prepare the Performance chart and lyrics as needed.
-2. Enter the song title and artist and choose **Save song to library**. Use **Save song changes** after subsequent edits or a new split.
-3. Create a playlist (press Enter in its name, or choose **Create playlist**) and add songs with **Add songs…**, either to the end or to the end of a set. Entries can repeat. Use the up/down buttons to set the order. Edits to a playlist are kept as a draft until you choose **Save playlist** (or press Cmd/Ctrl+S); **Discard changes** restores the saved list. Play, Load and Queue use the saved playlist, so save first. Switching to another playlist with unsaved edits asks whether to save them. Removing an entry does not remove the song.
-4. Choose **Play playlist** to perform the whole set, or **Play from here** on an entry to start partway through. Performance loads and starts each next song automatically, then stops after the last entry. It shows the current position, next title, **Previous song / Next song**, and **Stop playlist**. Pause/resume controls the set; skipping while paused loads the destination paused. **Load set paused** remains available for preparation. The queue uses a snapshot of the selected playlist order.
+## Play your first backing track
 
-Songs restore their saved BPM, MIDI Clock preference, chart, lyrics and mix. The global metronome follows each song. Audio loads between songs, so this is automatic sequential playback rather than gapless playback. Stop can cancel a pending next-song load; loading errors stop the set and show a message. Leaving Performance pauses the playlist.
+1. Choose **Import audio…** and pick a recording. **Open player** takes the original mix to **Performance → Play**. Choose **Play song** to hear it.
+2. To keep it for later, return to **Songs & sets** and enter a title and artist. Choose **Save song to library**, or select an existing set or **Create a new set** under **Add to set** and choose **Save and add to set**.
+3. For an arrangement, open the saved song and choose **Check timing and audition band**. Use **Split stems** first if you want to replace a recorded part. [Prepare a Band arrangement](PERFORMANCE.md#prepare-a-band-arrangement).
+4. In the playlist, use **Load set paused** to prepare, **Play playlist** to start from the top, or **Play from here** to start on an entry. After reordering or editing an existing playlist, choose **Save playlist** so those changes apply the next time you load it.
+
+Songs restore their saved tempo, clock preference, chart, lyrics and mix. The app prepares the next recording while the current one plays. If it is ready, songs can join without a gap or with your selected crossfade. If it is still loading, the next song starts once it is ready. On a load error, read the message and reopen the affected song before resuming. Switching to another tab within **Songs & sets** keeps playback running. Leaving that screen pauses the set.
 
 ## What is saved
 
@@ -19,9 +21,7 @@ The data lives under `%APPDATA%\VLTN Tone Studio\song-library` on Windows. `libr
 
 Songs saved by an earlier version used raw float32 files. The first time you start a newer version, the app converts them to FLAC in the background, one song at a time, with progress shown. The old files are removed only after the converted audio has been decoded and compared sample for sample, so an interrupted or failed conversion leaves the song as it was and is retried at the next start. A song that is still waiting to be converted shows a message if you try to open it. After conversion the library can no longer be opened by an older version of the app.
 
-The library index is version 3 from this release, which holds the per-track settings of imported tracks. Older indexes are upgraded automatically, and the upgrade writes only each track's kind. An app built before this release refuses a version 3 library, as it already refuses version 2.
-
-A save writes every audio asset before atomically replacing the index. Incomplete saves do not replace a previously saved song. Interrupted operations can leave unreferenced audio directories; automatic recovery/garbage collection is not implemented. Deleting a song removes it from playlists and deletes its managed audio; it never deletes the imported source. The UI requires a second confirmation for song/playlist deletion. Deleting a playlist keeps its songs.
+A save writes every audio asset before atomically replacing the index. Incomplete saves do not replace a previously saved song. Interrupted operations may leave unreferenced audio directories that the app cleans up later. Deleting a song removes it from playlists and deletes its managed audio; it never deletes the imported source. The UI requires a second confirmation for song/playlist deletion. Deleting a playlist keeps its songs.
 
 ## Portable backup and restore
 
@@ -29,13 +29,15 @@ In **Songs & sets**, use **Export library backup…**. Choose where to save the 
 
 Save a newly imported song or new stem split before exporting. Current local text/settings edits to an already-saved song are flushed before the backup begins. Audio and metadata are then exported as one consistent snapshot. Later edits and transcription results belong to a subsequent backup. The UI shows file-based progress while the main process streams the audio; the whole library is not copied into renderer memory.
 
-On this or another computer, choose **Restore backup…** and select the archive. Existing songs and playlists are kept. If some songs in the archive have the same source audio as songs already saved, you are asked whether to **skip songs already in the library** or **import as copies**. Skipping leaves those songs out, points playlist entries at the songs you already have, and leaves out playlists that already exist with the same name and songs, so restoring the same archive twice adds nothing. Copies and new songs receive fresh IDs, and repeated playlist entries point to the corresponding restored song. Backups made before songs were stored as FLAC carry no audio digest and are always imported as copies. Nothing starts playing or arms MIDI automatically. Connect and configure outputs on the destination computer.
+### Restore a set offline
 
-The archive includes `backup-manifest.json`, `library.json`, and referenced UUID audio directories. Backups made by earlier versions (raw float32 files) still restore; the restored songs are then converted to FLAC like any other older song. Archives and library folders with a version 4 index (written by this release, see [Format versions](#format-versions)) are refused by apps built before this release. Archives made by earlier versions still restore into this one. SHA-256 checksums, byte lengths, metadata, playlist references and every file path/type are checked before the restored library index is published. Links, duplicate/undeclared files and paths outside the expected audio layout are rejected. A failed restore does not replace the existing index. Export writes a temporary archive beside the chosen destination and only replaces the destination after compression succeeds, so a failed export preserves an earlier backup.
+1. On the first computer, save playlist and song edits. Open **Playlist menu → Export this set…**. The backup includes saved audio, rendered parts, charts, mixes, cues, and any recorded rig or dependency information. For a smart playlist, it includes the songs that match at export time.
+2. Copy the archive to the destination computer. With Tone Studio open, go to **Songs & sets → Restore backup…** and choose the local file.
+3. Review the song and playlist counts. When the same recording has a different chart, mix, or tracks, the preview lists it as a separate arrangement. Choose **Restore and reuse identical songs** to reuse matching arrangements, or **Import all as copies** to keep independent copies. Older backups without audio checksums are restored as copies.
+4. The destination rig and macros take precedence. For a set archive, **Add missing pedal settings** fills in gaps and **Import missing MIDI macros** adds available definitions. The preview lists macro conflicts and any tone files to relink for regeneration.
+5. Open the restored playlist, choose **Load set paused**, and check its chart, mix and output routes. Existing cues keep their saved commands and channels. Playback and cue arming are separate actions.
 
-MIDI device/port preferences, cue arming, custom/OpenMIDI pedal definitions, account credentials, downloaded analysis models and application-wide preferences are not included. Song MIDI cues retain their actual commands, channels and labels and do not require the original pedal profiles for playback. This exports the song library, not a backup of physical pedal presets.
-
-To take a single playlist to a different computer, save its edits, then choose **Playlist menu → Export this set…**. A smart playlist exports its current matches in order. Restore the archive with **Restore song library**. The set carries its saved audio, rendered parts, charts, mixes and cues, plus saved pedal settings when available. The archive’s `backup-manifest.json` lists macros and tone files needed to rebuild the set. Recreate any listed macros in the MIDI commands editor and download or relink the listed tone files before regenerating parts.
+The same restore flow opens a whole-library backup. Archives carry a manifest with byte lengths and SHA-256 checksums. Restore validates declared files and paths before publishing the new library index. Earlier backups with raw audio still restore and are converted to FLAC. Application-wide audio and MIDI port preferences, credentials, downloaded models and physical pedal memory are separate from a library backup.
 
 ## PDF charts
 
@@ -91,17 +93,16 @@ The analysis finds a song's tempo and meter, key, chords, loudness, missing drum
 
 ## Format versions
 
-This release saves the library as version 4, adding the details, folders, history, sets, smart playlists and PDF charts above. Earlier libraries open and are upgraded in memory, with no saved value changed; the upgrade is written on the next save. Once a library is version 4, apps built before this release refuse to open it, so keep a backup from before the upgrade if you may need to go back. Backups from earlier versions restore into this one; their songs start with no folder, a play count of zero and no history.
+Library index version 4 added the details, folders, history, sets, smart playlists and PDF charts above. Earlier libraries open and are upgraded in memory, with no saved value changed; the upgrade is written on the next save. Once a library is version 4, apps that support only earlier index versions refuse to open it, so keep a backup from before the upgrade if you may need to go back. Backups from earlier versions restore into this one; their songs start with no folder, a play count of zero and no history.
 
 ## Whole-playlist preflight
 
-**Check playlist** checks saved file sizes, cue preparation and settings. **Verify for show** also streams the saved audio and chart files to compare checksums and checks the current audio and MIDI routes. The report counts rig warnings and shows the estimated decoded audio for each song and its next preload. Recheck when the setup changes, then listen and check pedal response in rehearsal.
+Select a saved playlist in **Songs & sets**. Save any newly split tracks or song changes before running a check.
 
-Select a playlist under **Songs & sets**, then choose **Check playlist** before the set. Save song changes first: the report checks saved songs, not unsaved edits or newly split audio. It does not load or play a song, change cues, arm an output or send MIDI.
+- **Check playlist** quickly checks saved file sizes, charts, settings, cue preparation and MIDI command conflicts. It shows the estimated memory needed by each song and its next preload.
+- **Verify for show** also reads the saved audio and chart files to compare checksums, and reports current audio routes and MIDI connection state. Run it with the show rig plugged in and after changing a cable or output. Large libraries take longer to read.
 
-The report lists each entry in order, including repeats. It checks for missing songs and audio assets, incorrect audio file sizes, malformed charts/settings, invalid or unsupported tempo, continuous-clock/automatic-tempo conflicts, and the existing cue/channel warnings (including past-end cues, missing note-offs and dense/conflicting commands). Audio checks use file metadata without transferring the recordings into renderer memory. They do not detect same-size audio corruption or assess sound quality.
-
-Errors and warnings are advisory and do not block intentional playback. The report uses current saved MIDI preferences and configured pedal channels; it cannot confirm a connected output, physical receive channels or pedal response. Playlist/library or MIDI preference changes clear the report. Recheck after external file changes. Preflight is unavailable while a library operation or playlist playback is active.
+Both checks work without playback or MIDI messages. The report is advisory. Rehearse the transitions and listen to the backing and click on the actual outputs before the show.
 
 ## Stage mode
 

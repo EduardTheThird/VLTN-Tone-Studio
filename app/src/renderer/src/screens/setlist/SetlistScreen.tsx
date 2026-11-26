@@ -37,7 +37,7 @@ export function SetlistScreen() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-3 px-7 pt-4 pb-3">
-        <h1 className="m-0 mr-auto text-[32px] leading-[1.05] font-bold tracking-[-0.02em]">Setlists</h1>
+        <h1 className="m-0 mr-auto text-[32px] leading-[1.05] font-bold tracking-[-0.02em]">Preset setlists</h1>
         <input
           ref={fileInput}
           type="file"

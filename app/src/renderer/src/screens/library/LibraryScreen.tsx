@@ -221,7 +221,7 @@ function LibraryHead() {
 
   return (
     <div className="flex items-end gap-6 px-6 pt-5 pb-4">
-      <h1 className="text-[32px] leading-none font-bold tracking-[-0.02em] text-balance text-silkscreen">Library</h1>
+      <h1 className="text-[32px] leading-none font-bold tracking-[-0.02em] text-balance text-silkscreen">Presets</h1>
       <div className="ml-auto flex items-center gap-4">{right}</div>
     </div>
   );
