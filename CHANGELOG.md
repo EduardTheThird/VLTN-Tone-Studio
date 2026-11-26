@@ -4,6 +4,8 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.57] — 2026-11-26
+
 ### Added
 
 - Save an imported backing track and add it to a set in one step, then open Band Timing directly from the saved song.

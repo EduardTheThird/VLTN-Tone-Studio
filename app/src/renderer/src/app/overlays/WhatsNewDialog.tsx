@@ -23,6 +23,26 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Keep the harmony you wrote",
+    text: "Generated parts and the chart reader follow your passing chords, slash notes and no-chord breaks. In Band Timing, choose 6/8 for two dotted-quarter pulses per bar, or move one bar line while keeping the pulse times.",
+    image: band,
+  },
+  {
+    title: "Hear the change into the next section",
+    text: "In Band Preview options, turn on Across next section transition. Switch between the original recording, saved arrangement and proposed arrangement to hear the same passage at comparable levels.",
+    image: band,
+  },
+  {
+    title: "Prepare and restore a set",
+    text: "Save a backing track straight into a set and open Band Timing from the saved song. Restoring a backup shows alternate arrangements and missing dependencies and keeps the destination rig by default.",
+    image: songLibrary,
+  },
+  {
+    title: "See what Stage needs",
+    text: "Stage shows Audio ready for backing tracks. For songs that use MIDI, it calls out a missing output or disarmed cues. Audio warnings show which Main and Click routes are active.",
+    image: stageMode,
+  },
+  {
     title: "Verify a set before the show",
     text: "Verify for show checks saved file contents and the current audio and MIDI routes. Every song gets a decoded audio memory estimate that includes the next preload. Pick Export this set to carry the songs, charts, mixes and cues to a second computer.",
     image: songLibrary,
