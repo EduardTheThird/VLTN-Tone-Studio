@@ -10,6 +10,7 @@ import { ChordVoicings } from "./ChordVoicings";
 import { SoloScalesDialog } from "./SoloScales";
 import { formatted } from "./lyric-format";
 import { PerformanceEditor } from "./PerformanceEditor";
+import { isNoChord } from "@/song/performance/harmony-changes";
 import { performanceLines } from "@/song/performance/reader";
 import { useActiveIndex, usePlaybackClock } from "@/song/performance/playback-clock";
 import { READER_TEXT, useReaderText } from "@/song/performance/reader-text";
@@ -392,7 +393,7 @@ export function PerformanceReader({
                     {!!line.chords.length && (
                       <div aria-label="Chords" className="flex flex-wrap gap-x-6 font-semibold text-sky-400">
                         {line.chords.map((chord, i) =>
-                          chord.name === "N" ? (
+                          isNoChord(chord.name) ? (
                             <span key={i}>—</span>
                           ) : (
                             <button

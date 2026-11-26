@@ -3,7 +3,7 @@
 import type { Cue } from "../performance/chart";
 import type { Chord } from "../performance/chords";
 import { SEVENTH, THIRD, chordFifth, pitchClass as wrapPitch } from "./chord-tones";
-import { chordPattern } from "../performance/reader";
+import { harmonyPattern, isNoChord, mergeHarmonyChanges, type HarmonyChange } from "../performance/harmony-changes";
 import type { BassLineBeat } from "../analysis/bass-line";
 import { BASS_LINE_CONFIDENT } from "../analysis/bass-line";
 import type { BeatGrid } from "./beat-grid";
@@ -33,11 +33,7 @@ export interface ParsedChord {
 }
 
 /** A chord name and the time it starts, from the chart or from detection. */
-export interface ChordEvent {
-  time: number;
-  name: string;
-  authored?: true;
-}
+export type ChordEvent = HarmonyChange;
 
 export interface ChordAtBeat {
   /** Index into `grid.beats`. */
@@ -113,7 +109,7 @@ function deriveSeventh(suffix: string, quality: ChordQuality): ChordSeventh {
  */
 export function parseChordName(name: string): ParsedChord | null {
   const text = name.trim();
-  if (/^N(?:\.C\.?)?$/i.test(text)) return null;
+  if (isNoChord(text)) return null;
   const match = CHORD_NAME.exec(text.replaceAll("♭", "b").replaceAll("♯", "#"));
   if (!match) return null;
   const known = SUFFIXES.get(match[3]);
@@ -129,12 +125,10 @@ export function parseChordName(name: string): ParsedChord | null {
  * The chord tokens of the chart's timed lines, each with a time. Several chords on a line are spread evenly from the line's time to the
  * next timed line's time. Triggers have no song time and are skipped. The last line lasts LAST_CHORD_SECONDS per chord.
  */
-const BAND_CHORD_PATTERN = new RegExp(chordPattern.source.replace("|N", "|auto|N"), "g");
-
 export function chartChordEvents(cues: readonly Cue[]): ChordEvent[] {
   const lines = cues.filter((cue) => !cue.trigger).sort((a, b) => a.time - b.time);
   return lines.flatMap((line) => {
-    const names = [...line.text.matchAll(BAND_CHORD_PATTERN)].map((match) => match[1]);
+    const names = [...line.text.matchAll(harmonyPattern)].map((match) => match[1]);
     if (!names.length) return [];
     const next = lines.find((other) => other.time > line.time);
     const end = next ? next.time : line.time + LAST_CHORD_SECONDS * names.length;
@@ -256,28 +250,7 @@ export function harmonyForSong(
   bassLine: readonly BassLineBeat[] | null = null,
   overrides: readonly BassOverride[] = [],
 ): ChordAtBeat[] {
-  const fromChart = chartChordEvents(cues);
-  const estimates = detected.map(({ time, name }) => ({ time, name })).sort((a, b) => a.time - b.time);
-  const events: ChordEvent[] = [];
-  let chartIndex = 0;
-  let estimateIndex = 0;
-  let automatic = true;
-  let estimate: ChordEvent | undefined;
-  while (chartIndex < fromChart.length || estimateIndex < estimates.length) {
-    const authored = fromChart[chartIndex];
-    const guess = estimates[estimateIndex];
-    if (!authored || (guess && guess.time <= authored.time)) {
-      estimate = guess;
-      estimateIndex++;
-      if (automatic && (!authored || guess.time < authored.time)) events.push(guess);
-    } else {
-      chartIndex++;
-      automatic = authored.name === "auto";
-      events.push(automatic
-        ? { time: authored.time, name: estimate?.name ?? "N" }
-        : { ...authored, authored: true });
-    }
-  }
+  const events = mergeHarmonyChanges(chartChordEvents(cues), detected.map(({ time, name }) => ({ time, name })));
   const perBeat = mergeShortChords(chordsPerBeat(grid, events, songEnd));
   const withBass = bassLine ? withOriginalBass(perBeat, bassLine) : perBeat;
   return withBassOverrides(withBass, overrides);

@@ -1,14 +1,14 @@
 import { parseChart, type Cue } from "./chart";
 import type { Chord } from "./chords";
 import type { MidiMacro } from "./midi-macros";
+import { chordPattern, harmonyPattern, isNoChord, mergeHarmonyChanges } from "./harmony-changes";
 
 export interface ReaderLine {
   time: number;
   text: string;
   chords: { time: number; name: string }[];
 }
-/** A chord token in a chart line, such as `[Am7]` or `[N]`. The first group is the chord name. */
-export const chordPattern = /\[([A-G][#b♭♯]?[^\]\s]*|N(?:\.C\.?)?)\]/g;
+export { chordPattern } from "./harmony-changes";
 /**
  * The untimed text of a chart: its lines with directives, timestamps and MIDI removed. Comments and headings are kept, since the reader and
  * the editor decide how to show them.
@@ -39,12 +39,12 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
     }
   };
   const cues = safeParse(chart);
-  const words = (text: string) => text.replace(chordPattern, "").replaceAll("[auto]", "").trim();
+  const words = (text: string) => text.replace(harmonyPattern, "").trim();
   const chartWords = cues.filter((c) => words(c.text));
   const untimedChart = !cues.length && untimedLines(chart).length > 0;
-  let lines: ReaderLine[] = (chartWords.length ? chartWords : untimedChart ? [] : safeParse(lyrics)).map((c) => ({ time: c.time, text: c.text, chords: [] }));
-  const manual = cues.flatMap((c) => [...c.text.matchAll(chordPattern)].map((m) => ({ time: c.time, name: m[1] })));
-  const changes = manual.length ? manual : untimedChart ? [] : estimates;
+  let lines: ReaderLine[] = (chartWords.length ? chartWords : untimedChart ? [] : safeParse(lyrics)).map((c) => ({ time: c.time, text: c.text.replaceAll("[auto]", "").trim(), chords: [] }));
+  const manual = cues.flatMap((c) => [...c.text.matchAll(harmonyPattern)].map((m) => ({ time: c.time, name: m[1] })));
+  const changes = untimedChart ? [] : mergeHarmonyChanges(manual, estimates).map(({ time, name }) => ({ time, name }));
   if (!lines.length) {
     const plain = untimedChart ? untimedLines(chart) : untimedLines(lyrics || chart);
     lines = plain.map((text) => ({ time: NaN, text, chords: [...text.matchAll(chordPattern)].map((match) => ({ time: NaN, name: match[1] })) }));
@@ -61,7 +61,7 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
   const sorted = [...changes].sort((a, b) => a.time - b.time);
   for (const line of lines) {
     const held = sorted.findLast((chord) => chord.time < line.time);
-    if (held && held.name !== "N" && line.chords[0]?.time !== line.time) line.chords.unshift({ time: line.time, name: held.name });
+    if (held && !isNoChord(held.name) && line.chords[0]?.time !== line.time) line.chords.unshift({ time: line.time, name: held.name });
   }
   return lines;
 }

@@ -18,6 +18,15 @@ it("uses chart chords and lyrics instead of automatic drafts without showing MID
   const lines = performanceLines("[00:02] [C/G] My **words** {midi:pc 1 3}", "[00:02] Misheard", [{ time: 2, name: "D", confidence: 1 }]);
   expect(lines).toEqual([{ time: 2, text: "[C/G] My **words**", chords: [{ time: 2, name: "C/G" }] }]);
 });
+it("holds the written harmony, shows a rest and resumes detection at an auto marker", () => {
+  const chart = "[00:02] [C/E] First\n[00:03] [N.C.] Space\n[00:04] [auto] Rejoin";
+  const estimates = ["D", "F", "Ab", "G"].map((name, index) => ({ time: index + 1, name, confidence: 1 }));
+  const lines = performanceLines(chart, "", estimates);
+  expect(lines.map(({ time, chords }) => [time, chords.map(({ name }) => name)])).toEqual([
+    [1, ["D"]], [2, ["C/E"]], [3, ["N.C."]], [4, ["G"]],
+  ]);
+  expect(lines[3].text).toBe("Rejoin");
+});
 it("combines a chord-only chart with separate lyrics and ignores MIDI-only rows", () => {
   expect(performanceLines("[00:01] {midi:pc 1 2}\n[00:04] [Am]", "[00:03] Words", [])[0]).toEqual({
     time: 3,
