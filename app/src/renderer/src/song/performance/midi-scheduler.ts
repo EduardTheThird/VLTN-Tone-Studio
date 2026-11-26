@@ -1,4 +1,4 @@
-import { BeatClock, usableClockGrid, type ClockGrid } from "./beat-clock";
+import { BeatClock, CLOCK_PPQN, quarterNotesPerPulse, usableClockGrid, type ClockGrid } from "./beat-clock";
 import type { Cue } from "./chart";
 import { CHASE_LEAD_MS, chaseTriggerSet, computeChaseState, settledAt, type TriggerCc } from "./midi-chase";
 import { orderForPedal } from "./midi-pedal-order";
@@ -242,7 +242,7 @@ export class MidiSchedule {
     this.next = this.cursorAt(config.position);
     this.pulse = Math.ceil(((Math.max(0, config.position) * config.bpm) / 60) * 24);
     this.pulseAnchor = { time: config.origin, index: 0 };
-    this.beatClock = config.clock && usableClockGrid(config.clockGrid) ? new BeatClock(config.clockGrid.beats) : null;
+    this.beatClock = config.clock && usableClockGrid(config.clockGrid) ? new BeatClock(config.clockGrid.beats, CLOCK_PPQN * quarterNotesPerPulse(config.clockGrid)) : null;
     if (this.beatClock) {
       const firstPosition = config.tempoAt === undefined ? config.position : ((config.tempoAt - config.origin) / 1000) * this.rate;
       this.gridPulse = this.beatClock.next(firstPosition);

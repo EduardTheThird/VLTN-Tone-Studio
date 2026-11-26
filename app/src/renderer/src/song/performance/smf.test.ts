@@ -291,3 +291,12 @@ describe("exporting a standard MIDI file", () => {
     expect(messages.filter((message) => (message.bytes[0] & 0xf0) === 0xe0)).toEqual([]);
   });
 });
+
+it("writes 6/8, a pickup and a shortened bar with their actual times", () => {
+  const grid: BeatGrid = { beats: [0, 0.6, 1.2, 1.8, 2.4, 3], beatsPerBar: 2, downbeat: 1, bpm: 100, steady: null, meter: "6/8", barStarts: [1, 3, 4] };
+  const file = encodeSmf([{ name: "Keys", channel: 0, notes: [{ time: 1.8, pitch: 60, velocity: 90, duration: 0.3 }] }], grid);
+  const bytes = [...file];
+  const bars = bytes.flatMap((item, i) => item === 0xff && bytes[i+1] === 0x58 ? [[bytes[i+3], bytes[i+4], bytes[i+5]]] : []);
+  expect(bars).toEqual([[3, 3, 36], [6, 3, 36], [3, 3, 36], [6, 3, 36]]);
+  expect(parseSmf(file)[0].time).toBeCloseTo(1.8);
+});

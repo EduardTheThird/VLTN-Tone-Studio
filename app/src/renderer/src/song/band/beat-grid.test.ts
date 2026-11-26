@@ -552,3 +552,15 @@ describe("estimateMeter", () => {
     expect(estimateMeter([0, 0.5, 1], new Float64Array(200), 100)).toEqual({ beatsPerBar: 4, confidence: 0 });
   });
 });
+
+it("preserves a hand-moved bar line and compound pulse through saving and reanalysis", async () => {
+  const { setGridMeter } = await import("./beat-grid");
+  const { moveBarLine } = await import("./timing");
+  const compound = setGridMeter(fixedBeatGrid(100, 0.6, 4, 7), "6/8");
+  const changed = moveBarLine(compound, 1, -1);
+  expect(changed.beats).toEqual(compound.beats);
+  expect(changed.barStarts?.slice(0, 3)).toEqual([1, 2, 5]);
+  expect(parseBeatGrid(changed)).toMatchObject({ meter: "6/8", manualBarLines: true, barStarts: changed.barStarts });
+  const { withChordDownbeat } = await import("./beat-grid");
+  expect(withChordDownbeat(changed, [0, 1, 2, 3])).toBe(changed);
+});

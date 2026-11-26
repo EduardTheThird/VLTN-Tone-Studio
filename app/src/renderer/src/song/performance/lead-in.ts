@@ -1,3 +1,4 @@
+import { parseBeatGrid } from "../band/beat-grid";
 import { readOptions, setSetting } from "./settings";
 
 // The lead-in before a start: a count-in, a pre-roll and a start delay. Each has a global default, stored with the settings helpers. A
@@ -72,16 +73,17 @@ export interface SongCountIn {
  */
 export function songCountIn(settings: Record<string, string>, defaults: LeadIn = readLeadInDefaults()): SongCountIn {
   const bpm = Number(settings[":bpm"] || NaN);
-  let options: Partial<Record<"beats" | "countInBars", unknown>> = {};
+  let options: Partial<Record<"beats" | "countInBars" | "beatGrid", unknown>> = {};
   try {
     options = JSON.parse(settings[":options"] || "{}") ?? {};
   } catch {
     options = {};
   }
   const own = ownLeadIn("countInBars", options.countInBars);
+  const grid = parseBeatGrid(options.beatGrid);
   return {
-    bpm: Number.isFinite(bpm) && bpm >= 30 && bpm <= 300 ? bpm : 120,
+    bpm: grid && grid.bpm > 0 ? grid.bpm : Number.isFinite(bpm) && bpm >= 30 && bpm <= 300 ? bpm : 120,
     countInBars: own === "" ? defaults.countInBars : own,
-    beatsPerBar: typeof options.beats === "number" && Number.isFinite(options.beats) && options.beats > 0 ? options.beats : 4,
+    beatsPerBar: grid?.beatsPerBar ?? (typeof options.beats === "number" && Number.isFinite(options.beats) && options.beats > 0 ? options.beats : 4),
   };
 }

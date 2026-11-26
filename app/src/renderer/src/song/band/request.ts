@@ -226,10 +226,11 @@ export const THREE_FOUR_NOTE = "3/4 song: playing the 3/4 style";
  * plays the 3/4 style instead, so the four-beat groove is not squeezed into three beats. A section with a style of its own keeps it.
  */
 export function plansForMeter(grid: BeatGrid, plans: readonly SectionPlan[], settings: BandSettings): SectionPlan[] {
-  if (barBeats(grid) !== 3) return [...plans];
+  const matchingStyle = grid.meter === "6/8" ? "six-eight" : barBeats(grid) === 3 ? "three-four" : null;
+  if (!matchingStyle) return [...plans];
   return plans.map((plan) => {
     const chosen = settings.sections[plan.sectionId ?? WHOLE_SONG_ID]?.style !== undefined;
-    return !chosen && findStyle(plan.style)?.meter.beatsPerBar === 4 ? { ...plan, style: "three-four" } : plan;
+    return !chosen && (matchingStyle === "six-eight" || findStyle(plan.style)?.meter.beatsPerBar === 4) ? { ...plan, style: matchingStyle } : plan;
   });
 }
 

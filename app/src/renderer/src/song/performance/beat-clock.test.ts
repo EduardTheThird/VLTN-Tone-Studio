@@ -21,3 +21,11 @@ it("averages the first two bars from the downbeat, including a shorter bar", () 
   expect(openingBeatTempo({ beats, downbeat: 1, beatsPerBar: 4 })).toBeCloseTo(480 / 4.3);
   expect(openingBeatTempo({ beats: [0], downbeat: 0, beatsPerBar: 4 })).toBeNull();
 });
+
+it("keeps quarter-note MIDI timing when the played pulse is a dotted quarter", () => {
+  const grid = { beats: [0, 0.6, 1.2], beatsPerBar: 2, downbeat: 0, meter: "6/8" as const };
+  expect(openingBeatTempo(grid)).toBe(150);
+  const clock = new BeatClock(grid.beats, 36);
+  expect(clock.next(0.6)).toBe(36);
+  expect(clock.at(24)).toBeCloseTo(0.4);
+});

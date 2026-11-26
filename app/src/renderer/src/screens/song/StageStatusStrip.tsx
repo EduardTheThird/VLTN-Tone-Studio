@@ -87,7 +87,7 @@ function BarBeat({ grid, beat }: { grid: AnalysedGrid | null; beat: BeatGrid }) 
   });
   return (
     <div className="flex items-center gap-2">
-      <BeatIndicator {...beat} />
+      <BeatIndicator {...beat} grid={grid} />
       {position && <p className="text-lg font-semibold tabular-nums">{position}</p>}
     </div>
   );
@@ -145,7 +145,7 @@ function Health({ session, reason }: { session: PerformanceSession; reason: stri
 
 /** The last bar pulses the edge of the strip on each beat. A performer who prefers reduced motion gets none. */
 function useLastBarPulse(beat: BeatGrid, active: boolean): boolean {
-  const index = useBeatIndex(beat.bpm, beat.firstBeat);
+  const index = useBeatIndex(beat.bpm, beat.firstBeat, beat.grid);
   const lit = useBeatLit(active ? index : -1);
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -201,7 +201,7 @@ export function StageStatusStrip({
     const section = ordered[sectionIndexAt(ordered, s.position)];
     return !!section && s.playing && barsUntil(grid, s.position, section.end) === 1;
   });
-  const pulse = useLastBarPulse(beat, lastBar);
+  const pulse = useLastBarPulse({ ...beat, grid }, lastBar);
   return (
     <div
       aria-label="Stage status"

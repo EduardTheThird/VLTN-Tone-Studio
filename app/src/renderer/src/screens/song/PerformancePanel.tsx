@@ -455,8 +455,12 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
   }, [session]);
   // Lead-in before a start. Memoised: the session compares inputs by identity, so a new object every render would re-run it every render.
   const timing = useMemo<Timing>(
-    () => ({ countInBars: leadIn.countInBars, beatsPerBar: beats, preRollBeats: leadIn.preRollBeats, startDelay: leadIn.startDelay }),
-    [leadIn, beats],
+    () => ({
+      countInBars: leadIn.countInBars, beatsPerBar: grid?.beatsPerBar ?? beats,
+      ...(grid && grid.bpm > 0 ? { pulseBpm: grid.bpm } : {}),
+      preRollBeats: leadIn.preRollBeats, startDelay: leadIn.startDelay,
+    }),
+    [leadIn, beats, grid],
   );
   // Tap tempo sets the song BPM only while stopped. The taps live in a ref so the key handler always sees the latest sequence.
   const tapsRef = useRef<number[]>([]);
@@ -730,8 +734,11 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
     }
   }, [session, key, firstBeat, beats, shift, capo, clock, volume, mix, trackBuses, countsAs, partChoice, chordChoice, metronome, lead, soundOwn, sectionList]);
   useEffect(() => {
-    player?.setMetronome({ mode: metronome, bpm, beats, volume, firstBeat, sound: sounds.sound, countInSound: sounds.countInSound });
-  }, [player, metronome, bpm, beats, volume, firstBeat, sounds]);
+    player?.setMetronome({
+      mode: metronome, bpm: grid && grid.bpm > 0 ? grid.bpm : bpm, beats: grid?.beatsPerBar ?? beats,
+      ...(grid && grid.beats.length > 1 ? { grid } : {}), volume, firstBeat, sound: sounds.sound, countInSound: sounds.countInSound,
+    });
+  }, [player, metronome, bpm, beats, grid, volume, firstBeat, sounds]);
   // The song's trim, fades and end are read from its stored options, so a player always takes the song's own values.
   const playedShapeSignature = JSON.stringify(playerShapeFromOptions(getSetting(key, ":options")));
   useEffect(() => {
@@ -966,7 +973,7 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
               songKey={spellingKey}
               onSaveChart={saveChart}
               onImportMetadata={applyImportedMetadata}
-              beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat }}
+              beat={{ bpm: effectiveBpm(bpm, speed.rate), beats, firstBeat, grid }}
               speedNote={speedNote(speed)}
               pdf={pdfState}
               settingsKey={key}
@@ -1106,7 +1113,7 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
       </div>
       {!stage && (
         <ScreenBoundary name="Performance transport bar">
-          <TransportBar session={session} bpm={effectiveBpm(bpm, speed.rate)} beats={beats} firstBeat={firstBeat} />
+          <TransportBar session={session} bpm={effectiveBpm(bpm, speed.rate)} beats={beats} firstBeat={firstBeat} grid={grid} />
         </ScreenBoundary>
       )}
     </section>

@@ -1,7 +1,8 @@
 import type { Cue } from "./chart";
 import type { BeatGrid } from "../band/beat-grid";
 import type { NoteEvent } from "../band/note";
-import { beatSpan } from "../band/timing";
+import { quarterNotesPerPulse } from "./beat-clock";
+import { barSpans, beatSpan } from "../band/timing";
 
 /*
  * A song's MIDI file, read into timed messages. Times are song seconds at the file's own tempo map. The scheduler applies the song's rate,
@@ -229,13 +230,14 @@ interface TempoStep {
  */
 function tempoSteps(grid: BeatGrid, ppq: number): TempoStep[] {
   const beats = grid.beats;
+  const quarters = quarterNotesPerPulse(grid);
   const intervals = beats.length ? beats.map((_, beat) => beatSpan(beats, beat)) : [60 / (grid.bpm > 0 ? grid.bpm : 120)];
   const written: { tick: number; microseconds: number }[] = [];
   let held = 0;
   intervals.forEach((seconds, beat) => {
-    const microseconds = Math.min(MAX_MICROSECONDS, Math.max(1, Math.round((seconds > 0 ? seconds : 0.5) * 1_000_000)));
+    const microseconds = Math.min(MAX_MICROSECONDS, Math.max(1, Math.round((seconds > 0 ? seconds : 0.5) * 1_000_000 / quarters)));
     if (held === 0 || Math.abs(microseconds - held) > held * TEMPO_HOLD_SHARE) {
-      written.push({ tick: beat * ppq, microseconds });
+      written.push({ tick: Math.round(beat * ppq * quarters), microseconds });
       held = microseconds;
     }
   });
@@ -347,14 +349,25 @@ function slideEvents(channel: number, semitones: number, from: number, on: numbe
 
 /**
  * Writes a standard MIDI file (format 1). The first track is the conductor: a time signature and the tempo map. Each track after it holds
- * the notes of one part on its channel. A grid beat is written as a quarter note, so the time signature is the beats per bar over 4. A 6/8
- * song is therefore written in 2/4 at the same tempo: it plays the same, but the score shows the beats, not the dotted-quarter pulse.
+ * the notes of one part on its channel. Compound pulses are dotted quarters. A pickup and corrected bars get their own time signature.
  */
 export function encodeSmf(tracks: readonly SmfNoteTrack[], tempoMap: BeatGrid, ppq = EXPORT_PPQ): Uint8Array {
   const steps = tempoSteps(tempoMap, ppq);
-  const numerator = clamp(tempoMap.beatsPerBar, 1, 255);
+  const compound = tempoMap.meter === "6/8";
+  const pulses = barSpans(tempoMap);
+  const pickup = tempoMap.downbeat;
+  const meters = pickup > 0 ? [{ start: 0, beats: pickup }, ...pulses] : pulses;
+  const meterEvents: TrackEvent[] = [];
+  let previous = 0;
+  for (const { start, beats } of meters.length ? meters : [{ start: 0, beats: tempoMap.beatsPerBar }]) {
+    const numerator = clamp(beats * (compound ? 3 : 1), 1, 255);
+    if (numerator === previous) continue;
+    const tick = previous ? tickAt(steps, ppq, tempoMap.beats[start]) : 0;
+    meterEvents.push({ tick, order: -1, bytes: [0xff, 0x58, 4, numerator, compound ? 3 : 2, compound ? 36 : 24, 8] });
+    previous = numerator;
+  }
   const conductor: TrackEvent[] = [
-    { tick: 0, order: -1, bytes: [0xff, 0x58, 4, numerator, 2, 24, 8] },
+    ...meterEvents,
     ...steps.map((step) => ({
       tick: step.tick,
       order: -1,

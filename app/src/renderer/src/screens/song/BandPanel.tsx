@@ -37,7 +37,7 @@ import { encodeSmf } from "@/song/performance/smf";
 import type { RhythmSnapshot } from "@/song/band/rhythm-export";
 import { RhythmExportDialog } from "./RhythmExportDialog";
 import { startBeatGrid, type BeatGridJob } from "@/song/band/beat-grid-client";
-import { chordChangeTimesOf, fixedBeatGrid, type BeatGrid } from "@/song/band/beat-grid";
+import { chordChangeTimesOf, fixedBeatGrid, setGridMeter, type BeatGrid } from "@/song/band/beat-grid";
 import { startDrumPatternCheck } from "@/song/band/drum-pattern-client";
 import { bandSampleUrls, renderPreview, type BandJob } from "@/song/band/band-client";
 import type { ChordAtBeat } from "@/song/band/harmony";
@@ -495,7 +495,7 @@ function BandBody({
       const found: BeatGridJob = startBeatGrid({
         sources: beatSources(selectWholeSongStems(useSong.getState()), current.audio),
         sampleRate: current.audio.sampleRate,
-        beatsPerBar: beats,
+        beatsPerBar: grid?.beatsPerBar ?? beats,
         // The chart's chord changes, or else the detected chords, so the downbeat follows the chords when the chart has none.
         chordChanges: chartChordTimes(cues).length ? chartChordTimes(cues) : chordChangeTimesOf(chords),
         tempoHint: typedTempo && useMyTempo ? bpm : undefined,
@@ -503,7 +503,7 @@ function BandBody({
       job.current = found;
       const next = await found.done;
       if (next.beats.length === 0) setNotices(["No beat was found in this song. Use fixed BPM, or set the tempo by hand."]);
-      else applyGrid(next);
+      else applyGrid(grid?.meter ? setGridMeter(next, grid.meter) : next);
     });
   };
 
@@ -650,12 +650,16 @@ function BandBody({
       }
     }
   }, [songKey, settingsVersion]);
+  const fixedGrid = () => {
+    const next = fixedBeatGrid(bpm, firstBeat, beats, songEnd);
+    return grid?.meter ? setGridMeter(next, grid.meter) : next;
+  };
   useEffect(() => {
     const previous = musicalTempo.current;
     musicalTempo.current = { bpm, firstBeat, beats };
     // Opening a saved song is not a tempo edit. A drummer grid can intentionally differ from the metronome.
     if (previous.bpm === bpm && previous.firstBeat === firstBeat && previous.beats === beats) return;
-    if (source && grid && bpm > 0) applyGrid(fixedBeatGrid(bpm, firstBeat, beats, songEnd));
+    if (source && grid && bpm > 0) applyGrid(fixedGrid());
   }, [bpm, firstBeat, beats, source, songEnd, typedTempo]);
   const musicalInputs = generationInputs(settings);
   if (appliedInputs.current === null) appliedInputs.current = musicalInputs;
@@ -921,7 +925,7 @@ function BandBody({
     const current = useSong.getState().source;
     if (!current) return setNotices(["Load a song before using a fixed tempo."]);
     setNotices([]);
-    applyGrid(fixedBeatGrid(bpm, firstBeat, beats, songEnd));
+    applyGrid(fixedGrid());
   };
 
   const setTo = () => {
@@ -1031,12 +1035,13 @@ function BandBody({
             </Button>
           </p>
         )}
+        {grid?.meter === "6/8" && <p>6/8 · two dotted-quarter pulses per bar</p>}
         {generated && outOfDate && <p className="text-led-warn">{audioPlaying ? "Parts out of date. Updating when playback stops." : "Parts out of date. Generate to refresh them."}</p>}
       </section>
       {!grid && tab !== "timing" && (
         <div className="flex items-center gap-3 rounded border border-seam p-2">
           <p>Find the song's beat before generating or previewing.</p>
-          <Button size="sm" variant="outline" disabled={blocked} onClick={() => { setTab("timing"); void findBeat(); }}>Find the beat</Button>
+          <Button size="sm" variant="outline" disabled={blocked} onClick={() => { setTab("timing"); void findBeat(); }}>Set up the beat grid</Button>
         </div>
       )}
       <Tabs value={tab} onValueChange={(value) => isBandTab(value) && setTab(value)} className="min-h-0 flex-1 gap-2">

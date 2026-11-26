@@ -472,7 +472,7 @@ describe("Band panel", () => {
     pick(screen.getByRole("combobox", { name: "Style" }), "Funk");
     expect(savedOptions().band.style).toBe("funk");
     expect(savedOptions().bandOutOfDate).toBe(true);
-    expect(screen.getByText(/Parts out of date/)).toBeTruthy();
+    expect(screen.queryByText(/Parts out of date/)).toBeNull();
     // Funk's own swing default is saved with the style.
     expect(savedOptions().band.swing).toBe(0);
 
@@ -619,7 +619,7 @@ describe("Band panel", () => {
       cancel: vi.fn(),
     });
     renderPanel({ chart: "[Am] [G]", sections: SECTIONS });
-    expect(screen.getByText(/Parts out of date/)).toBeTruthy();
+    expect(screen.queryByText(/Parts out of date/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(useSong.getState().applyGeneratedParts).toHaveBeenCalledWith({ drums, bass }, { playing: false, remove: [] }));
     const request = mocks.startBandRender.mock.calls[0][0];
@@ -1127,7 +1127,7 @@ describe("Band panel", () => {
     renderPanel({ chart: "[C]" });
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     expect(await screen.findByText("Stop playback to change the generated parts.")).toBeTruthy();
-    expect(screen.getByText(/Parts out of date/)).toBeTruthy();
+    expect(screen.queryByText(/Parts out of date/)).toBeNull();
   });
 
   it("with no song loaded, disables every action and says to open a song", () => {
@@ -1747,4 +1747,10 @@ it("does not select a pattern for an already saved song without band settings", 
   renderPanel();
   expect(mocks.startDrumPatternCheck).not.toHaveBeenCalled();
   expect(savedOptions().band).toBeUndefined();
+});
+
+it("offers a beat setup action in Parts when first opening a song", () => {
+  renderPanel();
+  expect(screen.getByRole("button", { name: "Set up the beat grid" })).toBeTruthy();
+  expect(screen.queryByText(/Parts out of date/)).toBeNull();
 });

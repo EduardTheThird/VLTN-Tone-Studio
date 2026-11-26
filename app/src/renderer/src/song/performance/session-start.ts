@@ -260,10 +260,11 @@ export class SessionStart {
       const countIn = countInBeats(timing.countInBars, timing.beatsPerBar);
       // The count-in is as long as the audio it leads: beats at the song tempo times the rate. The drummer's count, when it plays, leads the
       // song too, and the longer of the two is what the tempo message and the cues wait for.
-      const chaseStart = preRollStart(requestedPosition, timing.preRollBeats, bpm);
+      const pulseBpm = timing.pulseBpm ?? bpm;
+      const chaseStart = preRollStart(requestedPosition, timing.preRollBeats, pulseBpm);
       const drummer = this.drummerCount();
       const drummerMs = countLeadSeconds(drummer, chaseStart, player.playbackRate) * 1000;
-      this.core.countInMs = Math.max(bpm > 0 ? (countIn * beatSeconds(bpm) * 1000) / player.playbackRate : 0, drummerMs);
+      this.core.countInMs = Math.max(pulseBpm > 0 ? (countIn * beatSeconds(pulseBpm) * 1000) / player.playbackRate : 0, drummerMs);
       // A chase that the pedals need before the song begins holds the audio back by CHASE_LEAD_MS, so it goes out first. Nothing is held
       // when the output is not armed, or when there is no state to chase (a start from the beginning, or no cues before the position).
       const settled = new Set(this.core.openingPrepared?.messages.map((bytes) => bytes.join(",")));
@@ -279,7 +280,7 @@ export class SessionStart {
       const lead = Math.max(chaseLead, clockLead) / 1000;
       this.core.transportAt = lead ? midiNow() + lead * 1000 : null;
       await player.play({
-        bpm,
+        bpm: pulseBpm,
         countInBeats: countIn,
         preRollBeats: timing.preRollBeats,
         ...(lead ? { startDelay: lead } : {}),

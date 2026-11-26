@@ -4,7 +4,7 @@ import { useSongLibrary } from "@/song/library";
 import { useSession, selectArmed, type PerformanceSession } from "@/song/performance/session";
 import { sectionIndexAt, sortedSections } from "@/song/performance/sections";
 import { usePlaybackClock } from "@/song/performance/playback-clock";
-import { BeatIndicator } from "./BeatIndicator";
+import { BeatIndicator, type BeatGrid } from "./BeatIndicator";
 import { PreparePedalsButton } from "./PreparePedalsButton";
 import { BandChangeStatus } from "./BandLiveControls";
 import { clock, tempo } from "./format";
@@ -34,7 +34,7 @@ function CurrentSection({ session }: { session: PerformanceSession }) {
  * preparation and the MIDI state, plus the playlist controls while a playlist plays. It reads the session the full transport reads and
  * adds no session calls of its own.
  */
-export function TransportBar({ session, bpm, beats, firstBeat }: { session: PerformanceSession; bpm: number; beats: number; firstBeat: number }) {
+export function TransportBar({ session, ...beat }: BeatGrid & { session: PerformanceSession }) {
   const library = useSongLibrary();
   const player = useSession(session, (s) => s.player);
   const playing = useSession(session, (s) => s.playing);
@@ -63,8 +63,8 @@ export function TransportBar({ session, bpm, beats, firstBeat }: { session: Perf
       <TimeReadout duration={duration} />
       <CurrentSection session={session} />
       <BandChangeStatus session={session} />
-      <BeatIndicator bpm={bpm} beats={beats} firstBeat={firstBeat} />
-      <span className="tabular-nums text-silkscreen-2">{tempo(bpm)}</span>
+      <BeatIndicator {...beat} />
+      <span className="tabular-nums text-silkscreen-2">{tempo(beat.bpm)}</span>
       {inPlaylist && (
         <>
           <Button size="icon-sm" variant="outline" aria-label="Previous song" disabled={library.busy || library.position <= 0} onClick={() => session.skip(-1)}>

@@ -146,3 +146,13 @@ describe("playback rate", () => {
     expect(clicks.at(-1)!.when).toBeCloseTo(20);
   });
 });
+
+it("uses measured beats and keeps an edited bar accent after a jump", async () => {
+  const { beatInBar } = await import("../band/timing");
+  const grid = { beats: [0, 0.4, 1.1, 1.6, 2.3], beatsPerBar: 2, downbeat: 0, bpm: 120, steady: null, meter: "6/8" as const, barStarts: [0, 1, 4] };
+  const segments: Segment[] = [{ ctxStart: 10, songStart: 0, songEnd: 1.6 }, { ctxStart: 11.6, songStart: 0.4, songEnd: 2.4 }];
+  const { clicks } = gridClicks(segments, gridStart(segments, 10, 0, 0.5, grid), 10, 12.7, 0, 0.5, grid);
+  expect(clicks.map(({ beat }) => beat)).toEqual([0, 1, 2, 1, 2]);
+  expect(clicks.map(({ beat }) => beatInBar(grid, beat))).toEqual([0, 0, 1, 0, 1]);
+  expect(clicks[2].when).toBeCloseTo(11.1);
+});

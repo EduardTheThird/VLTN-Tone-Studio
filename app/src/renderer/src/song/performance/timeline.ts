@@ -1,3 +1,6 @@
+import type { BeatGrid } from "../band/beat-grid";
+import { gridBeatAtOrAfter } from "../band/timing";
+
 /*
  * Where song time sits on the audio clock (pure). Playback is a list of segments: the song plays from `songStart` at audio
  * time `ctxStart` until `songEnd`, and a jump starts a new segment. Position and the metronome read the same list, so they
@@ -61,10 +64,10 @@ export interface GridCursor {
 }
 
 /** Where a grid starts at audio time `ctx`: the first beat at or after the song time playing then. */
-export function gridStart(segments: readonly Segment[], ctx: number, firstBeat: number, interval: number): GridCursor {
+export function gridStart(segments: readonly Segment[], ctx: number, firstBeat: number, interval: number, grid?: BeatGrid): GridCursor {
   const segment = segmentIndexAt(segments, ctx);
   const song = Math.max(segments[segment].songStart, songTimeAt(segments, ctx));
-  return { segment, beat: beatAtOrAfter(song, firstBeat, interval) };
+  return { segment, beat: grid ? gridBeatAtOrAfter(grid, song) : beatAtOrAfter(song, firstBeat, interval) };
 }
 
 /**
@@ -79,23 +82,24 @@ export function gridClicks(
   until: number,
   firstBeat: number,
   interval: number,
+  grid?: BeatGrid,
 ): { clicks: Click[]; cursor: GridCursor } {
   const clicks: Click[] = [];
   let { segment, beat } = cursor;
   while (segment < segments.length) {
     const current = segments[segment];
-    const song = firstBeat + beat * interval;
+    const song = grid ? grid.beats[beat] ?? Infinity : firstBeat + beat * interval;
     if (song >= current.songEnd) {
       // The segment ends at audio time `ctxStart + (songEnd - songStart) / rate`. Move on only once that is no longer in the future.
       if (current.ctxStart + (current.songEnd - current.songStart) / rateOf(current) > until) break;
       segment++;
       if (segment >= segments.length) break;
-      beat = beatAtOrAfter(segments[segment].songStart, firstBeat, interval);
+      beat = grid ? gridBeatAtOrAfter(grid, segments[segment].songStart) : beatAtOrAfter(segments[segment].songStart, firstBeat, interval);
       continue;
     }
     if (song < current.songStart) {
       // Always move forward, even when rounding lands the beat just before the start.
-      beat = Math.max(beat + 1, beatAtOrAfter(current.songStart, firstBeat, interval));
+      beat = Math.max(beat + 1, grid ? gridBeatAtOrAfter(grid, current.songStart) : beatAtOrAfter(current.songStart, firstBeat, interval));
       continue;
     }
     const when = current.ctxStart + (song - current.songStart) / rateOf(current);

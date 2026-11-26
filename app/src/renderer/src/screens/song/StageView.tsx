@@ -209,7 +209,7 @@ export function StageView({
           </>
         )}
       />
-      {stage && edgeFlash && <EdgeFlash {...beat} />}
+      {stage && edgeFlash && <EdgeFlash {...beat} grid={grid} />}
     </>
   );
 }

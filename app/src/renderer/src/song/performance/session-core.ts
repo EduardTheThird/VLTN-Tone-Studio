@@ -48,6 +48,7 @@ export function carriedInto(midi: CarriedMidi | null, next: { queued: boolean; p
 
 /** The lead-in before a start: whole bars of count-in, beats of pre-roll, and a delay before either (seconds). */
 export interface Timing {
+  pulseBpm?: number;
   countInBars: number;
   beatsPerBar: number;
   preRollBeats: number;

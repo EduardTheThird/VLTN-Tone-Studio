@@ -158,3 +158,33 @@ export function stepAt(
 export function clampVelocity(value: number): number {
   return Math.min(127, Math.max(1, Math.round(value)));
 }
+
+/** Moves one boundary while keeping the next bar line fixed, so the correction affects only its two adjoining bars. */
+export function moveBarLine(grid: BeatGrid, barIndex: number, offset: -1 | 1): BeatGrid {
+  const starts = barStarts(grid);
+  if (!Number.isInteger(barIndex) || barIndex < 1 || barIndex >= starts.length) return grid;
+  const moved = starts[barIndex] + offset;
+  const before = moved - starts[barIndex - 1];
+  const after = barIndex + 1 < starts.length ? starts[barIndex + 1] - moved : barBeats(grid);
+  if (moved >= grid.beats.length || before < 1 || after < 1 || Math.max(before, after) > 2 * barBeats(grid)) return grid;
+  starts[barIndex] = moved;
+  return { ...grid, barStarts: starts, manualBarLines: true };
+}
+
+/** Binary search of the saved beats, stable at exact boundaries. */
+export function gridBeatAtOrAfter(grid: BeatGrid, time: number): number {
+  let low = 0;
+  let high = grid.beats.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (grid.beats[middle] < time - 1e-7) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+export function gridBeatAt(grid: BeatGrid, time: number): number {
+  const next = gridBeatAtOrAfter(grid, time);
+  const beat = grid.beats[next];
+  return beat !== undefined && Math.abs(beat - time) < 1e-7 ? next : next - 1;
+}

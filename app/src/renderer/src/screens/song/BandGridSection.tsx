@@ -2,7 +2,8 @@ import { useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { doubleTempo, halveTempo, nudgeGrid, shiftDownbeat, type BeatGrid } from "@/song/band/beat-grid";
+import { doubleTempo, halveTempo, nudgeGrid, setGridMeter, shiftDownbeat, type BeatGrid } from "@/song/band/beat-grid";
+import { barStarts, moveBarLine } from "@/song/band/timing";
 import type { ChordAtBeat } from "@/song/band/harmony";
 import { BandGrid } from "./BandGrid";
 import { BassNoteEditor, BassNoteList, type BassNotesContext } from "./BassNotes";
@@ -48,6 +49,7 @@ export function BandGridSection({
   view,
 }: BandGridSectionProps) {
   // The beat whose bass note is open in the editor. A beat is toggled off by picking it again.
+  const [bar, setBar] = useState(2);
   const [editing, setEditing] = useState<number | null>(null);
   if (view === "notes") {
     return (
@@ -74,6 +76,22 @@ export function BandGridSection({
   }
   return (
     <section aria-label="Beat grid" className="flex min-w-0 flex-col gap-3">
+      {grid && <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">Meter
+          <select aria-label="Band meter" disabled={blocked} className="rounded border border-seam bg-background p-1"
+            value={grid.meter ?? `${grid.beatsPerBar}/4`} onChange={(event) => onGrid(setGridMeter(grid, event.target.value as "2/4" | "3/4" | "4/4" | "6/8"))}>
+            {![2, 3, 4].includes(grid.beatsPerBar) && <option value={`${grid.beatsPerBar}/4`} disabled>{grid.beatsPerBar}/4 (current)</option>}
+            <option>2/4</option><option>3/4</option><option>4/4</option><option value="6/8">6/8 (two dotted-quarter pulses)</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2">Bar to move
+          <input type="number" className="w-16 rounded border border-seam bg-background p-1" min={2} max={barStarts(grid).length}
+            disabled={blocked || barStarts(grid).length < 2} value={bar} onChange={(event) => setBar(Number(event.target.value))} />
+        </label>
+        <Button size="sm" variant="outline" disabled={blocked || moveBarLine(grid, bar - 1, -1) === grid} onClick={() => onGrid(moveBarLine(grid, bar - 1, -1))}>Bar line earlier</Button>
+        <Button size="sm" variant="outline" disabled={blocked || moveBarLine(grid, bar - 1, 1) === grid} onClick={() => onGrid(moveBarLine(grid, bar - 1, 1))}>Bar line later</Button>
+        <p className="w-full text-xs text-silkscreen-3">Move a bar line by one pulse. Beat times and the following bar line stay put.</p>
+      </div>}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" disabled={blocked} onClick={onFind}>
           Find the beat

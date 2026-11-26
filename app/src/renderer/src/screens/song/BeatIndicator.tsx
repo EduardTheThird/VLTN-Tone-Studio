@@ -1,9 +1,15 @@
+import type { BeatGrid as SongGrid } from "@/song/band/beat-grid";
+import { beatInBar, gridBeatAt } from "@/song/band/timing";
 import { useEffect, useState } from "react";
 import { usePlaybackClock, useCountInBeats } from "@/song/performance/playback-clock";
 
 /** Index of the song beat that is sounding, or -1 while stopped or before the first beat. Only a change of beat re-renders. */
-export function useBeatIndex(bpm: number, firstBeat: number): number {
-  return usePlaybackClock((s) => (s.playing && bpm > 0 ? Math.max(-1, Math.floor(((s.position - firstBeat) * bpm) / 60 + 1e-6)) : -1));
+export function useBeatIndex(bpm: number, firstBeat: number, grid?: SongGrid | null): number {
+  return usePlaybackClock((s) => {
+    if (!s.playing) return -1;
+    if (grid) return gridBeatAt(grid, s.position);
+    return bpm > 0 ? Math.max(-1, Math.floor(((s.position - firstBeat) * bpm) / 60 + 1e-6)) : -1;
+  });
 }
 
 /** The beat grid the indicators follow. */
@@ -11,16 +17,17 @@ export interface BeatGrid {
   bpm: number;
   beats: number;
   firstBeat: number;
+  grid?: SongGrid | null;
 }
 
 /**
  * A dot that flashes on each song beat, in the accent colour on the downbeat. It is remounted on every beat, so the flash plays again each
  * time. During a count-in it counts the clicks down to the audio instead.
  */
-export function BeatIndicator({ bpm, beats, firstBeat, large = false }: BeatGrid & { large?: boolean }) {
-  const beat = useBeatIndex(bpm, firstBeat);
-  const countIn = useCountInBeats(bpm);
-  const downbeat = beat >= 0 && beat % beats === 0;
+export function BeatIndicator({ bpm, beats, firstBeat, grid, large = false }: BeatGrid & { large?: boolean }) {
+  const beat = useBeatIndex(bpm, firstBeat, grid);
+  const countIn = useCountInBeats(grid && grid.bpm > 0 ? grid.bpm : bpm);
+  const downbeat = beat >= 0 && (grid ? beatInBar(grid, beat) : beat % beats) === 0;
   if (countIn > 0) {
     return (
       <span role="status" aria-label={`Count-in ${countIn}`} className={`font-bold text-amber-400 ${large ? "text-5xl" : "text-base"}`}>
@@ -55,10 +62,10 @@ export function useBeatLit(beat: number): boolean {
  * A frame around the whole stage view that flashes on each song beat, for performers who cannot look at the dot. Off unless the stage view
  * turns it on. It does not show during a count-in.
  */
-export function EdgeFlash({ bpm, beats, firstBeat }: BeatGrid) {
-  const beat = useBeatIndex(bpm, firstBeat);
+export function EdgeFlash({ bpm, beats, firstBeat, grid }: BeatGrid) {
+  const beat = useBeatIndex(bpm, firstBeat, grid);
   const lit = useBeatLit(beat);
-  const downbeat = beat >= 0 && beat % beats === 0;
+  const downbeat = beat >= 0 && (grid ? beatInBar(grid, beat) : beat % beats) === 0;
   const colour = downbeat ? "border-amber-400" : "border-sky-400";
   const visibility = lit ? "opacity-100" : "opacity-0";
   return <div aria-hidden className={`pointer-events-none fixed inset-0 z-40 border-[12px] transition-opacity duration-150 ${colour} ${visibility}`} />;

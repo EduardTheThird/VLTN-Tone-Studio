@@ -79,6 +79,10 @@ export interface TempoEstimate {
 
 export interface BeatGrid {
   beatsPerBar: number;
+  /** A compound bar consists of two dotted-quarter pulses. Older grids use quarter-note pulses. */
+  meter?: "6/8";
+  /** Keep the performer’s bar phase and local edits when harmony is reanalysed. */
+  manualBarLines?: true;
   /** Beat times in seconds, from the start of the audio. */
   beats: number[];
   /** Index into `beats` of the first downbeat, in 0 to beatsPerBar − 1. */
@@ -596,6 +600,7 @@ export function barStartsFromChords(beats: readonly number[], changes: readonly 
  * steady first beat on the downbeat, so that moves with it.
  */
 export function withChordDownbeat(grid: BeatGrid, changes: readonly number[]): BeatGrid {
+  if (grid.manualBarLines) return grid;
   const downbeat = downbeatFromChordChanges(grid.beats, changes, grid.beatsPerBar, grid.downbeat);
   const moved = downbeat !== grid.downbeat;
   const onDownbeat = grid.beats[grid.downbeat];
@@ -857,7 +862,12 @@ export function parseBeatGrid(value: unknown): BeatGrid | null {
   }
   const grid = makeGrid(beatsPerBar, beats as number[], downbeat);
   const starts = parseBarStarts(saved.barStarts, downbeat, beatsPerBar, beats.length);
-  return starts ? { ...grid, barStarts: starts } : grid;
+  return {
+    ...grid,
+    ...(starts ? { barStarts: starts } : {}),
+    ...(beatsPerBar === 2 && saved.meter === "6/8" ? { meter: "6/8" as const } : {}),
+    ...(saved.manualBarLines === true ? { manualBarLines: true as const } : {}),
+  };
 }
 
 /**
@@ -898,7 +908,7 @@ export function halveTempo(grid: BeatGrid): BeatGrid {
   const bar = Math.max(1, Math.floor(grid.beatsPerBar));
   const keep = grid.downbeat % 2;
   const beats = grid.beats.filter((_, i) => i % 2 === keep);
-  return makeGrid(grid.beatsPerBar, beats, Math.floor(grid.downbeat / 2) % bar);
+  return { ...makeGrid(grid.beatsPerBar, beats, Math.floor(grid.downbeat / 2) % bar), ...(grid.meter ? { meter: grid.meter } : {}) };
 }
 
 /** Adds the midpoint between each pair of beats, so the tempo doubles and the downbeat stays on the same beat in time. */
@@ -909,7 +919,7 @@ export function doubleTempo(grid: BeatGrid): BeatGrid {
     beats.push(beat);
     if (i + 1 < grid.beats.length) beats.push((beat + grid.beats[i + 1]) / 2);
   });
-  return makeGrid(grid.beatsPerBar, beats, (2 * grid.downbeat) % bar);
+  return { ...makeGrid(grid.beatsPerBar, beats, (2 * grid.downbeat) % bar), ...(grid.meter ? { meter: grid.meter } : {}) };
 }
 
 /** Moves the downbeat by `step` beats, wrapping within the bar. */
@@ -917,7 +927,7 @@ export function shiftDownbeat(grid: BeatGrid, step: number): BeatGrid {
   const bar = Math.max(1, Math.floor(grid.beatsPerBar));
   // The performer has set the bar phase by hand, so the bar lines are one length again.
   const { barStarts: _moved, ...rest } = grid;
-  return { ...rest, downbeat: (((grid.downbeat + step) % bar) + bar) % bar };
+  return { ...rest, downbeat: (((grid.downbeat + step) % bar) + bar) % bar, ...(grid.manualBarLines ? { manualBarLines: true } : {}) };
 }
 
 /**
@@ -930,5 +940,19 @@ export function nudgeGrid(grid: BeatGrid, seconds: number): BeatGrid {
   const kept = grid.beats.map((beat) => beat + shift).filter((beat) => beat >= 0);
   const dropped = grid.beats.length - kept.length;
   const nudged = makeGrid(grid.beatsPerBar, kept, (((grid.downbeat - dropped) % bar) + bar) % bar);
-  return grid.barStarts ? { ...nudged, barStarts: grid.barStarts.map((beat) => beat - dropped).filter((beat) => beat >= 0) } : nudged;
+  const starts = grid.barStarts?.map((beat) => beat - dropped).filter((beat) => beat >= 0);
+  return {
+    ...nudged,
+    ...(starts?.[0] === nudged.downbeat ? { barStarts: starts } : {}),
+    ...(grid.meter ? { meter: grid.meter } : {}),
+    ...(grid.manualBarLines ? { manualBarLines: true as const } : {}),
+  };
+}
+
+/** The selected meter describes the existing pulse; changing it leaves the beat times intact. */
+export function setGridMeter(grid: BeatGrid, meter: "2/4" | "3/4" | "4/4" | "6/8"): BeatGrid {
+  const beatsPerBar = meter === "6/8" ? 2 : Number(meter[0]);
+  const { barStarts: _starts, meter: _meter, ...timing } = grid;
+  const downbeat = grid.downbeat % beatsPerBar;
+  return { ...timing, beatsPerBar, downbeat, manualBarLines: true, ...(meter === "6/8" ? { meter } : {}) };
 }

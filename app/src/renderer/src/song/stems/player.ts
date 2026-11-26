@@ -1,3 +1,5 @@
+import type { BeatGrid } from "../band/beat-grid";
+import { beatInBar, gridBeatAtOrAfter } from "../band/timing";
 import { pcmMemoryShape, sharedPlaybackBuffer, sharePlaybackPcm } from "../audio/playback-pcm";
 import type { PcmAudio, Stems } from "../types";
 import { countApplies, countLeadSeconds, type DrummerCount } from "../performance/drummer-count";
@@ -96,6 +98,7 @@ export interface MetronomeSettings {
   beats: number;
   volume: number;
   firstBeat?: number;
+  grid?: BeatGrid;
   /** The click's sound; the plain blip when unset */
   sound?: ClickSound;
   /** The count-in's sound; follows `sound` when unset */
@@ -803,6 +806,11 @@ export class StemPlayer {
     const interval = Number.isFinite(bpm) && bpm > 0 ? 60 / bpm : 1;
     const firstBeat = this.firstBeat();
     const ahead = this.position + lead * this.rate;
+    const grid = this.metronome.grid;
+    if (grid) {
+      const measured = grid.beats[gridBeatAtOrAfter(grid, ahead)];
+      if (measured !== undefined) return measured;
+    }
     return firstBeat + beatAtOrAfter(ahead, firstBeat, interval) * interval;
   }
 
@@ -1144,16 +1152,16 @@ export class StemPlayer {
 
   /** Clicks on the grid along the current timeline, from where the timeline is now. Re-run by the timer, so a jump is followed. */
   private startGrid(): void {
-    const { bpm, beats } = this.metronome;
+    const { bpm, beats, grid } = this.metronome;
     if (!Number.isFinite(bpm) || bpm <= 0 || !Number.isInteger(beats) || beats < 1 || !this.segments.length) return;
     const firstBeat = this.firstBeat();
     const interval = 60 / bpm;
-    let cursor: GridCursor = gridStart(this.segments, this.ctx.currentTime, firstBeat, interval);
+    let cursor: GridCursor = gridStart(this.segments, this.ctx.currentTime, firstBeat, interval, grid);
     const fill = () => {
       const now = this.ctx.currentTime;
-      const next = gridClicks(this.segments, cursor, now, now + 0.1, firstBeat, interval);
+      const next = gridClicks(this.segments, cursor, now, now + 0.1, firstBeat, interval, grid);
       cursor = next.cursor;
-      for (const click of next.clicks) this.click(click.when, click.beat % beats);
+      for (const click of next.clicks) this.click(click.when, grid ? beatInBar(grid, click.beat) : click.beat % beats);
     };
     fill();
     this.clickTimer = setInterval(fill, 25);
