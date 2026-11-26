@@ -72,6 +72,8 @@ The **Rig audio check** in Audio outputs and MIDI health lists the active routes
 - **Solo scale** shows where to solo on the neck for the song's key. It starts on the minor pentatonic.
 - Pick another scale, a root, and **Whole neck** or a box position. The diagram follows transpose, pitch and capo.
 
+<a id="generated-drums-and-bass"></a>
+
 ### Prepare a Band arrangement
 
 1. From **Songs & sets**, open a saved song and choose **Check timing and audition band**. You can also open **Generate drums & bass…** from **Performance → This song**.
