@@ -1,12 +1,12 @@
 // Choose a close-position hand shape whose voices travel as little as possible.
-import { fifthInterval, pitchClass, SEVENTH, THIRD } from "./chord-tones";
+import { chordFifth, pitchClass, SEVENTH, THIRD } from "./chord-tones";
 import type { ParsedChord } from "./harmony";
 import type { KeysRegister, KeysSettings } from "./keys-types";
 
 export const KEYS_RANGE: Record<KeysRegister, readonly [number, number]> = { low: [48, 60], mid: [52, 76], high: [60, 84] };
 
 function noteClasses(chord: ParsedChord, extensions: boolean): number[] {
-  const intervals = [0, THIRD[chord.quality], fifthInterval(chord.quality)];
+  const intervals = [0, THIRD[chord.quality], chordFifth(chord)];
   if (extensions) {
     intervals.push(SEVENTH[chord.seventh]);
     const quality = chord.name.split("/")[0].replace(/^[A-Ga-g][#♯b♭]?/, "");
@@ -20,8 +20,10 @@ export function rightHand(chord: ParsedChord, settings: Pick<KeysSettings, "voic
   const [low, high] = KEYS_RANGE[settings.register];
   const classes = noteClasses(chord, settings.extensions);
   // The fit can favor the seventh or ninth over the fifth when there are more chord tones than fingers.
-  const fifth = pitchClass(chord.root + fifthInterval(chord.quality));
-  const essential = classes.length > settings.voices ? classes.filter((pc) => pc !== fifth).slice(-settings.voices) : classes;
+  const fifth = pitchClass(chord.root + chordFifth(chord));
+  const essential = classes.length > settings.voices
+    ? classes.filter((pc) => chord.fifth !== undefined || pc !== fifth).slice(-settings.voices)
+    : classes;
   const candidates = Array.from({ length: high - low + 1 }, (_, i) => low + i).filter((note) => classes.includes(pitchClass(note)));
   const count = Math.min(settings.voices, candidates.length);
   if (!count) return [];
@@ -52,6 +54,9 @@ export function leftHand(chord: ParsedChord, choice: Exclude<KeysSettings["left"
   const roots = Array.from({ length: 13 }, (_, i) => 36 + i).filter((note) => pitchClass(note) === chord.bass);
   const root = roots.sort((a, b) => Math.abs(a - anchor) - Math.abs(b - anchor))[0];
   if (choice === "root-octave") return [root, root + 12];
-  if (choice === "root-fifth") return [root, root + (chord.bass === chord.root ? fifthInterval(chord.quality) : 7)];
+  if (choice === "root-fifth") {
+    const fifth = pitchClass(chord.root + chordFifth(chord) - chord.bass);
+    return fifth ? [root, root + fifth] : [root];
+  }
   return [root];
 }

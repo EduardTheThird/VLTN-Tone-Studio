@@ -5,7 +5,7 @@
 // This file chooses a figure and fits it to the kick; bass.ts places its notes. Pure.
 
 import { keyScale, variationSeed, type BandKey } from "./bass-phrases";
-import { SEVENTH, THIRD, fifthInterval, pitchClass } from "./chord-tones";
+import { SEVENTH, THIRD, chordFifth, pitchClass } from "./chord-tones";
 import type { ParsedChord } from "./harmony";
 import { createRandom } from "./random";
 
@@ -137,7 +137,7 @@ export function lockToKick(notes: readonly FigureNote[], kicks: ReadonlySet<numb
  * takes the key's scale note a third or seventh above its root, and the fifth when no key is known.
  */
 export function degreePitchClass(degree: Degree, chord: ParsedChord, key: Pick<BandKey, "tonic" | "mode"> | null): number | null {
-  const fifth = pitchClass(chord.root + fifthInterval(chord.quality));
+  const fifth = pitchClass(chord.root + chordFifth(chord));
   const inKey = (...intervals: number[]): number | null => {
     if (!key) return null;
     const scale = keyScale(key);

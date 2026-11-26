@@ -27,7 +27,7 @@ import {
 } from "./bass-phrases";
 import type { BeatGrid } from "./beat-grid";
 import { chooseFigure, degreePitchClass, lockToKick, type BarNote, type Figure } from "./bass-figures";
-import { SEVENTH, THIRD, fifthInterval, pitchClass } from "./chord-tones";
+import { SEVENTH, THIRD, chordFifth, pitchClass } from "./chord-tones";
 import { bassRhythmFromAccents, hitSteps, isAccented, rhythmScore, type Feel } from "./feel";
 import type { ChordQuality, ChordAtBeat, ParsedChord } from "./harmony";
 import { endingBar, endingShape } from "./ending";
@@ -223,7 +223,7 @@ type Range = (typeof BASS_NOTE_RANGES)[keyof typeof BASS_NOTE_RANGES];
 
 /** The chord's tones as pitch classes: root, third, fifth and seventh where the chord has them. */
 function chordTones(chord: ParsedChord): number[] {
-  const intervals = [0, THIRD[chord.quality], fifthInterval(chord.quality), SEVENTH[chord.seventh]];
+  const intervals = [0, THIRD[chord.quality], chordFifth(chord), SEVENTH[chord.seventh]];
   return intervals.filter((interval): interval is number => interval !== null).map((interval) => pitchClass(chord.root + interval));
 }
 
@@ -314,7 +314,7 @@ function approachApplies(slot: Slot, chord: ParsedChord, next: Slot | undefined)
 
 /** The note for a step that is not an approach. A fifth role plays the fifth; otherwise the pitch method decides. */
 function plainPitch(slot: Slot, chord: ParsedChord, previous: number, method: BassMode, range: Range): number {
-  const fifth = fifthInterval(chord.quality);
+  const fifth = pitchClass(chord.root + chordFifth(chord) - chord.bass);
   // With a home register a fifth is placed from the bar's root, so it does not move the root's octave.
   const fifthNote = (): number =>
     slot.home === null ? nearestOctave(pitchClass(chord.bass + fifth), previous, range, false) : placeFromRoot(rootNote(slot, chord.bass, previous, range, false), fifth, slot.home, range);
@@ -346,7 +346,7 @@ function figurePitch(slot: Slot, note: BarNote, chord: ParsedChord, previous: nu
       const below = scale && scale.includes(pitchClass(target)) ? scaleNeighbours(target, scale)[0] : target - (complexity < CHROMATIC_FROM ? 2 : 1);
       if (below >= range.low) return { pitch: below, approach: true, root };
     }
-    return { pitch: place(pitchClass(chord.bass + fifthInterval(chord.quality))), approach: false, root };
+    return { pitch: place(pitchClass(chord.root + chordFifth(chord))), approach: false, root };
   }
   if (note.degree === "8") return { pitch: slot.octaveJumps === 0 ? root : placeFromRoot(root, 12, home, range), approach: false, root };
   const pc = degreePitchClass(note.degree, chord, slot.key);

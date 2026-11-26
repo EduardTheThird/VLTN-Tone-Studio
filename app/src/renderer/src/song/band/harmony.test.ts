@@ -290,3 +290,21 @@ describe("chordChangeTimes", () => {
     expect(chordChangeTimes(beatsNamed([null, null, "C"]))).toEqual([1]);
   });
 });
+
+it("keeps an authored passing inversion between identical chords", () => {
+  const cues = [line(0, "[C]"), line(0.5, "[G/B]"), line(1, "[C]")];
+  const result = harmonyForSong(grid(5), cues, [], 2.5, readingOf([0, 7, 0, 0, 0]));
+  expect(namesOf(result)).toEqual(["C", "G/B", "C", "C", "C"]);
+  expect(result[1].chord?.bass).toBe(11);
+});
+
+it("fills uncovered harmony from detection and preserves explicit rests", () => {
+  const cues = [line(0.5, "[C]"), line(1, "[N.C.]"), line(1.5, "[auto]"), line(2.5, "[Am]")];
+  const detected = [
+    { time: 0, name: "F", confidence: 1 },
+    { time: 0.5, name: "E", confidence: 1 },
+    { time: 2, name: "G", confidence: 1 },
+    { time: 2.5, name: "F", confidence: 1 },
+  ];
+  expect(namesOf(harmonyForSong(grid(6), cues, detected, 3))).toEqual(["F", "C", null, "E", "G", "Am"]);
+});

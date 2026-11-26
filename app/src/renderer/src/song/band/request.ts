@@ -47,7 +47,7 @@ export function sumAudio(sources: readonly PcmAudio[]): PcmAudio {
 
 /** The chord change times the chart gives, in song seconds. Used to pick the bar phase when the beat is found. */
 export function chartChordTimes(cues: readonly Cue[]): number[] {
-  return chartChordEvents(cues).map((event) => event.time);
+  return chartChordEvents(cues).flatMap((event) => event.name === "auto" ? [] : [event.time]);
 }
 
 export interface BandInputs {

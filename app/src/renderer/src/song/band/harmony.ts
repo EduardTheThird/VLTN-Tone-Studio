@@ -1,9 +1,8 @@
-// Harmony for the generated bass: which chord sounds on each beat of the song. The chart's chords are used when it has any timed chord,
-// otherwise the chords detected from the audio. Each beat takes the chord that covers most of it, and a one-beat blip between two
-// identical chords is folded into them. Everything here is pure; the chart and the beat grid come in as values.
+// Arranges the authored and detected harmony for the generated parts on the song grid.
 
 import type { Cue } from "../performance/chart";
 import type { Chord } from "../performance/chords";
+import { SEVENTH, THIRD, chordFifth, pitchClass as wrapPitch } from "./chord-tones";
 import { chordPattern } from "../performance/reader";
 import type { BassLineBeat } from "../analysis/bass-line";
 import { BASS_LINE_CONFIDENT } from "../analysis/bass-line";
@@ -21,6 +20,8 @@ export interface ParsedChord {
   root: number;
   quality: ChordQuality;
   seventh: ChordSeventh;
+  /** Explicit alteration of the fifth degree, in semitones above the root. */
+  fifth?: 6 | 8;
   /** Pitch class of the bass note: the slash note for `D/F#`, otherwise the root. */
   bass: number;
   /** The chord name as written, such as `D/F#`. */
@@ -35,6 +36,7 @@ export interface ParsedChord {
 export interface ChordEvent {
   time: number;
   name: string;
+  authored?: true;
 }
 
 export interface ChordAtBeat {
@@ -43,6 +45,7 @@ export interface ChordAtBeat {
   time: number;
   /** Null before the first chord, on `N`, and on a name that cannot be parsed. */
   chord: ParsedChord | null;
+  authored?: true;
 }
 
 const NATURAL_PITCH: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -110,25 +113,28 @@ function deriveSeventh(suffix: string, quality: ChordQuality): ChordSeventh {
  */
 export function parseChordName(name: string): ParsedChord | null {
   const text = name.trim();
-  if (text === "N") return null;
-  const match = CHORD_NAME.exec(text);
+  if (/^N(?:\.C\.?)?$/i.test(text)) return null;
+  const match = CHORD_NAME.exec(text.replaceAll("♭", "b").replaceAll("♯", "#"));
   if (!match) return null;
   const known = SUFFIXES.get(match[3]);
   const quality = known?.quality ?? deriveQuality(match[3]);
   const seventh = known?.seventh ?? deriveSeventh(match[3], quality);
   const root = pitchClass(match[1], match[2]);
   const bass = match[4] ? pitchClass(match[4], match[5]) : root;
-  return { root, quality, seventh, bass, name: text };
+  const fifth = /b5/.test(match[3]) ? 6 : /#5/.test(match[3]) ? 8 : undefined;
+  return { root, quality, seventh, bass, name: text, ...(fifth === undefined ? {} : { fifth }) };
 }
 
 /**
  * The chord tokens of the chart's timed lines, each with a time. Several chords on a line are spread evenly from the line's time to the
  * next timed line's time. Triggers have no song time and are skipped. The last line lasts LAST_CHORD_SECONDS per chord.
  */
+const BAND_CHORD_PATTERN = new RegExp(chordPattern.source.replace("|N", "|auto|N"), "g");
+
 export function chartChordEvents(cues: readonly Cue[]): ChordEvent[] {
   const lines = cues.filter((cue) => !cue.trigger).sort((a, b) => a.time - b.time);
   return lines.flatMap((line) => {
-    const names = [...line.text.matchAll(chordPattern)].map((match) => match[1]);
+    const names = [...line.text.matchAll(BAND_CHORD_PATTERN)].map((match) => match[1]);
     if (!names.length) return [];
     const next = lines.find((other) => other.time > line.time);
     const end = next ? next.time : line.time + LAST_CHORD_SECONDS * names.length;
@@ -145,18 +151,18 @@ export function chordsPerBeat(grid: BeatGrid, events: readonly ChordEvent[], son
   const timeline = [...events].sort((a, b) => a.time - b.time);
   return grid.beats.map((time, beat) => {
     const end = beat + 1 < grid.beats.length ? grid.beats[beat + 1] : songEnd;
-    let chosen: string | undefined = undefined,
+    let chosen: ChordEvent | undefined,
       bestOverlap = 0;
     for (let i = 0; i < timeline.length; i++) {
       const until = i + 1 < timeline.length ? timeline[i + 1].time : songEnd;
       const overlap = Math.min(end, until) - Math.max(time, timeline[i].time);
       if (overlap > bestOverlap) {
         bestOverlap = overlap;
-        chosen = timeline[i].name;
+        chosen = timeline[i];
       }
     }
-    if (chosen === undefined) chosen = timeline.findLast((event) => event.time <= time)?.name;
-    return { beat, time, chord: chosen === undefined ? null : parseChordName(chosen) };
+    chosen ??= timeline.findLast((event) => event.time <= time);
+    return { beat, time, chord: chosen ? parseChordName(chosen.name) : null, ...(chosen?.authored ? { authored: true as const } : {}) };
   });
 }
 
@@ -166,7 +172,7 @@ export function chordsPerBeat(grid: BeatGrid, events: readonly ChordEvent[], son
  */
 export function mergeShortChords(perBeat: readonly ChordAtBeat[]): ChordAtBeat[] {
   return perBeat.map((entry, i) => {
-    if (i === 0 || i + 1 >= perBeat.length) return entry;
+    if (entry.authored || perBeat[i - 1]?.authored || perBeat[i + 1]?.authored || i === 0 || i + 1 >= perBeat.length) return entry;
     const before = perBeat[i - 1].chord,
       after = perBeat[i + 1].chord;
     if (!entry.chord || !before || !after || before.name !== after.name || entry.chord.name === before.name) return entry;
@@ -176,11 +182,8 @@ export function mergeShortChords(perBeat: readonly ChordAtBeat[]): ChordAtBeat[]
 
 /** The notes of a chord that a bass can play under it: the root, the third, the fifth and the seventh (where it has one). */
 export function chordTones(chord: ParsedChord): number[] {
-  const third = { major: 4, minor: 3, dim: 3, aug: 4, sus2: 2, sus4: 5, power: null }[chord.quality];
-  const fifth = chord.quality === "dim" ? 6 : chord.quality === "aug" ? 8 : 7;
-  const seventh = { none: null, dom7: 10, min7: 10, maj7: 11, dim7: 9, "half-dim": 10 }[chord.seventh];
-  const intervals = [0, third, fifth, seventh];
-  return intervals.filter((interval): interval is number => interval !== null && interval !== undefined).map((interval) => (chord.root + interval) % 12);
+  return [0, THIRD[chord.quality], chordFifth(chord), SEVENTH[chord.seventh]]
+    .flatMap((interval) => interval === null ? [] : [wrapPitch(chord.root + interval)]);
 }
 
 /**
@@ -191,10 +194,10 @@ export function chordTones(chord: ParsedChord): number[] {
 export function withOriginalBass(perBeat: readonly ChordAtBeat[], bassLine: readonly BassLineBeat[]): ChordAtBeat[] {
   return perBeat.map((entry, beat) => {
     const reading = bassLine[beat];
-    if (!entry.chord || !reading || reading.pc === null || reading.confidence < BASS_LINE_CONFIDENT) return entry;
+    if (!entry.chord || (entry.authored && entry.chord.name.includes("/")) || !reading || reading.pc === null || reading.confidence < BASS_LINE_CONFIDENT) return entry;
     const played = reading.pc;
     const next = perBeat[beat + 1]?.chord ?? null;
-    if (next && next.root === played && !chordTones(entry.chord).includes(played)) {
+    if (!entry.authored && !perBeat[beat + 1]?.authored && next && next.root === played && !chordTones(entry.chord).includes(played)) {
       return { ...entry, chord: { ...next, bass: played } };
     }
     return { ...entry, chord: { ...entry.chord, bass: played } };
@@ -244,12 +247,7 @@ function overrideOnBeat(overrides: readonly BassOverride[], time: number): BassO
 /** Sharp spellings for a chord made from a bass note alone. */
 const NOTE_LETTERS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-/**
- * The chord on each beat of the song. The chart's chords are used when it has any timed chord, including `N`. Otherwise the detected
- * chords are used, ignoring their confidence. The result is snapped to the beats and short blips are merged. With `bassLine` (the
- * original bass, when the setting asks for it), the played bass notes replace the chords' bass (see withOriginalBass). The performer's
- * overrides (spec 87) come last, so they win over both.
- */
+/** A chart holds its last written chord until another chord, N.C., or an explicit [auto] marker. */
 export function harmonyForSong(
   grid: BeatGrid,
   cues: readonly Cue[],
@@ -259,7 +257,27 @@ export function harmonyForSong(
   overrides: readonly BassOverride[] = [],
 ): ChordAtBeat[] {
   const fromChart = chartChordEvents(cues);
-  const events = fromChart.length ? fromChart : detected.map(({ time, name }) => ({ time, name }));
+  const estimates = detected.map(({ time, name }) => ({ time, name })).sort((a, b) => a.time - b.time);
+  const events: ChordEvent[] = [];
+  let chartIndex = 0;
+  let estimateIndex = 0;
+  let automatic = true;
+  let estimate: ChordEvent | undefined;
+  while (chartIndex < fromChart.length || estimateIndex < estimates.length) {
+    const authored = fromChart[chartIndex];
+    const guess = estimates[estimateIndex];
+    if (!authored || (guess && guess.time <= authored.time)) {
+      estimate = guess;
+      estimateIndex++;
+      if (automatic && (!authored || guess.time < authored.time)) events.push(guess);
+    } else {
+      chartIndex++;
+      automatic = authored.name === "auto";
+      events.push(automatic
+        ? { time: authored.time, name: estimate?.name ?? "N" }
+        : { ...authored, authored: true });
+    }
+  }
   const perBeat = mergeShortChords(chordsPerBeat(grid, events, songEnd));
   const withBass = bassLine ? withOriginalBass(perBeat, bassLine) : perBeat;
   return withBassOverrides(withBass, overrides);

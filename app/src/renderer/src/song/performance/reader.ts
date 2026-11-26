@@ -8,7 +8,7 @@ export interface ReaderLine {
   chords: { time: number; name: string }[];
 }
 /** A chord token in a chart line, such as `[Am7]` or `[N]`. The first group is the chord name. */
-export const chordPattern = /\[([A-G][#b]?[^\]\s]*|N)\]/g;
+export const chordPattern = /\[([A-G][#b♭♯]?[^\]\s]*|N(?:\.C\.?)?)\]/g;
 /**
  * The untimed text of a chart: its lines with directives, timestamps and MIDI removed. Comments and headings are kept, since the reader and
  * the editor decide how to show them.
@@ -39,7 +39,7 @@ export function performanceLines(chart: string, lyrics: string, estimates: Chord
     }
   };
   const cues = safeParse(chart);
-  const words = (text: string) => text.replace(chordPattern, "").trim();
+  const words = (text: string) => text.replace(chordPattern, "").replaceAll("[auto]", "").trim();
   const chartWords = cues.filter((c) => words(c.text));
   const untimedChart = !cues.length && untimedLines(chart).length > 0;
   let lines: ReaderLine[] = (chartWords.length ? chartWords : untimedChart ? [] : safeParse(lyrics)).map((c) => ({ time: c.time, text: c.text, chords: [] }));

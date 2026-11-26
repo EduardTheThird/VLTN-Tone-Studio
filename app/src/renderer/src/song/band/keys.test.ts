@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { DEFAULT_BAND_SETTINGS, parseBandSettings, planSections, type BandSettings } from "./arrangement";
 import { fixedBeatGrid } from "./beat-grid";
 import { parseChordName } from "./harmony";
+import { leftHand, rightHand } from "./keys-voicing";
 import { generateKeys } from "./keys";
 import { ENERGIES, STYLES } from "./styles";
 
@@ -39,4 +40,11 @@ it("generates repeatably, respects a marked stop and plays the last held chord",
   const held = notes.filter((note) => note.time >= 8);
   expect(held.length).toBeGreaterThan(2);
   expect(held.every((note) => note.duration >= 2 && [0, 4, 9].includes(note.pitch % 12))).toBe(true);
+});
+
+it("voices the altered fifth and respects the bass under an inversion", () => {
+  const pcs = (notes: number[]) => notes.map((note) => note % 12);
+  const keys = { voices: 4 as const, extensions: true, register: "mid" as const };
+  expect(pcs(rightHand(parseChordName("C7♭5")!, keys)).sort((a, b) => a - b)).toEqual([0, 4, 6, 10]);
+  expect(pcs(leftHand(parseChordName("C/E")!, "root-fifth"))).toEqual([4, 7]);
 });

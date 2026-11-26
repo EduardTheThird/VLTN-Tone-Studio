@@ -1,6 +1,6 @@
 // The intervals of a chord's tones above its root, shared by the bass line (bass.ts) and the bass figures (bass-figures.ts). Pure.
 
-import type { ChordQuality, ChordSeventh } from "./harmony";
+import type { ChordQuality, ChordSeventh, ParsedChord } from "./harmony";
 
 /** Intervals above the root, in semitones. A missing third or seventh is null. */
 export const THIRD: Record<ChordQuality, number | null> = { major: 4, minor: 3, dim: 3, aug: 4, sus2: 2, sus4: 5, power: null };
@@ -13,4 +13,8 @@ export function fifthInterval(quality: ChordQuality): number {
   if (quality === "dim") return 6;
   if (quality === "aug") return 8;
   return 7;
+}
+
+export function chordFifth(chord: ParsedChord): number {
+  return chord.fifth ?? fifthInterval(chord.quality);
 }
