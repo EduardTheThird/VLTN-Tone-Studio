@@ -835,6 +835,7 @@ it.each([false, true])("releases only note channels on pause, without sending pe
 
 it("locks stage seeking and editors while keeping panic available", async () => {
   mocks.bluetooth = { id: "bluetooth-midi", name: "GP-180 BLE", state: "connected", send: mocks.send, clear: mocks.clear };
+  localStorage.setItem("vltn.performance.v1:clock-test.wav:44100:44100", "[00:00.10] {midi:pc 1 2}");
   render(<PerformancePanel />);
   fireEvent.click(screen.getByLabelText("Send cues"));
   fireEvent.click(screen.getByText("Enter stage mode"));
