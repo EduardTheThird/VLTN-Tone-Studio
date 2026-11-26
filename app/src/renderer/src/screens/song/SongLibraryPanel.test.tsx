@@ -64,3 +64,19 @@ it("opens on the song list: no save card or backup card above it, and the save b
   expect((screen.getByLabelText("Song title") as HTMLInputElement).value).toBe("new song");
   expect(screen.getByRole("button", { name: "Save song to library" })).toBeTruthy();
 });
+
+it("offers a single save action for a new song and can send it to a chosen set", async () => {
+  const saveForSet = vi.spyOn(useSongLibrary.getState(), "saveForSet").mockResolvedValue(undefined);
+  const audio = { sampleRate: 8000, channels: [new Float32Array(8)] };
+  useSong.setState({ source: { name: "demo.wav", audio, bits: 16 } });
+  try {
+    await act(async () => { render(<SongLibraryPanel onPick={vi.fn()} />); });
+    fireEvent.change(screen.getByLabelText("Add to set"), { target: { value: "new" } });
+    expect((screen.getByRole("button", { name: "Save and add to set" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("New set name"), { target: { value: "First set" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and add to set" }));
+    expect(saveForSet).toHaveBeenCalledWith("demo", "", { name: "First set" });
+  } finally {
+    saveForSet.mockRestore();
+  }
+});

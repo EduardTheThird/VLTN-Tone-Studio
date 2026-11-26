@@ -1031,8 +1031,14 @@ function BandBody({
             </Button>
           </p>
         )}
-        {outOfDate && <p className="text-led-warn">Parts out of date. Updating automatically when playback stops.</p>}
+        {generated && outOfDate && <p className="text-led-warn">{audioPlaying ? "Parts out of date. Updating when playback stops." : "Parts out of date. Generate to refresh them."}</p>}
       </section>
+      {!grid && tab !== "timing" && (
+        <div className="flex items-center gap-3 rounded border border-seam p-2">
+          <p>Find the song's beat before generating or previewing.</p>
+          <Button size="sm" variant="outline" disabled={blocked} onClick={() => { setTab("timing"); void findBeat(); }}>Find the beat</Button>
+        </div>
+      )}
       <Tabs value={tab} onValueChange={(value) => isBandTab(value) && setTab(value)} className="min-h-0 flex-1 gap-2">
         <TabsList aria-label="Band sections">
           {BAND_TABS.map((id) => (

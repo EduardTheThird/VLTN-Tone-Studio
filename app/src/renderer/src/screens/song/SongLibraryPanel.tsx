@@ -30,6 +30,9 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
   const unsaved = state?.kind === "unsaved" || state?.kind === "failed";
   const [title, setTitle] = useState(saved?.title ?? source?.name.replace(/\.[^.]+$/, "") ?? "");
   const [artist, setArtist] = useState(saved?.artist ?? "");
+  const [destination, setDestination] = useState("");
+  const [setName, setSetName] = useState("");
+  const editable = !!source && title.trim() !== "" && !library.busy && !["splitting", "model", "decoding"].includes(status.kind);
   // A batch analysis (spec 77) keeps going on any screen; this line shows it here too, with a way back to its dialog.
   const job = useAnalysisJob();
   const jobNow = useJobClock(isRunning(job.phase));
@@ -48,12 +51,19 @@ export function SongLibraryPanel({ onPick }: { onPick(): void }) {
         <div aria-label="Save the current song" className="flex flex-wrap items-center gap-3 rounded border border-seam px-3 py-2">
           <input id="save-current-song-title" aria-label="Song title" placeholder="Song title" className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
           <input aria-label="Song artist" placeholder="Artist" className={field} value={artist} onChange={(e) => setArtist(e.target.value)} />
-          <Button
-            disabled={!source || !title.trim() || library.busy || ["splitting", "model", "decoding"].includes(status.kind)}
-            title="Stores a local copy of the audio and stems, lyrics, chord chart, MIDI cues and performance settings. Save again after making changes."
-            onClick={() => void library.save(title, artist)}
-          >
-            {saved ? "Save song changes" : "Save song to library"}
+          {!saved && (
+            <select aria-label="Add to set" className={field} value={destination} onChange={(e) => setDestination(e.target.value)}>
+              <option value="">Save to library only</option>
+              <option value="new">Create a new set</option>
+              {library.index.playlists.filter((set) => !set.smart).map((set) => <option key={set.id} value={set.id}>{set.name}</option>)}
+            </select>
+          )}
+          {!saved && destination === "new" && <input aria-label="New set name" placeholder="New set name" className={field} value={setName} onChange={(e) => setSetName(e.target.value)} />}
+          <Button disabled={!editable || (!saved && destination === "new" && !setName.trim())} onClick={() => {
+            if (!saved && destination) void library.saveForSet(title, artist, destination === "new" ? { name: setName.trim() } : { id: destination });
+            else void library.save(title, artist);
+          }}>
+            {saved ? "Save song changes" : destination ? "Save and add to set" : "Save song to library"}
           </Button>
         </div>
       )}

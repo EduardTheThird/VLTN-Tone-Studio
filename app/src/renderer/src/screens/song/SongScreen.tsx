@@ -17,6 +17,7 @@ import { SongLibraryPanel } from "./SongLibraryPanel";
 import { PerformancePanel } from "./PerformancePanel";
 import { SaveBeforeLeaving, SaveIndicator } from "./SaveIndicator";
 import { useSongTab, type SongTab } from "./tab";
+import { useBandPanel } from "./band-panel-state";
 import { ScreenBoundary } from "@/components/ScreenBoundary";
 
 /** Decode a song and let the performer choose what to do with it. */
@@ -57,7 +58,7 @@ export function SongScreen() {
   const fileInput = useRef<HTMLInputElement>(null);
   const param = useNav((state) => state.param);
   const status = useSong((s) => s.status);
-  const requestedView = param === "performance-setup" ? "setup" : param === "performance-midi" ? "midi" : param === "performance-play" ? "play" : undefined;
+  const requestedView = param === "performance-setup" ? "setup" : param === "performance-midi" ? "midi" : param === "performance-play" ? "play" : param === "performance-song" ? "song" : undefined;
   useFileHandler("audio", openSongFiles);
   useFileHandler("wav", openSongFiles);
   const pick = () => fileInput.current?.click();
@@ -83,7 +84,7 @@ export function SongScreen() {
             <p className="truncate text-[12px] text-silkscreen-3">
               {songHeadline(source, saved, "Play backing tracks, prepare sets or split songs into stems.")}
             </p>
-            <SaveIndicator />
+            <SaveIndicator showAction={tab !== "songs" || !host.song.library} />
           </div>
           <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-3">
             <TabsList aria-label="Song">
@@ -107,10 +108,16 @@ export function SongScreen() {
             {source && !source.libraryId && (
               <div className="flex flex-wrap items-center gap-2 rounded border border-seam p-3" aria-label="Imported song actions">
                 <Button onClick={() => useNav.getState().go("song", "performance-play")}>Open player</Button>
-                {host.song.library && (
-                  <Button variant="outline" onClick={() => document.getElementById("save-current-song-title")?.focus()}>Prepare for a set</Button>
-                )}
                 <Button variant="outline" onClick={() => setTab("stems")}>Split stems</Button>
+              </div>
+            )}
+            {saved && (
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => {
+                  useNav.getState().go("song", "performance-song");
+                  useBandPanel.getState().setTab("timing");
+                  useBandPanel.getState().show(true);
+                }}>Check timing and audition band</Button>
               </div>
             )}
             <SongLibraryPanel onPick={pick} />

@@ -180,6 +180,7 @@ interface LibraryState {
   refresh(): Promise<void>;
   /** Saves the open song, including its audio. Saves run one at a time, in order. Resolves when this save has finished (or failed: see `error`). */
   save(title: string, artist: string): Promise<void>;
+  saveForSet(title: string, artist: string, destination: { id: string } | { name: string }): Promise<void>;
   /**
    * Saves the open library song's new audio in the background. Does nothing when the song has no unsaved audio or is not in the library.
    * It waits while a song or playlist plays, and runs one save at a time: a call while one is already queued adds nothing.
@@ -716,7 +717,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
    * A failed save does not stop the ones behind it.
    */
   let saveLine: Promise<unknown> = Promise.resolve();
-  const enqueueSave = (task: () => Promise<void>): Promise<void> => {
+  const enqueueSave = <T>(task: () => Promise<T>): Promise<T> => {
     const result = saveLine.then(task);
     saveLine = result.catch(() => undefined);
     return result;
@@ -736,7 +737,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       };
       stops.push(onSongPlayingChange(check), useSongLibrary.subscribe(check));
     });
-  const writeSong = async (title: string, artist: string, manual: boolean, freshBand = false): Promise<void> => {
+  const writeSong = async (title: string, artist: string, manual: boolean, freshBand = false): Promise<string> => {
     set({ saveStep: "Preparing…", saveError: "" });
     try {
       const state = useSong.getState(),
@@ -843,6 +844,7 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       const index = await api().index();
       if (manual) set({ index, notice: savedNotice(song.title, assets.length, tracks.length - assets.length) });
       else set({ index });
+      return id;
     } catch (e) {
       set({ saveError: e instanceof Error ? e.message : String(e) });
       throw e;
@@ -1108,7 +1110,19 @@ export const useSongLibrary = create<LibraryState>((set, get) => {
       run(async () => {
         set({ index: await readIndex() });
       }),
-    save: (title, artist) => run(() => enqueueSave(() => writeSong(title, artist, true))),
+    save: (title, artist) => run(async () => { await enqueueSave(() => writeSong(title, artist, true)); }),
+    saveForSet: (title, artist, destination) => run(async () => {
+      const id = await enqueueSave(() => writeSong(title, artist, true));
+      const listId = "id" in destination ? destination.id : crypto.randomUUID();
+      const success = await writePlaylists((lists) => {
+        if ("name" in destination) return [...lists, { id: listId, name: destination.name, songs: [id], sets: [] }];
+        if (!lists.some((list) => list.id === listId && !list.smart)) throw new Error("Song saved. Choose an available set to add it.");
+        return lists.map((list) => list.id === listId
+          ? { ...list, songs: [...list.songs, id], ...(list.overrides ? { overrides: [...list.overrides, null] } : {}) }
+          : list);
+      }, "Song saved and added to the set.");
+      if (success) set({ focusPlaylistId: listId });
+    }),
     autosave: () => {
       // One queued autosave covers every change made before it starts, so a burst of changes makes one save.
       if (autosaveQueued || !libraryAudioUnsaved()) return;

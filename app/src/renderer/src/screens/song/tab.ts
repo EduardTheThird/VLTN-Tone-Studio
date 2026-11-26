@@ -23,6 +23,6 @@ export function useSongTab(): [SongTab, (tab: SongTab) => void] {
   useEffect(() => {
     if (isSongTab(param)) lastTab = param;
   }, [param]);
-  const tab: SongTab = param === "performance-setup" || param === "performance-midi" || param === "performance-play" ? "performance" : isSongTab(param) ? param : (lastTab === "performance" || lastTab === "songs") ? lastTab : lastTab === "tone" && hasStems ? "tone" : "stems";
+  const tab: SongTab = param === "performance-setup" || param === "performance-midi" || param === "performance-play" || param === "performance-song" ? "performance" : isSongTab(param) ? param : (lastTab === "performance" || lastTab === "songs") ? lastTab : lastTab === "tone" && hasStems ? "tone" : "stems";
   return [tab, (next) => useNav.getState().go("song", next)];
 }

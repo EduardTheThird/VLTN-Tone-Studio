@@ -29,7 +29,7 @@ export function saveIndicator(input: {
 export const defaultTitle = (name: string): string => name.replace(/\.[^.]+$/, "");
 
 /** The save state next to the song's name: Saved, Saving…, Not saved, or Couldn't save, with a button where there is something to do. */
-export function SaveIndicator() {
+export function SaveIndicator({ showAction = true }: { showAction?: boolean }) {
   // React keeps a previous selector snapshot. Keep only header metadata/status here, so it cannot retain the previous song's PCM.
   const name = useSong((s) => s.source?.name ?? null);
   const libraryId = useSong((s) => s.source?.libraryId);
@@ -58,9 +58,9 @@ export function SaveIndicator() {
       {state.kind === "unsaved" && (
         <>
           <span className="text-amber-400">Not saved</span>
-          <Button size="sm" variant="outline" onClick={save}>
+          {showAction && <Button size="sm" variant="outline" onClick={save}>
             {state.inLibrary ? "Save" : "Save to library"}
-          </Button>
+          </Button>}
         </>
       )}
       {state.kind === "failed" && (
@@ -68,9 +68,9 @@ export function SaveIndicator() {
           <span className="text-red-400" title={state.message}>
             Couldn't save
           </span>
-          <Button size="sm" variant="outline" title={state.message} onClick={save}>
+          {showAction && <Button size="sm" variant="outline" title={state.message} onClick={save}>
             Try again
-          </Button>
+          </Button>}
         </>
       )}
     </span>
