@@ -461,7 +461,9 @@ export function PerformanceReader({
             </div>
           ) : (
             <p className="text-base text-silkscreen-3">
-              Generate lyrics from vocals or import a timed chart in the editors below. Lyrics and chords will appear together here and follow song playback.
+              {stage
+                ? "This song has no lyrics or chords. Exit Stage to add a chart."
+                : "Generate lyrics from vocals or import a timed chart in the editors below. Lyrics and chords will appear together here and follow song playback."}
             </p>
           )}
         </div>

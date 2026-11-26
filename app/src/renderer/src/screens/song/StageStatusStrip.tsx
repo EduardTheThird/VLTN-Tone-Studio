@@ -114,25 +114,45 @@ function ScheduledCue({ patches }: { patches: readonly PatchCue[] }) {
 }
 
 /** One dot and a word: Ready, Cues off or No MIDI. A problem says why. */
-function Health({ session, reason }: { session: PerformanceSession; reason: string }) {
+function stageReadiness(options: {
+  error: string;
+  loaded: boolean;
+  routingIssue: boolean;
+  expectsMidi: boolean;
+  connected: boolean;
+  armed: boolean;
+  late: string;
+  resynced: boolean;
+}) {
+  const { error, loaded, routingIssue, expectsMidi, connected, armed, late, resynced } = options;
+  const warning = "bg-amber-400";
+  const ready = "bg-emerald-500";
+  if (error) return { dot: "bg-red-500", word: "Problem", why: error };
+  if (!loaded) return { dot: "bg-silkscreen-3", word: "Load a song", why: "" };
+  if (routingIssue) return { dot: warning, word: "Check audio outputs", why: "" };
+  if (!expectsMidi) return { dot: ready, word: "Audio ready", why: "" };
+  if (!connected) return { dot: warning, word: "No MIDI", why: "Connect the song’s MIDI output" };
+  if (!armed) return { dot: warning, word: "Cues off", why: "Cues disarmed" };
+  if (late) return { dot: warning, word: "MIDI degraded", why: late };
+  return { dot: ready, word: resynced ? "MIDI resynced" : "Ready", why: "" };
+}
+
+function Health({ session, reason, routingIssue }: { session: PerformanceSession; reason: string; routingIssue: boolean }) {
   const output = useSession(session, selectOutput);
   const armed = useSession(session, selectArmed);
+  const loaded = useSession(session, (s) => s.player !== null);
+  const expectsMidi = useSession(session, (s) =>
+    s.clock || s.tempoOnStart || s.timecode?.enabled || s.cues.some((cue) => cue.messages.length > 0),
+  );
   const error = useSession(session, (s) => s.error || s.parseError);
   const lateNotice = useSession(session, (s) => s.lateNotice);
-  const connected = output?.state === "connected";
-  const late =
-    lateNotice && lateNotice.dropped > 0
-      ? `${lateNotice.dropped} late MIDI command${lateNotice.dropped === 1 ? "" : "s"} dropped`
-      : "";
-  const state = error
-    ? { dot: "bg-red-500", word: "Problem", why: error }
-    : !connected
-      ? { dot: "bg-amber-400", word: "No MIDI", why: "Output disconnected" }
-      : !armed
-        ? { dot: "bg-amber-400", word: "Cues off", why: "Cues disarmed" }
-        : late
-          ? { dot: "bg-amber-400", word: "MIDI degraded", why: late }
-          : { dot: "bg-emerald-500", word: lateNotice?.resynced ? "MIDI resynced" : "Ready", why: "" };
+  const late = lateNotice && lateNotice.dropped > 0
+    ? `${lateNotice.dropped} late MIDI command${lateNotice.dropped === 1 ? "" : "s"} dropped`
+    : "";
+  const state = stageReadiness({
+    error, loaded, routingIssue, expectsMidi: Boolean(expectsMidi), connected: output?.state === "connected",
+    armed, late, resynced: Boolean(lateNotice?.resynced),
+  });
   const why = [state.why, reason].filter(Boolean).join(" · ");
   return (
     <div role={error ? "alert" : "status"} aria-label="Performance status" className="flex min-w-0 items-center gap-2 text-lg font-semibold">
@@ -232,7 +252,7 @@ export function StageStatusStrip({
           {activeRoute.warnings.join(" ")} Main: {activeRoute.main} · Click: {activeRoute.click}
         </p>
       )}
-      <Health session={session} reason={notices} />
+      <Health session={session} reason={notices} routingIssue={!!activeRoute?.warnings.length} />
       <div className="ml-auto flex items-center gap-2">
         {speedNote && <span className="rounded-md border border-seam px-2 py-1 text-sm tabular-nums">{speedNote}</span>}
         {extra}

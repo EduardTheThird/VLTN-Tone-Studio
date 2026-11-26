@@ -1,3 +1,4 @@
+import { useOutputSettings } from "@/song/audio/output-settings";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -102,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useOutputSettings.setState({ activeRoute: null });
   vi.useRealTimers();
 });
 
@@ -136,6 +138,26 @@ it("shows one health word, and says why when something is wrong", () => {
   cleanup();
   mount(fakeSession({ armedOutput: null }));
   expect(screen.getByLabelText("Performance status").textContent).toBe("Cues offCues disarmed");
+});
+
+it("shows audio-only readiness and gives the performer a way to add the missing chart", () => {
+  mount(fakeSession({ cues: [], bluetooth: null, armedOutput: null }));
+  expect(screen.getByLabelText("Performance status").textContent).toBe("Audio ready");
+  expect(screen.getByText("This song has no lyrics or chords. Exit Stage to add a chart.")).toBeTruthy();
+});
+
+it("flags the missing output when the song sends MIDI clock", () => {
+  mount(fakeSession({ cues: [], clock: true, bluetooth: null, armedOutput: null }));
+  expect(screen.getByLabelText("Performance status").textContent).toBe("No MIDIConnect the song’s MIDI output");
+});
+
+it("surfaces a private click route failure even when the audio-only song can start", () => {
+  useOutputSettings.setState({
+    activeRoute: { main: "Default audio", click: "Muted", clickMuted: true, warnings: ["Click device disconnected."] },
+  });
+  mount(fakeSession({ cues: [], bluetooth: null, armedOutput: null }));
+  expect(screen.getByLabelText("Performance status").textContent).toBe("Check audio outputs");
+  expect(screen.getByText("Click device disconnected. Main: Default audio · Click: Muted")).toBeTruthy();
 });
 
 it("gives the chart the rest of the height, below three fixed bands", () => {
