@@ -183,6 +183,15 @@ The channel addresses the pedal. It does not change the pedal's own setting.
 - **Save automatic cues** adds a marked block to each song.
 - Test the whole song, including the last chorus, before a show.
 
+### The RC-10R pedal card
+
+- **Read the RC-10R…** (MIDI → **RC-10R pedal**, macOS desktop app) reads the pedal's MIDI settings and memories over USB. It writes nothing; the pedal leaves performance mode for a few seconds, so stop its rhythm and looper first. If macOS asks to allow access to a removable volume, choose **Allow**.
+- After a read, the **RC-10R drums** card checks each song: control channel and the rhythm start, pattern-change, fill and stop CCs, plus break and level when the song's cues use them. A ✗ line names the setting to change in the pedal's MIDI menu.
+- **Memories** lists each memory's rhythm, tempo, loops and the songs that use it. The cue preview warns when a memory holds loops or belongs to another song.
+- **Loops** plays the recorded loops from the newest pedal backup. **Add to this song** adds one as a track.
+- Each send backs up the pedal first. Loops that haven't changed since the last backup are linked, not copied, so a send backs up a few megabytes instead of the whole pedal. **Remove older backups…** keeps the five newest and any from an interrupted send.
+- The RC-10R needs USB only for reading and sending. On stage the app reaches it through the GP-180's MIDI out.
+
 ### Remote control
 
 Every live action can run from a MIDI message, a key or a Bluetooth page-turner. Choose **Edit remote control** to see the bindings.
