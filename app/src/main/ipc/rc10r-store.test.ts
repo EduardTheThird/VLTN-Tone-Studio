@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -209,5 +209,65 @@ describe("RC-10R copied-filesystem transactions", () => {
     const next = storeFor(),
       nextId = next.reserve(2);
     expect((await next.inspect(nextId, 2)).recoveries).toEqual([]);
+  });
+});
+
+describe("RC-10R reading, light backups and the loop library (specs 174, 175, 177, 178)", () => {
+  const session = async (store: Rc10rStore, record = true) => {
+    const id = store.reserve(1);
+    const view = await store.inspect(id, 1);
+    const plan = record ? await store.plan(id, 1, testRc10rRecord("New"), 2, null) : undefined;
+    if (plan) await store.write(id, 1);
+    await store.eject(id, 1);
+    await store.release(id, 1);
+    return { view, plan };
+  };
+  beforeEach(async () => {
+    await mkdir(join(volume, "ROLAND", "WAVE", "003_1"), { recursive: true });
+    await writeFile(join(volume, "ROLAND", "WAVE", "003_1", "003_1.WAV"), "x".repeat(200));
+  });
+  it("reports storage sizes and keeps reading problems out of the transfer", async () => {
+    const { view } = await session(storeFor(), false);
+    expect(view.problem).toBeUndefined();
+    expect(view.reading?.systemProblem).toMatch(/settings/);
+    expect(view.reading?.loopBytes).toBe("keep the recorded loop".length + 200);
+    expect(view.reading?.backupCopyBytes).toBe(view.reading?.storageBytes);
+  });
+  it("links unchanged loops to the previous backup and copies changed ones", async () => {
+    const first = await session(storeFor());
+    const second = await session(storeFor());
+    const loop = "ROLAND/WAVE/003_1/003_1.WAV";
+    const a = await stat(join(first.plan!.backupPath, loop)),
+      b = await stat(join(second.plan!.backupPath, loop));
+    expect(b.ino).toBe(a.ino);
+    expect(second.view.reading!.backupCopyBytes).toBeLessThan(second.view.reading!.storageBytes);
+    const journal = JSON.parse(await readFile(join(second.plan!.backupPath, "journal.json"), "utf8"));
+    expect(journal.files.find((f: { path: string }) => f.path === loop).linked).toBe(true);
+    expect(journal.files.find((f: { path: string }) => f.path === "ROLAND/DATA/RC10R.RC0").linked).toBeUndefined();
+    await writeFile(join(volume, "ROLAND", "WAVE", "003_1", "003_1.WAV"), "y".repeat(300));
+    const third = await session(storeFor());
+    expect((await stat(join(third.plan!.backupPath, loop))).ino).not.toBe(a.ino);
+    expect(await readFile(join(third.plan!.backupPath, loop), "utf8")).toBe("y".repeat(300));
+  });
+  it("lists loops from the newest backup and returns checked loop bytes", async () => {
+    await session(storeFor());
+    const store = storeFor();
+    const library = await store.loops();
+    expect(library.loops).toEqual([{ memory: 3, track: 1, path: "ROLAND/WAVE/003_1/003_1.WAV", bytes: 200 }]);
+    expect(new TextDecoder().decode(await store.loopAudio(library.backup!.id, library.loops[0].path))).toBe("x".repeat(200));
+    await expect(store.loopAudio(library.backup!.id, "ROLAND/DATA/RC10R.RC0")).rejects.toThrow(/Unknown loop/);
+    await expect(store.loopAudio(library.backup!.id, "ROLAND/WAVE/../DATA/x.wav")).rejects.toThrow(/Unknown loop/);
+  });
+  it("removes all but the five newest backups and never during a session", async () => {
+    for (let i = 0; i < 7; i++) await session(storeFor());
+    const store = storeFor();
+    expect((await store.backups()).removable).toBe(2);
+    const id = store.reserve(1);
+    await expect(store.pruneBackups()).rejects.toThrow(/Close the RC-10R connection/);
+    await store.eject(id, 1);
+    await store.release(id, 1);
+    const after = await store.pruneBackups();
+    expect(after.count).toBe(5);
+    expect(after.removable).toBe(0);
   });
 });

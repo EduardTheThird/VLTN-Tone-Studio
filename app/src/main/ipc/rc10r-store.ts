@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, realpath } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { HostError } from "@shared/ipc";
 import { patchRc10rBank, readRc10rBank, readRc10rRecord } from "@shared/rc10r-bank";
 import { patchRc10rMemory, readRc10rMemoryPair } from "@shared/rc10r-memory";
-import type { Rc10rStorageView, Rc10rWritePlan } from "@shared/host/rc10r";
+import { rc10rMemoryMap } from "@shared/rc10r-memory-map";
+import { readRc10rSystemPair } from "@shared/rc10r-system";
+import type { Rc10rBackupSummary, Rc10rLoopLibrary, Rc10rPedalReading, Rc10rStorageView, Rc10rWritePlan } from "@shared/host/rc10r";
 import { syncPath, writeJsonAtomic } from "./fs-atomic";
 
 const FILES = ["RC10R.RC0", "MEMORY1.RC0", "MEMORY2.RC0", "SYSTEM1.RC0", "SYSTEM2.RC0"] as const;
@@ -27,7 +29,23 @@ interface BackupFile {
   path: string;
   bytes: number;
   sha256: string;
+  /** Source modification time, so the next backup can link an unchanged loop instead of copying it (spec 175). */
+  mtimeMs?: number;
+  /** True when the file is a hard link to the same, unchanged file in an earlier backup. */
+  linked?: boolean;
 }
+interface PedalFile {
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+/** States whose backup is complete and verified. */
+const COMPLETE = new Set(["backed-up", "planned", "writing", "partial", "written", "ejected", "finished", "recovered", "closed"]);
+/** A backup from an interrupted write is kept until the player removes it on purpose. */
+const KEEP = new Set(["writing", "partial"]);
+const KEEP_NEWEST = 5;
+const LOOP_PATH = /^ROLAND\/WAVE\/(\d{3})_([12])\/[^/\\]+\.wav$/i;
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 interface Journal {
   version: 1;
   id: string;
@@ -145,12 +163,71 @@ export class Rc10rStore {
       const recoveries = await this.recoveries(lease.volume.identity);
       try {
         lease.original = await this.snapshot(lease);
-        return { id, patterns: readRc10rBank(lease.original.get("RC10R.RC0")!), recoveries };
+        const reading = await this.reading(lease).catch(() => undefined);
+        return { id, patterns: readRc10rBank(lease.original.get("RC10R.RC0")!), recoveries, ...(reading ? { reading } : {}) };
       } catch (error) {
         lease.original = undefined;
         return { id, patterns: [], recoveries, problem: error instanceof Error ? error.message : String(error) };
       }
     });
+  }
+
+  /** Every regular file under ROLAND with its size and time, with the same link and volume checks as a backup. */
+  private async listFiles(lease: Lease): Promise<PedalFile[]> {
+    const root = await this.root(lease);
+    const files: PedalFile[] = [];
+    const walk = async (folder: string, depth: number): Promise<void> => {
+      if (depth > 6) return fail("Unexpected folder depth on the pedal.");
+      for (const entry of await readdir(join(root, folder), { withFileTypes: true })) {
+        if (files.length > 5000 || entry.name.includes("\\") || entry.name === "..") return fail("Unexpected entry on the pedal.");
+        const name = join(folder, entry.name),
+          info = await lstat(join(root, name));
+        if (info.isSymbolicLink() || info.dev !== lease.device!.dev) return fail("The pedal contains a link or another volume.");
+        if (info.isDirectory()) await walk(name, depth + 1);
+        else if (info.isFile()) files.push({ path: name.split(sep).join("/"), size: info.size, mtimeMs: info.mtimeMs });
+      }
+    };
+    await walk("ROLAND", 0);
+    return files;
+  }
+  /** The newest complete backup of this pedal whose files carry times, so unchanged loops can be linked. */
+  private async previousBackup(volume: string): Promise<{ folder: string; files: Map<string, BackupFile> } | undefined> {
+    let best: { folder: string; value: Journal } | undefined;
+    for (const entry of await readdir(this.options.backupRoot).catch(() => [] as string[])) {
+      if (!UUID.test(entry)) continue;
+      const found = await this.journal(entry).catch(() => undefined);
+      if (!found || found.value.volume !== volume || !COMPLETE.has(found.value.state)) continue;
+      if (!best || found.value.date > best.value.date) best = found;
+    }
+    if (!best) return undefined;
+    return { folder: best.folder, files: new Map(best.value.files.filter((f) => typeof f.mtimeMs === "number").map((f) => [f.path, f])) };
+  }
+  private reusable(previous: Awaited<ReturnType<Rc10rStore["previousBackup"]>>, file: PedalFile): BackupFile | undefined {
+    if (!previous || !file.path.startsWith("ROLAND/WAVE/")) return undefined;
+    const saved = previous.files.get(file.path);
+    return saved && saved.bytes === file.size && saved.mtimeMs === file.mtimeMs ? saved : undefined;
+  }
+  /** Settings, memory map and storage sizes for the RC-10R card (specs 174, 177, 179). Problems are reported, never thrown. */
+  private async reading(lease: Lease): Promise<Rc10rPedalReading> {
+    const files = lease.original!;
+    const result: Rc10rPedalReading = { storageBytes: 0, loopBytes: 0, backupCopyBytes: 0 };
+    try {
+      result.system = readRc10rSystemPair(files.get("SYSTEM1.RC0")!, files.get("SYSTEM2.RC0")!);
+    } catch (error) {
+      result.systemProblem = message(error);
+    }
+    try {
+      result.memories = rc10rMemoryMap(readRc10rMemoryPair(files.get("MEMORY1.RC0")!, files.get("MEMORY2.RC0")!));
+    } catch (error) {
+      result.memoryProblem = message(error);
+    }
+    const previous = await this.previousBackup(lease.volume!.identity);
+    for (const file of await this.listFiles(lease)) {
+      result.storageBytes += file.size;
+      if (file.path.startsWith("ROLAND/WAVE/")) result.loopBytes += file.size;
+      if (!this.reusable(previous, file)) result.backupCopyBytes += file.size;
+    }
+    return result;
   }
 
   private async saveJournal(lease: Lease, state: string): Promise<void> {
@@ -219,6 +296,7 @@ export class Rc10rStore {
     };
     lease.journal = journal;
     await this.saveJournal(lease, "backing-up");
+    const previous = await this.previousBackup(lease.volume!.identity);
     let total = 0,
       count = 0;
     const walk = async (folder: string, depth: number): Promise<void> => {
@@ -239,14 +317,32 @@ export class Rc10rStore {
           total += info.size;
           if (total > 32 * 1024 ** 3) return fail("The pedal backup exceeds 32 GB.");
           await this.options.checkpoint?.("backup-file", name);
+          const relativePath = name.split(sep).join("/");
+          const saved = this.reusable(previous, { path: relativePath, size: info.size, mtimeMs: info.mtimeMs });
+          if (saved && (await this.linkSaved(previous!.folder, name, join(lease.backup!, name), saved.bytes))) {
+            journal.files.push({ ...saved, path: relativePath, mtimeMs: info.mtimeMs, linked: true });
+            continue;
+          }
           const file = await this.copyFile(path, join(lease.backup!, name), lease.device!.dev, lease.abort.signal);
-          journal.files.push({ ...file, path: name.split(sep).join("/") });
+          journal.files.push({ ...file, path: relativePath, mtimeMs: info.mtimeMs });
         } else return fail("Unexpected file type on the pedal.");
       }
       await syncPath(join(lease.backup!, folder));
     };
     await walk("ROLAND", 0);
     await this.saveJournal(lease, "backed-up");
+  }
+  /** Links an unchanged loop from an earlier verified backup. Falls back to copying when the earlier file is missing or altered. */
+  private async linkSaved(folder: string, name: string, target: string, bytes: number): Promise<boolean> {
+    try {
+      const source = join(folder, name),
+        info = await lstat(source);
+      if (!info.isFile() || info.isSymbolicLink() || info.size !== bytes) return false;
+      await link(source, target);
+      return true;
+    } catch {
+      return false;
+    }
   }
   async plan(id: string, owner: number, record: Uint8Array, slot: number, memory: number | null): Promise<Rc10rWritePlan> {
     return this.run(id, owner, async (lease) => {
@@ -465,6 +561,75 @@ export class Rc10rStore {
     } finally {
       lease.pending = false;
     }
+  }
+  /** Valid journals, newest first. Folders without a valid journal are never listed or removed. */
+  private async journals(): Promise<{ id: string; folder: string; value: Journal }[]> {
+    const result: { id: string; folder: string; value: Journal }[] = [];
+    for (const entry of await readdir(this.options.backupRoot).catch(() => [] as string[])) {
+      if (!UUID.test(entry)) continue;
+      const found = await this.journal(entry).catch(() => undefined);
+      if (found) result.push({ id: entry, ...found });
+    }
+    return result.sort((a, b) => b.value.date.localeCompare(a.value.date));
+  }
+  /** Loops in the newest complete backup (spec 178). Reads only the app's own backup folder. */
+  async loops(): Promise<Rc10rLoopLibrary> {
+    const newest = (await this.journals()).find(({ value }) => COMPLETE.has(value.state) && value.files.some((f) => LOOP_PATH.test(f.path)));
+    if (!newest) return { loops: [] };
+    const loops = newest.value.files.flatMap((file) => {
+      const match = LOOP_PATH.exec(file.path);
+      if (!match || file.bytes <= 44) return [];
+      return [{ memory: Number(match[1]), track: Number(match[2]) as 1 | 2, path: file.path, bytes: file.bytes }];
+    });
+    loops.sort((a, b) => a.memory - b.memory || a.track - b.track);
+    return { backup: { id: newest.id, date: newest.value.date }, loops };
+  }
+  /** One loop's bytes, checked against the backup's journal. */
+  async loopAudio(backupId: string, path: string): Promise<Uint8Array> {
+    if (typeof path !== "string" || !LOOP_PATH.test(path) || path.split("/").includes("..")) throw new HostError("invalid", "Unknown loop.");
+    const { folder, value } = await this.journal(backupId);
+    const meta = value.files.find((file) => file.path === path);
+    if (!meta || meta.bytes > 512 * 1024 * 1024) throw new HostError("invalid", "Unknown loop.");
+    let target = folder;
+    for (const part of path.split("/")) {
+      target = join(target, part);
+      if ((await lstat(target)).isSymbolicLink()) return fail("The backup contains a link.");
+    }
+    const bytes = new Uint8Array(await readFile(target));
+    if (bytes.length !== meta.bytes || digest(bytes) !== meta.sha256) return fail("This loop no longer matches its backup.");
+    return bytes;
+  }
+  private async diskBytes(folders: string[]): Promise<number> {
+    const seen = new Set<string>();
+    let total = 0;
+    const walk = async (folder: string, depth: number): Promise<void> => {
+      if (depth > 8) return;
+      for (const entry of await readdir(folder, { withFileTypes: true }).catch(() => [])) {
+        const path = join(folder, entry.name),
+          info = await lstat(path);
+        if (info.isSymbolicLink()) continue;
+        if (info.isDirectory()) await walk(path, depth + 1);
+        else if (info.isFile() && !seen.has(`${info.dev}:${info.ino}`)) {
+          seen.add(`${info.dev}:${info.ino}`);
+          total += info.size;
+        }
+      }
+    };
+    for (const folder of folders) await walk(folder, 0);
+    return total;
+  }
+  private removable(list: Awaited<ReturnType<Rc10rStore["journals"]>>) {
+    return list.filter(({ value }, index) => index >= KEEP_NEWEST && !KEEP.has(value.state));
+  }
+  async backups(): Promise<Rc10rBackupSummary> {
+    const list = await this.journals();
+    return { count: list.length, bytes: await this.diskBytes(list.map(({ folder }) => folder)), removable: this.removable(list).length };
+  }
+  /** Removes all but the five newest backups, keeping any from an interrupted write. Never runs during a pedal session. */
+  async pruneBackups(): Promise<Rc10rBackupSummary> {
+    if (this.active) throw new HostError("invalid", "Close the RC-10R connection before removing backups.");
+    for (const { folder } of this.removable(await this.journals())) await rm(folder, { recursive: true, force: true });
+    return this.backups();
   }
   /** A renderer crash cannot send MIDI cleanup. Eject storage and leave recovery information for the next session. */
   async abandon(owner: number): Promise<void> {

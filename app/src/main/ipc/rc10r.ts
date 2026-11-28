@@ -47,4 +47,11 @@ export function registerRc10rIpc(getWindow: () => BrowserWindow | null): void {
   handle("rc10r:recover", (e, id: unknown, backup: unknown) => service.recover(idOf(id), e.sender.id, idOf(backup)));
   handle("rc10r:eject", (e, id: unknown) => service.eject(idOf(id), e.sender.id));
   handle("rc10r:release", (e, id: unknown) => service.release(idOf(id), e.sender.id));
+  handle("rc10r:loops", () => service.loops());
+  handle("rc10r:loopAudio", (_e, backup: unknown, path: unknown) => {
+    if (typeof path !== "string" || path.length > 300) throw new HostError("invalid", "Unknown loop.");
+    return service.loopAudio(idOf(backup), path);
+  });
+  handle("rc10r:backups", () => service.backups());
+  handle("rc10r:pruneBackups", () => service.pruneBackups());
 }

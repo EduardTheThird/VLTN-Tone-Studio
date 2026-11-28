@@ -45,6 +45,25 @@ export async function findRc10rVolumes(): Promise<Rc10rVolume[]> {
   return result;
 }
 
+/** Waits before each retry when macOS reports the drive busy (often indexing just after a write). About 15 seconds in all. */
+export const EJECT_RETRY_MS = [1000, 2000, 4000, 8000] as const;
+const busy = (error: unknown) => /could not be unmounted|resource busy|busy/i.test(error instanceof Error ? error.message : String(error));
+
+/** Runs an eject, retrying while macOS reports the volume busy (spec 175). Other errors are reported at once. */
+export async function ejectWithRetry(run: () => Promise<unknown>, wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms))): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await run();
+      return;
+    } catch (error) {
+      if (!busy(error)) throw error;
+      if (attempt >= EJECT_RETRY_MS.length)
+        throw new HostError("io", "macOS says the RC-10R drive is busy. Eject BOSS RC-10R in Finder, then press EXIT on the pedal.");
+      await wait(EJECT_RETRY_MS[attempt]);
+    }
+  }
+}
+
 /** OS eject must finish before the renderer asks the pedal to leave editor mode. */
 export async function ejectRc10rVolume(volume: Rc10rVolume): Promise<void> {
   try {
@@ -54,7 +73,7 @@ export async function ejectRc10rVolume(volume: Rc10rVolume): Promise<void> {
     throw error;
   }
   if ((await info(volume.root)) !== volume.identity) throw new HostError("invalid", "The mounted device changed. It was not ejected.");
-  await exec("/usr/sbin/diskutil", ["eject", volume.root], { timeout: 20000, maxBuffer: 128 * 1024 });
+  await ejectWithRetry(() => exec("/usr/sbin/diskutil", ["eject", volume.root], { timeout: 20000, maxBuffer: 128 * 1024 }));
   try {
     await lstat(volume.root);
   } catch (error) {

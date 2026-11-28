@@ -10,4 +10,8 @@ export const rc10rApi: Rc10rApi = {
   recover: (id, backup) => invoke("rc10r:recover", id, backup),
   eject: (id) => invoke("rc10r:eject", id),
   release: (id) => invoke("rc10r:release", id),
+  loops: () => invoke("rc10r:loops"),
+  loopAudio: (backupId, path) => invoke("rc10r:loopAudio", backupId, path),
+  backups: () => invoke("rc10r:backups"),
+  pruneBackups: () => invoke("rc10r:pruneBackups"),
 };
