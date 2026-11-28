@@ -4,6 +4,12 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.59] — 2026-11-28
+
+### Fixed
+
+- Adding MIDI cues to a song's chart no longer shortens the chords around them, so the generated band stays the same and a confirmed RC-10R transfer no longer shows Needs export again.
+
 ## [0.9.58] — 2026-11-28
 
 ### Added
