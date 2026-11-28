@@ -85,9 +85,21 @@ it("requires beta acknowledgement, a verified full backup and review before send
   fireEvent.click(screen.getByRole("button", { name: "Send User 2" }));
   await waitFor(() => expect(mocks.sent).toHaveBeenCalledOnce());
   expect(mocks.close).toHaveBeenCalledOnce();
-  expect(mocks.write.mock.invocationCallOrder[0]).toBeLessThan(mocks.close.mock.invocationCallOrder[0]);
-  expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(mocks.sent.mock.invocationCallOrder[0]);
-  expect(screen.getByText(/Confirm the transfer after your check/)).toBeTruthy();
+  expect(mocks.write.mock.invocationCallOrder[0]).toBeLessThan(mocks.sent.mock.invocationCallOrder[0]);
+  // The export record is saved once the files are written and checked, before ejecting (spec 175).
+  expect(mocks.sent.mock.invocationCallOrder[0]).toBeLessThan(mocks.close.mock.invocationCallOrder[0]);
+  expect(await screen.findByText(/Confirm the transfer after your check/)).toBeTruthy();
+});
+
+it("keeps the export record when the eject fails after a checked write, and explains a busy drive (specs 175, 179)", async () => {
+  mocks.close.mockRejectedValueOnce(new Error("Command failed: diskutil eject: Unmount of disk8 failed: at least one volume could not be unmounted"));
+  open();
+  await connect();
+  fireEvent.click(screen.getByRole("button", { name: "Back up and review…" }));
+  await screen.findByText("Verified full backup: /checked/full-backup");
+  fireEvent.click(screen.getByRole("button", { name: "Send User 2" }));
+  await waitFor(() => expect(mocks.sent).toHaveBeenCalledOnce());
+  expect(await screen.findByText(/macOS says the RC-10R drive is busy. Eject BOSS RC-10R in Finder/)).toBeTruthy();
 });
 
 it("requires acknowledgement for an occupied slot and validates optional phrase memory separately", async () => {

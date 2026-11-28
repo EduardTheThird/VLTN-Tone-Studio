@@ -5,6 +5,24 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { host } from "@/host";
 import { useRc10rTransfer, type Rc10rTransferProps } from "./use-rc10r-transfer";
+import { megabytes, memoryNotes, RC10R_PHASES, useRc10rPedalReading } from "@/song/band/rc10r-pedal-state";
+
+/** Which step of the storage session the dialog is in (spec 179). */
+const STEP: Record<string, string> = { connecting: "connecting", ready: "reading", "backing-up": "backing-up", review: "review", writing: "writing", closing: "closing", done: "done" };
+
+function Steps({ phase }: { phase: string }) {
+  const current = STEP[phase];
+  if (!current) return null;
+  return (
+    <ol aria-label="Transfer steps" className="flex flex-wrap gap-x-2 text-xs text-silkscreen-3">
+      {RC10R_PHASES.map(([id, label]) => (
+        <li key={id} aria-current={id === current ? "step" : undefined} className={id === current ? "font-semibold text-silkscreen" : undefined}>
+          {label}
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 /** Explicitly separates shared user rhythms from per-phrase-memory settings. */
 export function Rc10rTransferDialog(props: Rc10rTransferProps) {
@@ -29,6 +47,7 @@ export function Rc10rTransferDialog(props: Rc10rTransferProps) {
     setRecovery,
     manual,
     setManual,
+    waiting,
     busy,
     previous,
     connection,
@@ -61,6 +80,10 @@ export function Rc10rTransferDialog(props: Rc10rTransferProps) {
           <DialogDescription>Keep every other User rhythm. Back up the whole pedal, review one replacement, then send and disconnect.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 space-y-3 overflow-y-auto text-sm">
+          <Steps phase={phase} />
+          {waiting && (
+            <p role="status">Waiting for macOS. If a prompt asks to allow access to files on a removable volume, choose Allow.</p>
+          )}
           <p>
             Pedal and listening checks are pending. Stop the pedal’s rhythm and looper, save any unsaved phrase, and close other editors before connecting. A
             storage session temporarily takes the pedal out of performance mode.
@@ -117,6 +140,12 @@ export function Rc10rTransferDialog(props: Rc10rTransferProps) {
                   </label>
                 )}
               </fieldset>
+              {settings &&
+                memoryNotes(view.reading?.memories ?? useRc10rPedalReading.getState().saved?.reading.memories, new Map(), memory).map((note) => (
+                  <p key={note} role="note">
+                    {note.replace("The cues only recall it; the loops stay.", "Only this User rhythm's kit and tempo change; the loops stay.")}
+                  </p>
+                ))}
               <p>Sending does not select the rhythm in a phrase memory. Select User {slot} and save the desired phrase memory on the pedal afterward.</p>
             </>
           )}
@@ -138,7 +167,10 @@ export function Rc10rTransferDialog(props: Rc10rTransferProps) {
           )}
           {phase === "backing-up" && (
             <p role="status">
-              Backing up and checking the complete ROLAND folder. Large recordings can take several minutes. No pedal files have been written.
+              {view?.reading
+                ? `Backing up the pedal: about ${megabytes(view.reading.backupCopyBytes)} to copy; loops unchanged since the last backup are linked, not copied.`
+                : "Backing up and checking the complete ROLAND folder. Large recordings can take several minutes."}{" "}
+              No pedal files have been written.
             </p>
           )}
           {phase === "writing" && <p role="status">Writing and checking files, then ejecting storage and leaving editor mode. Keep USB connected.</p>}

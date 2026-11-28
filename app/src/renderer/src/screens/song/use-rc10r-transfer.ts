@@ -3,6 +3,10 @@ import { host } from "@/host";
 import type { Rc10rStorageView, Rc10rWritePlan } from "@shared/host/rc10r";
 import { Rc10rConnection } from "@/song/band/rc10r-connection";
 import { sessionLog } from "@/state/session-log";
+import { friendlyRc10rError, useRc10rPedalReading } from "@/song/band/rc10r-pedal-state";
+
+/** Shown while the drive is mounted but macOS hasn't let the app read it yet (spec 179). */
+export const RC10R_WAITING_HINT_MS = 5000;
 
 // A failed disconnect remains reachable when the song screen is reopened.
 let retainedConnection: Rc10rConnection | undefined;
@@ -29,16 +33,25 @@ export function useRc10rTransfer({ record, onSent, onClose }: Rc10rTransferProps
   const [restore, setRestore] = useState(false);
   const [recovery, setRecovery] = useState(connection.current?.inspection?.recoveries[0]?.id ?? "");
   const [manual, setManual] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const alive = useRef(true);
   const operation = useRef<Promise<void> | undefined>(undefined);
   const busy = ["connecting", "backing-up", "writing", "closing", "restoring"].includes(phase);
   const previous = view?.patterns.find((p) => p.slot === slot);
+  useEffect(() => {
+    if (phase !== "connecting") {
+      setWaiting(false);
+      return;
+    }
+    const timer = setTimeout(() => setWaiting(true), RC10R_WAITING_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
   const run = (next: string, action: () => Promise<void>) => {
     setPhase(next);
     setError("");
     const promise = action().catch((problem) => {
       if (alive.current) {
-        setError(problem instanceof Error ? problem.message : String(problem));
+        setError(friendlyRc10rError(problem instanceof Error ? problem.message : String(problem)));
         setPhase("error");
       }
     });
@@ -77,6 +90,7 @@ export function useRc10rTransfer({ record, onSent, onClose }: Rc10rTransferProps
       });
       connection.current = retainedConnection = next;
       const result = await next.open();
+      if (result.reading) useRc10rPedalReading.getState().save(result.reading);
       if (alive.current) {
         setView(result);
         setSlot(Math.min(50, result.patterns.length + 1));
@@ -92,11 +106,12 @@ export function useRc10rTransfer({ record, onSent, onClose }: Rc10rTransferProps
         setPhase("review");
       }
     });
+  // The record is saved as soon as the pedal's files are written and checked, so a failed eject can't lose it (spec 175).
   const send = () =>
     run("writing", async () => {
       await connection.current!.write();
-      await connection.current!.close();
       onSent();
+      await connection.current!.close();
       if (alive.current) setPhase("done");
     });
   const restoreBackup = () =>
@@ -137,6 +152,7 @@ export function useRc10rTransfer({ record, onSent, onClose }: Rc10rTransferProps
     setRecovery,
     manual,
     setManual,
+    waiting,
     busy,
     previous,
     connection,
