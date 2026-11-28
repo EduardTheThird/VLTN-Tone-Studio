@@ -125,12 +125,22 @@ export function parseChordName(name: string): ParsedChord | null {
  * The chord tokens of the chart's timed lines, each with a time. Several chords on a line are spread evenly from the line's time to the
  * next timed line's time. Triggers have no song time and are skipped. The last line lasts LAST_CHORD_SECONDS per chord.
  */
+/**
+ * A timed MIDI cue (a pedal command, an automatic RC-10R or rig cue) is not part of the chart's text, so it must not end the span a
+ * chord line's chords are spread over. Otherwise adding cues would move chord changes.
+ */
+const isCueOnly = (cue: Cue): boolean =>
+  cue.messages.length > 0 || cue.label !== undefined || cue.managed !== undefined || !!cue.rig || !!cue.rigTempo
+    ? cue.text.replace(/\{[^}]*\}/g, "").trim() === ""
+    : false;
+
 export function chartChordEvents(cues: readonly Cue[]): ChordEvent[] {
   const lines = cues.filter((cue) => !cue.trigger).sort((a, b) => a.time - b.time);
+  const textLines = lines.filter((cue) => !isCueOnly(cue));
   return lines.flatMap((line) => {
     const names = [...line.text.matchAll(harmonyPattern)].map((match) => match[1]);
     if (!names.length) return [];
-    const next = lines.find((other) => other.time > line.time);
+    const next = textLines.find((other) => other.time > line.time);
     const end = next ? next.time : line.time + LAST_CHORD_SECONDS * names.length;
     return names.map((name, k) => ({ time: line.time + ((end - line.time) * k) / names.length, name }));
   });

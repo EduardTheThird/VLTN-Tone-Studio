@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Cue } from "../performance/chart";
+import { parseChart, type Cue } from "../performance/chart";
 import type { Chord } from "../performance/chords";
 import {
   chartChordEvents,
@@ -307,4 +307,20 @@ it("fills uncovered harmony from detection and preserves explicit rests", () => 
     { time: 2.5, name: "F", confidence: 1 },
   ];
   expect(namesOf(harmonyForSong(grid(6), cues, detected, 3))).toEqual(["F", "C", null, "E", "G", "Am"]);
+});
+
+describe("chartChordEvents with MIDI cues in the chart", () => {
+  it("spreads a chord line up to the next text line, ignoring timed cue lines between them", () => {
+    const chart = [
+      "[0:06.50] [A5/E] [A5] [C] [G]",
+      "[0:11.60] {nochase} {label:RC-10R: Fill for Verse 1} {midi:cc 2 82 127} {midi:cc 2 82 0}",
+      "[0:13.31] [Am] . [C] [G]",
+    ].join("\n");
+    const withCues = chartChordEvents(parseChart(chart));
+    const without = chartChordEvents(parseChart([chart.split("\n")[0], chart.split("\n")[2]].join("\n")));
+    expect(withCues).toEqual(without);
+    expect(withCues[1].time).toBeCloseTo(6.5 + (13.31 - 6.5) / 4);
+    // The fingerprint strips MIDI tokens first; the remaining label-only line must not move the chords either.
+    expect(chartChordEvents(parseChart(chart.replace(/\{midi[^}]*\}/g, "")))).toEqual(without);
+  });
 });
