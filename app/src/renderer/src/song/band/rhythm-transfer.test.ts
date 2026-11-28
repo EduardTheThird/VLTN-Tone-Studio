@@ -32,3 +32,14 @@ it("invalidates musical edits and a new export, but keeps confirmation through m
   settings[":options"] = JSON.stringify({ ...JSON.parse(settings[":options"]), rhythmTransfer: recordRhythmExport(settings, "export-two") });
   expect(rhythmTransferStatus(settings, 1)).toBe("Needs transfer confirmation");
 });
+it("keeps the confirmation when automatic cues are saved at the exported tempo (spec 176)", () => {
+  const settings = exported();
+  settings[":options"] = JSON.stringify({ ...JSON.parse(settings[":options"]), rhythmTransfer: confirmRhythmTransfer(settings, 1, 8) });
+  const withCues = (bpm: number) => {
+    const next = { ...settings };
+    next[":options"] = JSON.stringify({ ...JSON.parse(settings[":options"]), rhythmAutomation: { version: 1, memory: 1, bpm } });
+    return next;
+  };
+  expect(rhythmTransferStatus(withCues(140), 1)).toBe("Transfer confirmed");
+  expect(rhythmTransferStatus(withCues(120), 1)).toBe("Needs export");
+});

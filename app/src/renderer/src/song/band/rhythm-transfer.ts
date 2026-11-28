@@ -16,16 +16,20 @@ function options(settings: Record<string, string>): Record<string, unknown> {
     return {};
   }
 }
+/**
+ * The automatic cues' pedal tempo only matters when it differs from the exported rhythm's tempo. Saving cues at the same tempo
+ * leaves the record on the pedal byte-identical, so it must not ask for another export.
+ */
+function automationTempo(value: Record<string, unknown>): unknown {
+  const automation = (value.rhythmAutomation as { bpm?: unknown } | undefined)?.bpm;
+  const exported = (value.rhythmExport as { bpm?: unknown } | undefined)?.bpm;
+  return automation === exported ? undefined : automation;
+}
+
 /** Exact musical input revision. Mix, display, trim-only and cue edits do not alter the full-length exported passages. */
 export function rhythmInputRevision(settings: Record<string, string>): string {
   const value = options(settings);
-  return JSON.stringify([
-    settings[":bpm"] ?? "",
-    bandChartKey(settings[""] ?? ""),
-    bandOptionsKey(value),
-    value.rhythmExport,
-    (value.rhythmAutomation as { bpm?: unknown } | undefined)?.bpm,
-  ]);
+  return JSON.stringify([settings[":bpm"] ?? "", bandChartKey(settings[""] ?? ""), bandOptionsKey(value), value.rhythmExport, automationTempo(value)]);
 }
 export function rhythmTransferRecord(settings: Record<string, string>): RhythmTransferRecord | null {
   const record = options(settings).rhythmTransfer as Partial<RhythmTransferRecord> | undefined;
