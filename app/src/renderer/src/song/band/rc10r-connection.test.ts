@@ -43,6 +43,10 @@ function fixture(options: { occupied?: boolean; extra?: boolean; noAck?: boolean
     release: vi.fn(async () => {
       log.push("release");
     }),
+    loops: vi.fn(async () => ({ loops: [] })),
+    loopAudio: vi.fn(async () => new Uint8Array()),
+    backups: vi.fn(async () => ({ count: 0, bytes: 0, removable: 0 })),
+    pruneBackups: vi.fn(async () => ({ count: 0, bytes: 0, removable: 0 })),
   };
   const access = {
     sysexEnabled: true,

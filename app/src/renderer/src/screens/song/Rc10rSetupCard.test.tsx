@@ -100,3 +100,40 @@ it("marks a missing break assignment and opens the controls from the fix button"
   fireEvent.click(screen.getByRole("button", { name: "Set RHY BREAK CC…" }));
   expect(screen.getByLabelText("RHY BREAK CC").closest("details")?.open).toBe(true);
 });
+
+it("shows the pedal's own settings next to what the song's cues send (spec 174)", () => {
+  const onReadPedal = vi.fn();
+  render(
+    <Rc10rSetupCard
+      state={ready({
+        pedal: {
+          readAt: "2026-11-28T10:00:00Z",
+          checks: [
+            { id: "channel", label: "Control channel (RX CTRL CH)", ok: true, pedal: "channel 2", app: "channel 2" },
+            { id: "rhythmBreak", label: "Rhythm break", ok: false, pedal: "OFF", app: "CC#84" },
+          ],
+        },
+      })}
+      {...actions()}
+      onReadPedal={onReadPedal}
+    >
+      <p>advanced</p>
+    </Rc10rSetupCard>,
+  );
+  expect(line("pedal-channel").dataset.ok).toBe("true");
+  expect(line("pedal-rhythmBreak").dataset.ok).toBe("false");
+  expect(within(line("pedal-rhythmBreak")).getByText(/Rhythm break is OFF; the app sends CC#84/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+  expect(onReadPedal).toHaveBeenCalled();
+});
+
+it("offers a read when the pedal's settings are unknown", () => {
+  const onReadPedal = vi.fn();
+  render(
+    <Rc10rSetupCard state={ready({ pedal: { readAt: null, checks: null } })} {...actions()} onReadPedal={onReadPedal}>
+      <p>advanced</p>
+    </Rc10rSetupCard>,
+  );
+  fireEvent.click(within(line("pedal-settings")).getByRole("button", { name: "Read the RC-10R…" }));
+  expect(onReadPedal).toHaveBeenCalled();
+});

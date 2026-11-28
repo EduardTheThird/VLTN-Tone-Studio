@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsCard } from "@/components/ui/settings-card";
 import { drumsChip, isFallback, type DrumSource } from "@/song/band/drum-source";
 import type { PartChoice } from "@/song/band/part-choice";
+import type { Rc10rSettingCheck } from "@shared/rc10r-system";
 
 /** The pedal rhythm's transfer state for this song, or "none" when the song has no exported rhythm. */
 export type TransferState = "Needs export" | "Needs transfer confirmation" | "Transfer confirmed";
@@ -20,6 +21,8 @@ export interface Rc10rSetupState {
   drums: DrumSource;
   fallbackWhy: string;
   dynamics?: { label: string; cc?: number }[];
+  /** The pedal's own MIDI settings compared with this song's cues (spec 174). Null checks: not read yet. Absent: not shown. */
+  pedal?: { readAt: string | null; checks: Rc10rSettingCheck[] | null };
 }
 
 interface Line {
@@ -43,6 +46,7 @@ export function Rc10rSetupCard({
   onEnableMidi,
   onChooseOutput,
   onSendCues,
+  onReadPedal,
   children,
 }: {
   state: Rc10rSetupState;
@@ -50,6 +54,8 @@ export function Rc10rSetupCard({
   onEnableMidi(): void;
   onChooseOutput(): void;
   onSendCues(): void;
+  /** Opens the read-only RC-10R reading (spec 174). */
+  onReadPedal?(): void;
   /** The existing advanced controls: cue builder, transfer confirmation. */
   children: ReactNode;
 }) {
@@ -93,6 +99,23 @@ export function Rc10rSetupCard({
       fixes: choice === "pedal" ? undefined : [{ label: "Use pedal drums for this song", run: onChoosePedalDrums }],
     },
   ];
+  const pedal = state.pedal;
+  if (pedal && state.hasCues) {
+    if (!pedal.checks)
+      lines.push({
+        id: "pedal-settings",
+        ok: false,
+        text: "The RC-10R's own MIDI settings haven't been read yet",
+        fixes: onReadPedal ? [{ label: "Read the RC-10R…", run: onReadPedal }] : undefined,
+      });
+    else
+      for (const check of pedal.checks)
+        lines.push({
+          id: `pedal-${check.id}`,
+          ok: check.ok,
+          text: check.ok ? `Pedal ${check.label}: ${check.pedal}` : `Pedal ${check.label} is ${check.pedal}; the app sends ${check.app}. Set it in the RC-10R's MIDI menu.`,
+        });
+  }
   for (const control of state.dynamics ?? []) {
     lines.push({
       id: control.label,
@@ -125,6 +148,16 @@ export function Rc10rSetupCard({
             </li>
           ))}
         </ul>
+        {pedal?.checks && pedal.readAt && (
+          <p className="text-xs text-silkscreen-3">
+            Pedal settings read {new Date(pedal.readAt).toLocaleString()}.{" "}
+            {onReadPedal && (
+              <button type="button" className="underline" onClick={onReadPedal}>
+                Read again
+              </button>
+            )}
+          </p>
+        )}
         <details open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
           <summary className="cursor-pointer font-medium">Details</summary>
           <div className="space-y-3 pt-3">{children}</div>
