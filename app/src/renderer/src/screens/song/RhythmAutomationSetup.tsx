@@ -5,6 +5,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RHYTHM_CONTROLS, RHYTHM_DYNAMICS_CONTROLS, type RhythmAutomationSong } from "@/song/performance/rhythm-automation";
 import { RhythmAutomationSong as SongChoices } from "./RhythmAutomationSong";
 import { useRhythmAutomation } from "./use-rhythm-automation";
+import { useMemo } from "react";
+import { useSongLibrary } from "@/song/library";
+import { LIBRARY_PREFIX } from "@/song/performance/settings";
+import { memoryNotes, memoryUsers, useRc10rPedalReading } from "@/song/band/rc10r-pedal-state";
+
+/** Spec 177: what the pedal memory already holds, from the last RC-10R reading and the library's saved cues. */
+function MemoryNotes({ memory, songKey }: { memory: number; songKey: string }) {
+  const songs = useSongLibrary((state) => state.index.songs);
+  const map = useRc10rPedalReading((state) => state.saved?.reading.memories);
+  const users = useMemo(() => memoryUsers(songs), [songs]);
+  const id = songKey.startsWith(LIBRARY_PREFIX) ? songKey.slice(LIBRARY_PREFIX.length) : undefined;
+  const notes = memoryNotes(map, users, memory, id);
+  return (
+    <>
+      {notes.map((note) => (
+        <p key={note} role="note" className="text-led-warn">
+          {note}
+        </p>
+      ))}
+    </>
+  );
+}
 
 /** Review automatic rhythm changes for one song or a playlist, using fixed pedal memories. */
 export function RhythmAutomationSetup({ current, locked, onSaveChart }: { current: RhythmAutomationSong; locked: boolean; onSaveChart(chart: string): void }) {
@@ -139,6 +161,7 @@ export function RhythmAutomationSetup({ current, locked, onSaveChart }: { curren
           {entries.map((entry, i) => (
             <SongChoices
               key={entry.song.key}
+              notes={<MemoryNotes memory={entry.draft.memory} songKey={entry.song.key} />}
               entry={entry}
               onChange={(draft) => {
                 setDrafts(drafts.map((value, index) => (index === i ? { ...value, draft } : value)));

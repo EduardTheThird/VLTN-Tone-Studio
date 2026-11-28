@@ -56,12 +56,16 @@ import { applyPartChoices, defaultPartChoices, muteSilencedParts, partKeysOf, pe
 import { PerformanceOutputs } from "./PerformanceOutputs";
 import { PerformanceMidiSetup, SessionMidiHealth, setSendCues } from "./PerformanceMidiSetup";
 import { Rc10rSetupCard } from "./Rc10rSetupCard";
+import { Rc10rPedalPanel } from "./Rc10rPedalPanel";
+import { Rc10rReadDialog } from "./Rc10rReadDialog";
+import { rc10rExpectations, rc10rSettingChecks, useRc10rPedalReading } from "@/song/band/rc10r-pedal-state";
+import { DEFAULT_PEDAL_CHANNELS } from "@/song/performance/pedal-profiles";
 import { RhythmTransferStatus } from "./RhythmTransferStatus";
 import { rhythmTransferStatus } from "@/song/band/rhythm-transfer";
 import { RhythmAutomationSetup } from "./RhythmAutomationSetup";
 import { useSongSettingsRevision } from "@/song/performance/use-song-settings";
 import { usePedalLibrary } from "@/song/performance/pedal-library";
-import { currentRhythmAutomation, rhythmControlOverrides, RHYTHM_DYNAMICS_CONTROLS } from "@/song/performance/rhythm-automation";
+import { currentRhythmAutomation, rhythmControlOverrides, RHYTHM_DYNAMICS_CONTROLS, RHYTHM_PEDAL_ID, type RhythmControls } from "@/song/performance/rhythm-automation";
 import { PerformanceAnalysis, useChordAnalysis } from "./PerformanceAnalysis";
 import { preparationSettings, usePreparationDefaults } from "@/song/performance/start-preparation";
 import { pedalDrumMix } from "@/song/performance/pedal-drums";
@@ -277,6 +281,8 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
   const [midiFile, setMidiFile] = useState<MidiFileOption | null>(() => midiFileFromOptions(options));
   const pedalSettings = usePedalLibrary();
   const rhythmControls = rhythmControlOverrides(pedalSettings);
+  const pedalReading = useRc10rPedalReading((state) => state.saved);
+  const [readPedalOpen, setReadPedalOpen] = useState(false);
   const cueOptions = useMemo(() => readOptions<Record<string, unknown>>(key, {}), [key, settingsVersion]);
   const songRigTempo = readRigTempo(cueOptions.rigTempo);
   const rigTempo = useMemo(
@@ -995,6 +1001,27 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
                   choice: partChoice.drums,
                   drums,
                   fallbackWhy: fallbackReason(drums, outputConnected),
+                  pedal: {
+                    readAt: pedalReading?.readAt ?? null,
+                    checks: rc10rSettingChecks(
+                      pedalReading,
+                      rc10rExpectations(
+                        {
+                          channel: DEFAULT_PEDAL_CHANNELS[RHYTHM_PEDAL_ID],
+                          start: 80,
+                          division: 81,
+                          fill: 82,
+                          stop: 83,
+                          ...(cueOptions.rhythmAutomation as { controls?: Partial<RhythmControls> } | undefined)?.controls,
+                          ...rhythmControls,
+                        },
+                        {
+                          break: parsed.cues.some((cue) => cue.managed === "rhythm" && !!cue.label?.startsWith("RC-10R: Rhythm break")),
+                          level: parsed.cues.some((cue) => cue.managed === "rhythm" && !!cue.label?.startsWith("RC-10R: Rhythm level")),
+                        },
+                      ),
+                    ),
+                  },
                   dynamics: RHYTHM_DYNAMICS_CONTROLS.flatMap(({ key, setting }) =>
                     parsed.cues.some((cue) => cue.managed === "rhythm" && cue.label?.startsWith(key === "break" ? "RC-10R: Rhythm break" : "RC-10R: Rhythm level"))
                       ? [{ label: setting, cc: rhythmControls[key] }]
@@ -1005,6 +1032,7 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
                 onEnableMidi={() => void session.connectMidi()}
                 onChooseOutput={() => document.querySelector<HTMLElement>('[aria-label="MIDI output"]')?.focus()}
                 onSendCues={() => setSendCues(session, true)}
+                onReadPedal={() => setReadPedalOpen(true)}
               >
                 {source && (
                   <RhythmAutomationSetup
@@ -1023,6 +1051,19 @@ function PerformanceView({ stage, setStage, shown, requestedView }: { stage: boo
                   <RhythmTransferStatus songKey={key} locked={playing || !!library.playlistPlaying} />
                 )}
               </Rc10rSetupCard>
+              <Rc10rPedalPanel
+                songs={library.index.songs}
+                onRead={() => setReadPedalOpen(true)}
+                onAddLoop={
+                  source
+                    ? async (file) => {
+                        await useSong.getState().addTracks([file], { playing });
+                      }
+                    : undefined
+                }
+                locked={playing || !!library.playlistPlaying}
+              />
+              {readPedalOpen && <Rc10rReadDialog onClose={() => setReadPedalOpen(false)} />}
             </div>
             {source && (
               <fieldset aria-label="Rig tempo for this song" disabled={playing || !!library.playlistPlaying} className="flex flex-wrap gap-4 py-3 text-sm">

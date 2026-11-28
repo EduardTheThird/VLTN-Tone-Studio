@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Rc10rMemoryReview } from "./Rc10rMemoryReview";
 import { newRc10rMemorySetup } from "@/song/performance/rc10r-memory-setup";
 import { rhythmSongOptions } from "@/song/performance/rhythm-automation";
@@ -16,7 +17,16 @@ export interface RhythmAutomationEntry {
 }
 
 /** Per-song choices next to the MIDI that will be saved. Nothing here sends to the pedal. */
-export function RhythmAutomationSong({ entry, onChange }: { entry: RhythmAutomationEntry; onChange(draft: RhythmAutomationDraft): void }) {
+export function RhythmAutomationSong({
+  entry,
+  onChange,
+  notes,
+}: {
+  entry: RhythmAutomationEntry;
+  onChange(draft: RhythmAutomationDraft): void;
+  /** Warnings about the chosen pedal memory (spec 177). */
+  notes?: ReactNode;
+}) {
   const { song, draft, plan, error } = entry;
   const band = rhythmSongOptions(song).band;
   const style = band && typeof band === "object" && "style" in band ? band.style : undefined;
@@ -27,6 +37,7 @@ export function RhythmAutomationSong({ entry, onChange }: { entry: RhythmAutomat
         {song.title} · pedal memory {draft.memory}
       </summary>
       <div className="space-y-3 pt-3 text-sm">
+        {notes}
         <div className="flex flex-wrap gap-3">
           {(
             [
