@@ -4,6 +4,26 @@ All notable changes to VLTN Tone Studio. Versions match `app/package.json` and t
 
 ## [Unreleased]
 
+## [0.9.58] — 2026-11-28
+
+### Added
+
+- The RC-10R drums card reads the pedal's own MIDI settings and shows any that don't match what the song's cues send, such as an unassigned rhythm break CC.
+- Read the RC-10R from MIDI → RC-10R pedal without sending anything: see every memory with its rhythm, tempo, loops and the songs that use it.
+- Play the RC-10R's recorded loops from the newest pedal backup and add one to the current song as a track.
+- See how much space the RC-10R backups take and remove older ones, keeping the five newest and any from an interrupted send.
+
+### Changed
+
+- RC-10R backups copy the pedal's settings and only the loops that changed; unchanged loops are linked to the previous backup instead of copied again.
+- Sending to the RC-10R shows its steps, how much it will back up, a hint when macOS is waiting for permission, and plain messages for common drive errors.
+- The automatic RC-10R cue preview warns when a song's memory holds loops or is used by another song.
+
+### Fixed
+
+- Saving RC-10R cues no longer asks you to export an unchanged rhythm again.
+- A send whose files were written and checked keeps its export record even when the drive is busy and won't eject; ejecting retries for about 15 seconds first.
+
 ## [0.9.57] — 2026-11-26
 
 ### Added

@@ -23,6 +23,21 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
+    title: "Check your RC-10R's own settings",
+    text: "In MIDI, open RC-10R pedal and press Read the RC-10R. The RC-10R drums card then shows, for each song, whether the pedal's channel and rhythm CCs match the cues. The read writes nothing to the pedal.",
+    image: rigTools,
+  },
+  {
+    title: "Your RC-10R memories and loops",
+    text: "See every pedal memory with its rhythm, tempo, loops and the songs that use it. Play a recorded loop from the newest pedal backup or add it to the song as a track. The cue preview warns before a song uses a memory that holds loops.",
+    image: rigTools,
+  },
+  {
+    title: "Faster, smaller RC-10R sends",
+    text: "Backups now copy only the settings and changed loops, and the send shows each step. A busy drive no longer loses the transfer, and you can remove older pedal backups to free space.",
+    image: rigTools,
+  },
+  {
     title: "Keep the harmony you wrote",
     text: "Generated parts and the chart reader follow your passing chords, slash notes and no-chord breaks. In Band Timing, choose 6/8 for two dotted-quarter pulses per bar, or move one bar line while keeping the pulse times.",
     image: band,
